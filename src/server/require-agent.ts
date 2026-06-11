@@ -18,6 +18,16 @@ export interface AgentPrincipal {
   capabilities: Array<string>
 }
 
+/** Authenticated via the api-key fallback (task 5.3) — full standard access. */
+export interface ApiKeyPrincipal {
+  kind: 'api-key'
+  keyId: string
+  name: string | null
+  userId: string
+}
+
+export type Principal = AgentPrincipal | ApiKeyPrincipal
+
 interface AgentSessionResponse {
   type: 'autonomous' | 'delegated'
   agent: {
@@ -62,19 +72,66 @@ async function fetchAgentSession(
 }
 
 export type RequireAgentResult =
-  | { ok: true; principal: AgentPrincipal }
+  | { ok: true; principal: Principal }
   | { ok: false; response: Response }
 
+/** Bearer credentials that are not three-part JWTs are treated as API keys. */
+function bearerApiKey(request: Request): string | null {
+  const header = request.headers.get('authorization')
+  const bearer = header?.startsWith('Bearer ')
+    ? header.slice('Bearer '.length)
+    : null
+  const candidate = request.headers.get('x-api-key') ?? bearer
+  if (!candidate || candidate.split('.').length === 3) return null
+  return candidate
+}
+
+async function verifyApiKeyPrincipal(
+  auth: Auth,
+  key: string,
+): Promise<ApiKeyPrincipal | null> {
+  const verified = await auth.api.verifyApiKey({ body: { key } })
+  if (!verified.valid || !verified.key) return null
+  // The plugin stores the owning user under `referenceId`.
+  const owner = verified.key as { id: string; name?: string | null } & {
+    referenceId?: string
+    userId?: string
+  }
+  const userId = owner.referenceId ?? owner.userId
+  if (!userId) return null
+  return {
+    kind: 'api-key',
+    keyId: owner.id,
+    name: owner.name ?? null,
+    userId,
+  }
+}
+
 /**
- * Authenticate a request with an agent JWT; optionally require an active
- * grant for a specific capability. Returns a ready-made 401/403 Response on
- * failure.
+ * Authenticate a request with an agent JWT or an API key (Bearer or
+ * X-Api-Key); optionally require an active grant for a specific capability
+ * (API keys pass capability checks — they are the full-access fallback).
+ * Returns a ready-made 401/403 Response on failure.
  */
 export async function requireAgent(
   auth: Auth,
   request: Request,
   options?: { capability?: string },
 ): Promise<RequireAgentResult> {
+  const apiKey = bearerApiKey(request)
+  if (apiKey) {
+    const principal = await verifyApiKeyPrincipal(auth, apiKey)
+    if (principal) return { ok: true, principal }
+    return {
+      ok: false,
+      response: jsonError(
+        401,
+        'invalid_api_key',
+        'API key is invalid or disabled. Register a new one at POST /v1/agents/register-key.',
+      ),
+    }
+  }
+
   const session = await fetchAgentSession(auth, request)
   if (!session?.agent) {
     return {
@@ -82,7 +139,7 @@ export async function requireAgent(
       response: jsonError(
         401,
         'unauthorized',
-        'Provide an agent JWT (Authorization: Bearer). Register at /.well-known/agent-configuration.',
+        'Provide an agent JWT or API key (Authorization: Bearer). Register at /.well-known/agent-configuration or POST /v1/agents/register-key.',
       ),
     }
   }

@@ -387,10 +387,15 @@ discovery → register → request capability grants → execute with short-live
     JWT jtis are replay-protected — a fresh token per request. /v1/agents/me created
     minimal here (5.5 enriches it); 200/401/403 covered by worker tests + the live
     round-trip script.
-- [ ] **5.3 API-key fallback.** `POST /v1/agents/register-key` `{ name, email? }` →
+- [x] **5.3 API-key fallback.** `POST /v1/agents/register-key` `{ name, email? }` →
       Better Auth user + api-key plugin key, returned once; `Authorization: Bearer <key>`
       accepted everywhere `requireAgent` is — for agents that don't speak the agent-auth
       protocol. _Accepts:_ register → authed call with the key succeeds.
+  - Note: requireAgent now returns a Principal union (agent | api-key); non-JWT bearer
+    values and X-Api-Key are treated as keys; api-key principals pass capability
+    checks (full-access fallback). The plugin's key owner field is `referenceId`.
+    Emails are pre-checked in D1 (better-auth's duplicate throw leaves a floating
+    rejection). Live-verified: register → Bearer key on /v1/agents/me → 200.
 - [ ] **5.4 Rate limiting.** Per-agent/per-key and per-IP (anonymous) limits via
       Workers Rate Limiting binding (fallback: fixed-window counter in KV). Anonymous:
       60 req/h; authenticated: 5k req/h. 429s include `Retry-After`. _Accepts:_ test

@@ -85,10 +85,12 @@ describe('requireAgent', () => {
       protectedRequest({ authorization: `Bearer ${await freshAgentJwt()}` }),
     )
     expect(result.ok).toBe(true)
-    if (result.ok) {
+    if (result.ok && result.principal.kind === 'agent') {
       expect(result.principal.agentId).toBe(agentId)
       expect(result.principal.mode).toBe('autonomous')
       expect(result.principal.capabilities).toContain('getSchema')
+    } else {
+      expect.fail('expected an agent principal')
     }
   })
 
