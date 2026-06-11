@@ -661,7 +661,7 @@ rel="service-doc"`, `</llms.txt>; rel="describedby"`. _Accepts:_ curl -I
       digest computed from the live SKILL.md content). _Accepts:_ all three
       render with correct content types; sha256 in the index matches the
       served /skill body.
-- [ ] **10.4 Auth discovery.** `/.well-known/oauth-protected-resource`
+- [x] **10.4 Auth discovery.** `/.well-known/oauth-protected-resource`
       (RFC 9728: resource, authorization*servers, scopes_supported = public
       capability names), `/.well-known/oauth-authorization-server` (RFC 8414
       fields we genuinely have: issuer, registration via agent-auth, the

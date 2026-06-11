@@ -17,12 +17,15 @@ import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as DocsRouteImport } from './routes/docs'
+import { Route as AuthDotmdRouteImport } from './routes/auth[.]md'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as V1IndexRouteImport } from './routes/v1/index'
 import { Route as V1ValidateRouteImport } from './routes/v1/validate'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
 import { Route as V1ChangesRouteImport } from './routes/v1/changes'
+import { Route as DotwellKnownOauthProtectedResourceRouteImport } from './routes/[.]well-known/oauth-protected-resource'
+import { Route as DotwellKnownOauthAuthorizationServerRouteImport } from './routes/[.]well-known/oauth-authorization-server'
 import { Route as DotwellKnownApiCatalogRouteImport } from './routes/[.]well-known/api-catalog'
 import { Route as DotwellKnownAgentConfigurationRouteImport } from './routes/[.]well-known/agent-configuration'
 import { Route as V1SubscriptionsIndexRouteImport } from './routes/v1/subscriptions/index'
@@ -81,6 +84,11 @@ const DocsRoute = DocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthDotmdRoute = AuthDotmdRouteImport.update({
+  id: '/auth.md',
+  path: '/auth.md',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AccountRoute = AccountRouteImport.update({
   id: '/account',
   path: '/account',
@@ -111,6 +119,18 @@ const V1ChangesRoute = V1ChangesRouteImport.update({
   path: '/v1/changes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownOauthProtectedResourceRoute =
+  DotwellKnownOauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DotwellKnownOauthAuthorizationServerRoute =
+  DotwellKnownOauthAuthorizationServerRouteImport.update({
+    id: '/.well-known/oauth-authorization-server',
+    path: '/.well-known/oauth-authorization-server',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const DotwellKnownApiCatalogRoute = DotwellKnownApiCatalogRouteImport.update({
   id: '/.well-known/api-catalog',
   path: '/.well-known/api-catalog',
@@ -206,6 +226,7 @@ const V1SchemasProviderActivitySplatRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/auth.md': typeof AuthDotmdRoute
   '/docs': typeof DocsRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
@@ -216,6 +237,8 @@ export interface FileRoutesByFullPath {
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/.well-known/api-catalog': typeof DotwellKnownApiCatalogRoute
+  '/.well-known/oauth-authorization-server': typeof DotwellKnownOauthAuthorizationServerRoute
+  '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
@@ -239,6 +262,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/auth.md': typeof AuthDotmdRoute
   '/docs': typeof DocsRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
@@ -249,6 +273,8 @@ export interface FileRoutesByTo {
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/.well-known/api-catalog': typeof DotwellKnownApiCatalogRoute
+  '/.well-known/oauth-authorization-server': typeof DotwellKnownOauthAuthorizationServerRoute
+  '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
@@ -273,6 +299,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/auth.md': typeof AuthDotmdRoute
   '/docs': typeof DocsRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
@@ -283,6 +310,8 @@ export interface FileRoutesById {
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/.well-known/api-catalog': typeof DotwellKnownApiCatalogRoute
+  '/.well-known/oauth-authorization-server': typeof DotwellKnownOauthAuthorizationServerRoute
+  '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
@@ -308,6 +337,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account'
+    | '/auth.md'
     | '/docs'
     | '/llms.txt'
     | '/login'
@@ -318,6 +348,8 @@ export interface FileRouteTypes {
     | '/skill'
     | '/.well-known/agent-configuration'
     | '/.well-known/api-catalog'
+    | '/.well-known/oauth-authorization-server'
+    | '/.well-known/oauth-protected-resource'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
@@ -341,6 +373,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/account'
+    | '/auth.md'
     | '/docs'
     | '/llms.txt'
     | '/login'
@@ -351,6 +384,8 @@ export interface FileRouteTypes {
     | '/skill'
     | '/.well-known/agent-configuration'
     | '/.well-known/api-catalog'
+    | '/.well-known/oauth-authorization-server'
+    | '/.well-known/oauth-protected-resource'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
@@ -374,6 +409,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/account'
+    | '/auth.md'
     | '/docs'
     | '/llms.txt'
     | '/login'
@@ -384,6 +420,8 @@ export interface FileRouteTypes {
     | '/skill'
     | '/.well-known/agent-configuration'
     | '/.well-known/api-catalog'
+    | '/.well-known/oauth-authorization-server'
+    | '/.well-known/oauth-protected-resource'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
@@ -408,6 +446,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
+  AuthDotmdRoute: typeof AuthDotmdRoute
   DocsRoute: typeof DocsRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   LoginRoute: typeof LoginRoute
@@ -418,6 +457,8 @@ export interface RootRouteChildren {
   SkillRoute: typeof SkillRoute
   DotwellKnownAgentConfigurationRoute: typeof DotwellKnownAgentConfigurationRoute
   DotwellKnownApiCatalogRoute: typeof DotwellKnownApiCatalogRoute
+  DotwellKnownOauthAuthorizationServerRoute: typeof DotwellKnownOauthAuthorizationServerRoute
+  DotwellKnownOauthProtectedResourceRoute: typeof DotwellKnownOauthProtectedResourceRoute
   V1ChangesRoute: typeof V1ChangesRoute
   V1StatusRoute: typeof V1StatusRoute
   V1ValidateRoute: typeof V1ValidateRoute
@@ -497,6 +538,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth.md': {
+      id: '/auth.md'
+      path: '/auth.md'
+      fullPath: '/auth.md'
+      preLoaderRoute: typeof AuthDotmdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/account': {
       id: '/account'
       path: '/account'
@@ -537,6 +585,20 @@ declare module '@tanstack/react-router' {
       path: '/v1/changes'
       fullPath: '/v1/changes'
       preLoaderRoute: typeof V1ChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof DotwellKnownOauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/oauth-authorization-server': {
+      id: '/.well-known/oauth-authorization-server'
+      path: '/.well-known/oauth-authorization-server'
+      fullPath: '/.well-known/oauth-authorization-server'
+      preLoaderRoute: typeof DotwellKnownOauthAuthorizationServerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/.well-known/api-catalog': {
@@ -664,6 +726,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
+  AuthDotmdRoute: AuthDotmdRoute,
   DocsRoute: DocsRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   LoginRoute: LoginRoute,
@@ -674,6 +737,10 @@ const rootRouteChildren: RootRouteChildren = {
   SkillRoute: SkillRoute,
   DotwellKnownAgentConfigurationRoute: DotwellKnownAgentConfigurationRoute,
   DotwellKnownApiCatalogRoute: DotwellKnownApiCatalogRoute,
+  DotwellKnownOauthAuthorizationServerRoute:
+    DotwellKnownOauthAuthorizationServerRoute,
+  DotwellKnownOauthProtectedResourceRoute:
+    DotwellKnownOauthProtectedResourceRoute,
   V1ChangesRoute: V1ChangesRoute,
   V1StatusRoute: V1StatusRoute,
   V1ValidateRoute: V1ValidateRoute,
