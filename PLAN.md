@@ -441,10 +441,14 @@ The service's own `openapi.json` (task 4.1, every operation has an `operationId`
 the single source for three consumer surfaces: the generated TS client, the CLI, and
 the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
 
-- [ ] **7.1 MCP server endpoint** at `/mcp` (streamable HTTP, Workers-native) exposing
+- [x] **7.1 MCP server endpoint** at `/mcp` (streamable HTTP, Workers-native) exposing
       tools: `list_models`, `get_model`, `get_schema`, `validate_payload`,
       `recent_changes`. Reuse the Phase 4 service functions directly. _Accepts:_ MCP
       inspector (or a scripted client) lists tools and round-trips `get_schema`.
+  - Note: hand-rolled stateless streamable-HTTP (JSON responses, no SSE session —
+    the MCP SDK transports are node/DO-centric); handles initialize/ping/tools/\*,
+    202s notifications, 405s GET, JSON-RPC errors for unknown methods. Live scripted
+    client listed 5 tools and round-tripped the real Anthropic messages schema.
 - [ ] **7.2 Minimal human dashboard.** `/` route: provider sync status, model counts,
       latest changes, docs links. Tailwind + shadcn; no auth needed (read-only).
       _Accepts:_ renders against local data.

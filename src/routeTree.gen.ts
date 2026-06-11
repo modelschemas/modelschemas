@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
+import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as V1IndexRouteImport } from './routes/v1/index'
@@ -34,6 +35,11 @@ import { Route as V1SchemasProviderActivitySplatRouteImport } from './routes/v1/
 const OpenapiDotjsonRoute = OpenapiDotjsonRouteImport.update({
   id: '/openapi.json',
   path: '/openapi.json',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
@@ -144,6 +150,7 @@ const V1SchemasProviderActivitySplatRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
@@ -191,6 +199,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
+  '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/llms.txt'
+    | '/mcp'
     | '/openapi.json'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/llms.txt'
+    | '/mcp'
     | '/openapi.json'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/llms.txt'
+    | '/mcp'
     | '/openapi.json'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
@@ -286,6 +298,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
+  McpRoute: typeof McpRoute
   OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
   DotwellKnownAgentConfigurationRoute: typeof DotwellKnownAgentConfigurationRoute
   V1ChangesRoute: typeof V1ChangesRoute
@@ -314,6 +327,13 @@ declare module '@tanstack/react-router' {
       path: '/openapi.json'
       fullPath: '/openapi.json'
       preLoaderRoute: typeof OpenapiDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/llms.txt': {
@@ -462,6 +482,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
+  McpRoute: McpRoute,
   OpenapiDotjsonRoute: OpenapiDotjsonRoute,
   DotwellKnownAgentConfigurationRoute: DotwellKnownAgentConfigurationRoute,
   V1ChangesRoute: V1ChangesRoute,
