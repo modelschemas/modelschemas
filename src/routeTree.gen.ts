@@ -19,6 +19,7 @@ import { Route as V1ChangesRouteImport } from './routes/v1/changes'
 import { Route as DotwellKnownAgentConfigurationRouteImport } from './routes/[.]well-known/agent-configuration'
 import { Route as V1ProvidersIndexRouteImport } from './routes/v1/providers/index'
 import { Route as V1ModelsIndexRouteImport } from './routes/v1/models/index'
+import { Route as V1AgentsMeRouteImport } from './routes/v1/agents/me'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as V1SchemasProviderIndexRouteImport } from './routes/v1/schemas/$provider/index'
 import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
@@ -78,6 +79,11 @@ const V1ModelsIndexRoute = V1ModelsIndexRouteImport.update({
   path: '/v1/models/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1AgentsMeRoute = V1AgentsMeRouteImport.update({
+  id: '/v1/agents/me',
+  path: '/v1/agents/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/v1/validate': typeof V1ValidateRoute
   '/v1/': typeof V1IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByTo {
   '/v1/validate': typeof V1ValidateRoute
   '/v1': typeof V1IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/models': typeof V1ModelsIndexRoute
   '/v1/providers': typeof V1ProvidersIndexRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -166,6 +174,7 @@ export interface FileRoutesById {
   '/v1/validate': typeof V1ValidateRoute
   '/v1/': typeof V1IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -187,6 +196,7 @@ export interface FileRouteTypes {
     | '/v1/validate'
     | '/v1/'
     | '/api/auth/$'
+    | '/v1/agents/me'
     | '/v1/models/'
     | '/v1/providers/'
     | '/v1/admin/sync/$provider'
@@ -206,6 +216,7 @@ export interface FileRouteTypes {
     | '/v1/validate'
     | '/v1'
     | '/api/auth/$'
+    | '/v1/agents/me'
     | '/v1/models'
     | '/v1/providers'
     | '/v1/admin/sync/$provider'
@@ -225,6 +236,7 @@ export interface FileRouteTypes {
     | '/v1/validate'
     | '/v1/'
     | '/api/auth/$'
+    | '/v1/agents/me'
     | '/v1/models/'
     | '/v1/providers/'
     | '/v1/admin/sync/$provider'
@@ -245,6 +257,7 @@ export interface RootRouteChildren {
   V1ValidateRoute: typeof V1ValidateRoute
   V1IndexRoute: typeof V1IndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  V1AgentsMeRoute: typeof V1AgentsMeRoute
   V1ModelsIndexRoute: typeof V1ModelsIndexRoute
   V1ProvidersIndexRoute: typeof V1ProvidersIndexRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
@@ -327,6 +340,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1ModelsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/agents/me': {
+      id: '/v1/agents/me'
+      path: '/v1/agents/me'
+      fullPath: '/v1/agents/me'
+      preLoaderRoute: typeof V1AgentsMeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -389,6 +409,7 @@ const rootRouteChildren: RootRouteChildren = {
   V1ValidateRoute: V1ValidateRoute,
   V1IndexRoute: V1IndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  V1AgentsMeRoute: V1AgentsMeRoute,
   V1ModelsIndexRoute: V1ModelsIndexRoute,
   V1ProvidersIndexRoute: V1ProvidersIndexRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,

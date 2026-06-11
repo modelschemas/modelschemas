@@ -120,3 +120,28 @@ if (!payload.schema || !payload.contentHash) {
 console.log(
   `execute ok — getSchema round-tripped (contentHash ${String(payload.contentHash).slice(0, 12)}…)`,
 )
+
+// Native protected route (task 5.2): /v1/agents/me with a fresh agent JWT
+// (jti is replay-protected, so the execute JWT can't be reused).
+const meJwt = await new SignJWT({ aud: discovery.default_location })
+  .setProtectedHeader({ alg: 'EdDSA', typ: 'agent+jwt' })
+  .setIssuer(registeredHostId)
+  .setSubject(agentId)
+  .setIssuedAt()
+  .setJti(crypto.randomUUID())
+  .setExpirationTime('2m')
+  .sign(agentKeys.privateKey)
+const meResponse = await fetch(`${base}/v1/agents/me`, {
+  headers: { Authorization: `Bearer ${meJwt}` },
+})
+if (!meResponse.ok) await fail('agents/me', meResponse)
+const me = (await meResponse.json()) as {
+  agent?: { agentId?: string; capabilities?: Array<string> }
+}
+if (me.agent?.agentId !== agentId) {
+  console.error('agents/me returned wrong agent:', me)
+  process.exit(1)
+}
+console.log(
+  `agents/me ok (capabilities: ${(me.agent.capabilities ?? []).join(', ')})`,
+)

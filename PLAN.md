@@ -376,11 +376,17 @@ discovery → register → request capability grants → execute with short-live
     (open signup) and a `resolveAutonomousUser` virtual identity (autonomous agents
     have no human owner). Admin op (syncProvider) filtered out of capabilities;
     capabilities are at `/capability/list`, not inline in the discovery doc.
-- [ ] **5.2 JWT verification on owned routes.** For agent-authed access to our native
+- [x] **5.2 JWT verification on owned routes.** For agent-authed access to our native
       `/v1/*` routes (as opposed to the `/capability/execute` proxy), add a
       `requireAgent(request)` helper wrapping `verifyAgentRequest(request, auth)` +
       grant check, used by subscriptions (Phase 6) and `/v1/agents/me`. _Accepts:_ test
       hits a protected route with a valid agent JWT (200) and without (401).
+  - Note: signature is `requireAgent(auth, request, {capability?})` returning a
+    principal or a ready-made 401/403 Response. verifyAgentRequest builds its session
+    URL without the basePath, so the helper retries with `/api/auth` appended. Agent
+    JWT jtis are replay-protected — a fresh token per request. /v1/agents/me created
+    minimal here (5.5 enriches it); 200/401/403 covered by worker tests + the live
+    round-trip script.
 - [ ] **5.3 API-key fallback.** `POST /v1/agents/register-key` `{ name, email? }` →
       Better Auth user + api-key plugin key, returned once; `Authorization: Bearer <key>`
       accepted everywhere `requireAgent` is — for agents that don't speak the agent-auth
