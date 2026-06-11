@@ -8,6 +8,13 @@
     // Fast tier: models poll. Slow tier: full spec sync (05:00 UTC).
     "crons": ["*/15 * * * *", "0 5 * * *"],
   },
+  "kv_namespaces": [
+    {
+      "binding": "SCHEMA_CACHE",
+      // Placeholder for local dev; replaced with the real namespace ID in Phase 8 (task 8.1).
+      "id": "00000000000000000000000000000000",
+    },
+  ],
   "d1_databases": [
     {
       "binding": "DB",

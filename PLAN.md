@@ -32,7 +32,8 @@ This plan is executed by an autonomous loop. Each iteration:
    side-work, add it as a new task in the right phase instead of doing it now.
 3. Verify against the task's acceptance criteria. Every task that adds or changes
    behaviour must ship with tests covering it — write them as part of the task, not
-   later. Run `bun --bun run test`, `bun --bun run lint`, and `bun run typecheck`;
+   later. Run `bun run test` (plain `bun run`, not `--bun` — bun's ws shim can't
+   start the cloudflare vitest pool), `bun --bun run lint`, and `bun run typecheck`;
    all must be green (lefthook enforces lint/format/typecheck on commit — never
    commit with `--no-verify`). For route/API tasks, exercise the endpoint against
    `bun --bun run dev` (vite cloudflare plugin provides local D1/KV bindings —
@@ -136,12 +137,20 @@ Rules:
     (`wrangler dev --test-scheduled -c dist/server/wrangler.json`) and under vite dev —
     both crons dispatch, SSR home renders in both. Entry-module named exports must be
     handlers only (workerd rejects exported constants), so cron strings stay module-local.
-- [ ] **0.3 KV namespace + helpers.** Add `kv_namespaces` binding (`SCHEMA_CACHE`).
+- [x] **0.3 KV namespace + helpers.** Add `kv_namespaces` binding (`SCHEMA_CACHE`).
       Write `src/server/kv.ts` with typed get/put wrapping JSON + content-hash keys.
       The cloudflare vite plugin is incompatible with vitest (it is skipped under
       `VITEST` in `vite.config.ts`), so set up `@cloudflare/vitest-pool-workers`
       (or a miniflare test harness) here for tests that need real KV/D1 bindings.
       _Accepts:_ round-trip test passes under `bun run test` with a real KV binding.
+  - Note: pool-workers 0.16 (vitest 4) replaced `defineWorkersConfig` with a
+    `cloudflareTest()` vite plugin — config split into vitest.config.ts +
+    unit/workers project files (`*.worker.test.ts` runs in workerd). Tests MUST run
+    via plain `bun run test`: under `--bun`, bun's ws shim can't start the pool
+    runner (hangs after "Timeout starting cloudflare-pool runner"); ci.yml,
+    CLAUDE.md, and the loop protocol updated accordingly. Miniflare bindings are
+    declared inline (not via wrangler.jsonc configPath) so the pool doesn't try to
+    load the TanStack Start worker entry.
 - [ ] **0.4 Better Auth on D1.** Wire `src/lib/auth.ts` to the drizzle adapter over D1,
       add the `agent-auth` (`@better-auth/agent-auth`), `api-key`, and `bearer` plugins,
       generate auth tables into `src/db/schema.ts` via `bunx --bun @better-auth/cli generate`

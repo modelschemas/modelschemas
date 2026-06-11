@@ -24,10 +24,10 @@ This project uses Bun as the package manager/runtime.
 
 ```bash
 bun install              # install dependencies
-bun --bun run dev        # dev server on port 3000
+bun run dev              # dev server on port 3000 (NOT --bun: bun's ws shim hangs vite startup)
 bun --bun run build      # production build
-bun --bun run test       # run all tests (vitest run)
-bunx vitest run src/path/to/file.test.tsx   # run a single test file
+bun run test             # run all tests (NOT --bun: the cloudflare vitest pool needs node)
+bun run test src/path/to/file.test.ts       # run a single test file
 bun --bun run lint       # eslint (no-explicit-any + no-unsafe-* are errors)
 bun run typecheck        # tsc --noEmit
 bun --bun run format     # prettier --write + eslint --fix
