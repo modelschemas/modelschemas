@@ -10,11 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as V1StatusRouteImport } from './routes/v1/status'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1StatusRoute = V1StatusRouteImport.update({
+  id: '/v1/status',
+  path: '/v1/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -22,31 +29,49 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1AdminSyncProviderRoute = V1AdminSyncProviderRouteImport.update({
+  id: '/v1/admin/sync/$provider',
+  path: '/v1/admin/sync/$provider',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/v1/status': typeof V1StatusRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/v1/status': typeof V1StatusRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/v1/status': typeof V1StatusRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/auth/$'
+  fullPaths: '/' | '/v1/status' | '/api/auth/$' | '/v1/admin/sync/$provider'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/auth/$'
-  id: '__root__' | '/' | '/api/auth/$'
+  to: '/' | '/v1/status' | '/api/auth/$' | '/v1/admin/sync/$provider'
+  id:
+    | '__root__'
+    | '/'
+    | '/v1/status'
+    | '/api/auth/$'
+    | '/v1/admin/sync/$provider'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  V1StatusRoute: typeof V1StatusRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +83,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/status': {
+      id: '/v1/status'
+      path: '/v1/status'
+      fullPath: '/v1/status'
+      preLoaderRoute: typeof V1StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -65,12 +97,21 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/admin/sync/$provider': {
+      id: '/v1/admin/sync/$provider'
+      path: '/v1/admin/sync/$provider'
+      fullPath: '/v1/admin/sync/$provider'
+      preLoaderRoute: typeof V1AdminSyncProviderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  V1StatusRoute: V1StatusRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
