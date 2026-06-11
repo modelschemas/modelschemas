@@ -129,3 +129,36 @@ describe('subscriptions CRUD round-trip', () => {
     })
   })
 })
+
+describe('webhook URL SSRF guard', () => {
+  const attempt = (url: string) =>
+    parseCreateSubscriptionBody({ url, events: ['model.added'] })
+
+  it('requires https and rejects internal destinations', () => {
+    expect(attempt('https://hooks.example.com/x')).not.toBeNull()
+    // http is no longer accepted at all.
+    expect(attempt('http://hooks.example.com/x')).toBeNull()
+    for (const bad of [
+      'https://localhost/x',
+      'https://api.localhost/x',
+      'https://127.0.0.1/x',
+      'https://127.8.9.10/x',
+      'https://10.0.0.5/x',
+      'https://172.16.0.1/x',
+      'https://192.168.1.1/x',
+      'https://169.254.169.254/latest/meta-data',
+      'https://0.0.0.0/x',
+      'https://[::1]/x',
+      'https://[fe80::1]/x',
+      'https://[fd00::1]/x',
+      'https://internal.corp.internal/x',
+      'https://printer.local/x',
+      'https://hooks.example.com./x', // trailing-dot bypass — host still checked
+    ]) {
+      if (bad === 'https://hooks.example.com./x') continue // public host, allowed
+      expect(attempt(bad), bad).toBeNull()
+    }
+    // Trailing dots are normalised, not a bypass for forbidden names.
+    expect(attempt('https://localhost./x')).toBeNull()
+  })
+})

@@ -17,6 +17,47 @@ export interface CreateSubscriptionBody {
   provider?: string
 }
 
+/**
+ * SSRF guard for webhook destinations: only public https hosts. Literal
+ * loopback/private/link-local addresses and internal-looking names are
+ * rejected at registration; delivery additionally refuses to follow
+ * redirects. Residual risk (DNS rebinding to edge-internal space) is
+ * accepted: Workers fetch has no privileged network position and workerd
+ * exposes no resolver to re-check A records at delivery time.
+ */
+export function isForbiddenWebhookHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '')
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host === ''
+  ) {
+    return true
+  }
+  const bare = host.replace(/^\[|\]$/g, '')
+  if (
+    bare === '::' ||
+    bare === '::1' ||
+    bare.startsWith('fe80:') ||
+    bare.startsWith('fc') ||
+    bare.startsWith('fd')
+  ) {
+    return true
+  }
+  const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(bare)
+  if (ipv4) {
+    const a = Number(ipv4[1])
+    const b = Number(ipv4[2])
+    if (a === 0 || a === 127 || a === 10) return true
+    if (a === 169 && b === 254) return true
+    if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 192 && b === 168) return true
+  }
+  return false
+}
+
 export function parseCreateSubscriptionBody(
   raw: unknown,
 ): CreateSubscriptionBody | null {
@@ -29,7 +70,8 @@ export function parseCreateSubscriptionBody(
   } catch {
     return null
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
+  if (parsed.protocol !== 'https:') return null
+  if (isForbiddenWebhookHost(parsed.hostname)) return null
   if (
     !Array.isArray(body.events) ||
     body.events.length === 0 ||

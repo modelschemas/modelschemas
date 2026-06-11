@@ -39,7 +39,7 @@ export const Route = createFileRoute('/v1/subscriptions/')({
           return jsonError(
             400,
             'invalid_request',
-            'Body must be { url: http(s) string, events: ChangeType[], provider?: string }.',
+            'Body must be { url: public https URL, events: ChangeType[], provider?: string }.',
           )
         }
         const outcome = await createSubscription(

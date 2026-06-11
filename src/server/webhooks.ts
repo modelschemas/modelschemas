@@ -188,6 +188,10 @@ export async function deliverDue(
           'X-ModelSchemas-Delivery': delivery.id,
         },
         body,
+        // SSRF guard: never follow redirects — a receiver could otherwise
+        // bounce the delivery to an internal target on the second hop. A 3xx
+        // counts as a failed attempt.
+        redirect: 'manual',
       })
       responseCode = response.status
     } catch {
