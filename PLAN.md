@@ -449,9 +449,13 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
     the MCP SDK transports are node/DO-centric); handles initialize/ping/tools/\*,
     202s notifications, 405s GET, JSON-RPC errors for unknown methods. Live scripted
     client listed 5 tools and round-tripped the real Anthropic messages schema.
-- [ ] **7.2 Minimal human dashboard.** `/` route: provider sync status, model counts,
+- [x] **7.2 Minimal human dashboard.** `/` route: provider sync status, model counts,
       latest changes, docs links. Tailwind + shadcn; no auth needed (read-only).
       _Accepts:_ renders against local data.
+  - Note: data via a createServerFn loader reusing getServiceStatus + listChanges
+    (already worker-tested); plain Tailwind shadcn-style cards/badges (no new deps).
+    Full SSR verified against local data (provider table + change feed in the HTML —
+    note: ugrep chokes on the single-line SSR output, use python/sed to inspect).
 - [ ] **7.3 Docs page** `/docs`: quickstart for agents (register → fetch schema →
       validate → subscribe), rendered from the same content as `llms.txt`. _Accepts:_
       renders; links resolve.
