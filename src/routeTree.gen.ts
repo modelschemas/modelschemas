@@ -23,6 +23,7 @@ import { Route as V1IndexRouteImport } from './routes/v1/index'
 import { Route as V1ValidateRouteImport } from './routes/v1/validate'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
 import { Route as V1ChangesRouteImport } from './routes/v1/changes'
+import { Route as DotwellKnownApiCatalogRouteImport } from './routes/[.]well-known/api-catalog'
 import { Route as DotwellKnownAgentConfigurationRouteImport } from './routes/[.]well-known/agent-configuration'
 import { Route as V1SubscriptionsIndexRouteImport } from './routes/v1/subscriptions/index'
 import { Route as V1ProvidersIndexRouteImport } from './routes/v1/providers/index'
@@ -31,6 +32,8 @@ import { Route as V1SubscriptionsIdRouteImport } from './routes/v1/subscriptions
 import { Route as V1AgentsRegisterKeyRouteImport } from './routes/v1/agents/register-key'
 import { Route as V1AgentsMeRouteImport } from './routes/v1/agents/me'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as DotwellKnownMcpServerCardDotjsonRouteImport } from './routes/[.]well-known/mcp/server-card[.]json'
+import { Route as DotwellKnownAgentSkillsIndexDotjsonRouteImport } from './routes/[.]well-known/agent-skills/index[.]json'
 import { Route as V1SchemasProviderIndexRouteImport } from './routes/v1/schemas/$provider/index'
 import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
 import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/$provider.$modelId'
@@ -108,6 +111,11 @@ const V1ChangesRoute = V1ChangesRouteImport.update({
   path: '/v1/changes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownApiCatalogRoute = DotwellKnownApiCatalogRouteImport.update({
+  id: '/.well-known/api-catalog',
+  path: '/.well-known/api-catalog',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DotwellKnownAgentConfigurationRoute =
   DotwellKnownAgentConfigurationRouteImport.update({
     id: '/.well-known/agent-configuration',
@@ -149,6 +157,18 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownMcpServerCardDotjsonRoute =
+  DotwellKnownMcpServerCardDotjsonRouteImport.update({
+    id: '/.well-known/mcp/server-card.json',
+    path: '/.well-known/mcp/server-card.json',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const DotwellKnownAgentSkillsIndexDotjsonRoute =
+  DotwellKnownAgentSkillsIndexDotjsonRouteImport.update({
+    id: '/.well-known/agent-skills/index.json',
+    path: '/.well-known/agent-skills/index.json',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const V1SchemasProviderIndexRoute = V1SchemasProviderIndexRouteImport.update({
   id: '/v1/schemas/$provider/',
   path: '/v1/schemas/$provider/',
@@ -195,10 +215,13 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
+  '/.well-known/api-catalog': typeof DotwellKnownApiCatalogRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/v1/': typeof V1IndexRoute
+  '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
+  '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
@@ -225,10 +248,13 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
+  '/.well-known/api-catalog': typeof DotwellKnownApiCatalogRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/v1': typeof V1IndexRoute
+  '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
+  '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
@@ -256,10 +282,13 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
+  '/.well-known/api-catalog': typeof DotwellKnownApiCatalogRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/v1/': typeof V1IndexRoute
+  '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
+  '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
@@ -288,10 +317,13 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/skill'
     | '/.well-known/agent-configuration'
+    | '/.well-known/api-catalog'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
     | '/v1/'
+    | '/.well-known/agent-skills/index.json'
+    | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
@@ -318,10 +350,13 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/skill'
     | '/.well-known/agent-configuration'
+    | '/.well-known/api-catalog'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
     | '/v1'
+    | '/.well-known/agent-skills/index.json'
+    | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
@@ -348,10 +383,13 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/skill'
     | '/.well-known/agent-configuration'
+    | '/.well-known/api-catalog'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
     | '/v1/'
+    | '/.well-known/agent-skills/index.json'
+    | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
@@ -379,10 +417,13 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SkillRoute: typeof SkillRoute
   DotwellKnownAgentConfigurationRoute: typeof DotwellKnownAgentConfigurationRoute
+  DotwellKnownApiCatalogRoute: typeof DotwellKnownApiCatalogRoute
   V1ChangesRoute: typeof V1ChangesRoute
   V1StatusRoute: typeof V1StatusRoute
   V1ValidateRoute: typeof V1ValidateRoute
   V1IndexRoute: typeof V1IndexRoute
+  DotwellKnownAgentSkillsIndexDotjsonRoute: typeof DotwellKnownAgentSkillsIndexDotjsonRoute
+  DotwellKnownMcpServerCardDotjsonRoute: typeof DotwellKnownMcpServerCardDotjsonRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   V1AgentsMeRoute: typeof V1AgentsMeRoute
   V1AgentsRegisterKeyRoute: typeof V1AgentsRegisterKeyRoute
@@ -498,6 +539,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1ChangesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/api-catalog': {
+      id: '/.well-known/api-catalog'
+      path: '/.well-known/api-catalog'
+      fullPath: '/.well-known/api-catalog'
+      preLoaderRoute: typeof DotwellKnownApiCatalogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/.well-known/agent-configuration': {
       id: '/.well-known/agent-configuration'
       path: '/.well-known/agent-configuration'
@@ -552,6 +600,20 @@ declare module '@tanstack/react-router' {
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/mcp/server-card.json': {
+      id: '/.well-known/mcp/server-card.json'
+      path: '/.well-known/mcp/server-card.json'
+      fullPath: '/.well-known/mcp/server-card.json'
+      preLoaderRoute: typeof DotwellKnownMcpServerCardDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/agent-skills/index.json': {
+      id: '/.well-known/agent-skills/index.json'
+      path: '/.well-known/agent-skills/index.json'
+      fullPath: '/.well-known/agent-skills/index.json'
+      preLoaderRoute: typeof DotwellKnownAgentSkillsIndexDotjsonRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/schemas/$provider/': {
@@ -611,10 +673,14 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   SkillRoute: SkillRoute,
   DotwellKnownAgentConfigurationRoute: DotwellKnownAgentConfigurationRoute,
+  DotwellKnownApiCatalogRoute: DotwellKnownApiCatalogRoute,
   V1ChangesRoute: V1ChangesRoute,
   V1StatusRoute: V1StatusRoute,
   V1ValidateRoute: V1ValidateRoute,
   V1IndexRoute: V1IndexRoute,
+  DotwellKnownAgentSkillsIndexDotjsonRoute:
+    DotwellKnownAgentSkillsIndexDotjsonRoute,
+  DotwellKnownMcpServerCardDotjsonRoute: DotwellKnownMcpServerCardDotjsonRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   V1AgentsMeRoute: V1AgentsMeRoute,
   V1AgentsRegisterKeyRoute: V1AgentsRegisterKeyRoute,

@@ -21,13 +21,13 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>
 }
 
-interface ToolDefinition {
+export interface ToolDefinition {
   name: string
   description: string
   inputSchema: Record<string, unknown>
 }
 
-const TOOLS: Array<ToolDefinition> = [
+export const TOOLS: Array<ToolDefinition> = [
   {
     name: 'list_models',
     description:

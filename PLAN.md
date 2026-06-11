@@ -652,7 +652,7 @@ deploy. Re-verify on production at the end.
 rel="api-catalog"`, `</openapi.json>; rel="service-desc"`, `</docs>;
 rel="service-doc"`, `</llms.txt>; rel="describedby"`. _Accepts:_ curl -I
       of `/` shows the Link header; JSON endpoints unaffected.
-- [ ] **10.3 Discovery trio.** `/.well-known/api-catalog`
+- [x] **10.3 Discovery trio.** `/.well-known/api-catalog`
       (`application/linkset+json` per RFC 9727: anchor + service-desc/
       service-doc/status), `/.well-known/mcp/server-card.json` (SEP-1649:
       serverInfo, transport endpoint `/mcp`, capabilities/tools), and
