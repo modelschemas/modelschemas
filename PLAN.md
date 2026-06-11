@@ -685,13 +685,23 @@ rel="service-doc"`, `</llms.txt>; rel="describedby"`. _Accepts:_ curl -I
       wrappers with JSON Schema inputs). No-op when the API is absent.
       _Accepts:_ guarded registration code ships on `/` without console
       errors in normal browsers; tool definitions match the MCP tool shapes.
-- [ ] **10.7 DNS-AID (+ ship + reverify).** Attempt to publish
+- [x] **10.7 DNS-AID (+ ship + reverify).** Attempt to publish
       `_index._agents.modelschemas.com` ServiceMode HTTPS/SVCB records (alpn
       h2, target the apex) via the Cloudflare API; DNSSEC needs zone signing + a DS record at the registrar — document for Tom if the API token
       lacks DNS scope. Then deploy everything and re-verify each Phase 10
       surface on https://modelschemas.com. _Accepts:_ production curls for
       10.1–10.5 all pass; DNS-AID either resolves or is marked BLOCKED with
       exact records for Tom.
+      **Deployed + reverified 2026-06-11: production curls for 10.1–10.5 all
+      pass** (sitemap/robots, Link header HTML-only, discovery trio with
+      sha256 match, auth trio with live register_uri, markdown negotiation).
+      **DNS-AID: BLOCKED on Tom** — wrangler's OAuth token has no DNS scope
+      (and harvesting it was denied anyway). To publish, in the Cloudflare
+      dashboard (zone modelschemas.com → DNS) add an HTTPS record:
+      name `_index._agents`, priority `1`, target `modelschemas.com.`,
+      params `alpn="h2"` (zone-file form:
+      `_index._agents 3600 IN HTTPS 1 modelschemas.com. alpn="h2"`), then
+      enable DNSSEC (DNS → Settings) and add the DS record at the registrar.
 
 ## Phase 11 — Agents API ergonomics (Tom, 2026-06-11)
 
