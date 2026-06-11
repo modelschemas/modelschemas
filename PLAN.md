@@ -212,13 +212,19 @@ Rules:
 
 ## Phase 2 — Ingestion pipeline (the refresh loop)
 
-- [ ] **2.1 Provider registry.** `src/server/providers/types.ts` +
+- [x] **2.1 Provider registry.** `src/server/providers/types.ts` +
       `src/server/providers/{openai,anthropic,gemini,grok,elevenlabs,openrouter,fal}.ts`.
       Port PR #622's `ProviderConfig` shape, adapted to Workers: `fetchSpec(env)` returns
       parsed spec objects (no filesystem), `listModels(env)` hits the provider's models
       endpoint, `classify(path, op)` → `Activity | null`. Providers needing keys are
       skipped with a recorded warning when the secret is absent. _Accepts:_ unit tests
       for `classify` per provider using small spec fixtures.
+  - Note: listModels also normalises to the ModelInfo shape (providers own their API
+    mapping; 2.4 just diffs). FAL activity rides on a fetch-time per-operation marker
+    (category-derived; non-taxonomy targets like 3d/json classify to null for now);
+    OpenRouter's video synthesis + embeddings lift ported as exported, unit-tested
+    helpers; Anthropic's resolved spec URL doubles as specRevision. `yaml` dep added
+    for OpenAI/Anthropic YAML specs.
 - [ ] **2.2 Schema extraction + bundling.** `src/server/ingest/bundle.ts`: given a
       merged OpenAPI spec and an endpoint, extract the input schema (request body —
       handle `application/json` and `multipart/form-data`, per the PR's multipart fix)
