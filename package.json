@@ -16,7 +16,7 @@
     "prepare": "lefthook install",
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
-    "deploy": "bun run build && wrangler deploy",
+    "deploy": "bun run build && wrangler deploy -c dist/server/wrangler.json",
     "seed": "bun scripts/seed.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply DB --local",

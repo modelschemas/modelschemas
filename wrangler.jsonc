@@ -4,6 +4,10 @@
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/worker.ts",
+  "vars": {
+    // Agent JWT audiences are origin-bound.
+    "BETTER_AUTH_URL": "https://modelschemas.openstory.workers.dev",
+  },
   "observability": {
     "enabled": true,
   },
@@ -14,16 +18,14 @@
   "kv_namespaces": [
     {
       "binding": "SCHEMA_CACHE",
-      // Placeholder for local dev; replaced with the real namespace ID in Phase 8 (task 8.1).
-      "id": "00000000000000000000000000000000",
+      "id": "8c8f93fc618242d9b92d37bba437580f",
     },
   ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "modelschemas",
-      // Placeholder for local dev; replaced with the real database ID in Phase 8 (task 8.1).
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "557c12a0-dbad-4d46-8925-36315d8ecba9",
       "migrations_dir": "drizzle",
     },
   ],

@@ -511,19 +511,24 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
 
 ## Phase 8 — Ship
 
-- [x] ~BLOCKED~ **8.1 Production setup.** Create real D1 + KV resources, set IDs in
+- [x] **8.1 Production setup.** Create real D1 + KV resources, set IDs in
       `wrangler.jsonc`; `wrangler secret put` for `BETTER_AUTH_SECRET`, provider keys
       (`FAL_KEY`, `ELEVENLABS_API_KEY`, …), `ADMIN_KEY`. Document in README. _Accepts:_
       `bun run deploy` succeeds; `/v1/status` live.
-  - BLOCKED 2026-06-11: deploying to Tom's Cloudflare account is an outward-facing
-    action awaiting his explicit go-ahead (asked, no reply by the 30-min fallback).
-    Everything is deploy-ready: wrangler.jsonc has observability + worker name set,
-    README documents the exact resource/secret/deploy steps. Unblock: say "deploy it".
-- [x] ~BLOCKED~ **8.2 First production sync.** Trigger admin sync for all providers; verify
+  - Done 2026-06-11 after Tom's "deploy it": D1 557c12a0… + KV 8c8f93fc… created, IDs
+    wired, remote migrations + seed applied, secrets set (BETTER_AUTH_SECRET,
+    ADMIN_KEY — prod value in .env.local as PROD_ADMIN_KEY; provider keys still
+    unset → those providers skip). Live at https://modelschemas.openstory.workers.dev
+    with both crons. Deploy script fixed to use the vite-built config
+    (wrangler deploy -c dist/server/wrangler.json); BETTER_AUTH_URL var set to the
+    deployed origin.
+- [x] **8.2 First production sync.** Trigger admin sync for all providers; verify
       `/v1/models?activity=chat` returns real multi-provider data in prod. _Accepts:_
       spot-check Anthropic + OpenRouter schemas served with ETags.
-  - BLOCKED 2026-06-11: depends on 8.1. The same flow is fully verified locally
-    (admin sync of both providers, ETag/304 round-trips).
+  - Done: admin sync of OpenRouter (21 endpoints/41 versions) + Anthropic (5/10) in
+    prod, outcomes identical to local; /v1/models serves live multi-provider data
+    (cron poll already fired); Anthropic messages schema served with the same
+    contentHash as local, 304 on If-None-Match verified.
 - [x] **8.3 Observability.** `wrangler.jsonc` `observability.enabled`, structured
       `console.log` JSON lines in cron handlers (provider, duration, changes count),
       README runbook for "a provider sync is failing". _Accepts:_ logs visible via
@@ -531,7 +536,8 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
   - Note: observability.enabled set, worker renamed `modelschemas`, cron handlers
     already log structured JSON lines (provider/outcomes), README rewritten with the
     runbook + production setup. The wrangler-tail acceptance can only run post-deploy
-    (8.1) — everything tail-able is in place.
+    (8.1) — everything tail-able is in place. Post-deploy: wrangler tail captured both
+    manual sync invocations (request events, outcome ok).
 - [x] ~BLOCKED~ **8.4 Publish client + CLI.** npm publish `@modelschemas/client` and the
       `modelschemas` CLI (changesets or manual version bump); install instructions in
       README, `/docs`, and the skill. _Accepts:_ `bunx modelschemas@latest whoami`
