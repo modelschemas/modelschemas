@@ -17,6 +17,7 @@
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
     "deploy": "bun run build && wrangler deploy",
+    "seed": "bun scripts/seed.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",

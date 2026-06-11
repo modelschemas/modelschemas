@@ -200,11 +200,15 @@ Rules:
   - Note: migration drizzle/0002_violet_lionheart.sql; deliveries indexed on
     (status, nextAttemptAt) for the cron drain. Worker tests cover cache_meta
     round-trip, subscription→user/delivery→change relations, and FK enforcement.
-- [ ] **1.3 Seed script.** `scripts/seed.ts` inserting the 7 providers with their spec
+- [x] **1.3 Seed script.** `scripts/seed.ts` inserting the 7 providers with their spec
       source config (port the constants/URLs from PR #622's `scripts/providers/*`:
       Anthropic `.stats.yml` resolution, FAL `expand=openapi-3.0` note, Gemini discovery
       URL, etc.). Runnable via `bun run seed` against local D1. _Accepts:_ `providers`
       table populated locally.
+  - Note: seed data lives in `src/db/seed-providers.ts` (typed `$inferInsert`, unit
+    tested, reusable by the Phase 2 registry); `scripts/seed.ts` upserts via
+    `wrangler d1 execute --file` (idempotent, preserves runtime columns; `--remote`
+    flag for prod). URLs/env-vars ported from PR #622 @ 276e808.
 
 ## Phase 2 — Ingestion pipeline (the refresh loop)
 
