@@ -558,7 +558,7 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
 Requested by Tom 2026-06-11: a human-facing surface alongside the agent one.
 The production domain is **modelschemas.com**.
 
-- [ ] **9.1 Custom domain.** Attach `modelschemas.com` to the deployed worker
+- [x] **9.1 Custom domain.** Attach `modelschemas.com` to the deployed worker
       (Cloudflare custom domain on this account's zone; `routes` in
       `wrangler.jsonc` with `custom_domain: true`), set the
       `BETTER_AUTH_URL` var to `https://modelschemas.com` (agent JWT

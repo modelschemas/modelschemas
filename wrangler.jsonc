@@ -6,11 +6,13 @@
   "main": "src/worker.ts",
   "vars": {
     // Agent JWT audiences are origin-bound.
-    "BETTER_AUTH_URL": "https://modelschemas.openstory.workers.dev",
+    "BETTER_AUTH_URL": "https://modelschemas.com",
   },
   "observability": {
     "enabled": true,
   },
+  "workers_dev": true,
+  "routes": [{ "pattern": "modelschemas.com", "custom_domain": true }],
   "triggers": {
     // Fast tier: models poll. Slow tier: full spec sync (05:00 UTC).
     "crons": ["*/15 * * * *", "0 5 * * *"],
