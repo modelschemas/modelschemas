@@ -151,7 +151,7 @@ Rules:
     CLAUDE.md, and the loop protocol updated accordingly. Miniflare bindings are
     declared inline (not via wrangler.jsonc configPath) so the pool doesn't try to
     load the TanStack Start worker entry.
-- [ ] **0.4 Better Auth on D1.** Wire `src/lib/auth.ts` to the drizzle adapter over D1,
+- [x] **0.4 Better Auth on D1.** Wire `src/lib/auth.ts` to the drizzle adapter over D1,
       add the `agent-auth` (`@better-auth/agent-auth`), `api-key`, and `bearer` plugins,
       generate auth tables into `src/db/schema.ts` via `bunx --bun @better-auth/cli generate`
       (agent-auth adds `agent`, `host`, `grant`, `approval`), migrate. Keep email/password
@@ -160,6 +160,15 @@ Rules:
 ['autonomous', 'delegated']`, empty capabilities (filled in Phase 5). _Accepts:_
       sign-up + session retrieval works through the existing `/api/auth/$` catch-all
       locally; auth tables present in local D1.
+  - Note: better-auth 1.6 moved `apiKey` to `@better-auth/api-key` (added as a dep);
+    the option is `providerDescription`, not `description`. Auth is a `createAuth(db)`
+    factory in `src/lib/auth.ts` (CLI-loadable via `scripts/better-auth-config.ts`);
+    the runtime instance in `src/server/auth.ts` builds from `cloudflare:workers` env
+    and passes `tanstackStartCookies()` via `extraPlugins` — that plugin can't be in
+    the factory (vite-only `#tanstack-router-entry` imports break the workers test
+    pool). Worker tests apply drizzle migrations via the pool's
+    TEST_MIGRATIONS/applyD1Migrations pattern. Curl-verified sign-up + get-session
+    (needs an `Origin` header, else 403 MISSING_OR_NULL_ORIGIN).
 
 ## Phase 1 — Data model
 

@@ -4,11 +4,19 @@
 // and conflict with — the DOM-flavoured app tsconfig.
 declare module 'cloudflare:test' {
   import type { D1Database, KVNamespace } from '@cloudflare/workers-types'
+  import type { D1Migration } from '@cloudflare/vitest-pool-workers'
 
   interface ProvidedEnv {
     SCHEMA_CACHE: KVNamespace
     DB: D1Database
+    TEST_MIGRATIONS: D1Migration[]
   }
 
   export const env: ProvidedEnv
+
+  export function applyD1Migrations(
+    db: D1Database,
+    migrations: D1Migration[],
+    migrationsTableName?: string,
+  ): Promise<void>
 }

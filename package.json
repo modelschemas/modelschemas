@@ -24,6 +24,8 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@better-auth/agent-auth": "^0.5.1",
+    "@better-auth/api-key": "^1.6.16",
     "@cloudflare/vite-plugin": "^1.26.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/ai": "latest",
