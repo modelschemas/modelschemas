@@ -314,13 +314,18 @@ consumer: every list response includes `_links` to drill deeper, errors carry re
     src/server/llms-txt.ts for reuse by /docs (7.3) and the skill (7.6). Dotted
     filenames use `[.]` escaping (`openapi[.]json.ts`); the router plugin rewrites
     the createFileRoute id itself on dev-server regeneration.
-- [ ] **4.2 Catalog endpoints.**
+- [x] **4.2 Catalog endpoints.**
   - `GET /v1/providers` — list with sync status.
   - `GET /v1/providers/{provider}/models` — models for one provider.
   - `GET /v1/models?activity=&provider=&capability=&q=` — cross-provider catalog,
     filterable; this is the headline "what can I use right now" endpoint.
   - `GET /v1/models/{provider}/{modelId}` — full metadata + `_links.schemas`.
     _Accepts:_ curl each against seeded/synced local data; filters covered by tests.
+  - Note: query logic in src/server/catalog.ts (worker-tested; routes thin). Deprecated
+    models hidden unless `?deprecated=true`; model detail resolves slug OR raw id;
+    invalid `?activity=` → 400 listing valid values. Curl-verified against live local
+    data (q=claude → 20 OpenRouter models, capability=tools → 252, encoded raw-id
+    lookup, 404s with remediation). All reads use the 3.2 cachedJson helper.
 - [ ] **4.3 Schema endpoints.**
   - `GET /v1/schemas/{provider}` — activities + endpoint ids.
   - `GET /v1/schemas/{provider}/{activity}` — endpoint-id-keyed map (current versions),

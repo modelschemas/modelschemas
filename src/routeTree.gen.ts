@@ -14,7 +14,11 @@ import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as V1IndexRouteImport } from './routes/v1/index'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
+import { Route as V1ProvidersIndexRouteImport } from './routes/v1/providers/index'
+import { Route as V1ModelsIndexRouteImport } from './routes/v1/models/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
+import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/$provider.$modelId'
 import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
 
 const OpenapiDotjsonRoute = OpenapiDotjsonRouteImport.update({
@@ -42,9 +46,30 @@ const V1StatusRoute = V1StatusRouteImport.update({
   path: '/v1/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1ProvidersIndexRoute = V1ProvidersIndexRouteImport.update({
+  id: '/v1/providers/',
+  path: '/v1/providers/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1ModelsIndexRoute = V1ModelsIndexRouteImport.update({
+  id: '/v1/models/',
+  path: '/v1/models/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1ProvidersProviderModelsRoute =
+  V1ProvidersProviderModelsRouteImport.update({
+    id: '/v1/providers/$provider/models',
+    path: '/v1/providers/$provider/models',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const V1ModelsProviderModelIdRoute = V1ModelsProviderModelIdRouteImport.update({
+  id: '/v1/models/$provider/$modelId',
+  path: '/v1/models/$provider/$modelId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const V1AdminSyncProviderRoute = V1AdminSyncProviderRouteImport.update({
@@ -60,7 +85,11 @@ export interface FileRoutesByFullPath {
   '/v1/status': typeof V1StatusRoute
   '/v1/': typeof V1IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/models/': typeof V1ModelsIndexRoute
+  '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
+  '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
+  '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -69,7 +98,11 @@ export interface FileRoutesByTo {
   '/v1/status': typeof V1StatusRoute
   '/v1': typeof V1IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/models': typeof V1ModelsIndexRoute
+  '/v1/providers': typeof V1ProvidersIndexRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
+  '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
+  '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -79,7 +112,11 @@ export interface FileRoutesById {
   '/v1/status': typeof V1StatusRoute
   '/v1/': typeof V1IndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/v1/models/': typeof V1ModelsIndexRoute
+  '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
+  '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
+  '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -90,7 +127,11 @@ export interface FileRouteTypes {
     | '/v1/status'
     | '/v1/'
     | '/api/auth/$'
+    | '/v1/models/'
+    | '/v1/providers/'
     | '/v1/admin/sync/$provider'
+    | '/v1/models/$provider/$modelId'
+    | '/v1/providers/$provider/models'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -99,7 +140,11 @@ export interface FileRouteTypes {
     | '/v1/status'
     | '/v1'
     | '/api/auth/$'
+    | '/v1/models'
+    | '/v1/providers'
     | '/v1/admin/sync/$provider'
+    | '/v1/models/$provider/$modelId'
+    | '/v1/providers/$provider/models'
   id:
     | '__root__'
     | '/'
@@ -108,7 +153,11 @@ export interface FileRouteTypes {
     | '/v1/status'
     | '/v1/'
     | '/api/auth/$'
+    | '/v1/models/'
+    | '/v1/providers/'
     | '/v1/admin/sync/$provider'
+    | '/v1/models/$provider/$modelId'
+    | '/v1/providers/$provider/models'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -118,7 +167,11 @@ export interface RootRouteChildren {
   V1StatusRoute: typeof V1StatusRoute
   V1IndexRoute: typeof V1IndexRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  V1ModelsIndexRoute: typeof V1ModelsIndexRoute
+  V1ProvidersIndexRoute: typeof V1ProvidersIndexRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
+  V1ModelsProviderModelIdRoute: typeof V1ModelsProviderModelIdRoute
+  V1ProvidersProviderModelsRoute: typeof V1ProvidersProviderModelsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,11 +211,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/providers/': {
+      id: '/v1/providers/'
+      path: '/v1/providers'
+      fullPath: '/v1/providers/'
+      preLoaderRoute: typeof V1ProvidersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/models/': {
+      id: '/v1/models/'
+      path: '/v1/models'
+      fullPath: '/v1/models/'
+      preLoaderRoute: typeof V1ModelsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/providers/$provider/models': {
+      id: '/v1/providers/$provider/models'
+      path: '/v1/providers/$provider/models'
+      fullPath: '/v1/providers/$provider/models'
+      preLoaderRoute: typeof V1ProvidersProviderModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/models/$provider/$modelId': {
+      id: '/v1/models/$provider/$modelId'
+      path: '/v1/models/$provider/$modelId'
+      fullPath: '/v1/models/$provider/$modelId'
+      preLoaderRoute: typeof V1ModelsProviderModelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/admin/sync/$provider': {
@@ -182,7 +263,11 @@ const rootRouteChildren: RootRouteChildren = {
   V1StatusRoute: V1StatusRoute,
   V1IndexRoute: V1IndexRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  V1ModelsIndexRoute: V1ModelsIndexRoute,
+  V1ProvidersIndexRoute: V1ProvidersIndexRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,
+  V1ModelsProviderModelIdRoute: V1ModelsProviderModelIdRoute,
+  V1ProvidersProviderModelsRoute: V1ProvidersProviderModelsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
