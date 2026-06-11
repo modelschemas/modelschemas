@@ -623,7 +623,7 @@ The production domain is **modelschemas.com**.
     landing hero features a real schema fragment + etag, a 4-card FOR AGENTS section
     (curl/validate/MCP/discovery+skill), live provider table and log-line change feed.
     All 9 routes/surfaces curl-verified; agent JSON untouched; 128 tests green.
-- [ ] **9.5 Ship the human surface.** Deploy to production and verify on
+- [x] **9.5 Ship the human surface.** Deploy to production and verify on
       the live origin (modelschemas.com once 9.1 lands, else workers.dev):
       OTP sign-in (real email via the send*email binding when the zone is
       verified; logged code via `wrangler tail` otherwise), key creation,
