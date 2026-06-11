@@ -16,6 +16,7 @@ const LINKS: Array<[label: string, href: string]> = [
   ['Service status', '/v1/status'],
   ['Model catalog', '/v1/models'],
   ['Changes feed', '/v1/changes'],
+  ['Agent skill (SKILL.md)', '/skill'],
 ]
 
 function Docs() {

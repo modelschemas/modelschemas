@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SkillRouteImport } from './routes/skill'
 import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
@@ -33,6 +34,11 @@ import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.
 import { Route as V1SchemasProviderActivityIndexRouteImport } from './routes/v1/schemas/$provider/$activity/index'
 import { Route as V1SchemasProviderActivitySplatRouteImport } from './routes/v1/schemas/$provider/$activity/$'
 
+const SkillRoute = SkillRouteImport.update({
+  id: '/skill',
+  path: '/skill',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OpenapiDotjsonRoute = OpenapiDotjsonRouteImport.update({
   id: '/openapi.json',
   path: '/openapi.json',
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/llms.txt': typeof LlmsDottxtRoute
   '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/llms.txt': typeof LlmsDottxtRoute
   '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/llms.txt': typeof LlmsDottxtRoute
   '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
@@ -237,6 +246,7 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/mcp'
     | '/openapi.json'
+    | '/skill'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
     | '/v1/status'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/mcp'
     | '/openapi.json'
+    | '/skill'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
     | '/v1/status'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/llms.txt'
     | '/mcp'
     | '/openapi.json'
+    | '/skill'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
     | '/v1/status'
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   McpRoute: typeof McpRoute
   OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
+  SkillRoute: typeof SkillRoute
   DotwellKnownAgentConfigurationRoute: typeof DotwellKnownAgentConfigurationRoute
   V1ChangesRoute: typeof V1ChangesRoute
   V1StatusRoute: typeof V1StatusRoute
@@ -335,6 +348,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/skill': {
+      id: '/skill'
+      path: '/skill'
+      fullPath: '/skill'
+      preLoaderRoute: typeof SkillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/openapi.json': {
       id: '/openapi.json'
       path: '/openapi.json'
@@ -505,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   LlmsDottxtRoute: LlmsDottxtRoute,
   McpRoute: McpRoute,
   OpenapiDotjsonRoute: OpenapiDotjsonRoute,
+  SkillRoute: SkillRoute,
   DotwellKnownAgentConfigurationRoute: DotwellKnownAgentConfigurationRoute,
   V1ChangesRoute: V1ChangesRoute,
   V1StatusRoute: V1StatusRoute,

@@ -46,7 +46,8 @@ Send If-None-Match to get 304s.
 ## Machine-readable spec
 
 GET /openapi.json — OpenAPI 3.1 for this service; every operation has an
-operationId.
+operationId. GET /skill — installable agent skill (SKILL.md) teaching this
+full workflow.
 
 ## Errors
 

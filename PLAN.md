@@ -493,7 +493,7 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
     changes; subscribe). validate takes `<provider/endpointId>`. Surfaced + fixed a
     5.1 bug: defaultHostCapabilities derived from the raw spec included the excluded
     syncProvider op, 400-ing capability-less registrations — now the filtered list.
-- [ ] **7.6 Distributable agent skill.** `skill/modelschemas/SKILL.md` (frontmatter:
+- [x] **7.6 Distributable agent skill.** `skill/modelschemas/SKILL.md` (frontmatter:
       `name`, `description` with trigger phrases like "model schema", "what models
       support X", "validate this provider payload") teaching the full workflow:
       discovery (`/.well-known/agent-configuration`, `llms.txt`) → auth via
@@ -503,6 +503,11 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
       from `/docs` and `llms.txt`. _Accepts:_ frontmatter valid; installing the dir into
       `.claude/skills/` and asking for an Anthropic chat schema produces a correct
       CLI/HTTP call sequence.
+  - Note: SKILL.md generated from src/server/skill.ts (bun scripts/emit-skill.ts);
+    a test pins the committed file to the module and validates frontmatter +
+    trigger phrases; the reference section embeds llms.txt verbatim. Served at
+    GET /skill, linked from /docs and llms.txt. The taught call sequences are the
+    live-verified ones (schema get anthropic v1/messages; encoded HTTP path).
 
 ## Phase 8 — Ship
 
