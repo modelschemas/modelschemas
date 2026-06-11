@@ -79,6 +79,15 @@ export const openApiDocument = {
       get: {
         operationId: 'getStatus',
         summary: 'Per-provider sync status and row counts',
+        parameters: [
+          {
+            name: 'wait',
+            in: 'query',
+            description:
+              'Long-poll: hold up to N seconds (cap 60; "30s" form accepted) until new data exists, then return current data.',
+            schema: { type: 'string' },
+          },
+        ],
         responses: {
           '200': {
             description: 'Service status.',
@@ -285,6 +294,13 @@ export const openApiDocument = {
             schema: { type: 'string', enum: changeTypeEnum },
           },
           { name: 'cursor', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'wait',
+            in: 'query',
+            description:
+              'Long-poll: hold up to N seconds (cap 60; "30s" form accepted) until new data exists, then return current data.',
+            schema: { type: 'string' },
+          },
           {
             name: 'limit',
             in: 'query',

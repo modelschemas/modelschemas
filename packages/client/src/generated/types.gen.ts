@@ -66,7 +66,12 @@ export type GetServiceIndexResponse =
 export type GetStatusData = {
   body?: never
   path?: never
-  query?: never
+  query?: {
+    /**
+     * Long-poll: hold up to N seconds (cap 60; "30s" form accepted) until new data exists, then return current data.
+     */
+    wait?: string
+  }
   url: '/v1/status'
 }
 
@@ -373,6 +378,10 @@ export type ListChangesData = {
       | 'endpoint.added'
       | 'endpoint.removed'
     cursor?: string
+    /**
+     * Long-poll: hold up to N seconds (cap 60; "30s" form accepted) until new data exists, then return current data.
+     */
+    wait?: string
     limit?: number
   }
   url: '/v1/changes'

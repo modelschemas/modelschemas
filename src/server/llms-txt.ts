@@ -37,6 +37,13 @@ GETs, a request body for POSTs) so you can follow the API without consulting
 docs. Templated hrefs (RFC 6570) set \`"templated": true\` and always include
 an example. Start at GET /v1 and follow \`_links\`.
 
+## Long-polling
+
+No sleep tool? Add \`?wait=30\` (seconds, cap 60, \`30s\` form accepted) to
+GET /v1/changes or GET /v1/status: the request holds until new data lands or
+the window expires, then returns whatever is current. One request, one
+rate-limit token.
+
 ## Caching
 
 Read responses carry ETag (content hash), Last-Modified, Cache-Control with

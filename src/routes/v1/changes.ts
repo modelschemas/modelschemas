@@ -6,6 +6,7 @@ import { changeTypes } from '#/db/schema.ts'
 import type { ChangeType } from '#/db/schema.ts'
 import { jsonError } from '#/server/admin.ts'
 import { listChanges } from '#/server/changes-api.ts'
+import { parseWaitSeconds, waitForNewChange } from '#/server/wait.ts'
 
 export const Route = createFileRoute('/v1/changes')({
   server: {
@@ -41,6 +42,10 @@ export const Route = createFileRoute('/v1/changes')({
             "Parameter 'limit' must be an integer.",
           )
         }
+
+        // ?wait=Ns long-poll (task 11.3): hold until a new change lands.
+        const waitSeconds = parseWaitSeconds(url)
+        if (waitSeconds > 0) await waitForNewChange(getDb(env), waitSeconds)
 
         const outcome = await listChanges(getDb(env), {
           since,

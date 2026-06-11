@@ -725,7 +725,7 @@ surface; these tasks build the AX layer.
       _Accepts:_ JSON `GET /` returns the narrative document with `_links`;
       HTML browsers still get the landing page; MCP initialize instructions
       and the root narrative share one source.
-- [ ] **11.3 `?wait=` long-poll.** Support `?wait=<seconds>` (cap 60s, also
+- [x] **11.3 `?wait=` long-poll.** Support `?wait=<seconds>` (cap 60s, also
       accepts `60s` form) on `/v1/changes` and `/v1/status`: hold the
       request until new data exists or the window expires (poll D1 every
       ~2s), returning whatever is current at expiry. Agents rarely have a

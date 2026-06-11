@@ -40,7 +40,7 @@ export const serviceIndex = {
         payload: { model: 'claude-sonnet-4-5', max_tokens: 1024 },
       },
     }),
-    changes: halGet('/v1/changes{?since,provider,type,cursor,limit}', {
+    changes: halGet('/v1/changes{?since,provider,type,cursor,limit,wait}', {
       example: '/v1/changes?limit=20',
     }),
     agentDiscovery: halGet('/.well-known/agent-configuration'),
