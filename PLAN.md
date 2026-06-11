@@ -113,13 +113,18 @@ Rules:
   - Note: actionlint not installable and pushing to main not authorized in this session;
     validated via YAML parse + all five commands green locally. CI-run-green confirmation
     is pending the next authorized push.
-- [ ] **0.1 Move the database to D1.** Add a `d1_databases` binding (`DB`) to
+- [x] **0.1 Move the database to D1.** Add a `d1_databases` binding (`DB`) to
       `wrangler.jsonc`; switch `src/db/index.ts` to `drizzle-orm/d1` reading the binding
       from the Cloudflare env (expose a `getDb(env)` helper — Workers have no module-scope
       env); update `drizzle.config.ts` to the `d1-http` driver for remote, keep local
       migrations working against wrangler's local D1 (`bun run db:generate` +
       `wrangler d1 migrations apply DB --local`). Remove `better-sqlite3` and the demo
       `todos` table. _Accepts:_ dev server boots, a trivial query against D1 works locally.
+  - Note: dev server only boots under `bun run dev` (node runtime) — `bun --bun run dev`
+    hangs before vite's ready banner (pre-existing, ws-related). Vite binds IPv6-only
+    (`http://[::1]:3000`). `db:migrate` script now applies migrations to local D1 via
+    wrangler; `db:migrate:remote` added. `@cloudflare/workers-types` added (type-only,
+    drizzle optional peer).
 - [ ] **0.2 Custom worker entry with cron support.** Create `src/worker.ts` exporting
       `{ fetch }` from the TanStack Start server entry plus a `scheduled(controller, env, ctx)`
       handler that dispatches on `controller.cron`. Point `wrangler.jsonc` `main` at it and
