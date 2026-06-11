@@ -10,6 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SkillRouteImport } from './routes/skill'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
@@ -39,6 +41,16 @@ import { Route as V1SchemasProviderActivitySplatRouteImport } from './routes/v1/
 const SkillRoute = SkillRouteImport.update({
   id: '/skill',
   path: '/skill',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
+  id: '/robots.txt',
+  path: '/robots.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OpenapiDotjsonRoute = OpenapiDotjsonRouteImport.update({
@@ -179,6 +191,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
@@ -207,6 +221,8 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
@@ -236,6 +252,8 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/robots.txt': typeof RobotsDottxtRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/skill': typeof SkillRoute
   '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
@@ -266,6 +284,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/mcp'
     | '/openapi.json'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/skill'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
@@ -294,6 +314,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/mcp'
     | '/openapi.json'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/skill'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
@@ -322,6 +344,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/mcp'
     | '/openapi.json'
+    | '/robots.txt'
+    | '/sitemap.xml'
     | '/skill'
     | '/.well-known/agent-configuration'
     | '/v1/changes'
@@ -351,6 +375,8 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
   OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
+  RobotsDottxtRoute: typeof RobotsDottxtRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   SkillRoute: typeof SkillRoute
   DotwellKnownAgentConfigurationRoute: typeof DotwellKnownAgentConfigurationRoute
   V1ChangesRoute: typeof V1ChangesRoute
@@ -379,6 +405,20 @@ declare module '@tanstack/react-router' {
       path: '/skill'
       fullPath: '/skill'
       preLoaderRoute: typeof SkillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/robots.txt': {
+      id: '/robots.txt'
+      path: '/robots.txt'
+      fullPath: '/robots.txt'
+      preLoaderRoute: typeof RobotsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/openapi.json': {
@@ -567,6 +607,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,
   OpenapiDotjsonRoute: OpenapiDotjsonRoute,
+  RobotsDottxtRoute: RobotsDottxtRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
   SkillRoute: SkillRoute,
   DotwellKnownAgentConfigurationRoute: DotwellKnownAgentConfigurationRoute,
   V1ChangesRoute: V1ChangesRoute,

@@ -637,13 +637,16 @@ Tom pasted the audit 2026-06-11. Fixes target https://modelschemas.com; each
 lands as a route/header served by the worker so they stay correct on every
 deploy. Re-verify on production at the end.
 
-- [ ] **10.1 Sitemap + robots.** `GET /sitemap.xml` (canonical pages: `/`,
+- [x] **10.1 Sitemap + robots.** `GET /sitemap.xml` (canonical pages: `/`,
       `/docs`, `/login`, `/account`, plus `/llms.txt`, `/openapi.json`,
       `/skill`), generated dynamically (origin from BETTER*AUTH_URL, lastmod
       from the latest change row) so it is always current on publish;
       `GET /robots.txt` allowing all and referencing the sitemap. \_Accepts:*
       both render locally with correct content types; sitemap validates
       against the sitemaps.org shape (urlset/url/loc).
+  - Note: a scaffold public/robots.txt static asset was shadowing the route
+    (assets win over worker routes) — removed. lastmod derives from the newest
+    change row; worker tests cover both surfaces.
 - [ ] **10.2 Link headers (RFC 8288).** Add `Link` response headers on HTML
       pages (via the worker fetch wrapper): `</.well-known/api-catalog>;
 rel="api-catalog"`, `</openapi.json>; rel="service-desc"`, `</docs>;
