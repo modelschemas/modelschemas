@@ -13,8 +13,9 @@ TanStack AI PR #622 (`@tanstack/ai-schemas`), minus codegen — schemas are
 extracted/bundled at runtime and served over HTTP/MCP.
 
 **`PLAN.md` is the build log** — every task, settled architecture decision,
-and gotcha note. Phases 0–7 are complete; Phase 8 (production deploy + npm
-publish) awaits owner authorization. Don't relitigate PLAN.md's
+and gotcha note. All phases are complete and the service is live at
+https://modelschemas.openstory.workers.dev (npm publish, 8.4, still pends an
+npm scope decision). Don't relitigate PLAN.md's
 "Architecture decisions" section.
 
 ## Commands
@@ -73,8 +74,13 @@ crons (15-min models poll + webhook drain; daily 05:00 UTC spec sync).
 
 Request path: route files in `src/routes/` (server handlers via
 `server.handlers`) → service functions in `src/server/` → drizzle/D1 +
-KV. Bindings come from `import { env, waitUntil } from 'cloudflare:workers'`
-(typed locally in `src/cloudflare-env.d.ts` — workers-types are NOT global).
+KV. Bindings come from `import { env, waitUntil } from 'cloudflare:workers'` —
+typed by the committed, wrangler-generated `worker-configuration.d.ts`
+(`bun run types` regenerates it; rerun after changing wrangler.jsonc or
+.env.local since secret names are typed into Env). Workers runtime types are
+GLOBAL (KVNamespace, D1Database, …) — do not import from
+@cloudflare/workers-types (removed; its types conflict with the generated
+ones).
 
 - **Ingest** (`src/server/providers/` + `src/server/ingest/`): per-provider
   `ProviderConfig` (fetchSpec/listModels/classify) → `bundle.ts` extracts

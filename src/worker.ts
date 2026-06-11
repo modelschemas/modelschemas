@@ -1,8 +1,4 @@
 import serverEntry from '@tanstack/react-start/server-entry'
-import type {
-  ExecutionContext,
-  ScheduledController,
-} from '@cloudflare/workers-types'
 
 import { getDb } from '#/db/index.ts'
 import type { DbEnv } from '#/db/index.ts'

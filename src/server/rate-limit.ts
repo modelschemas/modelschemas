@@ -7,7 +7,6 @@
  */
 import { importJWK, jwtVerify } from 'jose'
 import { eq } from 'drizzle-orm'
-import type { KVNamespace } from '@cloudflare/workers-types'
 import type { JWK } from 'jose'
 
 import { agent } from '#/db/schema.ts'

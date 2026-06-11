@@ -5,7 +5,6 @@
  * `endpoints`, write `changes` rows, warm KV with new blobs. Idempotent.
  */
 import { and, eq, isNull } from 'drizzle-orm'
-import type { KVNamespace } from '@cloudflare/workers-types'
 
 import type { Db } from '#/db/index.ts'
 import { changes, endpoints, providers, schemaVersions } from '#/db/schema.ts'

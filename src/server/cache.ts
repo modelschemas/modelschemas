@@ -10,7 +10,6 @@ import { eq } from 'drizzle-orm'
 import type { Db } from '#/db/index.ts'
 import { cacheMeta } from '#/db/schema.ts'
 import { getJson, putJson } from '#/server/kv.ts'
-import type { KVNamespace } from '@cloudflare/workers-types'
 
 export interface SwrDeps {
   db: Db

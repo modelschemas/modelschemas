@@ -4,7 +4,6 @@
  * API key (returned exactly once).
  */
 import { eq } from 'drizzle-orm'
-import type { KVNamespace } from '@cloudflare/workers-types'
 
 import type { Db } from '#/db/index.ts'
 import { user } from '#/db/schema.ts'

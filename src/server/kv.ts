@@ -1,5 +1,3 @@
-import type { KVNamespace } from '@cloudflare/workers-types'
-
 export interface KvEnv {
   SCHEMA_CACHE: KVNamespace
 }
