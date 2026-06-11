@@ -28,11 +28,19 @@ bun --bun run dev        # dev server on port 3000
 bun --bun run build      # production build
 bun --bun run test       # run all tests (vitest run)
 bunx vitest run src/path/to/file.test.tsx   # run a single test file
-bun --bun run lint       # eslint
+bun --bun run lint       # eslint (no-explicit-any + no-unsafe-* are errors)
+bun run typecheck        # tsc --noEmit
 bun --bun run format     # prettier --write + eslint --fix
 bun --bun run check      # prettier --check
 bun run deploy           # build + wrangler deploy (Cloudflare Workers)
 ```
+
+Lefthook pre-commit hooks (installed via the `prepare` script) run prettier, eslint,
+and typecheck — don't bypass them with `--no-verify`. The `any` type is banned by
+lint; tsconfig has `strict` + `noUncheckedIndexedAccess` + `noImplicitOverride`.
+Note: the Cloudflare vite plugin is skipped when running under vitest
+(see `vite.config.ts`) — Workers-binding tests need `@cloudflare/vitest-pool-workers`
+(PLAN.md task 0.3).
 
 Database (Drizzle Kit, reads `DATABASE_URL` from `.env.local`/`.env`):
 
