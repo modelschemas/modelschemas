@@ -257,11 +257,17 @@ Rules:
     diffs. "Removed" = deprecatedAt set (row kept), recorded once; reappearance clears
     deprecation via model.updated with a before/after payload. Model db ids are
     `${providerId}-${slugified rawId}`.
-- [ ] **2.5 Wire crons.** `scheduled` dispatch: 15-min cron → `pollAllModels(env, ctx)`,
+- [x] **2.5 Wire crons.** `scheduled` dispatch: 15-min cron → `pollAllModels(env, ctx)`,
       daily cron → `syncAllSchemas(env, ctx)`. Stagger providers with `ctx.waitUntil` and
       keep each provider's work sequential to respect subrequest limits. _Accepts:_
       `--test-scheduled` run against live providers (no key required: OpenRouter) writes
       real rows locally.
+  - Note: live run wrote 338 OpenRouter models + changes locally; second trigger
+    idempotent (0 added); keyed providers skipped with recorded warnings. Surfaced a
+    0.4 regression: betterAuth() can't construct at module scope in the built worker
+    (workerd forbids global-scope I/O/random) — src/server/auth.ts now lazy-inits via
+    getAuth(). Use `wrangler dev -c dist/server/wrangler.json --persist-to
+.wrangler/state` so the built worker shares the root local D1.
 - [ ] **2.6 Manual trigger + status.** `POST /v1/admin/sync/{provider}` (admin-key
       gated) and `GET /v1/status` (public: per-provider lastPolledAt/lastSyncedAt/counts).
       _Accepts:_ curl both locally.
