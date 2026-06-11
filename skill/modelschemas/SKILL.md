@@ -69,7 +69,7 @@ minutes, full OpenAPI spec syncs daily. Every response is JSON.
 
 ## Why use this
 
-- Discover which models exist _right now_, across providers, by activity
+- Discover which models exist *right now*, across providers, by activity
   (chat, image, video, audio, embeddings, moderation).
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
