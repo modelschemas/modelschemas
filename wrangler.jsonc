@@ -3,7 +3,11 @@
   "name": "tanstack-start-app",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/worker.ts",
+  "triggers": {
+    // Fast tier: models poll. Slow tier: full spec sync (05:00 UTC).
+    "crons": ["*/15 * * * *", "0 5 * * *"],
+  },
   "d1_databases": [
     {
       "binding": "DB",

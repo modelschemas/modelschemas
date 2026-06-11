@@ -125,12 +125,17 @@ Rules:
     (`http://[::1]:3000`). `db:migrate` script now applies migrations to local D1 via
     wrangler; `db:migrate:remote` added. `@cloudflare/workers-types` added (type-only,
     drizzle optional peer).
-- [ ] **0.2 Custom worker entry with cron support.** Create `src/worker.ts` exporting
+- [x] **0.2 Custom worker entry with cron support.** Create `src/worker.ts` exporting
       `{ fetch }` from the TanStack Start server entry plus a `scheduled(controller, env, ctx)`
       handler that dispatches on `controller.cron`. Point `wrangler.jsonc` `main` at it and
       declare two crons: `*/15 * * * *` (models poll) and `0 5 * * *` (spec sync).
       _Accepts:_ `wrangler dev --test-scheduled` + `curl /__scheduled?cron=*/15+*+*+*+*`
       hits the handler; normal SSR routes still render.
+  - Note: on wrangler 4.99 the test endpoint is `/cdn-cgi/handler/scheduled?cron=…`
+    (`/__scheduled` 404s); verified against the built worker
+    (`wrangler dev --test-scheduled -c dist/server/wrangler.json`) and under vite dev —
+    both crons dispatch, SSR home renders in both. Entry-module named exports must be
+    handlers only (workerd rejects exported constants), so cron strings stay module-local.
 - [ ] **0.3 KV namespace + helpers.** Add `kv_namespaces` binding (`SCHEMA_CACHE`).
       Write `src/server/kv.ts` with typed get/put wrapping JSON + content-hash keys.
       The cloudflare vite plugin is incompatible with vitest (it is skipped under
