@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## What this project is
+
+A Cloudflare Workers service giving AI agents live access to model schemas: per-endpoint
+request/response JSON Schemas and model metadata for every monitored provider, with
+react-query-style server-side caching (persistent, stale-while-revalidate) and
+auto-refresh when providers ship new models. Design borrows from TanStack AI PR #622
+(`@tanstack/ai-schemas`).
+
+**The build is driven by `PLAN.md`** — a phased, checkbox task list with its own loop
+protocol and settled architecture decisions (D1 as source of truth + KV hot cache,
+two-tier cron refresh, better-auth agent-auth for agent signup, hey-api-generated
+client + CLI + skill from our own OpenAPI spec). Read PLAN.md before doing feature
+work; don't relitigate its "Architecture decisions" section. The codebase is currently
+the TanStack Start scaffold described below — the Commands/Architecture sections here
+reflect what exists now, not the plan's end state, and PLAN.md task 8.5 updates them.
+
 ## Commands
 
 This project uses Bun as the package manager/runtime.
