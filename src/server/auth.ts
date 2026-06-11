@@ -13,6 +13,7 @@ let instance: Auth | undefined
 export function getAuth(): Auth {
   instance ??= createAuth(getDb(env), {
     secret: env.BETTER_AUTH_SECRET,
+    baseUrl: env.BETTER_AUTH_URL,
     // Last in the plugin list (better-auth requirement for cookie handling).
     extraPlugins: [tanstackStartCookies()],
   })

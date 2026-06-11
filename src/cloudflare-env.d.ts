@@ -9,6 +9,7 @@ declare module 'cloudflare:workers' {
     DB: D1Database
     SCHEMA_CACHE: KVNamespace
     BETTER_AUTH_SECRET: string
+    BETTER_AUTH_URL?: string
     ADMIN_KEY?: string
     OPENAI_API_KEY?: string
     ANTHROPIC_API_KEY?: string

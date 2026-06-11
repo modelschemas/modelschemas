@@ -16,6 +16,7 @@ import { Route as V1IndexRouteImport } from './routes/v1/index'
 import { Route as V1ValidateRouteImport } from './routes/v1/validate'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
 import { Route as V1ChangesRouteImport } from './routes/v1/changes'
+import { Route as DotwellKnownAgentConfigurationRouteImport } from './routes/[.]well-known/agent-configuration'
 import { Route as V1ProvidersIndexRouteImport } from './routes/v1/providers/index'
 import { Route as V1ModelsIndexRouteImport } from './routes/v1/models/index'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -61,6 +62,12 @@ const V1ChangesRoute = V1ChangesRouteImport.update({
   path: '/v1/changes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DotwellKnownAgentConfigurationRoute =
+  DotwellKnownAgentConfigurationRouteImport.update({
+    id: '/.well-known/agent-configuration',
+    path: '/.well-known/agent-configuration',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const V1ProvidersIndexRoute = V1ProvidersIndexRouteImport.update({
   id: '/v1/providers/',
   path: '/v1/providers/',
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
@@ -132,6 +140,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
@@ -151,6 +160,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/openapi.json': typeof OpenapiDotjsonRoute
+  '/.well-known/agent-configuration': typeof DotwellKnownAgentConfigurationRoute
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
@@ -171,6 +181,7 @@ export interface FileRouteTypes {
     | '/'
     | '/llms.txt'
     | '/openapi.json'
+    | '/.well-known/agent-configuration'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/'
     | '/llms.txt'
     | '/openapi.json'
+    | '/.well-known/agent-configuration'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
@@ -207,6 +219,7 @@ export interface FileRouteTypes {
     | '/'
     | '/llms.txt'
     | '/openapi.json'
+    | '/.well-known/agent-configuration'
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
@@ -226,6 +239,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   OpenapiDotjsonRoute: typeof OpenapiDotjsonRoute
+  DotwellKnownAgentConfigurationRoute: typeof DotwellKnownAgentConfigurationRoute
   V1ChangesRoute: typeof V1ChangesRoute
   V1StatusRoute: typeof V1StatusRoute
   V1ValidateRoute: typeof V1ValidateRoute
@@ -290,6 +304,13 @@ declare module '@tanstack/react-router' {
       path: '/v1/changes'
       fullPath: '/v1/changes'
       preLoaderRoute: typeof V1ChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/.well-known/agent-configuration': {
+      id: '/.well-known/agent-configuration'
+      path: '/.well-known/agent-configuration'
+      fullPath: '/.well-known/agent-configuration'
+      preLoaderRoute: typeof DotwellKnownAgentConfigurationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/providers/': {
@@ -362,6 +383,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   OpenapiDotjsonRoute: OpenapiDotjsonRoute,
+  DotwellKnownAgentConfigurationRoute: DotwellKnownAgentConfigurationRoute,
   V1ChangesRoute: V1ChangesRoute,
   V1StatusRoute: V1StatusRoute,
   V1ValidateRoute: V1ValidateRoute,

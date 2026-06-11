@@ -361,7 +361,7 @@ consumer: every list response includes `_links` to drill deeper, errors carry re
 Built on Better Auth's agent-auth plugin (https://better-auth.com/docs/plugins/agent-auth):
 discovery → register → request capability grants → execute with short-lived JWTs.
 
-- [ ] **5.1 Agent Auth provider surface.** Expose the discovery document at
+- [x] **5.1 Agent Auth provider surface.** Expose the discovery document at
       `/.well-known/agent-configuration` (route handler calling
       `auth.api.getAgentConfiguration()`). Declare capabilities in `agentAuth({...})`:
       derive the read/validate operations from our own `src/server/openapi.ts` doc via
@@ -370,6 +370,12 @@ discovery → register → request capability grants → execute with short-live
       delegated mode + approvals kept enabled but not required for any current capability.
       _Accepts:_ discovery doc renders; `POST /agent/register` → capability request →
       `POST /capability/execute` round-trips `get_schema` locally.
+  - Note: full round-trip verified live by `bun scripts/agent-roundtrip.ts` (Ed25519
+    keys via jose; agent JWT: iss=hostId, sub=agentId, aud=default_location; execute
+    response wraps results in `{data}`). Required `allowDynamicHostRegistration: true`
+    (open signup) and a `resolveAutonomousUser` virtual identity (autonomous agents
+    have no human owner). Admin op (syncProvider) filtered out of capabilities;
+    capabilities are at `/capability/list`, not inline in the discovery doc.
 - [ ] **5.2 JWT verification on owned routes.** For agent-authed access to our native
       `/v1/*` routes (as opposed to the `/capability/execute` proxy), add a
       `requireAgent(request)` helper wrapping `verifyAgentRequest(request, auth)` +
