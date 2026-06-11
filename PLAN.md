@@ -237,13 +237,18 @@ Rules:
     instead of dangling in $defs; `findDanglingRefs` exported as the self-containment
     checker (used by tests, reusable as a sync-time sanity check). Inline (ref-less)
     body schemas are bundled too, not skipped.
-- [ ] **2.3 Sync engine.** `src/server/ingest/sync.ts`: per provider —
+- [x] **2.3 Sync engine.** `src/server/ingest/sync.ts`: per provider —
       fetch spec → classify endpoints → bundle schemas → diff content hashes against
       `schema_versions` → insert new versions, mark superseded, upsert `endpoints`,
       write `changes` rows, warm KV with new blobs. Idempotent; per-provider try/catch so
       one provider's outage doesn't sink the run; record outcome on `providers`.
       _Accepts:_ integration test with a fixture spec: first run inserts, second run
       no-ops, mutated fixture produces exactly one `schema.updated` change.
+  - Note: endpoint db ids are `${providerId}/${path-minus-slash}`. Vanished endpoints
+    keep their rows + version history; an `endpoint.removed` change is written once
+    (deduped against prior changes). Failed providers get status='degraded', successful
+    syncs set lastSyncedAt + status='active'. Injectable clock for tests. D1 persists
+    across tests in one isolate — worker tests use per-test provider ids.
 - [ ] **2.4 Model poller.** `src/server/ingest/poll-models.ts`: per provider, call
       `listModels`, normalise to the `models` shape, diff against D1 → `model.added` /
       `model.removed` / `model.updated` changes, bump `lastSeenAt`. _Accepts:_ fixture
