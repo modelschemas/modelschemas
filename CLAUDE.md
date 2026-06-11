@@ -24,7 +24,7 @@ This project uses Bun as the package manager/runtime.
 
 ```bash
 bun install              # install dependencies
-bun run dev              # dev server on port 3000 (NOT --bun: bun's ws shim hangs vite startup)
+bun run dev              # dev server on port 3100 (NOT --bun: bun's ws shim hangs vite startup)
 bun --bun run build      # production build
 bun run test             # run all tests (NOT --bun: the cloudflare vitest pool needs node)
 bun run test src/path/to/file.test.ts       # run a single test file
