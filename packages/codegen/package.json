@@ -1,0 +1,22 @@
+{
+  "name": "@modelschemas/codegen",
+  "version": "0.1.0",
+  "description": "Pull core for modelschemas build-time schema/type generation: selection grammar, conditional fetch, lockfile manifest, file writer.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "prettier": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "prettier": {
+      "optional": true
+    }
+  }
+}

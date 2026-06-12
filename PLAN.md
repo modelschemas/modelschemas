@@ -806,7 +806,7 @@ Design settled with Tom (don't relitigate):
     186KB module, 0 tsc diagnostics under strict+exactOptionalPropertyTypes,
     304 replay, 400s on bad format/optional. SKILL.md re-emitted (it embeds
     llms.txt).
-- [ ] **12.3 `@modelschemas/codegen` pull core.** `packages/codegen`:
+- [x] **12.3 `@modelschemas/codegen` pull core.** `packages/codegen`:
       selection parsing/expansion, conditional fetch (If-None-Match from
       manifest), atomic file writes, manifest read/write, optional local
       prettier pass, `pull()`/`checkUpdates()`/`verify()`. `checkUpdates`
