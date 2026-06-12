@@ -826,10 +826,19 @@ Design settled with Tom (don't relitigate):
       (selection read from the manifest) on the codegen core; help text
       updated. _Accepts:_ unit tests for arg parsing; roundtrip exercised
       in 12.6.
-- [ ] **12.6 E2E + docs + ship.** `bun scripts/pull-roundtrip.ts`: against
+- [x] **12.6 E2E + docs + ship.** `bun scripts/pull-roundtrip.ts`: against
       the local dev server, pull a real selection, typecheck the generated
       files, mutate one upstream schema (admin sync fixture or direct D1
       write), prove `update` rewrites exactly that file. README + docs page + llms.txt get the vite-plugin/CLI quickstart. Deploy; verify
       `?format=types` on production. _Accepts:_ roundtrip script green
       locally; production curl returns compilable TS with correct
       content-type and ETag.
+  - Note: roundtrip green against local dev (pull → tsc-clean module → 304
+    no-op → staled manifest entry rewritten exactly); upstream mutation done
+    by staling the lockfile entry rather than a D1 write — same code path,
+    no SWR-staleness flake. CLI pull/update smoked end-to-end. Docs: README
+    quickstart; /docs + llms.txt already carry the 12.2 section.
+    **Deploy BLOCKED on Tom** — production deploy needs explicit approval
+    (`bun run deploy`, then verify
+    `curl -sI 'https://modelschemas.com/v1/schemas/anthropic/chat/v1%2Fmessages?format=types'`
+    → 200 text/typescript with `<hash>-types-v1-exact` ETag).

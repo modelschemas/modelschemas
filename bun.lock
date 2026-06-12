@@ -47,6 +47,7 @@
         "@cloudflare/workers-types": "^4.20260611.1",
         "@hey-api/openapi-ts": "0.97.2",
         "@modelschemas/client": "workspace:*",
+        "@modelschemas/codegen": "workspace:*",
         "@tailwindcss/typography": "^0.5.16",
         "@tanstack/devtools-event-client": "latest",
         "@tanstack/devtools-vite": "latest",

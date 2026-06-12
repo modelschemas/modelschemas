@@ -19,6 +19,48 @@ Surfaces:
   (`POST /v1/agents/register-key`)
 - **TS client** `@modelschemas/client` (packages/client, generated from the
   spec) and the **`modelschemas` CLI** (packages/cli)
+- **Build-time pulls** — `@modelschemas/vite` (packages/vite) +
+  `@modelschemas/codegen` (packages/codegen): commit selected schemas and
+  generated TypeScript into your repo, fetched at dev time only
+
+## Build-time schema pulls (vite plugin + CLI)
+
+Pull self-contained TypeScript modules (JSON Schema const + generated
+interfaces — pure exports, no barrel, tree-shakeable) into your project.
+Files are committed; production builds touch zero network.
+
+```ts
+// vite.config.ts
+import { modelschemas } from '@modelschemas/vite'
+
+export default defineConfig({
+  plugins: [
+    modelschemas({
+      selections: ['anthropic/v1/messages#request', 'openai/chat/*'],
+      outDir: 'src/modelschemas', // default; commit it
+      apiKey: process.env.MODELSCHEMAS_API_KEY, // optional — lifts rate limits
+    }),
+  ],
+})
+```
+
+```ts
+import {
+  anthropicV1MessagesRequestSchema,
+  type AnthropicV1MessagesRequest,
+} from './modelschemas/anthropic/v1-messages.request.ts'
+```
+
+The dev server pulls whatever is missing and _reports_ upstream schema
+drift (it never rewrites existing files); `modelschemas update` is the
+explicit refresh and the git diff is the review. `vite build` only verifies
+files match the `.manifest.json` lockfile — offline, reproducible. Without
+vite: `modelschemas pull 'anthropic/*' --out src/modelschemas`. The raw
+surface behind all of this is `?format=types` on any
+`/v1/schemas/{provider}/{activity}/{endpointId}` read
+(`?optional=undefined` for `exactOptionalPropertyTypes` consumers who
+assign `undefined` explicitly). Verify locally end-to-end with
+`bun scripts/pull-roundtrip.ts`.
 
 ## Development
 
