@@ -848,7 +848,8 @@ Design settled with Tom (don't relitigate):
       GitHub). Connecting the repo needs interactive GitHub auth in the
       Cloudflare dashboard, so the setup is Tom's: dashboard → Workers &
       Pages → `modelschemas` → Settings → Build → Connect → GitHub repo
-      `tombeckenham/modelschemas`, production branch `main`, then:
+      `modelschemas/modelschemas` (moved from `tombeckenham/modelschemas`
+      2026-06), production branch `main`, then:
   - Build command: `bun run build` (the build image auto-runs
     `bun install` from bun.lock)
   - Deploy command:
