@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/schema-studio && tsc --noEmit -p examples/image-dimensions",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/schema-studio && tsc --noEmit -p examples/image-dimensions && tsc --noEmit -p examples/video-composer",
     "prepare": "lefthook install",
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
