@@ -12,6 +12,8 @@ import {
   knownEndpointIds,
   publicEndpointId,
 } from './schemas-api.ts'
+import { cachedText } from './http-cache.ts'
+import { emitTypesModule, typesEtag } from './typegen.ts'
 
 const NOW = 1_781_150_000
 const INPUT_SCHEMA = {
@@ -171,5 +173,56 @@ describe('helpers', () => {
       'v1/images/generations',
       'v1/messages',
     ])
+  })
+})
+
+describe('?format=types flow (12.2)', () => {
+  it('emits a typescript module for a stored schema and honours ETag replay', async () => {
+    const result = await getEndpointSchema(
+      db,
+      'sch-prov',
+      'chat',
+      'v1/messages',
+    )
+    expect(result).not.toBeNull()
+    if (result === null) return
+
+    const text = emitTypesModule({
+      provider: result.provider,
+      endpointId: result.endpointId,
+      kind: result.kind,
+      contentHash: result.contentHash,
+      schema: result.schema as Record<string, unknown>,
+      sourceUrl:
+        'https://example.com/v1/schemas/sch-prov/chat/v1/messages?kind=input',
+    })
+    expect(text).toContain('export const schProvV1MessagesRequestSchema')
+    expect(text).toContain('export interface SchProvV1MessagesRequest')
+    expect(text).toContain('export type Block =')
+    expect(text).not.toMatch(/^import /m)
+
+    const etag = typesEtag(result.contentHash, 'exact')
+    const fresh = cachedText(
+      new Request('https://example.com/x'),
+      text,
+      'text/typescript; charset=utf-8',
+      { etag, fetchedAt: NOW, staleAt: NOW + 300 },
+    )
+    expect(fresh.status).toBe(200)
+    expect(fresh.headers.get('content-type')).toBe(
+      'text/typescript; charset=utf-8',
+    )
+    expect(await fresh.text()).toBe(text)
+
+    const replay = cachedText(
+      new Request('https://example.com/x', {
+        headers: { 'if-none-match': fresh.headers.get('etag') ?? '' },
+      }),
+      text,
+      'text/typescript; charset=utf-8',
+      { etag, fetchedAt: NOW, staleAt: NOW + 300 },
+    )
+    expect(replay.status).toBe(304)
+    expect(await replay.text()).toBe('')
   })
 })

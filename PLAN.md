@@ -790,7 +790,7 @@ Design settled with Tom (don't relitigate):
       subset + a real bundled fixture; generated text compiles clean under
       `strict` with `exactOptionalPropertyTypes` both on and off (in-memory
       tsc program in the test).
-- [ ] **12.2 `?format=types` on the schema route.** Extend
+- [x] **12.2 `?format=types` on the schema route.** Extend
       `/v1/schemas/{p}/{activity}/{endpointId}` with `format=json|types`
       (+ `optional=exact|undefined`): types responses are
       `text/typescript; charset=utf-8`, SWR-cached per
@@ -799,6 +799,13 @@ Design settled with Tom (don't relitigate):
       llms.txt. _Accepts:_ worker test fetches types for a synced fixture
       endpoint, gets compilable TS, 304 on If-None-Match replay;
       `check:client` passes.
+  - Note: deviated from "SWR-cached emitted text" — the module is emitted
+    inline from the already-SWR-cached schema (pure CPU, cheaper than a
+    second KV read); the ETag (`typesEtag` = hash+TYPEGEN_VERSION+optional)
+    still fully keys the body. Verified live: real Anthropic v1/messages →
+    186KB module, 0 tsc diagnostics under strict+exactOptionalPropertyTypes,
+    304 replay, 400s on bad format/optional. SKILL.md re-emitted (it embeds
+    llms.txt).
 - [ ] **12.3 `@modelschemas/codegen` pull core.** `packages/codegen`:
       selection parsing/expansion, conditional fetch (If-None-Match from
       manifest), atomic file writes, manifest read/write, optional local

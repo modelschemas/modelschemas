@@ -20,9 +20,13 @@ export interface CacheHeaderOptions {
   staleWhileRevalidate?: number
 }
 
-function buildHeaders(etag: string, options: CacheHeaderOptions): Headers {
+function buildHeaders(
+  etag: string,
+  options: CacheHeaderOptions,
+  contentType: string,
+): Headers {
   return new Headers({
-    'Content-Type': 'application/json',
+    'Content-Type': contentType,
     ETag: `"${etag}"`,
     'Last-Modified': new Date(options.fetchedAt * 1000).toUTCString(),
     'Cache-Control': `public, max-age=${String(options.maxAge ?? 60)}, stale-while-revalidate=${String(options.staleWhileRevalidate ?? 600)}`,
@@ -55,10 +59,36 @@ export async function cachedJson(
   options: CacheHeaderOptions,
 ): Promise<Response> {
   const etag = options.etag ?? (await contentHash(value))
-  const headers = buildHeaders(etag, options)
+  return respond(
+    request,
+    JSON.stringify(value),
+    etag,
+    options,
+    'application/json',
+  )
+}
+
+/** Same cache semantics for a non-JSON text body (e.g. `?format=types`). */
+export function cachedText(
+  request: Request,
+  body: string,
+  contentType: string,
+  options: CacheHeaderOptions & { etag: string },
+): Response {
+  return respond(request, body, options.etag, options, contentType)
+}
+
+function respond(
+  request: Request,
+  body: string,
+  etag: string,
+  options: CacheHeaderOptions,
+  contentType: string,
+): Response {
+  const headers = buildHeaders(etag, options, contentType)
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     headers.delete('Content-Type')
     return new Response(null, { status: 304, headers })
   }
-  return new Response(JSON.stringify(value), { status: 200, headers })
+  return new Response(body, { status: 200, headers })
 }

@@ -238,12 +238,29 @@ export const openApiDocument = {
             description: 'Content hash of a historical version.',
             schema: { type: 'string' },
           },
+          {
+            name: 'format',
+            in: 'query',
+            description:
+              'json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports).',
+            schema: { type: 'string', enum: ['json', 'types'] },
+          },
+          {
+            name: 'optional',
+            in: 'query',
+            description:
+              'format=types only: optional-property style. exact (default) emits `foo?: T`; undefined emits `foo?: T | undefined`.',
+            schema: { type: 'string', enum: ['exact', 'undefined'] },
+          },
         ],
         responses: {
           '200': {
             description:
-              'Self-contained JSON Schema ($defs-bundled), served with ETag.',
-            content: { 'application/json': { schema: { type: 'object' } } },
+              'Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag.',
+            content: {
+              'application/json': { schema: { type: 'object' } },
+              'text/typescript': { schema: { type: 'string' } },
+            },
           },
           '404': errorResponse,
         },

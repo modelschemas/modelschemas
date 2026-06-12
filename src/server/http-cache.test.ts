@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { contentHash } from './kv.ts'
-import { cachedJson, ifNoneMatchSatisfied } from './http-cache.ts'
+import { cachedJson, cachedText, ifNoneMatchSatisfied } from './http-cache.ts'
 
 const FETCHED = 1_781_150_000
 const STALE = FETCHED + 600
@@ -77,6 +77,34 @@ describe('cachedJson', () => {
     expect(response.headers.get('cache-control')).toBe(
       'public, max-age=5, stale-while-revalidate=30',
     )
+  })
+})
+
+describe('cachedText', () => {
+  it('serves a non-JSON body with the given content type and full cache headers', () => {
+    const response = cachedText(
+      request(),
+      'export type X = string\n',
+      'text/typescript; charset=utf-8',
+      { etag: 'hash-types-v1-exact', fetchedAt: FETCHED, staleAt: STALE },
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe(
+      'text/typescript; charset=utf-8',
+    )
+    expect(response.headers.get('etag')).toBe('"hash-types-v1-exact"')
+    expect(response.headers.get('x-stale-at')).toBe(String(STALE))
+  })
+
+  it('returns 304 with no body on a matching If-None-Match', async () => {
+    const response = cachedText(
+      request({ 'if-none-match': '"hash-types-v1-exact"' }),
+      'export type X = string\n',
+      'text/typescript; charset=utf-8',
+      { etag: 'hash-types-v1-exact', fetchedAt: FETCHED, staleAt: STALE },
+    )
+    expect(response.status).toBe(304)
+    expect(await response.text()).toBe('')
   })
 })
 

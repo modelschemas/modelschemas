@@ -305,6 +305,14 @@ export type GetSchemaData = {
      * Content hash of a historical version.
      */
     version?: string
+    /**
+     * json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports).
+     */
+    format?: 'json' | 'types'
+    /**
+     * format=types only: optional-property style. exact (default) emits `foo?: T`; undefined emits `foo?: T | undefined`.
+     */
+    optional?: 'exact' | 'undefined'
   }
   url: '/v1/schemas/{provider}/{activity}/{endpointId}'
 }
@@ -320,7 +328,7 @@ export type GetSchemaError = GetSchemaErrors[keyof GetSchemaErrors]
 
 export type GetSchemaResponses = {
   /**
-   * Self-contained JSON Schema ($defs-bundled), served with ETag.
+   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag.
    */
   200: {
     [key: string]: unknown

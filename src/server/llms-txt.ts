@@ -29,6 +29,16 @@ minutes, full OpenAPI spec syncs daily. Every response is JSON.
 5. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
 6. GET /v1/changes?since=<unix epoch> — what changed.
 
+## TypeScript types
+
+Add \`?format=types\` to a schema read
+(GET /v1/schemas/{provider}/{activity}/{endpointId}) to get a self-contained
+TypeScript module instead of JSON: the schema as a pure const plus generated
+interfaces (\`text/typescript\`, zero imports, tree-shakeable, same ETag
+discipline). \`?optional=undefined\` widens optional properties to
+\`T | undefined\` for exactOptionalPropertyTypes consumers; default is
+\`foo?: T\`.
+
 ## Hypermedia (HAL, extended)
 
 Every JSON read response carries \`_links\`: HAL link objects extended with

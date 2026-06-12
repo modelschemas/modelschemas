@@ -290,6 +290,16 @@ export function moduleNames(
   return { rootType, schemaConst: `${lowerFirst(rootType)}Schema` }
 }
 
+/** ETag for a types response: schema identity × emitter version × the one
+ * output-shaping knob. Emission is deterministic, so this fully keys the
+ * body. */
+export function typesEtag(
+  contentHash: string,
+  optionalStyle: OptionalStyle,
+): string {
+  return `${contentHash}-types-v${TYPEGEN_VERSION}-${optionalStyle}`
+}
+
 /** Emit the full module text for one endpoint+kind schema. */
 export function emitTypesModule(input: EmitInput): string {
   const optionalStyle = input.optionalStyle ?? 'exact'
