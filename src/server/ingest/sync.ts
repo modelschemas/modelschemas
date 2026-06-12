@@ -13,9 +13,12 @@ import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
 import type {
   ProviderConfig,
   ProviderSecrets,
+  SpecFetchResult,
+  SpecSource,
 } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import {
+  EXTRACTOR_VERSION,
   endpointIdFromPath,
   extractEndpointSchemas,
   findDanglingRefs,
@@ -40,18 +43,78 @@ export interface SyncOutcome {
   warnings: Array<string>
 }
 
-interface ClassifiedEndpoint {
+export interface ClassifiedEndpoint {
   /** Globally unique db id: `${providerId}/${pathId}`. */
   dbId: string
   path: string
   activity: Activity
   description: string | null
+  /** Provenance of the spec document this endpoint came from. */
+  source: SpecSource | null
   input?: Record<string, JsonValue>
   output?: Record<string, JsonValue>
 }
 
 function newChangeId(): string {
   return crypto.randomUUID()
+}
+
+/**
+ * Classify + bundle every generation endpoint across a provider's fetched
+ * specs. Pure (no storage) — shared by the sync engine and the offline
+ * re-derivation script (`scripts/rederive.ts`), so both always derive
+ * identical content hashes from the same upstream documents.
+ */
+export function classifyAndBundle(
+  provider: ProviderConfig,
+  fetched: SpecFetchResult,
+): { endpoints: Array<ClassifiedEndpoint>; warnings: Array<string> } {
+  const classified: Array<ClassifiedEndpoint> = []
+  const warnings: Array<string> = []
+  for (const [specIndex, spec] of fetched.specs.entries()) {
+    const source = fetched.sources[specIndex] ?? null
+    for (const [pathKey, operations] of Object.entries(spec.paths ?? {})) {
+      const post = operations.post
+      if (!post) continue
+      const activity = provider.classify(pathKey, post)
+      if (activity === null) continue
+
+      const extracted = extractEndpointSchemas(
+        spec,
+        pathKey,
+        fetched.outputStrategy,
+      )
+      warnings.push(...extracted.warnings)
+      for (const [kind, schema] of [
+        ['input', extracted.input],
+        ['output', extracted.output],
+      ] as const) {
+        if (schema && findDanglingRefs(schema).length > 0) {
+          warnings.push(
+            `${provider.id}${pathKey}: bundled ${kind} schema has dangling refs`,
+          )
+        }
+      }
+      if (!extracted.input && !extracted.output) continue
+
+      const description =
+        typeof post.summary === 'string'
+          ? post.summary
+          : typeof post.description === 'string'
+            ? post.description
+            : null
+      classified.push({
+        dbId: `${provider.id}/${endpointIdFromPath(pathKey)}`,
+        path: pathKey,
+        activity,
+        description,
+        source,
+        input: extracted.input,
+        output: extracted.output,
+      })
+    }
+  }
+  return { endpoints: classified, warnings }
 }
 
 /** Sync one provider. Throws only on programmer error — upstream/storage
@@ -77,49 +140,11 @@ export async function syncProvider(
     return outcome
   }
 
-  // Classify + bundle every generation endpoint across the provider's specs.
-  const classified: Array<ClassifiedEndpoint> = []
-  for (const spec of fetched.specs) {
-    for (const [pathKey, operations] of Object.entries(spec.paths ?? {})) {
-      const post = operations.post
-      if (!post) continue
-      const activity = provider.classify(pathKey, post)
-      if (activity === null) continue
-
-      const extracted = extractEndpointSchemas(
-        spec,
-        pathKey,
-        fetched.outputStrategy,
-      )
-      outcome.warnings.push(...extracted.warnings)
-      for (const [kind, schema] of [
-        ['input', extracted.input],
-        ['output', extracted.output],
-      ] as const) {
-        if (schema && findDanglingRefs(schema).length > 0) {
-          outcome.warnings.push(
-            `${provider.id}${pathKey}: bundled ${kind} schema has dangling refs`,
-          )
-        }
-      }
-      if (!extracted.input && !extracted.output) continue
-
-      const description =
-        typeof post.summary === 'string'
-          ? post.summary
-          : typeof post.description === 'string'
-            ? post.description
-            : null
-      classified.push({
-        dbId: `${provider.id}/${endpointIdFromPath(pathKey)}`,
-        path: pathKey,
-        activity,
-        description,
-        input: extracted.input,
-        output: extracted.output,
-      })
-    }
-  }
+  const { endpoints: classified, warnings } = classifyAndBundle(
+    provider,
+    fetched,
+  )
+  outcome.warnings.push(...warnings)
   outcome.endpointsSeen = classified.length
 
   const existingEndpoints = await db
@@ -183,6 +208,9 @@ export async function syncProvider(
         contentHash: hash,
         schema: JSON.stringify(schema),
         specRevision: fetched.specRevision ?? null,
+        sourceUrl: endpoint.source?.url ?? null,
+        sourceHash: endpoint.source?.hash ?? null,
+        extractorVersion: EXTRACTOR_VERSION,
         createdAt: now,
       })
       outcome.versionsAdded++

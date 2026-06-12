@@ -256,7 +256,8 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag.',
+              'Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. ' +
+              'JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable.',
             content: {
               'application/json': { schema: { type: 'object' } },
               'text/typescript': { schema: { type: 'string' } },

@@ -8,7 +8,7 @@
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchText, skippedResult } from './types.ts'
+import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -52,7 +52,12 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const specUrl = await resolveAnthropicSpecUrl()
   const yamlText = await fetchText(specUrl)
   const spec = parse(yamlText) as OpenApiDocument
-  return { specs: [spec], outputStrategy: 'post-200', specRevision: specUrl }
+  return {
+    specs: [spec],
+    sources: [{ url: specUrl, hash: await sha256Text(yamlText) }],
+    outputStrategy: 'post-200',
+    specRevision: specUrl,
+  }
 }
 
 interface AnthropicModelList {

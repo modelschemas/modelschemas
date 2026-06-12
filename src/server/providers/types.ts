@@ -42,8 +42,22 @@ export interface ModelInfo {
   deprecated?: boolean
 }
 
+/** Provenance for one fetched spec document. */
+export interface SpecSource {
+  /** URL the document was fetched from. */
+  url: string
+  /**
+   * SHA-256 hex of the document as fetched — raw bytes when the upstream
+   * serves a file (reproducible with `curl <url> | shasum -a 256`),
+   * stable-stringified JSON for documents embedded in API responses (FAL).
+   */
+  hash: string
+}
+
 export interface SpecFetchResult {
   specs: Array<OpenApiDocument>
+  /** Per-document provenance, index-aligned with `specs`. */
+  sources: Array<SpecSource>
   /**
    * Output-schema derivation strategy (PR #622):
    * - 'post-200': POST .responses["200"].content (most providers)
@@ -91,6 +105,17 @@ export async function fetchJson(
     )
   }
   return response.json()
+}
+
+/** SHA-256 hex of raw fetched text (the `SpecSource.hash` for file specs). */
+export async function sha256Text(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(text),
+  )
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
 }
 
 export async function fetchText(

@@ -11,6 +11,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { activities } from '#/db/schema.ts'
+import { contentHash } from '#/server/kv.ts'
 import { skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -20,6 +21,7 @@ import type {
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
+  SpecSource,
 } from './types.ts'
 
 const FAL_MODELS_URL = 'https://api.fal.ai/v1/models'
@@ -151,17 +153,26 @@ async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
   if (!apiKey) {
     return {
       specs: [],
+      sources: [],
       outputStrategy: 'sibling-get',
       ...skippedResult('fal', 'FAL_KEY'),
     }
   }
   const models = await fetchFalModels(apiKey, true)
   const specs: Array<OpenApiDocument> = []
+  const sources: Array<SpecSource> = []
   for (const model of models) {
     if (!model.openapi) continue
     const activity = falCategoryActivity(model.metadata.category)
     if (activity === null) continue
     const spec = model.openapi
+    // FAL specs arrive embedded in the models API response (no standalone
+    // file URL), so provenance hashes the embedded document as delivered —
+    // before our annotations below.
+    sources.push({
+      url: `${FAL_MODELS_URL}?expand=openapi-3.0#${model.endpoint_id}`,
+      hash: await contentHash(spec),
+    })
     // Stash endpointId on info for the merge step (per-endpoint schema
     // dedup-renaming), mirroring the PR's x-fal-metadata trick.
     spec.info ??= {}
@@ -169,7 +180,7 @@ async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
     annotateOperations(spec, activity)
     specs.push(spec)
   }
-  return { specs, outputStrategy: 'sibling-get' }
+  return { specs, sources, outputStrategy: 'sibling-get' }
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {

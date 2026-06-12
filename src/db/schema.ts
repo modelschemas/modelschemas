@@ -419,6 +419,12 @@ export const schemaVersions = sqliteTable(
     contentHash: text('content_hash').notNull(),
     schema: text('schema').notNull(),
     specRevision: text('spec_revision'),
+    // Provenance (nullable on rows synced before it was recorded): the
+    // upstream document this version was derived from, and the extractor
+    // that derived it. createdAt doubles as the fetched-at timestamp.
+    sourceUrl: text('source_url'),
+    sourceHash: text('source_hash'),
+    extractorVersion: text('extractor_version'),
     createdAt: integer('created_at').notNull(),
     supersededAt: integer('superseded_at'),
   },

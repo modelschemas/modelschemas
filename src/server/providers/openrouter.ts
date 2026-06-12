@@ -6,7 +6,7 @@
  * model like any other endpoint. Fully keyless.
  */
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchText } from './types.ts'
+import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -199,13 +199,17 @@ export function synthesizeVideoModelEndpoints(
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const rawText = await fetchText(OPENROUTER_OPENAPI_URL)
+  // Provenance hashes the bytes as served (curl-reproducible) — before the
+  // redaction below.
+  const source = {
+    url: OPENROUTER_OPENAPI_URL,
+    hash: await sha256Text(rawText),
+  }
   // The spec's key-management examples embed realistic-looking `sk-or-v1-…`
   // keys; redact them (they only appear in platform endpoints that classify
   // to null anyway).
-  const text = (await fetchText(OPENROUTER_OPENAPI_URL)).replace(
-    /sk-or-v1-[0-9a-f]{16,}/g,
-    'sk-or-v1-REDACTED',
-  )
+  const text = rawText.replace(/sk-or-v1-[0-9a-f]{16,}/g, 'sk-or-v1-REDACTED')
   const spec = JSON.parse(text) as OpenApiDocument
 
   liftEmbeddingsSchemas(spec)
@@ -224,7 +228,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
   synthesizeVideoModelEndpoints(spec, videoModels)
 
-  return { specs: [spec], outputStrategy: 'post-200' }
+  return { specs: [spec], sources: [source], outputStrategy: 'post-200' }
 }
 
 interface OpenRouterModelList {

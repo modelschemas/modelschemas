@@ -3,7 +3,7 @@
  * Models endpoint requires ELEVENLABS_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, skippedResult } from './types.ts'
+import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -44,8 +44,13 @@ function classify(_path: string, op: OpenApiOperation): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const spec = (await fetchJson(ELEVENLABS_OPENAPI_URL)) as OpenApiDocument
-  return { specs: [spec], outputStrategy: 'post-200' }
+  const text = await fetchText(ELEVENLABS_OPENAPI_URL)
+  const spec = JSON.parse(text) as OpenApiDocument
+  return {
+    specs: [spec],
+    sources: [{ url: ELEVENLABS_OPENAPI_URL, hash: await sha256Text(text) }],
+    outputStrategy: 'post-200',
+  }
 }
 
 interface ElevenLabsModel {

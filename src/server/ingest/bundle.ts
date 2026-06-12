@@ -9,6 +9,14 @@
  */
 import type { OpenApiDocument } from '#/server/providers/types.ts'
 
+/**
+ * Version of the extraction pipeline (classification + bundling), recorded
+ * on every schema_versions row. Bump whenever a change here or in a
+ * provider's classify/fetchSpec could alter derived schemas — it tells
+ * verifiers which extractor produced a stored hash.
+ */
+export const EXTRACTOR_VERSION = '1'
+
 export type JsonValue =
   | string
   | number

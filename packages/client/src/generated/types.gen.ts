@@ -328,7 +328,7 @@ export type GetSchemaError = GetSchemaErrors[keyof GetSchemaErrors]
 
 export type GetSchemaResponses = {
   /**
-   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag.
+   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable.
    */
   200: {
     [key: string]: unknown

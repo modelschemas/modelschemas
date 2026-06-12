@@ -5,7 +5,7 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, skippedResult } from './types.ts'
+import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -217,8 +217,13 @@ function classify(path: string): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const discovery = (await fetchJson(GEMINI_DISCOVERY_URL)) as DiscoveryDoc
-  return { specs: [discoveryToOpenApi(discovery)], outputStrategy: 'post-200' }
+  const text = await fetchText(GEMINI_DISCOVERY_URL)
+  const discovery = JSON.parse(text) as DiscoveryDoc
+  return {
+    specs: [discoveryToOpenApi(discovery)],
+    sources: [{ url: GEMINI_DISCOVERY_URL, hash: await sha256Text(text) }],
+    outputStrategy: 'post-200',
+  }
 }
 
 interface GeminiModelList {

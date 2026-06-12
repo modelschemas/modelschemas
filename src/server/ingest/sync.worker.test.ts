@@ -11,6 +11,7 @@ import {
 } from '../../db/schema.ts'
 import { getByHash } from '../kv.ts'
 import type { OpenApiDocument, ProviderConfig } from '../providers/types.ts'
+import { EXTRACTOR_VERSION } from './bundle.ts'
 import { syncProvider } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -54,12 +55,21 @@ function fixtureSpec(maxTokens: boolean): OpenApiDocument {
 
 // D1 state persists across tests in the same isolate, so each test gets its
 // own provider id and filters its queries by it.
+const STUB_SOURCE = {
+  url: 'https://example.com/spec.json',
+  hash: 'stub-source-hash',
+}
+
 function stubProvider(id: string, spec: OpenApiDocument): ProviderConfig {
   return {
     id,
     displayName: 'Stub',
     fetchSpec: () =>
-      Promise.resolve({ specs: [spec], outputStrategy: 'post-200' as const }),
+      Promise.resolve({
+        specs: [spec],
+        sources: [STUB_SOURCE],
+        outputStrategy: 'post-200' as const,
+      }),
     listModels: () => Promise.resolve({ models: [] }),
     classify: (path) => (path === '/v1/messages' ? 'chat' : null),
   }
@@ -114,6 +124,10 @@ describe('syncProvider', () => {
     expect(
       await getByHash(env.SCHEMA_CACHE, inputVersion?.contentHash ?? ''),
     ).toEqual({ type: 'object', properties: { model: { type: 'string' } } })
+    // Provenance is recorded on every version.
+    expect(inputVersion?.sourceUrl).toBe(STUB_SOURCE.url)
+    expect(inputVersion?.sourceHash).toBe(STUB_SOURCE.hash)
+    expect(inputVersion?.extractorVersion).toBe(EXTRACTOR_VERSION)
 
     const providerRow = await db.query.providers.findFirst({
       where: eq(providers.id, id),
@@ -188,6 +202,7 @@ describe('syncProvider', () => {
       fetchSpec: () =>
         Promise.resolve({
           specs: [],
+          sources: [],
           outputStrategy: 'post-200' as const,
           skipped: 'stub: STUB_KEY not set — skipped',
         }),

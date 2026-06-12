@@ -4,7 +4,7 @@
  * though xAI titles the spec "xAI's REST API".
  */
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, skippedResult } from './types.ts'
+import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -40,8 +40,13 @@ function classify(path: string): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const spec = (await fetchJson(GROK_OPENAPI_URL)) as OpenApiDocument
-  return { specs: [spec], outputStrategy: 'post-200' }
+  const text = await fetchText(GROK_OPENAPI_URL)
+  const spec = JSON.parse(text) as OpenApiDocument
+  return {
+    specs: [spec],
+    sources: [{ url: GROK_OPENAPI_URL, hash: await sha256Text(text) }],
+    outputStrategy: 'post-200',
+  }
 }
 
 interface GrokModelList {

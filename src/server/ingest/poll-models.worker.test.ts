@@ -13,7 +13,11 @@ function stubProvider(id: string, list: Array<ModelInfo>): ProviderConfig {
     id,
     displayName: 'Stub',
     fetchSpec: () =>
-      Promise.resolve({ specs: [], outputStrategy: 'post-200' as const }),
+      Promise.resolve({
+        specs: [],
+        sources: [],
+        outputStrategy: 'post-200' as const,
+      }),
     listModels: () => Promise.resolve({ models: list }),
     classify: () => null,
   }

@@ -107,6 +107,17 @@ export async function getActivitySchemaMap(
   }
 }
 
+export interface SchemaProvenance {
+  /** Upstream document the schema was derived from. */
+  sourceUrl: string | null
+  /** SHA-256 of that document as fetched (see SpecSource.hash). */
+  sourceHash: string | null
+  /** When this version was derived (the row's createdAt). */
+  fetchedAt: number
+  /** Extraction-pipeline version that produced contentHash. */
+  extractorVersion: string | null
+}
+
 export interface EndpointSchemaResult {
   provider: string
   activity: Activity
@@ -114,6 +125,7 @@ export interface EndpointSchemaResult {
   kind: 'input' | 'output'
   contentHash: string
   specRevision: string | null
+  provenance: SchemaProvenance
   createdAt: number
   supersededAt: number | null
   schema: unknown
@@ -156,6 +168,12 @@ export async function getEndpointSchema(
     kind,
     contentHash: row.contentHash,
     specRevision: row.specRevision,
+    provenance: {
+      sourceUrl: row.sourceUrl,
+      sourceHash: row.sourceHash,
+      fetchedAt: row.createdAt,
+      extractorVersion: row.extractorVersion,
+    },
     createdAt: row.createdAt,
     supersededAt: row.supersededAt,
     schema: JSON.parse(row.schema) as unknown,

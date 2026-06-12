@@ -22,6 +22,13 @@
       "when": 1781156109234,
       "tag": "0002_violet_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1781230964647,
+      "tag": "0003_huge_plazm",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchText, skippedResult } from './types.ts'
+import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -52,7 +52,11 @@ function classify(path: string, op: OpenApiOperation): Activity | null {
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const yamlText = await fetchText(OPENAI_OPENAPI_URL)
   const spec = parse(yamlText) as OpenApiDocument
-  return { specs: [spec], outputStrategy: 'post-200' }
+  return {
+    specs: [spec],
+    sources: [{ url: OPENAI_OPENAPI_URL, hash: await sha256Text(yamlText) }],
+    outputStrategy: 'post-200',
+  }
 }
 
 interface OpenAiModelList {
