@@ -30,6 +30,10 @@ export default [
       'src/routeTree.gen.ts',
       // hey-api codegen output (task 7.4) — regenerated, not hand-linted.
       'packages/client/src/generated/**',
+      // example-app generated artifacts: route trees from the Start dev
+      // server, schema modules pulled by @modelschemas/vite.
+      'examples/*/src/routeTree.gen.ts',
+      'examples/*/src/modelschemas/**',
     ],
   },
 ]

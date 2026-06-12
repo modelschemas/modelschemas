@@ -1,0 +1,28 @@
+# Examples
+
+Three small [TanStack Start](https://tanstack.com/start) apps showing the
+modelschemas packages in real use. Each links to the workspace packages by
+`workspace:*` reference — run `bun install` at the repo root first.
+
+| Example                                | Shows                                                                                                                                   | Port |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| [schema-studio](./schema-studio)       | `@modelschemas/vite` — schemas pulled at dev time, committed, verified offline at build; rendered as generative UI (schema-driven form) | 3201 |
+| [image-dimensions](./image-dimensions) | `@modelschemas/client` — live discovery of image models; supported dimensions extracted from each input schema and drawn to scale       | 3202 |
+| [video-composer](./video-composer)     | `@modelschemas/client` — video request builder whose model/aspect-ratio/duration pickers only offer values the schema allows            | 3203 |
+
+```bash
+bun install                      # repo root — links workspace packages
+cd examples/schema-studio        # or image-dimensions / video-composer
+bun run dev
+```
+
+All three fetch from the live service at `https://modelschemas.com` by
+default. Point them at another deployment (e.g. a local dev server with
+freshly synced providers) with:
+
+```bash
+MODELSCHEMAS_URL=http://localhost:3100 bun run dev
+```
+
+API calls happen server-side (TanStack Start server functions, or the
+`@modelschemas/vite` plugin at dev/build time), so no CORS setup is needed.

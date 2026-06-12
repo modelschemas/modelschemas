@@ -93,6 +93,16 @@ every derivation is recorded and reproducible:
   matching their content addresses, with each check's provenance telling
   you which upstream document to audit.
 
+## Examples
+
+Three TanStack Start apps in [`examples/`](./examples) exercise the
+packages end-to-end: **schema-studio** (`@modelschemas/vite` pulls →
+generative UI from JSON Schemas), **image-dimensions** (live image-model
+discovery, supported dimensions drawn to scale), and **video-composer**
+(request builder restricted to each video schema's allowed
+model/aspect-ratio/duration values). `bun install`, then `bun run dev`
+inside any example.
+
 ## Development
 
 ```bash
