@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "baseUrl": "https://modelschemas.com",
+  "selections": [
+    "anthropic/v1/messages#request",
+    "openrouter/chat/completions#request",
+    "openrouter/videos/google/veo-3.1#request",
+    "openrouter/audio/speech#request"
+  ],
+  "types": false,
+  "optionalStyle": "exact",
+  "fetchedAt": 1781253156,
+  "entries": {
+    "anthropic/chat/v1/messages#request": {
+      "path": "anthropic/v1-messages.request.ts",
+      "contentHash": "817523c9788bc9ab300541d0b4af1fbf7656003dccb9da8463147c068a83d6fb",
+      "etag": "W/\"817523c9788bc9ab300541d0b4af1fbf7656003dccb9da8463147c068a83d6fb\""
+    },
+    "openrouter/chat/chat/completions#request": {
+      "path": "openrouter/chat-completions.request.ts",
+      "contentHash": "e876e6f8eabe4f4f4c36bb3ba61de4717a7c4a749902ee6e10a5efa6e13fd7c8",
+      "etag": "W/\"e876e6f8eabe4f4f4c36bb3ba61de4717a7c4a749902ee6e10a5efa6e13fd7c8\""
+    },
+    "openrouter/video/videos/google/veo-3.1#request": {
+      "path": "openrouter/videos-google-veo-3.1.request.ts",
+      "contentHash": "3e1af1a152264809e9ccbee3b01ee69d6b3d46997f8e279fd5a5194335b88226",
+      "etag": "W/\"3e1af1a152264809e9ccbee3b01ee69d6b3d46997f8e279fd5a5194335b88226\""
+    },
+    "openrouter/audio/audio/speech#request": {
+      "path": "openrouter/audio-speech.request.ts",
+      "contentHash": "a4e7044cc9d40435d020bcd9cb4615fd66ccc81a66d86127300f9b11c67b8293",
+      "etag": "W/\"a4e7044cc9d40435d020bcd9cb4615fd66ccc81a66d86127300f9b11c67b8293\""
+    }
+  }
+}

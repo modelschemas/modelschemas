@@ -71,6 +71,24 @@
         "wrangler": "^4.70.0",
       },
     },
+    "examples/schema-studio": {
+      "name": "@modelschemas-examples/schema-studio",
+      "dependencies": {
+        "@tailwindcss/vite": "^4.1.18",
+        "@tanstack/react-router": "latest",
+        "@tanstack/react-start": "latest",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "tailwindcss": "^4.1.18",
+      },
+      "devDependencies": {
+        "@modelschemas/vite": "workspace:*",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "@vitejs/plugin-react": "^6.0.1",
+        "vite": "^8.0.0",
+      },
+    },
     "packages/cli": {
       "name": "modelschemas",
       "version": "0.1.0",
@@ -404,6 +422,8 @@
     "@lukeed/ms": ["@lukeed/ms@2.0.2", "", {}, "sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA=="],
 
     "@mermaid-js/parser": ["@mermaid-js/parser@1.1.1", "", { "dependencies": { "@chevrotain/types": "~11.1.1" } }, "sha512-VuHdsYMK1bT6X2JbcAaWAhugTRvRBRyuZgd+c22swUeI9g/ntaxF7CY7dYarhZovofCbUNO0G7JesfmNtjYOCw=="],
+
+    "@modelschemas-examples/schema-studio": ["@modelschemas-examples/schema-studio@workspace:examples/schema-studio"],
 
     "@modelschemas/client": ["@modelschemas/client@workspace:packages/client"],
 

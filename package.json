@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p examples/schema-studio",
     "prepare": "lefthook install",
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
