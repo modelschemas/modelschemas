@@ -1,0 +1,20 @@
+{
+  "name": "@modelschemas/vite",
+  "version": "0.1.0",
+  "description": "Vite plugin for modelschemas: pull selected JSON Schemas + generated TypeScript at dev time, verify offline at build time.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelschemas/codegen": "workspace:*"
+  },
+  "peerDependencies": {
+    "vite": ">=5"
+  }
+}

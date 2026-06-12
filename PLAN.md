@@ -814,7 +814,7 @@ Design settled with Tom (don't relitigate):
       endpoints. _Accepts:_ unit tests with a mocked fetch cover grammar
       (provider, globs, #kind), 304 short-circuit, manifest round-trip,
       verify failure messaging.
-- [ ] **12.4 `@modelschemas/vite` plugin.** `packages/vite`: on `serve`,
+- [x] **12.4 `@modelschemas/vite` plugin.** `packages/vite`: on `serve`,
       pull missing files then log (never auto-rewrite) upstream updates
       from `checkUpdates`; on `build`, `verify()` only — zero network —
       erroring with "run `modelschemas pull`" remediation. _Accepts:_ unit
