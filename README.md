@@ -62,6 +62,31 @@ surface behind all of this is `?format=types` on any
 assign `undefined` explicitly). Verify locally end-to-end with
 `bun scripts/pull-roundtrip.ts`.
 
+## Provenance & verification
+
+You don't have to trust that a schema served here matches its upstream —
+every derivation is recorded and reproducible:
+
+- **Provenance on every version.** Each stored schema version records the
+  upstream document it was derived from: `sourceUrl`, `sourceHash`
+  (SHA-256 of the document as fetched — for file-served specs,
+  `curl -s <sourceUrl> | shasum -a 256` reproduces it), `fetchedAt`, and
+  the `extractorVersion` that derived it.
+  `GET /v1/schemas/{provider}/{activity}/{endpointId}` returns all of it
+  alongside the schema.
+- **Content-addressed schemas.** `contentHash` is the SHA-256 of the
+  key-sorted schema JSON; it doubles as the ETag and the
+  `?version=<contentHash>` address, so a pinned version is immutable by
+  construction.
+- **Re-derive the hashes yourself.** The extraction pipeline is this repo;
+  `bun scripts/rederive.ts <provider>` runs the same
+  fetchSpec → classify → bundle → hash pipeline the sync engine runs
+  (shared code, `classifyAndBundle`) directly against the upstream spec —
+  no service, no database — and prints every endpoint's `contentHash`.
+  Matching hashes prove the served schema is exactly what the upstream
+  document derives to. If they differ, compare `sourceHash` first: the
+  upstream usually moved after the service's last daily sync.
+
 ## Development
 
 ```bash
@@ -86,7 +111,9 @@ Secrets live in `.env.local` (see CLAUDE.md). `ADMIN_KEY` gates
 `POST /v1/admin/sync/{provider}`. Useful scripts:
 `bun scripts/agent-roundtrip.ts` (agent-auth end-to-end),
 `bun scripts/client-smoke.ts` (typed client), `bun run check:client`
-(client/spec drift), `bun scripts/emit-skill.ts` (regenerate SKILL.md).
+(client/spec drift), `bun scripts/emit-skill.ts` (regenerate SKILL.md),
+`bun scripts/rederive.ts <provider>` (re-derive schema hashes from the
+upstream spec, no service needed).
 
 ## Production setup
 
