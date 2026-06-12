@@ -734,3 +734,95 @@ surface; these tasks build the AX layer.
       timers within the request, no cron dependency). _Accepts:_ worker test
       proves `?wait=2` returns early when a change lands mid-wait and at
       ~wait expiry otherwise; rate limiter counts the call once.
+
+## Phase 12 — Build-time schema pulls: typegen + vite plugin (Tom, 2026-06-12)
+
+Design settled with Tom (don't relitigate):
+
+- **Generated files on disk, committed.** No virtual modules. Dev-time
+  fetch only: the vite dev server (or explicit CLI command) fetches and
+  writes; production builds touch zero network and fail with remediation if
+  files are missing. `.manifest.json` in the out dir is the lockfile
+  (endpoint → contentHash) and records the selection, so `update` needs no
+  separate config.
+- **Tree-shakeable, no barrel index.** One pure `.ts` module per
+  endpoint+kind (schema const + generated types), zero imports, zero side
+  effects, descriptive export names (`anthropicV1MessagesRequestSchema`,
+  `AnthropicV1MessagesRequest`). Users import directly from the file. The
+  schema const is annotated with an exported structural `JsonSchema` alias
+  (exported so `declaration: true` consumers don't hit TS4025) — never
+  `as const` (literal-typing megabyte schemas kills tsc).
+- **Server-side typegen, dependency-free emitter.** No
+  json-schema-to-typescript (prettier dep + bundle weight in workerd);
+  we own a small deterministic emitter. Generated lazily at request time
+  via `?format=types` on the existing schema route, SWR-cached, ETag =
+  contentHash + emitter version. tsconfig variance handled by emitting
+  flag-agnostic declaration-only types plus one knob:
+  `optional=exact|undefined` (default `exact`: `foo?: T` — JSON has no
+  undefined). Always `unknown`, never `any`. Index signatures only when
+  `additionalProperties` is explicitly truthy (jstt's always-on
+  `[k: string]: unknown` poisons DX).
+- **Formatting belongs to the user.** The pull core runs the user's own
+  prettier (dynamic `import('prettier')` + `resolveConfig`) over generated
+  files when present; otherwise the server's canonical formatting stands.
+  Files carry a `// @generated` banner (source URL + contentHash + emitter
+  version, no timestamp — output stays byte-deterministic).
+- **Selection grammar** maps 1:1 onto the API:
+  `provider[/endpointId][#request|response]` with `*` globs expanded via
+  the catalog (`request`/`response` are the user-facing aliases for
+  kind=`input`/`output`; filenames use them too:
+  `anthropic/v1-messages.request.ts`).
+- **Auth:** anonymous fine (a dev boot is ~1 request thanks to the
+  manifest); `MODELSCHEMAS_API_KEY` lifts to the credentialed tier.
+- **Packages:** `@modelschemas/codegen` (pull core: grammar, catalog
+  expansion, ETag fetch, manifest, file writer, prettier pass),
+  `@modelschemas/vite` (thin plugin), CLI gains `pull`/`update` on the
+  same core.
+
+- [x] **12.1 TypeScript emitter.** `src/server/typegen.ts`: JSON Schema →
+      self-contained `.ts` module text (banner, `JsonSchema` alias, schema
+      const, root interface/type, named `$defs` as exported declarations,
+      JSDoc from descriptions). Handles type arrays, OpenAPI `nullable`,
+      enum/const, anyOf/oneOf unions, allOf intersections, tuples,
+      `$ref → #/$defs/*` (circular-safe via named declarations), name
+      collisions via numeric suffix. Deterministic output;
+      `TYPEGEN_VERSION` exported for ETags. _Accepts:_ unit tests cover the
+      subset + a real bundled fixture; generated text compiles clean under
+      `strict` with `exactOptionalPropertyTypes` both on and off (in-memory
+      tsc program in the test).
+- [ ] **12.2 `?format=types` on the schema route.** Extend
+      `/v1/schemas/{p}/{activity}/{endpointId}` with `format=json|types`
+      (+ `optional=exact|undefined`): types responses are
+      `text/typescript; charset=utf-8`, SWR-cached per
+      `contentHash+TYPEGEN_VERSION+optional`, ETag/304 preserved.
+      openapi.json + generated client regenerated (additive). Documented in
+      llms.txt. _Accepts:_ worker test fetches types for a synced fixture
+      endpoint, gets compilable TS, 304 on If-None-Match replay;
+      `check:client` passes.
+- [ ] **12.3 `@modelschemas/codegen` pull core.** `packages/codegen`:
+      selection parsing/expansion, conditional fetch (If-None-Match from
+      manifest), atomic file writes, manifest read/write, optional local
+      prettier pass, `pull()`/`checkUpdates()`/`verify()`. `checkUpdates`
+      is one `/v1/changes?since=` call per provider filtered to selected
+      endpoints. _Accepts:_ unit tests with a mocked fetch cover grammar
+      (provider, globs, #kind), 304 short-circuit, manifest round-trip,
+      verify failure messaging.
+- [ ] **12.4 `@modelschemas/vite` plugin.** `packages/vite`: on `serve`,
+      pull missing files then log (never auto-rewrite) upstream updates
+      from `checkUpdates`; on `build`, `verify()` only — zero network —
+      erroring with "run `modelschemas pull`" remediation. _Accepts:_ unit
+      tests drive the plugin hooks both modes; a fixture project under the
+      test proves generated modules are import-clean (no side effects, no
+      barrel).
+- [ ] **12.5 CLI `pull`/`update`.** `modelschemas pull` taking selections
+      plus `--out` and `--no-types` flags, and `modelschemas update --out`
+      (selection read from the manifest) on the codegen core; help text
+      updated. _Accepts:_ unit tests for arg parsing; roundtrip exercised
+      in 12.6.
+- [ ] **12.6 E2E + docs + ship.** `bun scripts/pull-roundtrip.ts`: against
+      the local dev server, pull a real selection, typecheck the generated
+      files, mutate one upstream schema (admin sync fixture or direct D1
+      write), prove `update` rewrites exactly that file. README + docs page + llms.txt get the vite-plugin/CLI quickstart. Deploy; verify
+      `?format=types` on production. _Accepts:_ roundtrip script green
+      locally; production curl returns compilable TS with correct
+      content-type and ETag.
