@@ -13,6 +13,12 @@ export type {
   UpstreamUpdate,
   VerifyResult,
 } from './pull.ts'
+export { schemaContentHash, verifyIntegrity } from './integrity.ts'
+export type {
+  IntegrityCheck,
+  IntegrityResult,
+  SchemaProvenance,
+} from './integrity.ts'
 export {
   MANIFEST_FILENAME,
   fileRelPath,

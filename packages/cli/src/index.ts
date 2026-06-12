@@ -16,7 +16,12 @@ import {
   validatePayload,
 } from '@modelschemas/client'
 
-import { pull, readManifest } from '@modelschemas/codegen'
+import {
+  pull,
+  readManifest,
+  verify,
+  verifyIntegrity,
+} from '@modelschemas/codegen'
 import type { OptionalStyle, PullConfig } from '@modelschemas/codegen'
 
 import { mintAgentJwt, registerAgent, waitForActivation } from './agent-auth.ts'
@@ -45,6 +50,10 @@ Commands:
                                                  (e.g. anthropic/v1/messages#request, gemini/*)
   update [--out dir]                             refresh pulled modules (selection
                                                  comes from the manifest)
+  verify [--out dir]                             verify pulled modules: files match
+                                                 the manifest AND the service still
+                                                 serves bytes matching each pinned
+                                                 content hash (reports provenance)
 
 Options:
   --base-url <url>   service origin (default: $MODELSCHEMAS_URL or http://localhost:3100)
@@ -357,6 +366,32 @@ async function cmdUpdate(ctx: Ctx): Promise<void> {
   })
 }
 
+async function cmdVerify(ctx: Ctx): Promise<void> {
+  const flags = parsePullFlags(ctx.values)
+  const manifest = await readManifest(flags.outDir)
+  if (manifest === null) {
+    fail(
+      `no ${flags.outDir}/.manifest.json — run 'modelschemas pull <selection...>' first`,
+    )
+  }
+  const config = {
+    // Explicit --base-url wins; otherwise verify against where we pulled.
+    baseUrl:
+      typeof ctx.values['base-url'] === 'string'
+        ? ctx.baseUrl
+        : manifest.baseUrl,
+    apiKey: pullApiKey(),
+    outDir: flags.outDir,
+    selections: manifest.selections,
+    log: (message: string) => console.error(message),
+  }
+  const files = await verify(config)
+  const integrity = await verifyIntegrity(config)
+  const ok = files.ok && integrity.ok
+  output(ctx, { ok, files, integrity })
+  if (!ok) process.exit(2)
+}
+
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
     args: process.argv.slice(2),
@@ -419,6 +454,8 @@ async function main(): Promise<void> {
       return cmdPull(ctx)
     case 'update':
       return cmdUpdate(ctx)
+    case 'verify':
+      return cmdVerify(ctx)
     default:
       fail(`unknown command '${command}'.\n${HELP}`)
   }

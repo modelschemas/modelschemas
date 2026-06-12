@@ -86,6 +86,12 @@ every derivation is recorded and reproducible:
   Matching hashes prove the served schema is exactly what the upstream
   document derives to. If they differ, compare `sourceHash` first: the
   upstream usually moved after the service's last daily sync.
+- **Verify your pulls.** `modelschemas verify` checks committed files
+  against the `.manifest.json` lockfile, then re-fetches every entry at
+  its pinned `?version=<contentHash>` address, recomputes the hash
+  locally, and exits non-zero on any mismatch — so pulled schemas keep
+  matching their content addresses, with each check's provenance telling
+  you which upstream document to audit.
 
 ## Development
 
