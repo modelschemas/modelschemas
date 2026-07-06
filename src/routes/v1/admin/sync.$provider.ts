@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers'
 
 import { getDb } from '#/db/index.ts'
 import { isAdminRequest, jsonError } from '#/server/admin.ts'
+import { errorMessage } from '#/server/errors.ts'
 import { syncProvider } from '#/server/ingest/sync.ts'
 import { getProvider, providerRegistry } from '#/server/providers/index.ts'
 
@@ -33,11 +34,7 @@ export const Route = createFileRoute('/v1/admin/sync/$provider')({
           )
           return Response.json({ outcome })
         } catch (error) {
-          return jsonError(
-            502,
-            'sync_failed',
-            error instanceof Error ? error.message : String(error),
-          )
+          return jsonError(502, 'sync_failed', errorMessage(error))
         }
       },
     },

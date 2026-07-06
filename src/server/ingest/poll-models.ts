@@ -6,6 +6,7 @@
 import { eq, inArray } from 'drizzle-orm'
 
 import { changes, models, providers } from '#/db/schema.ts'
+import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
@@ -202,7 +203,7 @@ export async function pollAllProviders(
     try {
       outcomes.push(await pollProviderModels(deps, provider))
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorMessage(error)
       // Own log line per failure: the aggregate outcomes blob can exceed
       // what Workers Logs stores, which silently loses these errors.
       console.error(

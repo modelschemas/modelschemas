@@ -9,6 +9,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import type { Db } from '#/db/index.ts'
 import { changes, endpoints, providers, schemaVersions } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
+import { errorMessage } from '#/server/errors.ts'
 import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
 import type {
   ProviderConfig,
@@ -282,7 +283,7 @@ export async function syncAllProviders(
     try {
       outcomes.push(await syncProvider(deps, provider))
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = errorMessage(error)
       // Own log line per failure: the aggregate outcomes blob can exceed
       // what Workers Logs stores, which silently loses these errors.
       console.error(
