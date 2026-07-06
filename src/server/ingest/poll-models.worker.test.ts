@@ -134,6 +134,31 @@ describe('pollProviderModels', () => {
     expect(providerRow?.lastPolledAt).not.toBeNull()
   })
 
+  it('bulk-bumps lastSeenAt across chunk boundaries for unchanged models', async () => {
+    const id = 'poll-bulk'
+    const deps = await freshDeps(id)
+    // 200 models spans three 90-id UPDATE chunks.
+    const herd: Array<ModelInfo> = Array.from({ length: 200 }, (_, i) => ({
+      rawId: `model-${String(i)}`,
+      displayName: `Model ${String(i)}`,
+      activity: 'chat',
+    }))
+
+    const first = await pollProviderModels(deps, stubProvider(id, herd))
+    expect(first).toMatchObject({ added: 200, removed: 0, updated: 0 })
+
+    const second = await pollProviderModels(deps, stubProvider(id, herd))
+    expect(second).toMatchObject({ added: 0, removed: 0, updated: 0 })
+    const rows = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, id))
+    expect(rows).toHaveLength(200)
+    for (const row of rows) {
+      expect(row.lastSeenAt).toBeGreaterThan(row.firstSeenAt)
+    }
+  })
+
   it('reports skipped providers without touching the database', async () => {
     const id = 'poll-skipped'
     const deps = await freshDeps(id)

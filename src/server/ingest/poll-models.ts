@@ -3,7 +3,7 @@
  * list currently served models, diff against D1, write
  * model.added/removed/updated changes, bump lastSeenAt.
  */
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 import { changes, models, providers } from '#/db/schema.ts'
 import { stableStringify } from '#/server/kv.ts'
@@ -71,6 +71,10 @@ export async function pollProviderModels(
     .where(eq(models.providerId, provider.id))
   const existingById = new Map(existingRows.map((m) => [m.id, m]))
   const seenIds = new Set<string>()
+  // Unchanged rows only need their lastSeenAt bumped; collect them and write
+  // in chunked bulk UPDATEs. One-per-row writes here previously cost ~2,000
+  // sequential D1 round trips per poll (~10 min wall), starving the crons.
+  const cleanIds: Array<string> = []
 
   for (const info of listed.models) {
     const id = modelDbId(provider.id, info.rawId)
@@ -119,42 +123,48 @@ export async function pollProviderModels(
     const after = comparable(info)
     const dirty = stableStringify(before) !== stableStringify(after)
 
+    if (!dirty) {
+      cleanIds.push(id)
+      continue
+    }
+
     await db
       .update(models)
       .set({
         lastSeenAt: now,
-        ...(dirty
-          ? {
-              displayName: info.displayName ?? null,
-              activity: info.activity ?? null,
-              contextWindow: info.contextWindow ?? null,
-              maxOutput: info.maxOutput ?? null,
-              modalities: info.modalities ?? null,
-              pricing: info.pricing ?? null,
-              capabilities: info.capabilities ?? null,
-              // A model that reappears (or upstream re-activates) clears
-              // its deprecation; an upstream-deprecated one gains it.
-              deprecatedAt:
-                (info.deprecated ?? false)
-                  ? (existing.deprecatedAt ?? now)
-                  : null,
-            }
-          : {}),
+        displayName: info.displayName ?? null,
+        activity: info.activity ?? null,
+        contextWindow: info.contextWindow ?? null,
+        maxOutput: info.maxOutput ?? null,
+        modalities: info.modalities ?? null,
+        pricing: info.pricing ?? null,
+        capabilities: info.capabilities ?? null,
+        // A model that reappears (or upstream re-activates) clears
+        // its deprecation; an upstream-deprecated one gains it.
+        deprecatedAt:
+          (info.deprecated ?? false) ? (existing.deprecatedAt ?? now) : null,
       })
       .where(eq(models.id, id))
 
-    if (dirty) {
-      await db.insert(changes).values({
-        id: crypto.randomUUID(),
-        type: 'model.updated',
-        providerId: provider.id,
-        subjectId: id,
-        summary: `Model ${info.rawId} updated`,
-        payload: { before, after },
-        createdAt: now,
-      })
-      outcome.updated++
-    }
+    await db.insert(changes).values({
+      id: crypto.randomUUID(),
+      type: 'model.updated',
+      providerId: provider.id,
+      subjectId: id,
+      summary: `Model ${info.rawId} updated`,
+      payload: { before, after },
+      createdAt: now,
+    })
+    outcome.updated++
+  }
+
+  // Bump lastSeenAt for the unchanged majority in chunks that stay under
+  // D1's 100-bound-parameter-per-statement limit.
+  for (let i = 0; i < cleanIds.length; i += 90) {
+    await db
+      .update(models)
+      .set({ lastSeenAt: now })
+      .where(inArray(models.id, cleanIds.slice(i, i + 90)))
   }
 
   // Models in D1 the provider no longer lists → mark deprecated once.
@@ -192,13 +202,23 @@ export async function pollAllProviders(
     try {
       outcomes.push(await pollProviderModels(deps, provider))
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // Own log line per failure: the aggregate outcomes blob can exceed
+      // what Workers Logs stores, which silently loses these errors.
+      console.error(
+        JSON.stringify({
+          job: 'models-poll',
+          providerId: provider.id,
+          error: message,
+        }),
+      )
       outcomes.push({
         providerId: provider.id,
         modelsSeen: 0,
         added: 0,
         removed: 0,
         updated: 0,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       })
     }
   }

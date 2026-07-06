@@ -282,12 +282,22 @@ export async function syncAllProviders(
     try {
       outcomes.push(await syncProvider(deps, provider))
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      // Own log line per failure: the aggregate outcomes blob can exceed
+      // what Workers Logs stores, which silently loses these errors.
+      console.error(
+        JSON.stringify({
+          job: 'spec-sync',
+          providerId: provider.id,
+          error: message,
+        }),
+      )
       outcomes.push({
         providerId: provider.id,
         endpointsSeen: 0,
         versionsAdded: 0,
         changesWritten: 0,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         warnings: [],
       })
       await deps.db

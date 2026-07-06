@@ -101,7 +101,13 @@ export default {
       case SPEC_SYNC_CRON:
         ctx.waitUntil(
           syncAllProviders(syncDeps(env)).then((outcomes) => {
-            console.log(JSON.stringify({ job: 'spec-sync', outcomes }))
+            // Summarize warnings to a count: hundreds of dangling-ref lines
+            // push the blob past what Workers Logs stores, losing the log.
+            const summary = outcomes.map(({ warnings, ...rest }) => ({
+              ...rest,
+              warningCount: warnings.length,
+            }))
+            console.log(JSON.stringify({ job: 'spec-sync', outcomes: summary }))
           }),
         )
         break
