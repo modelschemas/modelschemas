@@ -1,4 +1,9 @@
-/** Shared chrome for the data-broadsheet theme. */
+/**
+ * Shared chrome + building blocks for the "the resource is the page" theme:
+ * mono request-line headers, a readable/json content-negotiation toggle on
+ * every resource page, and editor-token colors doing the semantic work.
+ */
+import { useState } from 'react'
 
 export const GITHUB_URL = 'https://github.com/tombeckenham/modelschemas'
 
@@ -17,26 +22,18 @@ export function GithubIcon({ className = '' }: { className?: string }) {
 
 export function SiteNav({ active }: { active?: string }) {
   const links: Array<[label: string, href: string]> = [
+    ['models', '/models'],
+    ['changes', '/changes'],
     ['docs', '/docs'],
-    ['openapi', '/openapi.json'],
-    ['llms.txt', '/llms.txt'],
-    ['status', '/v1/status'],
-    ['sign in', '/login'],
-    ['account', '/account'],
+    ['openapi.json', '/openapi.json'],
   ]
   return (
-    <nav className="rule-double sticky top-0 z-40 bg-paper/92 backdrop-blur-sm">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-6 gap-y-1 px-5 py-3">
-        <a
-          href="/"
-          className="font-display text-xl font-semibold tracking-tight text-ink"
-        >
+    <nav className="hairline border-b">
+      <div className="mx-auto flex max-w-[1080px] flex-wrap items-baseline gap-x-6 gap-y-1 px-6 py-3.5">
+        <a href="/" className="font-mono text-[15px] font-semibold text-ink">
           modelschemas
-          <span className="text-press">.</span>
+          <span className="font-normal text-ink-faint">.com</span>
         </a>
-        <span className="overline-label hidden sm:inline">
-          live model registry
-        </span>
         <div className="ml-auto flex flex-wrap items-baseline gap-x-5 gap-y-1">
           {links.map(([label, href]) => (
             <a
@@ -47,6 +44,12 @@ export function SiteNav({ active }: { active?: string }) {
               {label}
             </a>
           ))}
+          <a
+            href="/account"
+            className={`nav-link !text-tok-blue ${active === 'account' ? 'is-active' : ''}`}
+          >
+            get an API key
+          </a>
           <a
             href={GITHUB_URL}
             aria-label="GitHub repository"
@@ -62,35 +65,31 @@ export function SiteNav({ active }: { active?: string }) {
 
 export function SiteFooter() {
   return (
-    <footer className="hairline border-t-2 border-t-ink">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-6 gap-y-2 px-5 py-6 text-xs text-ink-soft">
-        <span className="overline-label">colophon</span>
+    <footer className="hairline mt-2 border-t">
+      <div className="mx-auto flex max-w-[1080px] flex-wrap gap-x-5 gap-y-2 px-6 py-4 font-mono text-[11.5px] text-ink-faint">
         <span>
           agents start at{' '}
-          <a className="press-link font-mono" href="/llms.txt">
+          <a className="press-link" href="/llms.txt">
             /llms.txt
           </a>
         </span>
-        <a
-          className="press-link font-mono"
-          href="/.well-known/agent-configuration"
-        >
+        <a className="press-link" href="/.well-known/agent-configuration">
           /.well-known/agent-configuration
         </a>
-        <a className="press-link font-mono" href="/skill">
+        <a className="press-link" href="/skill">
           /skill
         </a>
-        <a className="press-link font-mono" href="/mcp">
+        <a className="press-link" href="/mcp">
           /mcp
         </a>
         <a
-          className="inline-flex items-center gap-1.5 self-center transition-colors hover:text-ink"
+          className="inline-flex items-center gap-1.5 self-center text-ink-soft transition-colors hover:text-ink"
           href={GITHUB_URL}
         >
           <GithubIcon className="h-3.5 w-3.5" />
-          <span className="font-mono">github</span>
+          github
         </a>
-        <span className="ml-auto font-mono">
+        <span className="ml-auto">
           openapi-described · etag-cached · cron-refreshed
         </span>
       </div>
@@ -98,43 +97,242 @@ export function SiteFooter() {
   )
 }
 
-/** Boxed figure with a small-caps caption rule — the broadsheet's exhibit. */
-export function Figure({
-  title,
-  children,
+/** Copy-to-clipboard with a brief confirmation state. */
+export function CopyButton({
+  text,
+  label = 'copy',
   className = '',
 }: {
-  title: string
-  children: React.ReactNode
+  text: string
+  label?: string
   className?: string
 }) {
+  const [copied, setCopied] = useState(false)
   return (
-    <figure className={`figure m-0 ${className}`}>
-      <figcaption className="figure-caption flex items-center gap-2 px-4 py-2">
-        <span aria-hidden className="text-press">
-          ¶
-        </span>
-        {title}
-      </figcaption>
-      <div className="overflow-x-auto px-4 py-3 font-mono text-[13px] leading-relaxed">
-        {children}
+    <button
+      type="button"
+      className={`copybtn ${copied ? 'copied' : ''} ${className}`}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        })
+      }}
+    >
+      {copied ? 'copied' : label}
+    </button>
+  )
+}
+
+/** Dark editor-style code panel with a caption bar and optional copy. */
+export function CodePanel({
+  title,
+  copyText,
+  children,
+}: {
+  title: string
+  copyText?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="codepanel">
+      <div className="codehead">
+        <span>{title}</span>
+        {copyText !== undefined ? <CopyButton text={copyText} /> : null}
       </div>
-    </figure>
+      <pre>{children}</pre>
+    </div>
+  )
+}
+
+const JSON_TOKEN =
+  /("(?:[^"\\]|\\.)*")(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g
+
+/** Highlight cap: beyond this, serve the JSON unhighlighted (FAL schemas can be huge). */
+const HIGHLIGHT_MAX_CHARS = 200_000
+
+/** Tokenize a JSON string into syntax-colored spans (no innerHTML). */
+export function highlightJson(text: string): React.ReactNode {
+  if (text.length > HIGHLIGHT_MAX_CHARS) return text
+  const nodes: Array<React.ReactNode> = []
+  let last = 0
+  let key = 0
+  for (const match of text.matchAll(JSON_TOKEN)) {
+    const index = match.index
+    const [full, str, colon] = match
+    if (index > last) nodes.push(text.slice(last, index))
+    if (str !== undefined) {
+      if (colon !== undefined) {
+        nodes.push(
+          <span key={key++} className="cj-key">
+            {str}
+          </span>,
+          colon,
+        )
+      } else {
+        nodes.push(
+          <span key={key++} className="cj-str">
+            {str}
+          </span>,
+        )
+      }
+    } else if (full === 'true' || full === 'false' || full === 'null') {
+      nodes.push(
+        <span key={key++} className="cj-kw">
+          {full}
+        </span>,
+      )
+    } else {
+      nodes.push(
+        <span key={key++} className="cj-num">
+          {full}
+        </span>,
+      )
+    }
+    last = index + full.length
+  }
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
+
+/** The JSON representation pane: exact response bytes, highlighted. */
+export function JsonPane({
+  title,
+  json,
+  note,
+}: {
+  title: string
+  json: string
+  note?: React.ReactNode
+}) {
+  return (
+    <div className="space-y-2.5">
+      <CodePanel title={title} copyText={json}>
+        <code>{highlightJson(json)}</code>
+      </CodePanel>
+      {note !== undefined ? (
+        <p className="font-mono text-xs text-ink-faint">{note}</p>
+      ) : null}
+    </div>
+  )
+}
+
+export type ResourceView = 'readable' | 'json'
+
+/** The signature control: content negotiation as a segmented toggle. */
+export function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: ResourceView
+  onChange: (view: ResourceView) => void
+}) {
+  return (
+    <div className="ml-auto flex items-center gap-2.5">
+      <span className="hidden font-mono text-[10.5px] text-ink-faint sm:inline">
+        Accept:
+      </span>
+      <div className="seg">
+        {(['readable', 'json'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={view === v}
+            onClick={() => onChange(v)}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Request-line page header: the URL is the page title. */
+export function ReqLine({
+  method = 'GET',
+  path,
+  copyUrl,
+  right,
+}: {
+  method?: string
+  path: React.ReactNode
+  copyUrl?: string
+  right?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 pt-7 pb-3.5">
+      <span className="method-chip">{method}</span>
+      <h1 className="m-0 font-mono text-[19px] font-medium break-all text-ink max-sm:text-base">
+        {path}
+      </h1>
+      {copyUrl !== undefined ? (
+        <CopyButton text={copyUrl} label="copy url" />
+      ) : null}
+      {right}
+    </div>
+  )
+}
+
+/** Freshness + provenance strip under the request line. */
+export function MetaStrip({
+  items,
+}: {
+  items: Array<[key: string, value: React.ReactNode]>
+}) {
+  return (
+    <div className="hairline mb-7 flex flex-wrap gap-x-5 gap-y-2 border-b pt-2.5 pb-6 font-mono text-[11.5px] text-ink-soft">
+      {items.map(([key, value]) => (
+        <span key={key} className="inline-flex items-baseline gap-1.5">
+          <span className="text-ink-faint">{key}</span> {value}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+export function SectionHead({
+  title,
+  aside,
+}: {
+  title: string
+  aside?: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pt-10 pb-3">
+      <h2 className="m-0 font-mono text-xs font-semibold tracking-[0.14em] text-ink uppercase">
+        {title}
+      </h2>
+      {aside !== undefined ? (
+        <span className="ml-auto font-mono text-[11.5px] text-ink-faint">
+          {aside}
+        </span>
+      ) : null}
+    </div>
   )
 }
 
 export const CHANGE_STYLES: Record<string, string> = {
-  'model.added': 'text-live',
-  'model.removed': 'text-press',
-  'model.updated': 'text-update',
-  'schema.added': 'text-live',
-  'schema.updated': 'text-update',
-  'endpoint.added': 'text-live',
-  'endpoint.removed': 'text-press',
+  'model.added': 'text-tok-green',
+  'model.removed': 'text-tok-red',
+  'model.updated': 'text-tok-amber',
+  'schema.added': 'text-tok-green',
+  'schema.updated': 'text-tok-amber',
+  'endpoint.added': 'text-tok-green',
+  'endpoint.removed': 'text-tok-red',
 }
 
 export const STATUS_DOT: Record<string, string> = {
-  active: 'bg-live',
-  degraded: 'bg-update',
+  active: 'bg-tok-green',
+  degraded: 'bg-tok-amber',
   disabled: 'bg-ink-faint',
+}
+
+export function StatusDot({ status }: { status: string }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className={`pulse-dot ${STATUS_DOT[status] ?? 'bg-ink-faint'}`} />
+      <span className="text-xs">{status}</span>
+    </span>
+  )
 }

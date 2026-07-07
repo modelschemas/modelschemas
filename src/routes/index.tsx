@@ -3,15 +3,19 @@ import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
 import { registerWebMcp } from '#/lib/webmcp.ts'
+import { timeAgo } from '#/lib/time.ts'
 
 import {
   CHANGE_STYLES,
-  Figure,
-  STATUS_DOT,
+  CodePanel,
+  SectionHead,
   SiteFooter,
   SiteNav,
+  StatusDot,
 } from '#/components/site.tsx'
 import type { ServiceStatus } from '#/server/status.ts'
+
+export { timeAgo } from '#/lib/time.ts'
 
 interface DashboardChange {
   id: string
@@ -36,7 +40,7 @@ const getDashboardData = createServerFn({ method: 'GET' }).handler(
     const db = getDb(env)
     const [status, changesOutcome] = await Promise.all([
       getServiceStatus(db),
-      listChanges(db, { limit: 12 }),
+      listChanges(db, { limit: 8 }),
     ])
     return {
       status,
@@ -58,32 +62,7 @@ export const Route = createFileRoute('/')({
   component: Landing,
 })
 
-export function timeAgo(epochSeconds: number | null): string {
-  if (!epochSeconds) return 'never'
-  const delta = Math.max(0, Math.floor(Date.now() / 1000) - epochSeconds)
-  if (delta < 90) return `${String(delta)}s ago`
-  if (delta < 5400) return `${String(Math.round(delta / 60))}m ago`
-  if (delta < 129_600) return `${String(Math.round(delta / 3600))}h ago`
-  return `${String(Math.round(delta / 86_400))}d ago`
-}
-
-function SectionRule({ title, aside }: { title: string; aside?: string }) {
-  return (
-    <div className="rule-heavy flex items-baseline justify-between gap-4 pb-2">
-      <h2 className="overline-label !text-ink">
-        <span aria-hidden className="mr-2 text-press">
-          §
-        </span>
-        {title}
-      </h2>
-      {aside ? (
-        <span className="hidden font-mono text-xs text-ink-faint sm:block">
-          {aside}
-        </span>
-      ) : null}
-    </div>
-  )
-}
+const fmt = new Intl.NumberFormat('en-US')
 
 function Landing() {
   const { status, changes } = Route.useLoaderData()
@@ -100,234 +79,224 @@ function Landing() {
     }),
     { models: 0, endpoints: 0, schemas: 0 },
   )
+  const lastPolledAt = Math.max(
+    0,
+    ...status.providers.map((p) => p.lastPolledAt ?? 0),
+  )
+  const lastSyncedAt = Math.max(
+    0,
+    ...status.providers.map((p) => p.lastSyncedAt ?? 0),
+  )
 
   return (
     <div className="min-h-screen text-ink">
       <SiteNav />
 
-      {/* front page */}
-      <header className="mx-auto max-w-6xl px-5 pt-14 pb-10 lg:pt-20">
-        <p className="fade-up flex items-center gap-2 font-mono text-xs text-ink-soft">
-          <span className="pulse-dot bg-live" />
-          live · model lists every 15 minutes · full specs daily
-        </p>
-        <h1 className="fade-up fade-up-1 mt-5 max-w-4xl font-display text-[2.9rem] leading-[1.02] font-medium tracking-tight sm:text-6xl lg:text-7xl">
-          Live AI model schemas<span className="text-press">.</span>
-        </h1>
-        <div className="fade-up fade-up-2 mt-7 grid gap-8 lg:grid-cols-[1.2fr_1fr]">
-          <p className="max-w-xl text-[15px] leading-relaxed text-ink-soft">
+      <main className="mx-auto max-w-[1080px] px-6 pb-16">
+        <header className="pt-13">
+          <h1 className="m-0 mb-3 max-w-[30em] font-mono text-[clamp(22px,3.4vw,30px)] leading-[1.25] font-semibold tracking-[-0.01em] text-balance">
+            Live request &amp; response schemas for every AI model API
+            <span className="text-tok-blue">▌</span>
+          </h1>
+          <p className="m-0 mb-6 max-w-[40em] text-[14.5px] text-ink-soft">
             Which models exist right now, and what their payloads look like.
-            Request/response JSON Schemas for {status.providers.length}{' '}
-            providers, served as plain JSON.
+            JSON Schemas for {status.providers.length} providers, refreshed
+            automatically, served as plain JSON over HTTP — no key needed for
+            reads.
           </p>
-          <div className="flex flex-wrap items-start gap-3 font-mono text-sm">
+
+          <CodePanel
+            title="try it"
+            copyText="curl https://modelschemas.com/v1/models?q=claude"
+          >
+            <code>
+              <span className="prompt">$</span> curl{' '}
+              <span className="cj-str">
+                https://modelschemas.com/v1/models?q=claude
+              </span>
+              {'\n'}
+              <span className="cj-dim">{'{'} </span>
+              <span className="cj-key">"id"</span>
+              <span className="cj-dim">: </span>
+              <span className="cj-str">"anthropic-claude-sonnet-5"</span>
+              <span className="cj-dim">, </span>
+              <span className="cj-key">"rawId"</span>
+              <span className="cj-dim">: </span>
+              <span className="cj-str">"claude-sonnet-5"</span>
+              <span className="cj-dim">, </span>
+              <span className="cj-key">"lastSeenAt"</span>
+              <span className="cj-dim">: </span>
+              <span className="cj-num">{lastPolledAt || 1783408549}</span>
+              <span className="cj-dim">, … {'}'}</span>
+            </code>
+          </CodePanel>
+
+          <div className="mt-5 flex flex-wrap gap-2.5 font-mono text-[12.5px]">
             <a
-              href="/v1/models"
-              className="border border-ink bg-ink px-4 py-2 text-paper transition-colors hover:bg-press hover:border-press"
+              href="/models"
+              className="rounded-[4px] border border-ink bg-ink px-3.5 py-2 text-paper transition-opacity hover:opacity-85"
             >
               GET /v1/models
             </a>
             <a
               href="/docs"
-              className="hairline border px-4 py-2 transition-colors hover:border-ink"
+              className="rounded-[4px] border border-rule-strong px-3.5 py-2 transition-colors hover:border-ink"
             >
-              read the docs
+              docs
             </a>
-            <a href="/account" className="press-link px-1 py-2 text-ink-soft">
-              get an API key →
+            <a
+              href="/mcp"
+              className="rounded-[4px] border border-rule-strong px-3.5 py-2 transition-colors hover:border-ink"
+            >
+              /mcp
+            </a>
+            <a
+              href="/llms.txt"
+              className="rounded-[4px] border border-rule-strong px-3.5 py-2 transition-colors hover:border-ink"
+            >
+              /llms.txt
             </a>
           </div>
-        </div>
-      </header>
 
-      {/* by the numbers */}
-      <section className="hairline border-y bg-paper-raised">
-        <div className="mx-auto grid max-w-6xl grid-cols-2 sm:grid-cols-4">
-          {(
-            [
-              ['models tracked', totals.models],
-              ['endpoints', totals.endpoints],
-              ['schema versions', totals.schemas],
-              ['providers', status.providers.length],
-            ] as const
-          ).map(([label, n], i) => (
-            <div
-              key={label}
-              className={`px-5 py-6 ${i > 0 ? 'hairline sm:border-l' : ''}`}
-            >
-              <div className="font-display text-4xl font-medium tabular-nums">
-                {n}
-              </div>
-              <div className="overline-label mt-1">{label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+          <div className="hairline mt-11 flex flex-wrap gap-x-5 gap-y-2 border-y py-3 font-mono text-xs text-ink-soft">
+            <span className="inline-flex items-center gap-2">
+              <span className="pulse-dot bg-tok-green" />
+              <span className="text-tok-green">live</span>
+            </span>
+            <span>
+              <b className="font-semibold text-ink tabular-nums">
+                {status.providers.length}
+              </b>{' '}
+              providers
+            </span>
+            <span>
+              <b className="font-semibold text-ink tabular-nums">
+                {fmt.format(totals.models)}
+              </b>{' '}
+              models
+            </span>
+            <span>
+              <b className="font-semibold text-ink tabular-nums">
+                {fmt.format(totals.endpoints)}
+              </b>{' '}
+              endpoints
+            </span>
+            <span>
+              <b className="font-semibold text-ink tabular-nums">
+                {fmt.format(totals.schemas)}
+              </b>{' '}
+              schema versions
+            </span>
+            <span>
+              polled{' '}
+              <b className="font-semibold text-ink">{timeAgo(lastPolledAt)}</b>{' '}
+              · specs synced{' '}
+              <b className="font-semibold text-ink">{timeAgo(lastSyncedAt)}</b>
+            </span>
+          </div>
+        </header>
 
-      {/* for agents */}
-      <section className="mx-auto max-w-6xl space-y-6 px-5 py-14">
-        <SectionRule
-          title="For agents"
-          aside="no signup for reads · 60 req/h anonymous · 5k with a key"
-        />
-
-        <div className="grid gap-5 md:grid-cols-2">
-          <Figure title="catalog + schema, raw http">
-            <pre className="whitespace-pre-wrap">
-              <code>
-                <span className="text-press">$</span>{' '}
-                {
-                  'curl https://modelschemas.com/v1/models?activity=chat&q=claude'
-                }
-                {'\n'}
-                <span className="text-press">$</span>{' '}
-                {
-                  'curl https://modelschemas.com/v1/schemas/anthropic/chat/v1%2Fmessages'
-                }
-              </code>
-            </pre>
-          </Figure>
-
-          <Figure title="validate before you spend tokens">
-            <pre className="whitespace-pre-wrap">
-              <code>
-                <span className="text-press">$</span>{' '}
-                {'curl -X POST https://modelschemas.com/v1/validate \\'}
-                {'\n    '}
-                {`-d '{"provider":"anthropic","endpointId":"v1/messages","payload":{…}}'`}
-                {'\n'}
-                <span className="text-ink-faint">
-                  {`→ {"valid":false,"errors":[{"path":"#","keyword":"required",…}]}`}
-                </span>
-              </code>
-            </pre>
-          </Figure>
-
-          <Figure title="mcp · streamable http">
-            <pre className="whitespace-pre-wrap">
-              <code>
-                endpoint:{' '}
-                <span className="text-press-deep">
-                  https://modelschemas.com/mcp
-                </span>
-                {'\n'}
-                tools: list_models · get_model · get_schema · validate_payload ·
-                recent_changes
-              </code>
-            </pre>
-          </Figure>
-
-          <Figure title="discovery + skill install">
-            <pre className="whitespace-pre-wrap">
-              <code>
-                <a className="press-link" href="/llms.txt">
-                  /llms.txt
-                </a>{' '}
-                — agent guide{'\n'}
-                <a
-                  className="press-link"
-                  href="/.well-known/agent-configuration"
-                >
-                  /.well-known/agent-configuration
-                </a>{' '}
-                — agent-auth{'\n'}
-                <a className="press-link" href="/skill">
-                  /skill
-                </a>{' '}
-                — drop into .claude/skills/
-              </code>
-            </pre>
-          </Figure>
-        </div>
-      </section>
-
-      {/* providers */}
-      <section className="mx-auto max-w-6xl space-y-5 px-5 pb-14">
-        <SectionRule title="Providers" />
-        <div className="figure">
-          <table className="w-full font-mono text-[13px]">
-            <thead>
-              <tr className="figure-caption text-left">
-                <th className="px-4 py-2 font-semibold">provider</th>
-                <th className="px-4 py-2 font-semibold">status</th>
-                <th className="px-4 py-2 text-right font-semibold">models</th>
-                <th className="px-4 py-2 text-right font-semibold">schemas</th>
-                <th className="hidden px-4 py-2 text-right font-semibold sm:table-cell">
-                  polled
-                </th>
-                <th className="hidden px-4 py-2 text-right font-semibold sm:table-cell">
-                  synced
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.providers.map((p) => (
-                <tr key={p.id} className="hairline border-b last:border-0">
-                  <td className="px-4 py-2.5 font-medium">
-                    <a
-                      className="press-link"
-                      href={`/v1/providers/${p.id}/models`}
-                    >
-                      {p.displayName}
-                    </a>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <span className="inline-flex items-center gap-2">
-                      <span
-                        className={`pulse-dot ${STATUS_DOT[p.status] ?? 'bg-ink-faint'}`}
-                      />
-                      <span className="text-xs">{p.status}</span>
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
-                    {p.counts.models}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
-                    {p.counts.schemas}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-right text-ink-faint sm:table-cell">
-                    {timeAgo(p.lastPolledAt)}
-                  </td>
-                  <td className="hidden px-4 py-2.5 text-right text-ink-faint sm:table-cell">
-                    {timeAgo(p.lastSyncedAt)}
-                  </td>
+        <section>
+          <SectionHead
+            title="Providers"
+            aside={
+              <a className="press-link" href="/v1/providers">
+                GET /v1/providers →
+              </a>
+            }
+          />
+          <div className="figure overflow-x-auto">
+            <table className="dtable">
+              <thead>
+                <tr>
+                  <th>provider</th>
+                  <th>status</th>
+                  <th className="num">models</th>
+                  <th className="num">endpoints</th>
+                  <th className="num">schemas</th>
+                  <th className="num max-sm:hidden">polled</th>
+                  <th className="num max-sm:hidden">synced</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* change log */}
-      <section className="mx-auto max-w-6xl space-y-5 px-5 pb-20">
-        <SectionRule title="Just changed" aside="GET /v1/changes" />
-        {changes.length === 0 ? (
-          <p className="font-mono text-sm text-ink-faint">
-            no changes yet — the next cron poll will populate this feed.
-          </p>
-        ) : (
-          <div className="figure px-4 py-3">
-            <ol className="space-y-1.5 font-mono text-[13px]">
-              {changes.map((change) => (
-                <li key={change.id} className="flex items-baseline gap-3">
-                  <span className="shrink-0 text-ink-faint">
-                    {timeAgo(change.createdAt)}
-                  </span>
-                  <span
-                    className={`shrink-0 ${CHANGE_STYLES[change.type] ?? 'text-ink-soft'}`}
-                  >
-                    {change.type}
-                  </span>
-                  <span className="truncate">{change.summary}</span>
-                  <span className="ml-auto hidden shrink-0 text-ink-faint sm:inline">
-                    {change.providerId}
-                  </span>
-                </li>
-              ))}
-            </ol>
+              </thead>
+              <tbody>
+                {status.providers.map((p) => (
+                  <tr key={p.id}>
+                    <td className="font-medium">
+                      <a
+                        className="text-ink hover:text-tok-blue"
+                        href={`/models?provider=${p.id}`}
+                      >
+                        {p.displayName}
+                      </a>
+                    </td>
+                    <td>
+                      <StatusDot status={p.status} />
+                    </td>
+                    <td className="num">{fmt.format(p.counts.models)}</td>
+                    <td className="num">{fmt.format(p.counts.endpoints)}</td>
+                    <td className="num">{fmt.format(p.counts.schemas)}</td>
+                    <td className="num text-ink-faint max-sm:hidden">
+                      {timeAgo(p.lastPolledAt)}
+                    </td>
+                    <td className="num text-ink-faint max-sm:hidden">
+                      {timeAgo(p.lastSyncedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
-      </section>
+        </section>
+
+        <section>
+          <SectionHead
+            title="Recent changes"
+            aside={
+              <a className="press-link" href="/changes">
+                GET /v1/changes →
+              </a>
+            }
+          />
+          {changes.length === 0 ? (
+            <p className="font-mono text-sm text-ink-faint">
+              no changes yet — the next cron poll will populate this feed.
+            </p>
+          ) : (
+            <>
+              <div className="figure overflow-x-auto">
+                <table className="dtable">
+                  <tbody>
+                    {changes.map((change) => (
+                      <tr key={change.id}>
+                        <td className="font-mono text-xs whitespace-nowrap text-ink-faint">
+                          {timeAgo(change.createdAt)}
+                        </td>
+                        <td
+                          className={`font-mono text-xs whitespace-nowrap ${CHANGE_STYLES[change.type] ?? 'text-ink-soft'}`}
+                        >
+                          {change.type}
+                        </td>
+                        <td className="max-w-[38em] truncate">
+                          {change.summary}
+                        </td>
+                        <td className="font-mono text-xs text-ink-faint max-sm:hidden">
+                          {change.providerId}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2.5 font-mono text-xs text-ink-faint">
+                Subscribe with a webhook to get these pushed —{' '}
+                <a className="press-link" href="/docs">
+                  POST /v1/subscriptions
+                </a>
+              </p>
+            </>
+          )}
+        </section>
+      </main>
 
       <SiteFooter />
     </div>

@@ -59,8 +59,8 @@ function Login() {
       <SiteNav active="sign in" />
       <div className="mx-auto max-w-sm space-y-6 px-5 py-16">
         <header className="space-y-2">
-          <h1 className="font-display text-5xl font-medium tracking-tight">
-            Sign in<span className="text-press">.</span>
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">
+            Sign in<span className="text-tok-blue">▌</span>
           </h1>
           <p className="text-sm text-ink-soft">
             Manage your API keys. We email you a one-time code — no password.
@@ -73,7 +73,7 @@ function Login() {
               Signed in as{' '}
               <span className="font-medium">{session.user.email}</span>
             </p>
-            <a className="press-link text-press" href="/account">
+            <a className="press-link" href="/account">
               Manage API keys →
             </a>
             <button
@@ -139,7 +139,9 @@ function Login() {
           </form>
         )}
 
-        {error ? <p className="font-mono text-sm text-press">{error}</p> : null}
+        {error ? (
+          <p className="font-mono text-sm text-tok-red">{error}</p>
+        ) : null}
       </div>
       <SiteFooter />
     </div>

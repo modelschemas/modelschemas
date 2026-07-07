@@ -25,8 +25,8 @@ function Docs() {
       <SiteNav active="docs" />
       <div className="mx-auto max-w-3xl space-y-10 px-5 py-14">
         <header className="space-y-4">
-          <h1 className="font-display text-5xl font-medium tracking-tight">
-            Documentation<span className="text-press">.</span>
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">
+            Documentation<span className="text-tok-blue">▌</span>
           </h1>
           <p className="font-mono text-xs text-ink-faint">
             rendered from the exact /llms.txt agents fetch — zero drift by
@@ -34,7 +34,7 @@ function Docs() {
           </p>
           <nav className="hairline flex flex-wrap gap-x-5 gap-y-1.5 border-y py-2.5 font-mono text-xs">
             {LINKS.map(([label, href]) => (
-              <a key={href} className="press-link text-ink-soft" href={href}>
+              <a key={href} className="press-link" href={href}>
                 {label}
               </a>
             ))}
@@ -43,7 +43,7 @@ function Docs() {
 
         {/* Rendered from the exact llms.txt source so the human docs can never
             drift from what agents read. */}
-        <article className="prose max-w-none prose-headings:font-display prose-headings:font-medium prose-headings:text-ink prose-p:text-ink-soft prose-li:text-ink-soft prose-strong:text-ink prose-code:text-press-deep prose-a:text-press prose-li:marker:text-press">
+        <article className="prose max-w-none prose-headings:font-mono prose-headings:font-semibold prose-headings:text-ink prose-p:text-ink-soft prose-li:text-ink-soft prose-strong:text-ink prose-code:text-tok-blue prose-a:text-tok-blue prose-li:marker:text-ink-faint">
           <Streamdown>{llmsTxt}</Streamdown>
         </article>
       </div>

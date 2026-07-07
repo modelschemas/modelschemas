@@ -17,10 +17,12 @@ import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as DocsRouteImport } from './routes/docs'
+import { Route as ChangesRouteImport } from './routes/changes'
 import { Route as AuthDotmdRouteImport } from './routes/auth[.]md'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as V1IndexRouteImport } from './routes/v1/index'
+import { Route as ModelsIndexRouteImport } from './routes/models/index'
 import { Route as V1ValidateRouteImport } from './routes/v1/validate'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
 import { Route as V1ChangesRouteImport } from './routes/v1/changes'
@@ -34,6 +36,7 @@ import { Route as V1ModelsIndexRouteImport } from './routes/v1/models/index'
 import { Route as V1SubscriptionsIdRouteImport } from './routes/v1/subscriptions/$id'
 import { Route as V1AgentsRegisterKeyRouteImport } from './routes/v1/agents/register-key'
 import { Route as V1AgentsMeRouteImport } from './routes/v1/agents/me'
+import { Route as ModelsProviderModelIdRouteImport } from './routes/models/$provider.$modelId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DotwellKnownMcpServerCardDotjsonRouteImport } from './routes/[.]well-known/mcp/server-card[.]json'
 import { Route as DotwellKnownAgentSkillsIndexDotjsonRouteImport } from './routes/[.]well-known/agent-skills/index[.]json'
@@ -41,6 +44,7 @@ import { Route as V1SchemasProviderIndexRouteImport } from './routes/v1/schemas/
 import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
 import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/$provider.$modelId'
 import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
+import { Route as SchemasProviderActivitySplatRouteImport } from './routes/schemas/$provider.$activity.$'
 import { Route as V1SchemasProviderActivityIndexRouteImport } from './routes/v1/schemas/$provider/$activity/index'
 import { Route as V1SchemasProviderActivitySplatRouteImport } from './routes/v1/schemas/$provider/$activity/$'
 
@@ -84,6 +88,11 @@ const DocsRoute = DocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChangesRoute = ChangesRouteImport.update({
+  id: '/changes',
+  path: '/changes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthDotmdRoute = AuthDotmdRouteImport.update({
   id: '/auth.md',
   path: '/auth.md',
@@ -102,6 +111,11 @@ const IndexRoute = IndexRouteImport.update({
 const V1IndexRoute = V1IndexRouteImport.update({
   id: '/v1/',
   path: '/v1/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModelsIndexRoute = ModelsIndexRouteImport.update({
+  id: '/models/',
+  path: '/models/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const V1ValidateRoute = V1ValidateRouteImport.update({
@@ -172,6 +186,11 @@ const V1AgentsMeRoute = V1AgentsMeRouteImport.update({
   path: '/v1/agents/me',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ModelsProviderModelIdRoute = ModelsProviderModelIdRouteImport.update({
+  id: '/models/$provider/$modelId',
+  path: '/models/$provider/$modelId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -210,6 +229,12 @@ const V1AdminSyncProviderRoute = V1AdminSyncProviderRouteImport.update({
   path: '/v1/admin/sync/$provider',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SchemasProviderActivitySplatRoute =
+  SchemasProviderActivitySplatRouteImport.update({
+    id: '/schemas/$provider/$activity/$',
+    path: '/schemas/$provider/$activity/$',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const V1SchemasProviderActivityIndexRoute =
   V1SchemasProviderActivityIndexRouteImport.update({
     id: '/v1/schemas/$provider/$activity/',
@@ -227,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/auth.md': typeof AuthDotmdRoute
+  '/changes': typeof ChangesRoute
   '/docs': typeof DocsRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
@@ -242,16 +268,19 @@ export interface FileRoutesByFullPath {
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
+  '/models/': typeof ModelsIndexRoute
   '/v1/': typeof V1IndexRoute
   '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/subscriptions/': typeof V1SubscriptionsIndexRoute
+  '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
@@ -263,6 +292,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/auth.md': typeof AuthDotmdRoute
+  '/changes': typeof ChangesRoute
   '/docs': typeof DocsRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
@@ -278,16 +308,19 @@ export interface FileRoutesByTo {
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
+  '/models': typeof ModelsIndexRoute
   '/v1': typeof V1IndexRoute
   '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models': typeof V1ModelsIndexRoute
   '/v1/providers': typeof V1ProvidersIndexRoute
   '/v1/subscriptions': typeof V1SubscriptionsIndexRoute
+  '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
@@ -300,6 +333,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/auth.md': typeof AuthDotmdRoute
+  '/changes': typeof ChangesRoute
   '/docs': typeof DocsRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
@@ -315,16 +349,19 @@ export interface FileRoutesById {
   '/v1/changes': typeof V1ChangesRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
+  '/models/': typeof ModelsIndexRoute
   '/v1/': typeof V1IndexRoute
   '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/subscriptions/': typeof V1SubscriptionsIndexRoute
+  '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
@@ -338,6 +375,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/auth.md'
+    | '/changes'
     | '/docs'
     | '/llms.txt'
     | '/login'
@@ -353,16 +391,19 @@ export interface FileRouteTypes {
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
+    | '/models/'
     | '/v1/'
     | '/.well-known/agent-skills/index.json'
     | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
+    | '/models/$provider/$modelId'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
     | '/v1/subscriptions/$id'
     | '/v1/models/'
     | '/v1/providers/'
     | '/v1/subscriptions/'
+    | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
     | '/v1/providers/$provider/models'
@@ -374,6 +415,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/auth.md'
+    | '/changes'
     | '/docs'
     | '/llms.txt'
     | '/login'
@@ -389,16 +431,19 @@ export interface FileRouteTypes {
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
+    | '/models'
     | '/v1'
     | '/.well-known/agent-skills/index.json'
     | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
+    | '/models/$provider/$modelId'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
     | '/v1/subscriptions/$id'
     | '/v1/models'
     | '/v1/providers'
     | '/v1/subscriptions'
+    | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
     | '/v1/providers/$provider/models'
@@ -410,6 +455,7 @@ export interface FileRouteTypes {
     | '/'
     | '/account'
     | '/auth.md'
+    | '/changes'
     | '/docs'
     | '/llms.txt'
     | '/login'
@@ -425,16 +471,19 @@ export interface FileRouteTypes {
     | '/v1/changes'
     | '/v1/status'
     | '/v1/validate'
+    | '/models/'
     | '/v1/'
     | '/.well-known/agent-skills/index.json'
     | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
+    | '/models/$provider/$modelId'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
     | '/v1/subscriptions/$id'
     | '/v1/models/'
     | '/v1/providers/'
     | '/v1/subscriptions/'
+    | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
     | '/v1/providers/$provider/models'
@@ -447,6 +496,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
   AuthDotmdRoute: typeof AuthDotmdRoute
+  ChangesRoute: typeof ChangesRoute
   DocsRoute: typeof DocsRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   LoginRoute: typeof LoginRoute
@@ -462,16 +512,19 @@ export interface RootRouteChildren {
   V1ChangesRoute: typeof V1ChangesRoute
   V1StatusRoute: typeof V1StatusRoute
   V1ValidateRoute: typeof V1ValidateRoute
+  ModelsIndexRoute: typeof ModelsIndexRoute
   V1IndexRoute: typeof V1IndexRoute
   DotwellKnownAgentSkillsIndexDotjsonRoute: typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   DotwellKnownMcpServerCardDotjsonRoute: typeof DotwellKnownMcpServerCardDotjsonRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ModelsProviderModelIdRoute: typeof ModelsProviderModelIdRoute
   V1AgentsMeRoute: typeof V1AgentsMeRoute
   V1AgentsRegisterKeyRoute: typeof V1AgentsRegisterKeyRoute
   V1SubscriptionsIdRoute: typeof V1SubscriptionsIdRoute
   V1ModelsIndexRoute: typeof V1ModelsIndexRoute
   V1ProvidersIndexRoute: typeof V1ProvidersIndexRoute
   V1SubscriptionsIndexRoute: typeof V1SubscriptionsIndexRoute
+  SchemasProviderActivitySplatRoute: typeof SchemasProviderActivitySplatRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
   V1ModelsProviderModelIdRoute: typeof V1ModelsProviderModelIdRoute
   V1ProvidersProviderModelsRoute: typeof V1ProvidersProviderModelsRoute
@@ -538,6 +591,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/changes': {
+      id: '/changes'
+      path: '/changes'
+      fullPath: '/changes'
+      preLoaderRoute: typeof ChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth.md': {
       id: '/auth.md'
       path: '/auth.md'
@@ -564,6 +624,13 @@ declare module '@tanstack/react-router' {
       path: '/v1'
       fullPath: '/v1/'
       preLoaderRoute: typeof V1IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/models/': {
+      id: '/models/'
+      path: '/models'
+      fullPath: '/models/'
+      preLoaderRoute: typeof ModelsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/validate': {
@@ -657,6 +724,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1AgentsMeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/models/$provider/$modelId': {
+      id: '/models/$provider/$modelId'
+      path: '/models/$provider/$modelId'
+      fullPath: '/models/$provider/$modelId'
+      preLoaderRoute: typeof ModelsProviderModelIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -706,6 +780,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1AdminSyncProviderRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/schemas/$provider/$activity/$': {
+      id: '/schemas/$provider/$activity/$'
+      path: '/schemas/$provider/$activity/$'
+      fullPath: '/schemas/$provider/$activity/$'
+      preLoaderRoute: typeof SchemasProviderActivitySplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/v1/schemas/$provider/$activity/': {
       id: '/v1/schemas/$provider/$activity/'
       path: '/v1/schemas/$provider/$activity'
@@ -727,6 +808,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
   AuthDotmdRoute: AuthDotmdRoute,
+  ChangesRoute: ChangesRoute,
   DocsRoute: DocsRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   LoginRoute: LoginRoute,
@@ -744,17 +826,20 @@ const rootRouteChildren: RootRouteChildren = {
   V1ChangesRoute: V1ChangesRoute,
   V1StatusRoute: V1StatusRoute,
   V1ValidateRoute: V1ValidateRoute,
+  ModelsIndexRoute: ModelsIndexRoute,
   V1IndexRoute: V1IndexRoute,
   DotwellKnownAgentSkillsIndexDotjsonRoute:
     DotwellKnownAgentSkillsIndexDotjsonRoute,
   DotwellKnownMcpServerCardDotjsonRoute: DotwellKnownMcpServerCardDotjsonRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ModelsProviderModelIdRoute: ModelsProviderModelIdRoute,
   V1AgentsMeRoute: V1AgentsMeRoute,
   V1AgentsRegisterKeyRoute: V1AgentsRegisterKeyRoute,
   V1SubscriptionsIdRoute: V1SubscriptionsIdRoute,
   V1ModelsIndexRoute: V1ModelsIndexRoute,
   V1ProvidersIndexRoute: V1ProvidersIndexRoute,
   V1SubscriptionsIndexRoute: V1SubscriptionsIndexRoute,
+  SchemasProviderActivitySplatRoute: SchemasProviderActivitySplatRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,
   V1ModelsProviderModelIdRoute: V1ModelsProviderModelIdRoute,
   V1ProvidersProviderModelsRoute: V1ProvidersProviderModelsRoute,

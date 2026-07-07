@@ -84,13 +84,13 @@ function Account() {
       <div className="min-h-screen text-ink">
         <SiteNav active="account" />
         <div className="mx-auto max-w-sm space-y-4 px-5 py-16 text-sm">
-          <h1 className="font-display text-5xl font-medium tracking-tight">
-            Account<span className="text-press">.</span>
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">
+            Account<span className="text-tok-blue">▌</span>
           </h1>
           <p className="text-ink-soft">
             You need to sign in to manage API keys.
           </p>
-          <a className="press-link text-press" href="/login">
+          <a className="press-link" href="/login">
             Sign in with email →
           </a>
         </div>
@@ -104,8 +104,8 @@ function Account() {
       <SiteNav active="account" />
       <div className="mx-auto max-w-2xl space-y-8 px-5 py-14">
         <header className="space-y-2">
-          <h1 className="font-display text-5xl font-medium tracking-tight">
-            Account<span className="text-press">.</span>
+          <h1 className="font-mono text-2xl font-semibold tracking-tight">
+            Account<span className="text-tok-blue">▌</span>
           </h1>
           <p className="text-sm text-ink-soft">
             Signed in as <span className="font-mono">{session.user.email}</span>{' '}
@@ -123,12 +123,7 @@ function Account() {
         </header>
 
         <section className="space-y-3">
-          <h2 className="overline-label rule-heavy !text-ink pb-2">
-            <span aria-hidden className="mr-2 text-press">
-              §
-            </span>
-            API keys
-          </h2>
+          <h2 className="overline-label rule-heavy pb-2 !text-ink">API keys</h2>
           <p className="text-sm text-ink-soft">
             Keys unlock 5,000 requests/hour (vs 60/hour anonymous) and webhook
             subscriptions. Send them as{' '}
@@ -213,7 +208,7 @@ function Account() {
                   </span>
                   <button
                     type="button"
-                    className="press-link font-mono text-xs text-press"
+                    className="cursor-pointer font-mono text-xs text-tok-red hover:underline"
                     onClick={() => {
                       void revokeKey(key.id)
                     }}
@@ -226,7 +221,9 @@ function Account() {
           )}
         </section>
 
-        {error ? <p className="font-mono text-sm text-press">{error}</p> : null}
+        {error ? (
+          <p className="font-mono text-sm text-tok-red">{error}</p>
+        ) : null}
 
         <footer className="font-mono text-xs text-ink-faint">
           Agents can self-register instead — see{' '}

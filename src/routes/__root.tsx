@@ -39,7 +39,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="broadsheet">
+      <body>
         {children}
         <TanStackDevtools
           config={{
