@@ -1,19 +1,23 @@
 /**
- * Server-side sweep of every provider's video activity schemas, plus a
- * validation proxy — the modelschemas API is only ever called from the
- * server, so the browser needs no CORS.
+ * Browser-side sweep of every provider's video activity schemas, plus
+ * validation: in production the app is served from
+ * modelschemas.com/examples/…, so API calls are same-origin; `vite dev`
+ * proxies /v1 to MODELSCHEMAS_URL (see vite.config.ts). Either way the
+ * browser needs no CORS.
  */
-import { createServerFn } from '@tanstack/react-start'
 import {
   createModelschemasClient,
   getActivitySchemas,
   listProviders,
   validatePayload,
 } from '@modelschemas/client'
-import { extractVideoControls } from '../lib/video'
-import type { SchemaNode, VideoControls } from '../lib/video'
+import { extractVideoControls } from './video'
+import type { SchemaNode, VideoControls } from './video'
 
-const BASE_URL = process.env.MODELSCHEMAS_URL ?? 'https://modelschemas.com'
+const BASE_URL =
+  typeof window === 'undefined'
+    ? 'https://modelschemas.com'
+    : window.location.origin
 
 export interface VideoModelEntry {
   provider: string
@@ -86,17 +90,15 @@ async function buildCatalog(): Promise<VideoCatalog> {
 let cache: { at: number; catalog: Promise<VideoCatalog> } | null = null
 const TTL_MS = 5 * 60 * 1000
 
-export const getVideoCatalog = createServerFn({ method: 'GET' }).handler(
-  (): Promise<VideoCatalog> => {
-    if (cache === null || Date.now() - cache.at > TTL_MS) {
-      cache = { at: Date.now(), catalog: buildCatalog() }
-      cache.catalog.catch(() => {
-        cache = null
-      })
-    }
-    return cache.catalog
-  },
-)
+export function getVideoCatalog(): Promise<VideoCatalog> {
+  if (cache === null || Date.now() - cache.at > TTL_MS) {
+    cache = { at: Date.now(), catalog: buildCatalog() }
+    cache.catalog.catch(() => {
+      cache = null
+    })
+  }
+  return cache.catalog
+}
 
 export interface ValidationOutcome {
   valid: boolean
@@ -110,48 +112,38 @@ interface ValidateInput {
   payload: unknown
 }
 
-function narrowValidateInput(input: unknown): ValidateInput {
-  if (!isNode(input)) throw new Error('expected an object')
-  const provider = input['provider']
-  const endpointId = input['endpointId']
-  if (typeof provider !== 'string' || typeof endpointId !== 'string') {
-    throw new Error('provider and endpointId must be strings')
-  }
-  return { provider, endpointId, payload: input['payload'] }
-}
-
-export const validateVideoRequest = createServerFn({ method: 'POST' })
-  .inputValidator(narrowValidateInput)
-  .handler(async ({ data }): Promise<ValidationOutcome> => {
-    const client = makeClient()
-    const result = await validatePayload({
-      client,
-      body: {
-        provider: data.provider,
-        endpointId: data.endpointId,
-        kind: 'input',
-        payload: data.payload,
-      },
-    })
-    if (result.error !== undefined || !isNode(result.data)) {
-      return {
-        valid: false,
-        errors: [],
-        failure: `validation call failed (${String(result.response?.status ?? 'no response')})`,
-      }
-    }
-    const errors: Array<{ path: string; message: string }> = []
-    const rawErrors = result.data['errors']
-    if (Array.isArray(rawErrors)) {
-      for (const entry of rawErrors) {
-        if (!isNode(entry)) continue
-        const path = entry['path']
-        const message = entry['message']
-        errors.push({
-          path: typeof path === 'string' ? path : '',
-          message: typeof message === 'string' ? message : 'invalid',
-        })
-      }
-    }
-    return { valid: result.data['valid'] === true, errors, failure: null }
+export async function validateVideoRequest(
+  data: ValidateInput,
+): Promise<ValidationOutcome> {
+  const client = makeClient()
+  const result = await validatePayload({
+    client,
+    body: {
+      provider: data.provider,
+      endpointId: data.endpointId,
+      kind: 'input',
+      payload: data.payload,
+    },
   })
+  if (result.error !== undefined || !isNode(result.data)) {
+    return {
+      valid: false,
+      errors: [],
+      failure: `validation call failed (${String(result.response?.status ?? 'no response')})`,
+    }
+  }
+  const errors: Array<{ path: string; message: string }> = []
+  const rawErrors = result.data['errors']
+  if (Array.isArray(rawErrors)) {
+    for (const entry of rawErrors) {
+      if (!isNode(entry)) continue
+      const path = entry['path']
+      const message = entry['message']
+      errors.push({
+        path: typeof path === 'string' ? path : '',
+        message: typeof message === 'string' ? message : 'invalid',
+      })
+    }
+  }
+  return { valid: result.data['valid'] === true, errors, failure: null }
+}

@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "vite dev --port 3100",
     "generate-routes": "tsr generate",
-    "build": "vite build",
+    "build": "vite build && bun run build:examples",
+    "build:examples": "bun scripts/build-examples.ts",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint",

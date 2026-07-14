@@ -1,17 +1,21 @@
 /**
- * Server-side catalog: the modelschemas API is only ever called from the
- * server (TanStack Start server functions), so the browser needs no CORS.
+ * Browser-side catalog: in production the app is served from
+ * modelschemas.com/examples/…, so API calls are same-origin; `vite dev`
+ * proxies /v1 to MODELSCHEMAS_URL (see vite.config.ts). Either way the
+ * browser needs no CORS.
  */
-import { createServerFn } from '@tanstack/react-start'
 import {
   createModelschemasClient,
   getActivitySchemas,
   listProviders,
 } from '@modelschemas/client'
-import { extractDimensions } from '../lib/dimensions'
-import type { DimensionReport, SchemaNode } from '../lib/dimensions'
+import { extractDimensions } from './dimensions'
+import type { DimensionReport, SchemaNode } from './dimensions'
 
-const BASE_URL = process.env.MODELSCHEMAS_URL ?? 'https://modelschemas.com'
+const BASE_URL =
+  typeof window === 'undefined'
+    ? 'https://modelschemas.com'
+    : window.location.origin
 
 export interface ImageModelEntry {
   provider: string
@@ -78,14 +82,12 @@ async function buildCatalog(): Promise<ImageCatalog> {
 let cache: { at: number; catalog: Promise<ImageCatalog> } | null = null
 const TTL_MS = 5 * 60 * 1000
 
-export const getImageCatalog = createServerFn({ method: 'GET' }).handler(
-  (): Promise<ImageCatalog> => {
-    if (cache === null || Date.now() - cache.at > TTL_MS) {
-      cache = { at: Date.now(), catalog: buildCatalog() }
-      cache.catalog.catch(() => {
-        cache = null
-      })
-    }
-    return cache.catalog
-  },
-)
+export function getImageCatalog(): Promise<ImageCatalog> {
+  if (cache === null || Date.now() - cache.at > TTL_MS) {
+    cache = { at: Date.now(), catalog: buildCatalog() }
+    cache.catalog.catch(() => {
+      cache = null
+    })
+  }
+  return cache.catalog
+}

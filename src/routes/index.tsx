@@ -17,6 +17,27 @@ import type { ServiceStatus } from '#/server/status.ts'
 
 export { timeAgo } from '#/lib/time.ts'
 
+const EXAMPLES = [
+  {
+    slug: 'schema-studio',
+    blurb:
+      'generative UI — request forms rendered at runtime from live provider schemas',
+    package: '@modelschemas/vite',
+  },
+  {
+    slug: 'image-dimensions',
+    blurb:
+      'every image model with its supported output sizes, extracted from each input schema',
+    package: '@modelschemas/client',
+  },
+  {
+    slug: 'video-composer',
+    blurb:
+      'video request builder whose knobs only offer values the schema allows',
+    package: '@modelschemas/client',
+  },
+]
+
 interface DashboardChange {
   id: string
   type: string
@@ -295,6 +316,42 @@ function Landing() {
               </p>
             </>
           )}
+        </section>
+
+        <section>
+          <SectionHead
+            title="Examples"
+            aside={
+              <a
+                className="press-link"
+                href="https://github.com/modelschemas/modelschemas/tree/main/examples"
+              >
+                source →
+              </a>
+            }
+          />
+          <div className="figure overflow-x-auto">
+            <table className="dtable">
+              <tbody>
+                {EXAMPLES.map((example) => (
+                  <tr key={example.slug}>
+                    <td className="font-mono text-xs whitespace-nowrap">
+                      <a
+                        className="press-link"
+                        href={`/examples/${example.slug}/`}
+                      >
+                        {example.slug}
+                      </a>
+                    </td>
+                    <td className="max-w-[38em]">{example.blurb}</td>
+                    <td className="font-mono text-xs whitespace-nowrap text-ink-faint max-sm:hidden">
+                      {example.package}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
 

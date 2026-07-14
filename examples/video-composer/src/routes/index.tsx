@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { getVideoCatalog, validateVideoRequest } from '../server/api'
-import type { ValidationOutcome, VideoModelEntry } from '../server/api'
+import { getVideoCatalog, validateVideoRequest } from '../lib/api'
+import type { ValidationOutcome, VideoModelEntry } from '../lib/api'
 import { clampOption, setAtPath } from '../lib/video'
 import type { JsonObject, PickOption } from '../lib/video'
 
@@ -106,11 +106,9 @@ function Composer() {
     setChecking(true)
     setVerdict(null)
     validateVideoRequest({
-      data: {
-        provider: selected.provider,
-        endpointId: selected.endpointId,
-        payload,
-      },
+      provider: selected.provider,
+      endpointId: selected.endpointId,
+      payload,
     })
       .then(setVerdict)
       .catch(() => {

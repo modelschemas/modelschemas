@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { getImageCatalog } from '../server/api'
-import type { ImageModelEntry } from '../server/api'
+import { getImageCatalog } from '../lib/api'
+import type { ImageModelEntry } from '../lib/api'
 import type { AspectBox, SizeBox } from '../lib/dimensions'
 
 export const Route = createFileRoute('/')({

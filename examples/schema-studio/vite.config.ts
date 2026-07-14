@@ -7,6 +7,8 @@ import { modelschemas } from '@modelschemas/vite'
 // Schemas are pulled into src/modelschemas at dev time and committed;
 // `vite build` only verifies the files against .manifest.json (offline).
 export default defineConfig({
+  // Served as static assets from the main worker under this path.
+  base: '/examples/schema-studio/',
   server: { port: 3201 },
   plugins: [
     modelschemas({
@@ -22,7 +24,7 @@ export default defineConfig({
       types: false,
     }),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({ spa: { enabled: true } }),
     viteReact(),
   ],
 })
