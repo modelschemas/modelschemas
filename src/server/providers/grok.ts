@@ -50,7 +50,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 }
 
 interface GrokModelList {
-  data?: Array<{ id: string }>
+  data?: Array<{ id: string; created?: number }>
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -61,7 +61,12 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(GROK_MODELS_URL, {
     headers: { Authorization: `Bearer ${key}` },
   })) as GrokModelList
-  return { models: (body.data ?? []).map((m) => ({ rawId: m.id })) }
+  return {
+    models: (body.data ?? []).map((m) => ({
+      rawId: m.id,
+      releasedAt: m.created ?? null,
+    })),
+  }
 }
 
 export const grokProvider: ProviderConfig = {

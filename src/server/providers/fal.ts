@@ -12,6 +12,7 @@
 import type { Activity } from '#/db/schema.ts'
 import { activities } from '#/db/schema.ts'
 import { contentHash } from '#/server/kv.ts'
+import { isoToEpochSeconds } from './release-dates.ts'
 import { skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -36,6 +37,8 @@ interface FalApiModel {
     category: string
     description?: string
     status?: 'active' | 'inactive' | 'deprecated'
+    /** Listing/release date, ISO 8601. */
+    date?: string
     [key: string]: unknown
   }
 }
@@ -194,6 +197,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     displayName: m.metadata.display_name ?? null,
     activity: falCategoryActivity(m.metadata.category),
     deprecated: m.metadata.status === 'deprecated',
+    releasedAt: isoToEpochSeconds(m.metadata.date),
     capabilities: { category: m.metadata.category },
   }))
   return { models }

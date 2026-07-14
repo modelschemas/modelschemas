@@ -8,6 +8,7 @@
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
+import { isoToEpochSeconds } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -61,7 +62,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 }
 
 interface AnthropicModelList {
-  data?: Array<{ id: string; display_name?: string }>
+  data?: Array<{ id: string; display_name?: string; created_at?: string }>
   has_more?: boolean
   last_id?: string
 }
@@ -82,7 +83,11 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       headers,
     })) as AnthropicModelList
     for (const m of body.data ?? []) {
-      models.push({ rawId: m.id, displayName: m.display_name ?? null })
+      models.push({
+        rawId: m.id,
+        displayName: m.display_name ?? null,
+        releasedAt: isoToEpochSeconds(m.created_at),
+      })
     }
     afterId = body.has_more ? body.last_id : undefined
   } while (afterId)

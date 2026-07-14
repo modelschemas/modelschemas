@@ -40,6 +40,12 @@ export interface ModelInfo {
   pricing?: unknown
   capabilities?: unknown
   deprecated?: boolean
+  /**
+   * Upstream release/creation time (epoch seconds) when the provider reports
+   * one; used to backdate `models.firstSeenAt` (issue #1). Null/absent when
+   * the provider has no date for the model.
+   */
+  releasedAt?: number | null
 }
 
 /** Provenance for one fetched spec document. */

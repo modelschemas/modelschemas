@@ -3,6 +3,7 @@
  * Models endpoint requires ELEVENLABS_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { ELEVENLABS_RELEASE_DATES, curatedReleasedAt } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -77,6 +78,8 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       rawId: m.model_id,
       displayName: m.name ?? null,
       activity: 'audio',
+      // ElevenLabs' API has no release timestamp — curated dates only.
+      releasedAt: curatedReleasedAt(ELEVENLABS_RELEASE_DATES, m.model_id),
       capabilities: {
         canDoTextToSpeech: m.can_do_text_to_speech,
         canDoVoiceConversion: m.can_do_voice_conversion,

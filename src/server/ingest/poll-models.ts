@@ -18,6 +18,8 @@ export interface PollOutcome {
   added: number
   removed: number
   updated: number
+  /** Rows whose firstSeenAt moved back to the upstream release date. */
+  backdated: number
   skipped?: string
   error?: string
 }
@@ -29,6 +31,23 @@ export function modelDbId(providerId: string, rawId: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return `${providerId}-${slug}`
+}
+
+/**
+ * Reject obviously bogus upstream release timestamps (0, negative, or
+ * pre-2015 — years before any monitored provider existed).
+ */
+const RELEASED_AT_FLOOR = 1_420_070_400 // 2015-01-01T00:00:00Z
+
+/**
+ * Upstream release time usable for firstSeenAt: sane, and never later than
+ * the reference time (we backdate, never forward-date).
+ */
+function usableReleasedAt(info: ModelInfo, before: number): number | null {
+  const releasedAt = info.releasedAt ?? null
+  if (releasedAt === null) return null
+  if (releasedAt < RELEASED_AT_FLOOR || releasedAt >= before) return null
+  return releasedAt
 }
 
 /** The fields whose changes constitute a `model.updated` event. */
@@ -57,6 +76,7 @@ export async function pollProviderModels(
     added: 0,
     removed: 0,
     updated: 0,
+    backdated: 0,
   }
 
   const listed = await provider.listModels(secrets)
@@ -95,7 +115,9 @@ export async function pollProviderModels(
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
         capabilities: info.capabilities ?? null,
-        firstSeenAt: now,
+        // Providers that report a release date get it as firstSeenAt, so
+        // models predating our monitoring carry their historical date.
+        firstSeenAt: usableReleasedAt(info, now) ?? now,
         lastSeenAt: now,
         deprecatedAt: info.deprecated ? now : null,
       })
@@ -124,8 +146,22 @@ export async function pollProviderModels(
     const after = comparable(info)
     const dirty = stableStringify(before) !== stableStringify(after)
 
+    // Upstream reports a release date earlier than our observed firstSeenAt
+    // → backdate in place. A silent correction (no model.updated event):
+    // it converges once per row, and the fleet-wide first pass would
+    // otherwise flood the changes feed and webhook fan-out.
+    const backdatedFirstSeen = usableReleasedAt(info, existing.firstSeenAt)
+    if (backdatedFirstSeen !== null) outcome.backdated++
+
     if (!dirty) {
-      cleanIds.push(id)
+      if (backdatedFirstSeen === null) {
+        cleanIds.push(id)
+        continue
+      }
+      await db
+        .update(models)
+        .set({ firstSeenAt: backdatedFirstSeen, lastSeenAt: now })
+        .where(eq(models.id, id))
       continue
     }
 
@@ -133,6 +169,9 @@ export async function pollProviderModels(
       .update(models)
       .set({
         lastSeenAt: now,
+        ...(backdatedFirstSeen !== null
+          ? { firstSeenAt: backdatedFirstSeen }
+          : {}),
         displayName: info.displayName ?? null,
         activity: info.activity ?? null,
         contextWindow: info.contextWindow ?? null,
@@ -219,6 +258,7 @@ export async function pollAllProviders(
         added: 0,
         removed: 0,
         updated: 0,
+        backdated: 0,
         error: message,
       })
     }

@@ -861,3 +861,22 @@ Design settled with Tom (don't relitigate):
     Once connected, manual `bun run deploy` becomes the emergency path
     only. _Accepts:_ a push to main produces a dashboard build that
     deploys; /v1/status on prod reflects the new version.
+
+## Phase 13 — Backdate firstSeenAt to real release dates (Tom, 2026-07-14; issue #1)
+
+- [x] **13.1 Backdate `models.firstSeenAt` per provider.** `ModelInfo` gains
+      optional `releasedAt` (epoch s); listModels populates it — OpenAI/xAI/
+      OpenRouter `created`, Anthropic `created_at` (ISO), FAL `metadata.date`
+      (ISO), Gemini/ElevenLabs from a curated map in
+      `src/server/providers/release-dates.ts` (+ Gemini `MM-YYYY` preview-id
+      suffix fallback). The 15-min poll applies it continuously: on insert
+      `firstSeenAt = releasedAt` when sane-and-earlier than now; existing
+      rows backdate in place when upstream reports an earlier date —
+      SILENTLY (no `model.updated` event: the fleet-wide first pass would
+      flood the changes feed + webhook fan-out; converges once per row so
+      the bulk clean-path perf note above still holds). Never forward-dates;
+      bogus timestamps (< 2015-01-01) ignored. `PollOutcome.backdated`
+      counts corrections for cron observability. _Accepts:_ live listModels
+      shows date coverage openai 129/129, anthropic 10/10, grok 10/10,
+      openrouter 344/344, fal 1399/1399; worker test walks insert/backdate/
+      never-forward/update-compose cycles.
