@@ -383,6 +383,8 @@ export const models = sqliteTable(
     modalities: text('modalities', { mode: 'json' }),
     pricing: text('pricing', { mode: 'json' }),
     capabilities: text('capabilities', { mode: 'json' }),
+    // Upstream release date when the provider reports one (backdated by the
+    // poller, issue #1); otherwise when our poller first observed the model.
     firstSeenAt: integer('first_seen_at').notNull(),
     lastSeenAt: integer('last_seen_at').notNull(),
     deprecatedAt: integer('deprecated_at'),

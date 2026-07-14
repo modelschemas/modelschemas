@@ -60,7 +60,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 }
 
 interface OpenAiModelList {
-  data?: Array<{ id: string }>
+  data?: Array<{ id: string; created?: number }>
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -72,7 +72,10 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     headers: { Authorization: `Bearer ${key}` },
   })) as OpenAiModelList
   return {
-    models: (body.data ?? []).map((m) => ({ rawId: m.id })),
+    models: (body.data ?? []).map((m) => ({
+      rawId: m.id,
+      releasedAt: m.created ?? null,
+    })),
   }
 }
 

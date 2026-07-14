@@ -5,6 +5,11 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
+import {
+  GEMINI_RELEASE_DATES,
+  curatedReleasedAt,
+  geminiIdSuffixDate,
+} from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -251,12 +256,18 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     if (pageToken) url.searchParams.set('pageToken', pageToken)
     const body = (await fetchJson(url.toString())) as GeminiModelList
     for (const m of body.models ?? []) {
+      const rawId = m.name.replace(/^models\//, '')
       models.push({
-        rawId: m.name.replace(/^models\//, ''),
+        rawId,
         displayName: m.displayName ?? null,
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
         capabilities: m.supportedGenerationMethods,
+        // Gemini's API has no release timestamp: curated dates first, then
+        // the MM-YYYY month embedded in preview ids.
+        releasedAt:
+          curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
+          geminiIdSuffixDate(rawId),
       })
     }
     pageToken = body.nextPageToken

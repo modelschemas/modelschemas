@@ -235,6 +235,7 @@ interface OpenRouterModelList {
   data?: Array<{
     id: string
     name?: string
+    created?: number
     context_length?: number
     pricing?: unknown
     architecture?: {
@@ -252,6 +253,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
     models: (body.data ?? []).map((m) => ({
       rawId: m.id,
       displayName: m.name ?? null,
+      releasedAt: m.created ?? null,
       contextWindow: m.context_length ?? null,
       maxOutput: m.top_provider?.max_completion_tokens ?? null,
       pricing: m.pricing,

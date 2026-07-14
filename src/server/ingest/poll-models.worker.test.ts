@@ -157,6 +157,96 @@ describe('pollProviderModels', () => {
     for (const row of rows) {
       expect(row.lastSeenAt).toBeGreaterThan(row.firstSeenAt)
     }
+
+    // Fleet-wide backdate (the first-pass-after-deploy shape) spans seven
+    // 30-row CASE chunks; each row gets its own date.
+    const BASE = 1_700_000_000
+    const dated = herd.map((m, i) => ({ ...m, releasedAt: BASE + i }))
+    const third = await pollProviderModels(deps, stubProvider(id, dated))
+    expect(third).toMatchObject({ added: 0, updated: 0, backdated: 200 })
+    const backdatedRows = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, id))
+    for (const row of backdatedRows) {
+      const i = Number(row.rawId.replace('model-', ''))
+      expect(row.firstSeenAt).toBe(BASE + i)
+      expect(row.lastSeenAt).toBeGreaterThan(row.firstSeenAt)
+    }
+
+    // Converged: the same dates no longer count as backdates.
+    const fourth = await pollProviderModels(deps, stubProvider(id, dated))
+    expect(fourth).toMatchObject({ backdated: 0 })
+  })
+
+  it('backdates firstSeenAt to the upstream release date (issue #1)', async () => {
+    const id = 'poll-backdate'
+    const deps = await freshDeps(id)
+    const db = deps.db
+    const RELEASE = 1_700_000_000 // well before the test clock's 1_781_150_000
+
+    // Insert: a reported release date becomes firstSeenAt directly.
+    const first = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...fable, releasedAt: RELEASE }]),
+    )
+    expect(first).toMatchObject({ added: 1 })
+    const fableId = modelDbId(id, 'claude-fable-5')
+    let row = await db.select().from(models).where(eq(models.id, fableId))
+    expect(row[0]?.firstSeenAt).toBe(RELEASE)
+    expect(row[0]?.lastSeenAt).toBeGreaterThan(RELEASE)
+
+    // Insert without a date: poll-time firstSeenAt, as before.
+    await pollProviderModels(deps, stubProvider(id, [fable, haiku]))
+    const haikuId = modelDbId(id, 'claude-haiku-4-5')
+    let haikuRow = await db.select().from(models).where(eq(models.id, haikuId))
+    expect(haikuRow[0]?.firstSeenAt).toBeGreaterThan(RELEASE)
+    const observedFirstSeen = haikuRow[0]?.firstSeenAt ?? 0
+    const changeCount = (
+      await db.select().from(changes).where(eq(changes.providerId, id))
+    ).length
+
+    // Existing otherwise-unchanged row gains a date → backdated silently
+    // (no model.updated event), lastSeenAt still bumped.
+    const backfill = await pollProviderModels(
+      deps,
+      stubProvider(id, [fable, { ...haiku, releasedAt: RELEASE + 1 }]),
+    )
+    expect(backfill).toMatchObject({ updated: 0, backdated: 1 })
+    haikuRow = await db.select().from(models).where(eq(models.id, haikuId))
+    expect(haikuRow[0]?.firstSeenAt).toBe(RELEASE + 1)
+    expect(haikuRow[0]?.lastSeenAt).toBeGreaterThan(observedFirstSeen)
+    expect(
+      await db.select().from(changes).where(eq(changes.providerId, id)),
+    ).toHaveLength(changeCount)
+
+    // Never forward-dates: a later/bogus releasedAt leaves firstSeenAt alone.
+    const noop = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, releasedAt: RELEASE + 999_999_999 }, // future
+        { ...haiku, releasedAt: 0 }, // bogus
+      ]),
+    )
+    expect(noop.backdated).toBe(0)
+    row = await db.select().from(models).where(eq(models.id, fableId))
+    haikuRow = await db.select().from(models).where(eq(models.id, haikuId))
+    expect(row[0]?.firstSeenAt).toBe(RELEASE)
+    expect(haikuRow[0]?.firstSeenAt).toBe(RELEASE + 1)
+
+    // Backdate composes with a real update: firstSeenAt and the mutable
+    // field change land together, and the update event still fires.
+    const combo = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, contextWindow: 500_000, releasedAt: RELEASE - 50 },
+        { ...haiku, releasedAt: RELEASE + 1 },
+      ]),
+    )
+    expect(combo).toMatchObject({ updated: 1, backdated: 1 })
+    row = await db.select().from(models).where(eq(models.id, fableId))
+    expect(row[0]?.firstSeenAt).toBe(RELEASE - 50)
+    expect(row[0]?.contextWindow).toBe(500_000)
   })
 
   it('reports skipped providers without touching the database', async () => {

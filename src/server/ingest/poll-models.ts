@@ -3,7 +3,7 @@
  * list currently served models, diff against D1, write
  * model.added/removed/updated changes, bump lastSeenAt.
  */
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 
 import { changes, models, providers } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
@@ -18,6 +18,8 @@ export interface PollOutcome {
   added: number
   removed: number
   updated: number
+  /** Rows whose firstSeenAt moved back to the upstream release date. */
+  backdated: number
   skipped?: string
   error?: string
 }
@@ -29,6 +31,23 @@ export function modelDbId(providerId: string, rawId: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return `${providerId}-${slug}`
+}
+
+/**
+ * Reject obviously bogus upstream release timestamps (0, negative, or
+ * pre-2015 — years before any monitored provider existed).
+ */
+const RELEASED_AT_FLOOR = 1_420_070_400 // 2015-01-01T00:00:00Z
+
+/**
+ * Upstream release time usable for firstSeenAt: sane, and never later than
+ * the reference time (we backdate, never forward-date).
+ */
+function usableReleasedAt(info: ModelInfo, before: number): number | null {
+  const releasedAt = info.releasedAt ?? null
+  if (releasedAt === null) return null
+  if (releasedAt < RELEASED_AT_FLOOR || releasedAt >= before) return null
+  return releasedAt
 }
 
 /** The fields whose changes constitute a `model.updated` event. */
@@ -57,6 +76,7 @@ export async function pollProviderModels(
     added: 0,
     removed: 0,
     updated: 0,
+    backdated: 0,
   }
 
   const listed = await provider.listModels(secrets)
@@ -76,6 +96,12 @@ export async function pollProviderModels(
   // in chunked bulk UPDATEs. One-per-row writes here previously cost ~2,000
   // sequential D1 round trips per poll (~10 min wall), starving the crons.
   const cleanIds: Array<string> = []
+  // Otherwise-unchanged rows that need firstSeenAt backdated. Written in
+  // chunked bulk UPDATEs like cleanIds: each D1 query is a subrequest
+  // against the invocation's 1,000 budget, and the first pass after deploy
+  // backdates nearly every row (~1,900 across providers) — one-per-row
+  // writes would exhaust the budget mid-poll.
+  const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
   for (const info of listed.models) {
     const id = modelDbId(provider.id, info.rawId)
@@ -95,7 +121,9 @@ export async function pollProviderModels(
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
         capabilities: info.capabilities ?? null,
-        firstSeenAt: now,
+        // Providers that report a release date get it as firstSeenAt, so
+        // models predating our monitoring carry their historical date.
+        firstSeenAt: usableReleasedAt(info, now) ?? now,
         lastSeenAt: now,
         deprecatedAt: info.deprecated ? now : null,
       })
@@ -124,8 +152,16 @@ export async function pollProviderModels(
     const after = comparable(info)
     const dirty = stableStringify(before) !== stableStringify(after)
 
+    // Upstream reports a release date earlier than our observed firstSeenAt
+    // → backdate in place. A silent correction (no model.updated event):
+    // it converges once per row, and the fleet-wide first pass would
+    // otherwise flood the changes feed and webhook fan-out.
+    const backdatedFirstSeen = usableReleasedAt(info, existing.firstSeenAt)
+    if (backdatedFirstSeen !== null) outcome.backdated++
+
     if (!dirty) {
-      cleanIds.push(id)
+      if (backdatedFirstSeen === null) cleanIds.push(id)
+      else backdates.push({ id, firstSeenAt: backdatedFirstSeen })
       continue
     }
 
@@ -133,6 +169,9 @@ export async function pollProviderModels(
       .update(models)
       .set({
         lastSeenAt: now,
+        ...(backdatedFirstSeen !== null
+          ? { firstSeenAt: backdatedFirstSeen }
+          : {}),
         displayName: info.displayName ?? null,
         activity: info.activity ?? null,
         contextWindow: info.contextWindow ?? null,
@@ -166,6 +205,29 @@ export async function pollProviderModels(
       .update(models)
       .set({ lastSeenAt: now })
       .where(inArray(models.id, cleanIds.slice(i, i + 90)))
+  }
+
+  // Backdates carry a per-row value, so bulk-update via CASE. Three bound
+  // params per row (CASE arm + IN member) + one for lastSeenAt → 30 rows
+  // stays under the 100-param limit.
+  for (let i = 0; i < backdates.length; i += 30) {
+    const chunk = backdates.slice(i, i + 30)
+    const arms = sql.join(
+      chunk.map((b) => sql`WHEN ${b.id} THEN ${b.firstSeenAt}`),
+      sql` `,
+    )
+    await db
+      .update(models)
+      .set({
+        firstSeenAt: sql`CASE ${models.id} ${arms} END`,
+        lastSeenAt: now,
+      })
+      .where(
+        inArray(
+          models.id,
+          chunk.map((b) => b.id),
+        ),
+      )
   }
 
   // Models in D1 the provider no longer lists → mark deprecated once.
@@ -219,6 +281,7 @@ export async function pollAllProviders(
         added: 0,
         removed: 0,
         updated: 0,
+        backdated: 0,
         error: message,
       })
     }
