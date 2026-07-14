@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { getDb } from '../../db/index.ts'
 import {
@@ -166,6 +166,53 @@ describe('syncProvider', () => {
     expect(inputVersions.filter((v) => v.supersededAt === null)).toHaveLength(1)
     const payload = updated[0]?.payload as { previousHash: string }
     expect(payload.previousHash).toBe(inputVersion?.contentHash)
+  })
+
+  it('revives the superseded version when upstream reverts to prior content', async () => {
+    const id = 'stub-revert'
+    const deps = await freshDeps(id)
+    const db = deps.db
+
+    // A → B → A: the third run re-derives version A's deterministic id.
+    await syncProvider(deps, stubProvider(id, fixtureSpec(false)))
+    const versionA = await db.query.schemaVersions.findFirst({
+      where: and(
+        eq(schemaVersions.endpointId, `${id}/v1/messages`),
+        eq(schemaVersions.kind, 'input'),
+      ),
+    })
+    await syncProvider(deps, stubProvider(id, fixtureSpec(true)))
+    const revert = await syncProvider(
+      deps,
+      stubProvider(id, fixtureSpec(false)),
+    )
+    expect(revert.error).toBeUndefined()
+    expect(revert.versionsAdded).toBe(1)
+    expect(revert.changesWritten).toBe(1)
+
+    const inputVersions = (
+      await db
+        .select()
+        .from(schemaVersions)
+        .where(eq(schemaVersions.endpointId, `${id}/v1/messages`))
+    ).filter((v) => v.kind === 'input')
+    // Still two distinct versions — A was revived, not duplicated.
+    expect(inputVersions).toHaveLength(2)
+    const current = inputVersions.filter((v) => v.supersededAt === null)
+    expect(current).toHaveLength(1)
+    expect(current[0]?.id).toBe(versionA?.id)
+    expect(current[0]?.contentHash).toBe(versionA?.contentHash)
+
+    // The revert is recorded as a regular schema.updated change.
+    const updated = (await providerChanges(db, id)).filter(
+      (c) => c.type === 'schema.updated',
+    )
+    expect(updated).toHaveLength(2)
+
+    const providerRow = await db.query.providers.findFirst({
+      where: eq(providers.id, id),
+    })
+    expect(providerRow?.status).toBe('active')
   })
 
   it('records endpoint.removed once when an endpoint vanishes from the spec', async () => {
