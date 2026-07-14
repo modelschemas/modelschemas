@@ -3,7 +3,7 @@
  * list currently served models, diff against D1, write
  * model.added/removed/updated changes, bump lastSeenAt.
  */
-import { eq, inArray } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 
 import { changes, models, providers } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
@@ -96,6 +96,12 @@ export async function pollProviderModels(
   // in chunked bulk UPDATEs. One-per-row writes here previously cost ~2,000
   // sequential D1 round trips per poll (~10 min wall), starving the crons.
   const cleanIds: Array<string> = []
+  // Otherwise-unchanged rows that need firstSeenAt backdated. Written in
+  // chunked bulk UPDATEs like cleanIds: each D1 query is a subrequest
+  // against the invocation's 1,000 budget, and the first pass after deploy
+  // backdates nearly every row (~1,900 across providers) — one-per-row
+  // writes would exhaust the budget mid-poll.
+  const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
   for (const info of listed.models) {
     const id = modelDbId(provider.id, info.rawId)
@@ -154,14 +160,8 @@ export async function pollProviderModels(
     if (backdatedFirstSeen !== null) outcome.backdated++
 
     if (!dirty) {
-      if (backdatedFirstSeen === null) {
-        cleanIds.push(id)
-        continue
-      }
-      await db
-        .update(models)
-        .set({ firstSeenAt: backdatedFirstSeen, lastSeenAt: now })
-        .where(eq(models.id, id))
+      if (backdatedFirstSeen === null) cleanIds.push(id)
+      else backdates.push({ id, firstSeenAt: backdatedFirstSeen })
       continue
     }
 
@@ -205,6 +205,29 @@ export async function pollProviderModels(
       .update(models)
       .set({ lastSeenAt: now })
       .where(inArray(models.id, cleanIds.slice(i, i + 90)))
+  }
+
+  // Backdates carry a per-row value, so bulk-update via CASE. Three bound
+  // params per row (CASE arm + IN member) + one for lastSeenAt → 30 rows
+  // stays under the 100-param limit.
+  for (let i = 0; i < backdates.length; i += 30) {
+    const chunk = backdates.slice(i, i + 30)
+    const arms = sql.join(
+      chunk.map((b) => sql`WHEN ${b.id} THEN ${b.firstSeenAt}`),
+      sql` `,
+    )
+    await db
+      .update(models)
+      .set({
+        firstSeenAt: sql`CASE ${models.id} ${arms} END`,
+        lastSeenAt: now,
+      })
+      .where(
+        inArray(
+          models.id,
+          chunk.map((b) => b.id),
+        ),
+      )
   }
 
   // Models in D1 the provider no longer lists → mark deprecated once.

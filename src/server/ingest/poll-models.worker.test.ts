@@ -157,6 +157,26 @@ describe('pollProviderModels', () => {
     for (const row of rows) {
       expect(row.lastSeenAt).toBeGreaterThan(row.firstSeenAt)
     }
+
+    // Fleet-wide backdate (the first-pass-after-deploy shape) spans seven
+    // 30-row CASE chunks; each row gets its own date.
+    const BASE = 1_700_000_000
+    const dated = herd.map((m, i) => ({ ...m, releasedAt: BASE + i }))
+    const third = await pollProviderModels(deps, stubProvider(id, dated))
+    expect(third).toMatchObject({ added: 0, updated: 0, backdated: 200 })
+    const backdatedRows = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, id))
+    for (const row of backdatedRows) {
+      const i = Number(row.rawId.replace('model-', ''))
+      expect(row.firstSeenAt).toBe(BASE + i)
+      expect(row.lastSeenAt).toBeGreaterThan(row.firstSeenAt)
+    }
+
+    // Converged: the same dates no longer count as backdates.
+    const fourth = await pollProviderModels(deps, stubProvider(id, dated))
+    expect(fourth).toMatchObject({ backdated: 0 })
   })
 
   it('backdates firstSeenAt to the upstream release date (issue #1)', async () => {

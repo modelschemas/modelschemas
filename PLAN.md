@@ -874,7 +874,11 @@ Design settled with Tom (don't relitigate):
       rows backdate in place when upstream reports an earlier date —
       SILENTLY (no `model.updated` event: the fleet-wide first pass would
       flood the changes feed + webhook fan-out; converges once per row so
-      the bulk clean-path perf note above still holds). Never forward-dates;
+      the bulk clean-path perf note above still holds). Backdates write in
+      30-row CASE-chunked bulk UPDATEs — each D1 query is a subrequest
+      against the invocation's 1,000 budget, and the ~1,900-row first pass
+      as one-per-row writes would exhaust it mid-poll (and starve the
+      webhook drain sharing the invocation). Never forward-dates;
       bogus timestamps (< 2015-01-01) ignored. `PollOutcome.backdated`
       counts corrections for cron observability. _Accepts:_ live listModels
       shows date coverage openai 129/129, anthropic 10/10, grok 10/10,
