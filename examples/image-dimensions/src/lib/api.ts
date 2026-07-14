@@ -4,6 +4,7 @@
  * proxies /v1 to MODELSCHEMAS_URL (see vite.config.ts). Either way the
  * browser needs no CORS.
  */
+import { createIsomorphicFn } from '@tanstack/react-start'
 import {
   createModelschemasClient,
   getActivitySchemas,
@@ -12,10 +13,11 @@ import {
 import { extractDimensions } from './dimensions'
 import type { DimensionReport, SchemaNode } from './dimensions'
 
-const BASE_URL =
-  typeof window === 'undefined'
-    ? 'https://modelschemas.com'
-    : window.location.origin
+// Each branch is compiled out of the other bundle, so the client never
+// references process.env and the server never touches window.
+const getBaseUrl = createIsomorphicFn()
+  .server(() => process.env.MODELSCHEMAS_URL ?? 'https://modelschemas.com')
+  .client(() => window.location.origin)
 
 export interface ImageModelEntry {
   provider: string
@@ -35,7 +37,8 @@ function isNode(value: unknown): value is SchemaNode {
 }
 
 async function buildCatalog(): Promise<ImageCatalog> {
-  const client = createModelschemasClient({ baseUrl: BASE_URL })
+  const baseUrl = getBaseUrl()
+  const client = createModelschemasClient({ baseUrl })
 
   const providersResult = await listProviders({ client })
   const providerList = isNode(providersResult.data)
@@ -76,7 +79,7 @@ async function buildCatalog(): Promise<ImageCatalog> {
       ? a.endpointId.localeCompare(b.endpointId)
       : a.provider.localeCompare(b.provider),
   )
-  return { baseUrl: BASE_URL, providers: providerIds, entries }
+  return { baseUrl, providers: providerIds, entries }
 }
 
 let cache: { at: number; catalog: Promise<ImageCatalog> } | null = null
