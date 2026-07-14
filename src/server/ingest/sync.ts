@@ -1,7 +1,8 @@
 /**
  * Sync engine (PLAN.md task 2.3): per provider — fetch spec → classify
  * endpoints → bundle schemas → diff content hashes against
- * `schema_versions` → insert new versions, mark superseded, upsert
+ * `schema_versions` → insert new versions (reviving superseded rows when
+ * upstream reverts to previously seen content), mark superseded, upsert
  * `endpoints`, write `changes` rows, warm KV with new blobs. Idempotent.
  */
 import { and, eq, isNull } from 'drizzle-orm'
@@ -202,18 +203,34 @@ export async function syncProvider(
       })
       if (current?.contentHash === hash) continue
 
-      await db.insert(schemaVersions).values({
-        id: `${endpoint.dbId}:${kind}:${hash.slice(0, 16)}`,
-        endpointId: endpoint.dbId,
-        kind,
-        contentHash: hash,
-        schema: JSON.stringify(schema),
-        specRevision: fetched.specRevision ?? null,
-        sourceUrl: endpoint.source?.url ?? null,
-        sourceHash: endpoint.source?.hash ?? null,
-        extractorVersion: EXTRACTOR_VERSION,
-        createdAt: now,
-      })
+      // The id is deterministic on content, so when upstream reverts to a
+      // previously served schema (A → B → A) the row already exists as a
+      // superseded version — revive it instead of colliding on the insert.
+      await db
+        .insert(schemaVersions)
+        .values({
+          id: `${endpoint.dbId}:${kind}:${hash.slice(0, 16)}`,
+          endpointId: endpoint.dbId,
+          kind,
+          contentHash: hash,
+          schema: JSON.stringify(schema),
+          specRevision: fetched.specRevision ?? null,
+          sourceUrl: endpoint.source?.url ?? null,
+          sourceHash: endpoint.source?.hash ?? null,
+          extractorVersion: EXTRACTOR_VERSION,
+          createdAt: now,
+        })
+        .onConflictDoUpdate({
+          target: schemaVersions.id,
+          set: {
+            supersededAt: null,
+            specRevision: fetched.specRevision ?? null,
+            sourceUrl: endpoint.source?.url ?? null,
+            sourceHash: endpoint.source?.hash ?? null,
+            extractorVersion: EXTRACTOR_VERSION,
+            createdAt: now,
+          },
+        })
       outcome.versionsAdded++
       await putJson(kv, schemaKey(hash), schema)
 
