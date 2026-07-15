@@ -16,6 +16,7 @@ import { Route as OpenapiDotjsonRouteImport } from './routes/openapi[.]json'
 import { Route as McpRouteImport } from './routes/mcp'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
+import { Route as ExamplesRouteImport } from './routes/examples'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as ChangesRouteImport } from './routes/changes'
 import { Route as AuthDotmdRouteImport } from './routes/auth[.]md'
@@ -81,6 +82,11 @@ const LoginRoute = LoginRouteImport.update({
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
   id: '/llms.txt',
   path: '/llms.txt',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ExamplesRoute = ExamplesRouteImport.update({
+  id: '/examples',
+  path: '/examples',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsRoute = DocsRouteImport.update({
@@ -254,6 +260,7 @@ export interface FileRoutesByFullPath {
   '/auth.md': typeof AuthDotmdRoute
   '/changes': typeof ChangesRoute
   '/docs': typeof DocsRoute
+  '/examples': typeof ExamplesRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -294,6 +301,7 @@ export interface FileRoutesByTo {
   '/auth.md': typeof AuthDotmdRoute
   '/changes': typeof ChangesRoute
   '/docs': typeof DocsRoute
+  '/examples': typeof ExamplesRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -335,6 +343,7 @@ export interface FileRoutesById {
   '/auth.md': typeof AuthDotmdRoute
   '/changes': typeof ChangesRoute
   '/docs': typeof DocsRoute
+  '/examples': typeof ExamplesRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
     | '/auth.md'
     | '/changes'
     | '/docs'
+    | '/examples'
     | '/llms.txt'
     | '/login'
     | '/mcp'
@@ -417,6 +427,7 @@ export interface FileRouteTypes {
     | '/auth.md'
     | '/changes'
     | '/docs'
+    | '/examples'
     | '/llms.txt'
     | '/login'
     | '/mcp'
@@ -457,6 +468,7 @@ export interface FileRouteTypes {
     | '/auth.md'
     | '/changes'
     | '/docs'
+    | '/examples'
     | '/llms.txt'
     | '/login'
     | '/mcp'
@@ -498,6 +510,7 @@ export interface RootRouteChildren {
   AuthDotmdRoute: typeof AuthDotmdRoute
   ChangesRoute: typeof ChangesRoute
   DocsRoute: typeof DocsRoute
+  ExamplesRoute: typeof ExamplesRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
@@ -582,6 +595,13 @@ declare module '@tanstack/react-router' {
       path: '/llms.txt'
       fullPath: '/llms.txt'
       preLoaderRoute: typeof LlmsDottxtRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/examples': {
+      id: '/examples'
+      path: '/examples'
+      fullPath: '/examples'
+      preLoaderRoute: typeof ExamplesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs': {
@@ -810,6 +830,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthDotmdRoute: AuthDotmdRoute,
   ChangesRoute: ChangesRoute,
   DocsRoute: DocsRoute,
+  ExamplesRoute: ExamplesRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,

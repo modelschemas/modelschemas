@@ -26,3 +26,14 @@ MODELSCHEMAS_URL=http://localhost:3100 bun run dev
 
 API calls happen server-side (TanStack Start server functions, or the
 `@modelschemas/vite` plugin at dev/build time), so no CORS setup is needed.
+
+## Deploying
+
+Every example ships with a Cloudflare Workers setup: `bun run deploy` inside
+an example builds it and deploys it to your own account, running at the root
+of your workers.dev subdomain (reading from the live modelschemas API by
+default). The `modelschemas` Wrangler environment
+(`CLOUDFLARE_ENV=modelschemas bun run deploy`) is the canonical deployment,
+which mounts each app at `modelschemas.com/examples/<name>/` via a zone
+route — only deployable by maintainers, since it targets the
+modelschemas.com zone.

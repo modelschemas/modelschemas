@@ -4,6 +4,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import { registerWebMcp } from '#/lib/webmcp.ts'
 import { timeAgo } from '#/lib/time.ts'
+import { EXAMPLES } from '#/lib/examples.ts'
 
 import {
   CHANGE_STYLES,
@@ -295,6 +296,39 @@ function Landing() {
               </p>
             </>
           )}
+        </section>
+
+        <section>
+          <SectionHead
+            title="Examples"
+            aside={
+              <a className="press-link" href="/examples">
+                /examples →
+              </a>
+            }
+          />
+          <div className="figure overflow-x-auto">
+            <table className="dtable">
+              <tbody>
+                {EXAMPLES.map((example) => (
+                  <tr key={example.slug}>
+                    <td className="font-mono text-xs whitespace-nowrap">
+                      <a
+                        className="press-link"
+                        href={`/examples/${example.slug}/`}
+                      >
+                        {example.slug}
+                      </a>
+                    </td>
+                    <td className="max-w-[38em]">{example.blurb}</td>
+                    <td className="font-mono text-xs whitespace-nowrap text-ink-faint max-sm:hidden">
+                      {example.package}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       </main>
 

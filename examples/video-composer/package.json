@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --port 3203",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "vite build && bun scripts/nest-hosted-assets.ts",
+    "preview": "vite preview",
+    "deploy": "bun run build && wrangler deploy"
   },
   "dependencies": {
     "@modelschemas/client": "workspace:*",
@@ -17,9 +18,11 @@
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.26.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "vite": "^8.0.0"
+    "vite": "^8.0.0",
+    "wrangler": "^4.70.0"
   }
 }

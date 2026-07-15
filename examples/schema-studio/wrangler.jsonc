@@ -1,0 +1,33 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Default environment: anyone can clone this example and `bun run deploy`
+  // it to their own account — it runs at the root of their workers.dev
+  // subdomain.
+  "name": "schema-studio-example",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/worker.ts",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+  },
+  // The canonical deployment: built with CLOUDFLARE_ENV=modelschemas (which
+  // also switches the vite base to /examples/schema-studio/), served on the
+  // main site via a zone route that takes precedence over the
+  // modelschemas.com custom domain for this path.
+  "env": {
+    "modelschemas": {
+      "name": "modelschemas-example-schema-studio",
+      "workers_dev": false,
+      "observability": {
+        "enabled": true,
+      },
+      "routes": [
+        {
+          "pattern": "modelschemas.com/examples/schema-studio/*",
+          "zone_name": "modelschemas.com",
+        },
+      ],
+    },
+  },
+}

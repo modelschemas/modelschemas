@@ -1,0 +1,34 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Default environment: anyone can clone this example and `bun run deploy`
+  // it to their own account — it runs at the root of their workers.dev
+  // subdomain and reads from the live modelschemas API (override with
+  // MODELSCHEMAS_URL at build time).
+  "name": "video-composer-example",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/worker.ts",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+  },
+  // The canonical deployment: built with CLOUDFLARE_ENV=modelschemas (which
+  // also switches the vite base to /examples/video-composer/), served on the
+  // main site via a zone route that takes precedence over the
+  // modelschemas.com custom domain for this path.
+  "env": {
+    "modelschemas": {
+      "name": "modelschemas-example-video-composer",
+      "workers_dev": false,
+      "observability": {
+        "enabled": true,
+      },
+      "routes": [
+        {
+          "pattern": "modelschemas.com/examples/video-composer/*",
+          "zone_name": "modelschemas.com",
+        },
+      ],
+    },
+  },
+}

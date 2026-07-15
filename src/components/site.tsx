@@ -24,6 +24,7 @@ export function SiteNav({ active }: { active?: string }) {
   const links: Array<[label: string, href: string]> = [
     ['models', '/models'],
     ['changes', '/changes'],
+    ['examples', '/examples'],
     ['docs', '/docs'],
     ['openapi.json', '/openapi.json'],
   ]
