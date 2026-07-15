@@ -103,6 +103,40 @@ code {
   border-bottom-color: var(--red);
 }
 
+/* provider filter */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1.1rem 0 0.2rem;
+}
+.filter-chip {
+  background: none;
+  border: 1px solid var(--ink);
+  padding: 0.25rem 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+.filter-chip:hover {
+  background: var(--paper-2);
+}
+.filter-chip-on {
+  background: var(--ink);
+  color: var(--paper);
+}
+.filter-count {
+  margin-left: 0.3rem;
+  font-size: 0.64rem;
+  color: var(--ink-soft);
+}
+.filter-chip-on .filter-count {
+  color: var(--paper-2);
+}
+
 /* layout */
 .sheet-grid {
   display: grid;

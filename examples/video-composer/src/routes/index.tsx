@@ -16,6 +16,8 @@ function entryKey(entry: VideoModelEntry): string {
 
 function Composer() {
   const catalog = Route.useLoaderData()
+  const [query, setQuery] = useState('')
+  const [provider, setProvider] = useState<string | null>(null)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [aspectLabel, setAspectLabel] = useState<string | null>(null)
   const [durationLabel, setDurationLabel] = useState<string | null>(null)
@@ -27,8 +29,29 @@ function Composer() {
   const [verdict, setVerdict] = useState<ValidationOutcome | null>(null)
   const [checking, setChecking] = useState(false)
 
+  const providers = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const entry of catalog.entries)
+      counts.set(entry.provider, (counts.get(entry.provider) ?? 0) + 1)
+    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [catalog.entries])
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return catalog.entries.filter((entry) => {
+      if (provider !== null && entry.provider !== provider) return false
+      if (needle === '') return true
+      return (
+        entry.provider.toLowerCase().includes(needle) ||
+        entry.endpointId.toLowerCase().includes(needle) ||
+        shortName(entry).toLowerCase().includes(needle)
+      )
+    })
+  }, [catalog.entries, query, provider])
+
   const selected =
-    catalog.entries.find((entry) => entryKey(entry) === selectedKey) ??
+    filtered.find((entry) => entryKey(entry) === selectedKey) ??
+    filtered[0] ??
     catalog.entries[0]
 
   // Schema-clamped effective choices: a remembered pick survives a model
@@ -131,8 +154,48 @@ function Composer() {
 
       <div className="suite-grid">
         <nav className="bin" aria-label="video models">
-          <p className="bin-label">models / {catalog.entries.length}</p>
-          {catalog.entries.map((entry) => {
+          <p className="bin-label">
+            models / {filtered.length}
+            {filtered.length !== catalog.entries.length
+              ? ` of ${catalog.entries.length}`
+              : ''}
+          </p>
+          <input
+            type="search"
+            className="bin-search"
+            placeholder="search models…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {providers.length > 1 && (
+            <div className="bin-chips" role="group" aria-label="providers">
+              <button
+                type="button"
+                className={
+                  provider === null ? 'bin-chip bin-chip-on' : 'bin-chip'
+                }
+                onClick={() => setProvider(null)}
+              >
+                all
+              </button>
+              {providers.map(([name, count]) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={
+                    provider === name ? 'bin-chip bin-chip-on' : 'bin-chip'
+                  }
+                  onClick={() => setProvider(provider === name ? null : name)}
+                >
+                  {name} {count}
+                </button>
+              ))}
+            </div>
+          )}
+          {filtered.length === 0 && (
+            <p className="bin-empty">nothing matches</p>
+          )}
+          {filtered.map((entry) => {
             const key = entryKey(entry)
             const active = key === entryKey(selected)
             return (

@@ -12,18 +12,28 @@ export const Route = createFileRoute('/')({
 function ContactSheet() {
   const catalog = Route.useLoaderData()
   const [query, setQuery] = useState('')
+  const [provider, setProvider] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const providers = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const entry of catalog.entries)
+      counts.set(entry.provider, (counts.get(entry.provider) ?? 0) + 1)
+    return [...counts.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [catalog.entries])
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    if (needle === '') return catalog.entries
-    return catalog.entries.filter(
-      (entry) =>
+    return catalog.entries.filter((entry) => {
+      if (provider !== null && entry.provider !== provider) return false
+      if (needle === '') return true
+      return (
         entry.endpointId.toLowerCase().includes(needle) ||
         entry.provider.toLowerCase().includes(needle) ||
-        entry.report.modelIds.some((id) => id.toLowerCase().includes(needle)),
-    )
-  }, [catalog.entries, query])
+        entry.report.modelIds.some((id) => id.toLowerCase().includes(needle))
+      )
+    })
+  }, [catalog.entries, query, provider])
 
   const selected =
     filtered.find((entry) => entryKey(entry) === selectedId) ?? filtered[0]
@@ -65,46 +75,82 @@ function ContactSheet() {
       {catalog.entries.length === 0 ? (
         <EmptyState baseUrl={catalog.baseUrl} swept={catalog.providers} />
       ) : (
-        <div className="sheet-grid">
-          <nav className="index" aria-label="image models">
-            {byProvider.map(([provider, group]) => (
-              <section key={provider}>
-                <h2 className="index-provider">{provider}</h2>
-                {group.map((entry) => {
-                  const key = entryKey(entry)
-                  const active =
-                    selected !== undefined && entryKey(selected) === key
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={
-                        active ? 'index-row index-row-on' : 'index-row'
-                      }
-                      onClick={() => setSelectedId(key)}
-                    >
-                      <span className="index-name">{entry.endpointId}</span>
-                      <span className="index-count">
-                        {entry.report.sizes.length > 0
-                          ? `${String(entry.report.sizes.length)} sizes`
-                          : entry.report.aspects.length > 0
-                            ? `${String(entry.report.aspects.length)} ratios`
-                            : entry.report.bounds !== null
-                              ? 'free size'
-                              : '—'}
-                      </span>
-                    </button>
-                  )
-                })}
-              </section>
-            ))}
-            {filtered.length === 0 && (
-              <p className="index-empty">nothing matches “{query}”</p>
-            )}
-          </nav>
+        <>
+          {providers.length > 1 && (
+            <div className="filter-row" role="group" aria-label="providers">
+              <button
+                type="button"
+                className={
+                  provider === null
+                    ? 'filter-chip filter-chip-on'
+                    : 'filter-chip'
+                }
+                onClick={() => setProvider(null)}
+              >
+                all{' '}
+                <span className="filter-count">{catalog.entries.length}</span>
+              </button>
+              {providers.map(([name, count]) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={
+                    provider === name
+                      ? 'filter-chip filter-chip-on'
+                      : 'filter-chip'
+                  }
+                  onClick={() => setProvider(provider === name ? null : name)}
+                >
+                  {name} <span className="filter-count">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="sheet-grid">
+            <nav className="index" aria-label="image models">
+              {byProvider.map(([providerName, group]) => (
+                <section key={providerName}>
+                  <h2 className="index-provider">{providerName}</h2>
+                  {group.map((entry) => {
+                    const key = entryKey(entry)
+                    const active =
+                      selected !== undefined && entryKey(selected) === key
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className={
+                          active ? 'index-row index-row-on' : 'index-row'
+                        }
+                        onClick={() => setSelectedId(key)}
+                      >
+                        <span className="index-name">{entry.endpointId}</span>
+                        <span className="index-count">
+                          {entry.report.sizes.length > 0
+                            ? `${String(entry.report.sizes.length)} sizes`
+                            : entry.report.aspects.length > 0
+                              ? `${String(entry.report.aspects.length)} ratios`
+                              : entry.report.bounds !== null
+                                ? 'free size'
+                                : '—'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </section>
+              ))}
+              {filtered.length === 0 && (
+                <p className="index-empty">
+                  nothing matches
+                  {provider !== null ? ` in ${provider}` : ''}
+                  {query.trim() !== '' ? ` “${query}”` : ''}
+                </p>
+              )}
+            </nav>
 
-          {selected !== undefined && <DetailPane entry={selected} />}
-        </div>
+            {selected !== undefined && <DetailPane entry={selected} />}
+          </div>
+        </>
       )}
     </main>
   )
