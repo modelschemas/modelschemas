@@ -1,11 +1,22 @@
 /**
- * OpenAI — canonical OpenAPI spec from github.com/openai/openai-openapi
- * (raw YAML, public). Models endpoint requires OPENAI_API_KEY.
+ * OpenAI — official OpenAPI spec published by OpenAI's Stainless-generated
+ * SDKs. The `.stats.yml` in openai-node declares the current
+ * `openapi_spec_url` (a hash-stamped YAML in GCS). This leads the public
+ * github.com/openai/openai-openapi export, which lags behind API releases
+ * (e.g. gpt-image-2 was in the Stainless spec's model enums while the
+ * public repo still capped at gpt-image-1.5). Models endpoint requires
+ * OPENAI_API_KEY.
  */
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
+import {
+  fetchJson,
+  fetchText,
+  resolveStainlessSpecUrl,
+  sha256Text,
+  skippedResult,
+} from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -15,8 +26,8 @@ import type {
   SpecFetchResult,
 } from './types.ts'
 
-const OPENAI_OPENAPI_URL =
-  'https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml'
+const OPENAI_STATS_URL =
+  'https://raw.githubusercontent.com/openai/openai-node/master/.stats.yml'
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models'
 
 /**
@@ -50,12 +61,14 @@ function classify(path: string, op: OpenApiOperation): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const yamlText = await fetchText(OPENAI_OPENAPI_URL)
+  const specUrl = await resolveStainlessSpecUrl('openai', OPENAI_STATS_URL)
+  const yamlText = await fetchText(specUrl)
   const spec = parse(yamlText) as OpenApiDocument
   return {
     specs: [spec],
-    sources: [{ url: OPENAI_OPENAPI_URL, hash: await sha256Text(yamlText) }],
+    sources: [{ url: specUrl, hash: await sha256Text(yamlText) }],
     outputStrategy: 'post-200',
+    specRevision: specUrl,
   }
 }
 

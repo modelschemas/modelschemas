@@ -6,9 +6,10 @@ export type ProviderSeed = typeof providers.$inferInsert
  * Spec-source config for the 7 monitored providers, ported from TanStack AI
  * PR #622 (`packages/ai-schemas/scripts/providers/*`):
  *
- * - Anthropic's spec URL is not fetched directly: the seeded URL is the
- *   Stainless `.stats.yml` for the TypeScript SDK, whose `openapi_spec_url`
- *   field points at the current spec revision (resolved at sync time).
+ * - OpenAI's and Anthropic's spec URLs are not fetched directly: the seeded
+ *   URL is the Stainless `.stats.yml` for each TypeScript SDK, whose
+ *   `openapi_spec_url` field points at the current spec revision (resolved
+ *   at sync time). The Stainless artifact leads the public spec exports.
  * - Gemini publishes a Google Discovery document, converted to OpenAPI during
  *   sync.
  * - FAL lists per-model OpenAPI specs from its models API via the
@@ -21,8 +22,9 @@ export const providerSeeds: Array<ProviderSeed> = [
   {
     id: 'openai',
     displayName: 'OpenAI',
+    // Stainless .stats.yml; resolve `openapi_spec_url` at sync time.
     specSourceUrl:
-      'https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml',
+      'https://raw.githubusercontent.com/openai/openai-node/master/.stats.yml',
     modelsEndpoint: 'https://api.openai.com/v1/models',
     authEnvVar: 'OPENAI_API_KEY',
   },
