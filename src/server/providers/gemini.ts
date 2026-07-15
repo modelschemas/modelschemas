@@ -231,6 +231,34 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
+/**
+ * Model-level activity. Google's models API doesn't label modality, so
+ * derive it from the signals it does carry: `predict`, `predictLongRunning`,
+ * and `embedContent` uniquely identify Imagen, Veo, and embedding models.
+ * The generateContent surface serves chat, image (Nano Banana), and TTS
+ * models alike, so it splits on the id's `-image`/`-tts` segments. The
+ * live/native-audio bidiGenerateContent models group with chat, matching
+ * the OpenAI Realtime → chat mapping.
+ */
+export function geminiModelActivity(
+  rawId: string,
+  methods: Array<string>,
+): Activity | null {
+  if (methods.includes('predict')) return 'image'
+  if (methods.includes('predictLongRunning')) return 'video'
+  if (methods.includes('embedContent') || methods.includes('embedText')) {
+    return 'embeddings'
+  }
+  const generates =
+    methods.includes('generateContent') ||
+    methods.includes('bidiGenerateContent') ||
+    methods.includes('generateAnswer')
+  if (!generates) return null
+  if (/(^|-)image(-|$)/.test(rawId)) return 'image'
+  if (/(^|-)tts(-|$)/.test(rawId)) return 'audio'
+  return 'chat'
+}
+
 interface GeminiModelList {
   models?: Array<{
     name: string
@@ -260,6 +288,10 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       models.push({
         rawId,
         displayName: m.displayName ?? null,
+        activity: geminiModelActivity(
+          rawId,
+          m.supportedGenerationMethods ?? [],
+        ),
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
         capabilities: m.supportedGenerationMethods,
