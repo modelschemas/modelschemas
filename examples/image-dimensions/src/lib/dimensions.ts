@@ -76,6 +76,44 @@ const PRESET_DIMS: Record<string, [number, number]> = {
 const SIZE_RE = /^(\d{2,5})\s*[x×]\s*(\d{2,5})$/i
 const ASPECT_RE = /^(\d{1,2})\s*:\s*(\d{1,2})$/
 
+/**
+ * Google Discovery specs encode enum values as symbolic constants
+ * (`ASPECT_RATIO_SIXTEEN_BY_NINE`, `IMAGE_SIZE_TWO_K`) rather than the
+ * literal labels every other provider uses; map them back. `*_UNSPECIFIED`
+ * sentinels are dropped before these run.
+ */
+const GOOGLE_NUMBER_WORDS: Record<string, number> = {
+  ONE: 1,
+  TWO: 2,
+  THREE: 3,
+  FOUR: 4,
+  FIVE: 5,
+  SIX: 6,
+  SEVEN: 7,
+  EIGHT: 8,
+  NINE: 9,
+  TEN: 10,
+  SIXTEEN: 16,
+  TWENTY_ONE: 21,
+}
+
+const GOOGLE_IMAGE_SIZES: Record<string, string> = {
+  IMAGE_SIZE_FIVE_TWELVE: '512',
+  IMAGE_SIZE_ONE_K: '1K',
+  IMAGE_SIZE_TWO_K: '2K',
+  IMAGE_SIZE_FOUR_K: '4K',
+}
+
+/** `ASPECT_RATIO_SIXTEEN_BY_NINE` → `16:9`; undefined when not symbolic. */
+function googleAspectLabel(value: string): string | undefined {
+  const match = /^ASPECT_RATIO_(.+)_BY_(.+)$/.exec(value)
+  if (match?.[1] === undefined || match[2] === undefined) return undefined
+  const w = GOOGLE_NUMBER_WORDS[match[1]]
+  const h = GOOGLE_NUMBER_WORDS[match[2]]
+  if (w === undefined || h === undefined) return undefined
+  return `${String(w)}:${String(h)}`
+}
+
 function parseAspect(label: string): number | undefined {
   const match = ASPECT_RE.exec(label)
   if (match?.[1] === undefined || match[2] === undefined) return undefined
@@ -174,13 +212,21 @@ export function extractDimensions(schema: SchemaNode): DimensionReport {
       for (const id of options)
         if (!report.modelIds.includes(id)) report.modelIds.push(id)
     } else if (ASPECT_KEYS.has(lower) && options !== undefined) {
-      for (const option of options) addAspect(option, option === fallback)
+      for (const option of options) {
+        if (option.endsWith('_UNSPECIFIED')) continue
+        addAspect(googleAspectLabel(option) ?? option, option === fallback)
+      }
     } else if (RESOLUTION_KEYS.has(lower) && options !== undefined) {
-      for (const option of options)
+      for (const option of options) {
+        if (option.endsWith('_UNSPECIFIED')) continue
         if (!report.resolutions.includes(option))
           report.resolutions.push(option)
+      }
     } else if (SIZE_KEYS.has(lower) && options !== undefined) {
-      for (const option of options) addSize(option, option === fallback)
+      for (const option of options) {
+        if (option.endsWith('_UNSPECIFIED')) continue
+        addSize(GOOGLE_IMAGE_SIZES[option] ?? option, option === fallback)
+      }
     } else if (lower === 'width' || lower === 'height') {
       const bounds: Bounds = report.bounds ?? {}
       const min = num(resolved, 'minimum')
