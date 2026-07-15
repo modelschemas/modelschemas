@@ -9,7 +9,13 @@ import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
-import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
+import {
+  fetchJson,
+  fetchText,
+  resolveStainlessSpecUrl,
+  sha256Text,
+  skippedResult,
+} from './types.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -22,17 +28,6 @@ const ANTHROPIC_STATS_URL =
   'https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/.stats.yml'
 const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models'
 const ANTHROPIC_VERSION = '2023-06-01'
-
-export async function resolveAnthropicSpecUrl(): Promise<string> {
-  const text = await fetchText(ANTHROPIC_STATS_URL)
-  // .stats.yml is plain YAML key-value; we only need one field, so avoid a
-  // full YAML parse for the common case.
-  const match = text.match(/^openapi_spec_url:\s*(.+)$/m)
-  if (!match?.[1]) {
-    throw new Error("anthropic .stats.yml: couldn't find openapi_spec_url")
-  }
-  return match[1].trim()
-}
 
 /**
  * Anthropic's generation surface is messages + the legacy text completion
@@ -50,7 +45,10 @@ function classify(path: string): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const specUrl = await resolveAnthropicSpecUrl()
+  const specUrl = await resolveStainlessSpecUrl(
+    'anthropic',
+    ANTHROPIC_STATS_URL,
+  )
   const yamlText = await fetchText(specUrl)
   const spec = parse(yamlText) as OpenApiDocument
   return {
