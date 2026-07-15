@@ -119,6 +119,51 @@ code {
   text-transform: uppercase;
   color: var(--dim);
 }
+.bin-search {
+  background: var(--coal-2);
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.6rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--fog);
+  outline: none;
+}
+.bin-search::placeholder {
+  color: var(--dim);
+}
+.bin-search:focus {
+  border-color: var(--signal);
+}
+.bin-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.1rem 0 0.3rem;
+}
+.bin-chip {
+  background: var(--coal-2);
+  border: 1px solid var(--line);
+  padding: 0.2rem 0.55rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  cursor: pointer;
+}
+.bin-chip:hover {
+  border-color: var(--line-2);
+  color: var(--fog);
+}
+.bin-chip-on {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+.bin-empty {
+  color: var(--dim);
+  font-style: italic;
+  font-size: 0.75rem;
+}
 .bin-row {
   display: flex;
   flex-direction: column;
