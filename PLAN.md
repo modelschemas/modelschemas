@@ -884,3 +884,33 @@ Design settled with Tom (don't relitigate):
       shows date coverage openai 129/129, anthropic 10/10, grok 10/10,
       openrouter 344/344, fal 1399/1399; worker test walks insert/backdate/
       never-forward/update-compose cycles.
+
+## Phase 14 — BytePlus provider (2026-08-11)
+
+- [x] **14.1 BytePlus as the 8th provider — fully static, keyless.** BytePlus
+      publishes no machine-readable spec (its OpenAPI docs live behind the
+      console's API explorer) and the Ark data-plane `GET /models` needs a
+      region-bound key AND is documented non-exhaustive, so both surfaces are
+      embedded, ported from TanStack AI's `@tanstack/ai-byteplus` adapter
+      (whose wire types are hand-written, test-pinned, and probe-verified
+      against the ap-southeast host on 2026-07-31):
+      `src/server/providers/byteplus-spec.ts` synthesizes two OpenAPI 3.1
+      documents — Ark (`/chat/completions` OpenAI-compatible + thinking/
+      reasoning*effort/repetition_penalty/service_tier extensions,
+      `/images/generations` Seedream, `/contents/generations/tasks` Seedance
+      async task API whose 200 is just the `{id}` ack, post-200 precedent per
+      OpenRouter/ElevenLabs job acks) and Seed Speech (`/tts/create`,
+      `/auc/bigmodel/recognize/flash` — separate host and `X-Api-Key` product
+      key). `byteplus.ts` classifies by exact path and serves the curated
+      32-model catalog (18 chat / 7 video / 5 image / 2 speech) with context
+      windows, modalities, probed structured-output capabilities, and
+      `releasedAt` from the `-YYMMDD` id suffix
+      (`byteplusIdSuffixDate` in release-dates.ts). Provenance: sources point
+      at the human docs, hashes are `contentHash` of the built documents (FAL
+      embedded-spec precedent), so content changes only land through edits
+      here and version like any upstream change. NOTE the HMAC
+      `BYTEPLUS_ACCESS_KEY`/`SECRET_KEY` pair in the old providers-to-add
+      table only guards the control plane — never needed. \_Accepts:*
+      byteplus.test.ts walks classifyAndBundle over the embedded specs (5
+      endpoints, zero warnings, no dangling refs, deterministic hashes) and
+      the catalog counts; registry/seed tests updated to 8.

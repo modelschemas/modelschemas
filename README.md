@@ -2,7 +2,8 @@
 
 Live AI model schema service on Cloudflare Workers: per-endpoint
 request/response JSON Schemas and model metadata for monitored providers
-(OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL), with
+(OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL, BytePlus),
+with
 react-query-style server-side caching (D1 source of truth, KV hot cache,
 stale-while-revalidate) and automatic refresh — model lists every 15 minutes,
 full OpenAPI spec syncs daily.
@@ -118,7 +119,7 @@ Local data setup:
 
 ```bash
 bun run db:migrate       # apply migrations to wrangler's local D1
-bun run seed             # seed the 7 providers
+bun run seed             # seed the 8 providers
 bun run dev              # then, in another shell:
 curl -X POST http://localhost:3100/v1/admin/sync/openrouter -H "X-Admin-Key: $ADMIN_KEY"
 ```
@@ -151,8 +152,8 @@ upstream spec, no service needed).
    bytes), `ADMIN_KEY`, and optionally provider keys — `OPENAI_API_KEY`,
    `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`,
    `ELEVENLABS_API_KEY`, `FAL_KEY`. Providers without keys are skipped with
-   a recorded warning (OpenRouter needs none; Anthropic's spec sync is also
-   keyless). Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
+   a recorded warning (OpenRouter and BytePlus need none; Anthropic's spec
+   sync is also keyless). Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
    deployed origin (agent JWT audiences are origin-bound).
 
 4. Deploy and warm:

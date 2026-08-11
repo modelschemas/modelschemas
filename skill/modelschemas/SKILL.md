@@ -1,6 +1,6 @@
 ---
 name: modelschemas
-description: Live AI model schema service. Use when asked about a "model schema", "what models support X", "validate this provider payload", which AI models exist right now (availability, context windows, modalities, pricing, capabilities) across OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, or FAL, or the request/response shape of a provider endpoint.
+description: Live AI model schema service. Use when asked about a "model schema", "what models support X", "validate this provider payload", which AI models exist right now (availability, context windows, modalities, pricing, capabilities) across OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL, or BytePlus, or the request/response shape of a provider endpoint.
 ---
 
 # modelschemas

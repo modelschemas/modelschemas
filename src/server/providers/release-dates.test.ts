@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ELEVENLABS_RELEASE_DATES,
   GEMINI_RELEASE_DATES,
+  byteplusIdSuffixDate,
   curatedReleasedAt,
   dateToEpoch,
   geminiIdSuffixDate,
@@ -35,6 +36,22 @@ describe('release date helpers', () => {
     expect(geminiIdSuffixDate('gemini-2.5-pro')).toBeNull()
     // Month out of range.
     expect(geminiIdSuffixDate('model-preview-13-2025')).toBeNull()
+  })
+
+  it('extracts the YYMMDD suffix embedded in dated BytePlus ids', () => {
+    expect(byteplusIdSuffixDate('seedance-1-5-pro-251215')).toBe(
+      dateToEpoch('2025-12-15'),
+    )
+    expect(byteplusIdSuffixDate('dola-seed-2-1-turbo-260628')).toBe(
+      dateToEpoch('2026-06-28'),
+    )
+    // Undated Seed Speech ids and short numeric suffixes must not parse.
+    expect(byteplusIdSuffixDate('seed-audio-1.0')).toBeNull()
+    expect(byteplusIdSuffixDate('seed-asr')).toBeNull()
+    expect(byteplusIdSuffixDate('gpt-4-0613')).toBeNull()
+    // Implausible month/day.
+    expect(byteplusIdSuffixDate('model-251345')).toBeNull()
+    expect(byteplusIdSuffixDate('model-250099')).toBeNull()
   })
 
   it('resolves curated dates and misses to null', () => {

@@ -1,7 +1,7 @@
 # Providers to add — credential checklist
 
-Working list for expanding past the current 7 (OpenAI, Anthropic, Gemini, Grok,
-ElevenLabs, OpenRouter, FAL). Ordered by priority.
+Working list for expanding past the current 8 (OpenAI, Anthropic, Gemini, Grok,
+ElevenLabs, OpenRouter, FAL, BytePlus). Ordered by priority.
 
 **Two things need auth, separately:**
 
@@ -43,12 +43,17 @@ best-known — confirm on signup.
 
 ## Special auth — higher effort, do these later
 
-| Secret(s)                                                          | Provider            | Why it's harder                                                                           |
-| ------------------------------------------------------------------ | ------------------- | ----------------------------------------------------------------------------------------- |
-| `BYTEPLUS_ACCESS_KEY` + `BYTEPLUS_SECRET_KEY`                      | BytePlus (ModelArk) | Signature auth (HMAC), not a bearer token. Seedance/Seedream/Doubao. console.byteplus.com |
-| AWS creds (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + region) | AWS Bedrock         | SigV4 / IAM. Spec is Smithy models, not one OpenAPI URL.                                  |
-| service-account JSON                                               | Google Vertex AI    | OAuth service account, per-project routing.                                               |
-| `AZURE_OPENAI_API_KEY` + endpoint                                  | Azure OpenAI        | Key + resource endpoint + `api-version`; deployment-name routing.                         |
+(BytePlus graduated off this list 2026-08: the HMAC signature auth only guards
+its control plane — the Ark data plane takes a plain bearer `ARK_API_KEY`, and
+since there's no public spec and the data-plane `GET /models` is documented
+non-exhaustive, the provider ships keyless with the spec + model catalog
+embedded, ported from `@tanstack/ai-byteplus`.)
+
+| Secret(s)                                                          | Provider         | Why it's harder                                                   |
+| ------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------- |
+| AWS creds (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + region) | AWS Bedrock      | SigV4 / IAM. Spec is Smithy models, not one OpenAPI URL.          |
+| service-account JSON                                               | Google Vertex AI | OAuth service account, per-project routing.                       |
+| `AZURE_OPENAI_API_KEY` + endpoint                                  | Azure OpenAI     | Key + resource endpoint + `api-version`; deployment-name routing. |
 
 ## Keyless — no credential needed
 

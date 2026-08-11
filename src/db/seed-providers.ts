@@ -3,7 +3,7 @@ import type { providers } from './schema.ts'
 export type ProviderSeed = typeof providers.$inferInsert
 
 /**
- * Spec-source config for the 7 monitored providers, ported from TanStack AI
+ * Spec-source config for the 8 monitored providers, ported from TanStack AI
  * PR #622 (`packages/ai-schemas/scripts/providers/*`):
  *
  * - Anthropic's spec URL is not fetched directly: the seeded URL is the
@@ -16,6 +16,10 @@ export type ProviderSeed = typeof providers.$inferInsert
  *   `sibling-get` strategy rather than `post-200`.
  * - OpenRouter also exposes `/api/v1/videos/models` for synthesized
  *   per-model video endpoints.
+ * - BytePlus publishes no machine-readable spec; specs and the model catalog
+ *   are embedded in `src/server/providers/byteplus{,-spec}.ts` (ported from
+ *   `@tanstack/ai-byteplus`), so the seeded URLs are provenance/config
+ *   metadata, not fetch targets.
  */
 export const providerSeeds: Array<ProviderSeed> = [
   {
@@ -73,5 +77,15 @@ export const providerSeeds: Array<ProviderSeed> = [
     specSourceUrl: 'https://api.fal.ai/v1/models?expand=openapi-3.0',
     modelsEndpoint: 'https://api.fal.ai/v1/models',
     authEnvVar: 'FAL_KEY',
+  },
+  {
+    id: 'byteplus',
+    displayName: 'BytePlus',
+    // Human docs the embedded spec was derived from — nothing is fetched.
+    specSourceUrl: 'https://docs.byteplus.com/en/docs/ModelArk',
+    // Ark's live listing (needs a region-bound key, documented non-exhaustive)
+    // is recorded for reference; listModels serves the embedded catalog.
+    modelsEndpoint: 'https://ark.ap-southeast.bytepluses.com/api/v3/models',
+    authEnvVar: null,
   },
 ]

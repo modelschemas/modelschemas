@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this project is
 
 A Cloudflare Workers service giving AI agents live access to model schemas:
-per-endpoint request/response JSON Schemas and model metadata for 7 monitored
-providers (OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL),
+per-endpoint request/response JSON Schemas and model metadata for 8 monitored
+providers (OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL,
+BytePlus),
 with react-query-style server-side caching (D1 source of truth, KV hot cache,
 stale-while-revalidate) and cron-driven auto-refresh. Design ported from
 TanStack AI PR #622 (`@tanstack/ai-schemas`), minus codegen — schemas are
@@ -41,7 +42,7 @@ Database (drizzle-kit generates; wrangler applies):
 bun run db:generate          # generate migrations from src/db/schema.ts
 bun run db:migrate           # apply to wrangler's LOCAL D1
 bun run db:migrate:remote    # apply to remote D1
-bun run seed                 # seed the 7 providers (--remote for prod)
+bun run seed                 # seed the 8 providers (--remote for prod)
 ```
 
 Generated artifacts (committed; CI fails on drift):
