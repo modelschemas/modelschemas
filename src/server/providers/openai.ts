@@ -83,6 +83,7 @@ export const openaiProvider: ProviderConfig = {
   id: 'openai',
   displayName: 'OpenAI',
   authEnvVar: 'OPENAI_API_KEY',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,

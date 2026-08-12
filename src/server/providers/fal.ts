@@ -207,6 +207,7 @@ export const falProvider: ProviderConfig = {
   id: 'fal',
   displayName: 'FAL',
   authEnvVar: 'FAL_KEY',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,

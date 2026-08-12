@@ -427,6 +427,16 @@ export const schemaVersions = sqliteTable(
     sourceUrl: text('source_url'),
     sourceHash: text('source_hash'),
     extractorVersion: text('extractor_version'),
+    /**
+     * How the content was arrived at — the `Derivation` trust ladder in
+     * `src/server/providers/types.ts`. Nullable on rows synced before it was
+     * recorded. `verifiedAt` is a `YYYY-MM-DD` date and is only meaningful
+     * for `probe-verified`, whose accuracy is a point-in-time claim.
+     */
+    derivation: text('derivation', {
+      enum: ['upstream-spec', 'generated', 'probe-verified', 'docs-derived'],
+    }),
+    verifiedAt: text('verified_at'),
     createdAt: integer('created_at').notNull(),
     supersededAt: integer('superseded_at'),
   },

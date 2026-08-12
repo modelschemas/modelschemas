@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { anthropicProvider } from './anthropic.ts'
+import { byteplusProvider } from './byteplus.ts'
 import { elevenlabsProvider } from './elevenlabs.ts'
 import { FAL_ACTIVITY_MARKER, falCategoryActivity, falProvider } from './fal.ts'
 import { discoveryToOpenApi, geminiProvider } from './gemini.ts'
@@ -16,9 +17,10 @@ import { getProvider, providerRegistry } from './index.ts'
 import type { OpenApiDocument } from './types.ts'
 
 describe('registry', () => {
-  it('contains the 7 providers, ids matching the seed data', () => {
+  it('contains the 8 providers, ids matching the seed data', () => {
     expect(providerRegistry.map((p) => p.id).sort()).toEqual([
       'anthropic',
+      'byteplus',
       'elevenlabs',
       'fal',
       'gemini',
@@ -315,5 +317,45 @@ describe('fal classify', () => {
     expect(
       falProvider.classify('/x', { [FAL_ACTIVITY_MARKER]: 'not-real' }),
     ).toBeNull()
+  })
+})
+
+describe('byteplus classify', () => {
+  it('maps the two hosts by exact path, drops everything else', () => {
+    expect(byteplusProvider.classify('/chat/completions', {})).toBe('chat')
+    expect(byteplusProvider.classify('/images/generations', {})).toBe('image')
+    expect(byteplusProvider.classify('/contents/generations/tasks', {})).toBe(
+      'video',
+    )
+    expect(byteplusProvider.classify('/tts/create', {})).toBe('audio')
+    expect(byteplusProvider.classify('/auc/bigmodel/recognize/flash', {})).toBe(
+      'audio',
+    )
+    expect(byteplusProvider.classify('/models', {})).toBeNull()
+    expect(
+      byteplusProvider.classify('/contents/generations/tasks/{id}', {}),
+    ).toBeNull()
+  })
+})
+
+describe('provider derivations', () => {
+  it('grades every registered provider', () => {
+    const byId = Object.fromEntries(
+      providerRegistry.map((p) => [p.id, p.defaultDerivation]),
+    )
+    // The seven that re-fetch a published spec document every sync.
+    for (const id of [
+      'openai',
+      'anthropic',
+      'gemini',
+      'grok',
+      'elevenlabs',
+      'openrouter',
+      'fal',
+    ]) {
+      expect(byId[id], id).toBe('upstream-spec')
+    }
+    // BytePlus stamps per operation; the default is only a backstop.
+    expect(byId.byteplus).toBe('probe-verified')
   })
 })

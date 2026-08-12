@@ -1,4 +1,5 @@
 import { anthropicProvider } from './anthropic.ts'
+import { byteplusProvider } from './byteplus.ts'
 import { elevenlabsProvider } from './elevenlabs.ts'
 import { falProvider } from './fal.ts'
 import { geminiProvider } from './gemini.ts'
@@ -15,6 +16,7 @@ export const providerRegistry: Array<ProviderConfig> = [
   elevenlabsProvider,
   openrouterProvider,
   falProvider,
+  byteplusProvider,
 ]
 
 export function getProvider(id: string): ProviderConfig | undefined {

@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this project is
 
 A Cloudflare Workers service giving AI agents live access to model schemas:
-per-endpoint request/response JSON Schemas and model metadata for 7 monitored
-providers (OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL),
+per-endpoint request/response JSON Schemas and model metadata for 8 monitored
+providers (OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL,
+BytePlus),
 with react-query-style server-side caching (D1 source of truth, KV hot cache,
 stale-while-revalidate) and cron-driven auto-refresh. Design ported from
 TanStack AI PR #622 (`@tanstack/ai-schemas`), minus codegen — schemas are
@@ -41,7 +42,7 @@ Database (drizzle-kit generates; wrangler applies):
 bun run db:generate          # generate migrations from src/db/schema.ts
 bun run db:migrate           # apply to wrangler's LOCAL D1
 bun run db:migrate:remote    # apply to remote D1
-bun run seed                 # seed the 7 providers (--remote for prod)
+bun run seed                 # seed the 8 providers (--remote for prod)
 ```
 
 Generated artifacts (committed; CI fails on drift):
@@ -84,6 +85,17 @@ GLOBAL (KVNamespace, D1Database, …) — do not import from
 @cloudflare/workers-types (removed; its types conflict with the generated
 ones).
 
+- **BytePlus** publishes no OpenAPI document (`/openapi.json` is a catch-all
+  200-empty; the real ones sit behind the console's API Explorer login), so
+  its Ark spec is GENERATED at sync time from BytePlus's official Go SDK:
+  `fetchSpec` pulls `service/arkruntime/model/*.go` from GitHub,
+  `go-struct-parser.ts` turns the `json:"…"`-tagged structs into schemas, and
+  `byteplus-ark-build.ts` maps them onto paths and re-applies curated
+  descriptions plus the few request fields the SDK omits. `byteplus-spec.ts`
+  holds the hand-ported fallback used when that fetch/parse fails, and the
+  Seed Speech document, which no SDK covers. The model catalog is live when
+  `ARK_API_KEY` is set (Ark `GET /models`), with the embedded catalog filling
+  the gaps that listing omits — Seed Speech and unlisted-but-served ids.
 - **Ingest** (`src/server/providers/` + `src/server/ingest/`): per-provider
   `ProviderConfig` (fetchSpec/listModels/classify) → `bundle.ts` extracts
   request/response schemas and inlines `$ref` closures under `$defs` →

@@ -2,7 +2,8 @@
 
 Live AI model schema service on Cloudflare Workers: per-endpoint
 request/response JSON Schemas and model metadata for monitored providers
-(OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL), with
+(OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL, BytePlus),
+with
 react-query-style server-side caching (D1 source of truth, KV hot cache,
 stale-while-revalidate) and automatic refresh — model lists every 15 minutes,
 full OpenAPI spec syncs daily.
@@ -118,7 +119,7 @@ Local data setup:
 
 ```bash
 bun run db:migrate       # apply migrations to wrangler's local D1
-bun run seed             # seed the 7 providers
+bun run seed             # seed the 8 providers
 bun run dev              # then, in another shell:
 curl -X POST http://localhost:3100/v1/admin/sync/openrouter -H "X-Admin-Key: $ADMIN_KEY"
 ```
@@ -150,10 +151,29 @@ upstream spec, no service needed).
 3. Secrets (`wrangler secret put <NAME>`): `BETTER_AUTH_SECRET` (32+ random
    bytes), `ADMIN_KEY`, and optionally provider keys — `OPENAI_API_KEY`,
    `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`,
-   `ELEVENLABS_API_KEY`, `FAL_KEY`. Providers without keys are skipped with
-   a recorded warning (OpenRouter needs none; Anthropic's spec sync is also
-   keyless). Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
+   `ELEVENLABS_API_KEY`, `FAL_KEY`, `ARK_API_KEY`. Providers without keys are
+   skipped with a recorded warning (OpenRouter needs none; Anthropic's spec
+   sync is also keyless). `ARK_API_KEY` is the exception: it is optional and
+   only upgrades BytePlus's model catalog from the embedded one to Ark's live
+   listing — BytePlus still serves schemas and a catalog without it. Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
    deployed origin (agent JWT audiences are origin-bound).
+
+   Rather than setting them one at a time, reconcile against Doppler:
+
+   ```bash
+   bun run secrets:check   # three-way diff: code ↔ Doppler prd ↔ Worker
+   bun run secrets:push    # apply (one wrangler secret bulk call)
+   ```
+
+   It runs locally against your existing Doppler and wrangler logins, so no
+   token goes near CI. Secrets are written into a new Worker version rather
+   than the live one (the live API refuses while an undeployed preview
+   version exists); the next deploy inherits them. The expected set is derived from each provider's
+   `authEnvVar`, so it stays correct as providers are added; `DOPPLER_*`
+   context vars are never pushed, and nothing is ever deleted. Deliberately
+   NOT a CI job: that would need a long-lived Doppler service token plus a
+   Cloudflare API token in GitHub, turning repo write access into full
+   production compromise.
 
 4. Deploy and warm:
 

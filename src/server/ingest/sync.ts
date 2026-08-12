@@ -12,7 +12,11 @@ import { changes, endpoints, providers, schemaVersions } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
+import { PROVENANCE_MARKER } from '#/server/providers/types.ts'
 import type {
+  Derivation,
+  EndpointProvenance,
+  OpenApiOperation,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -53,12 +57,45 @@ export interface ClassifiedEndpoint {
   description: string | null
   /** Provenance of the spec document this endpoint came from. */
   source: SpecSource | null
+  /** How this endpoint's schemas were arrived at (the trust ladder). */
+  derivation: Derivation
+  /** `YYYY-MM-DD` a `probe-verified` claim was last confirmed. */
+  verifiedAt: string | null
   input?: Record<string, JsonValue>
   output?: Record<string, JsonValue>
 }
 
 function newChangeId(): string {
   return crypto.randomUUID()
+}
+
+const DERIVATIONS: ReadonlyArray<Derivation> = [
+  'upstream-spec',
+  'generated',
+  'probe-verified',
+  'docs-derived',
+]
+
+/**
+ * Per-operation provenance annotation, falling back to the provider's
+ * default. A malformed marker falls back too rather than throwing — a bad
+ * annotation should not sink a sync.
+ */
+function readProvenance(
+  op: OpenApiOperation,
+  provider: ProviderConfig,
+): { derivation: Derivation; verifiedAt: string | null } {
+  const marker = op[PROVENANCE_MARKER]
+  if (marker !== null && typeof marker === 'object') {
+    const { derivation, verifiedAt } = marker as Partial<EndpointProvenance>
+    if (typeof derivation === 'string' && DERIVATIONS.includes(derivation)) {
+      return {
+        derivation: derivation,
+        verifiedAt: typeof verifiedAt === 'string' ? verifiedAt : null,
+      }
+    }
+  }
+  return { derivation: provider.defaultDerivation, verifiedAt: null }
 }
 
 /**
@@ -105,12 +142,15 @@ export function classifyAndBundle(
           : typeof post.description === 'string'
             ? post.description
             : null
+      const { derivation, verifiedAt } = readProvenance(post, provider)
       classified.push({
         dbId: `${provider.id}/${endpointIdFromPath(pathKey)}`,
         path: pathKey,
         activity,
         description,
         source,
+        derivation,
+        verifiedAt,
         input: extracted.input,
         output: extracted.output,
       })
@@ -136,6 +176,7 @@ export async function syncProvider(
   }
 
   const fetched = await provider.fetchSpec(secrets)
+  if (fetched.warnings) outcome.warnings.push(...fetched.warnings)
   if (fetched.skipped) {
     outcome.skipped = fetched.skipped
     outcome.warnings.push(fetched.skipped)
@@ -218,6 +259,8 @@ export async function syncProvider(
           sourceUrl: endpoint.source?.url ?? null,
           sourceHash: endpoint.source?.hash ?? null,
           extractorVersion: EXTRACTOR_VERSION,
+          derivation: endpoint.derivation,
+          verifiedAt: endpoint.verifiedAt,
           createdAt: now,
         })
         .onConflictDoUpdate({
@@ -228,6 +271,8 @@ export async function syncProvider(
             sourceUrl: endpoint.source?.url ?? null,
             sourceHash: endpoint.source?.hash ?? null,
             extractorVersion: EXTRACTOR_VERSION,
+            derivation: endpoint.derivation,
+            verifiedAt: endpoint.verifiedAt,
             createdAt: now,
           },
         })

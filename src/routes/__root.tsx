@@ -20,7 +20,7 @@ export const Route = createRootRoute({
       {
         name: 'description',
         content:
-          'Which AI models exist right now, and what do their payloads look like? Live request/response JSON Schemas and model metadata across OpenAI, Anthropic, Gemini, Grok, ElevenLabs, OpenRouter and FAL — built for agents.',
+          'Which AI models exist right now, and what do their payloads look like? Live request/response JSON Schemas and model metadata across OpenAI, Anthropic, Gemini, Grok, ElevenLabs, OpenRouter, FAL and BytePlus — built for agents.',
       },
     ],
     links: [

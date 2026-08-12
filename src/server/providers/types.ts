@@ -7,6 +7,44 @@ import type { Activity } from '#/db/schema.ts'
  * (the 15-minute poll tier).
  */
 
+/**
+ * How a schema's content was arrived at — a trust ladder, strongest first.
+ * Agents use it to weigh how much a schema can be relied on, and it makes a
+ * stale hand-written corner visible instead of invisible.
+ *
+ * - `upstream-spec`  — extracted from a machine-readable document the
+ *   provider itself publishes and we re-fetch every sync. Self-healing.
+ * - `generated`      — derived at sync time from a provider-published
+ *   artifact that is not a spec (BytePlus's Go SDK structs). Also
+ *   self-healing, one inference step removed from the wire.
+ * - `probe-verified` — hand-written, but every field confirmed against live
+ *   API calls on `verifiedAt`. Accurate as of that date; does not self-heal.
+ * - `docs-derived`   — hand-written from prose documentation and NOT
+ *   confirmed against the API. The weakest claim we make.
+ */
+export type Derivation =
+  | 'upstream-spec'
+  | 'generated'
+  | 'probe-verified'
+  | 'docs-derived'
+
+/**
+ * Operation-level provenance annotation, read back by the sync engine —
+ * same trick as FAL's activity marker. Set it on an OpenAPI operation to
+ * override the provider's `defaultDerivation` for that one endpoint.
+ */
+export const PROVENANCE_MARKER = 'x-modelschemas-provenance'
+
+export interface EndpointProvenance {
+  derivation: Derivation
+  /**
+   * `YYYY-MM-DD` the claim was last confirmed. Meaningful for
+   * `probe-verified`; omitted for the self-healing derivations, whose
+   * freshness is already the sync timestamp.
+   */
+  verifiedAt?: string
+}
+
 /** A parsed OpenAPI document (loosely typed; pure JSON manipulation). */
 export type OpenApiOperation = Record<string, unknown>
 
@@ -27,6 +65,19 @@ export interface ProviderSecrets {
   XAI_API_KEY?: string
   ELEVENLABS_API_KEY?: string
   FAL_KEY?: string
+  /**
+   * BytePlus Ark data plane. Optional: it upgrades BytePlus's model catalog
+   * from the embedded one to Ark's live listing. Region-isolated — a key
+   * issued for ap-southeast does not work against the EU host.
+   */
+  ARK_API_KEY?: string
+  /**
+   * BytePlus Seed Speech (the voice host) — a separate product key from Ark;
+   * an Ark key there fails with `45000010 Invalid X-Api-Key`. Not consumed by
+   * the sync pipeline (Seed Speech exposes no spec or model-list endpoint);
+   * declared so local probe scripts share one canonical name.
+   */
+  SEED_SPEECH_API_KEY?: string
 }
 
 /** Normalised model entry (maps onto the `models` table shape). */
@@ -73,6 +124,12 @@ export interface SpecFetchResult {
   outputStrategy: 'post-200' | 'sibling-get'
   /** Upstream revision identifier when one exists (e.g. Anthropic's hash-stamped spec URL). */
   specRevision?: string
+  /**
+   * Non-fatal problems encountered while fetching/derivating the documents —
+   * e.g. BytePlus falling back to its embedded Ark document when the Go SDK
+   * it generates from is unreachable. Surfaced on the sync outcome.
+   */
+  warnings?: Array<string>
   /** Set when the provider was skipped (e.g. missing secret); specs will be empty. */
   skipped?: string
 }
@@ -89,6 +146,12 @@ export interface ProviderConfig {
   displayName: string
   /** Env var holding the API key; undefined for keyless providers. */
   authEnvVar?: keyof ProviderSecrets
+  /**
+   * Derivation recorded for this provider's endpoints unless an operation
+   * carries its own {@link PROVENANCE_MARKER}. Providers that re-fetch a
+   * published spec every sync declare `upstream-spec`.
+   */
+  defaultDerivation: Derivation
   /** Fetch + parse the provider's OpenAPI spec document(s). */
   fetchSpec: (env: ProviderSecrets) => Promise<SpecFetchResult>
   /** List currently served models from the provider's cheap models endpoint. */

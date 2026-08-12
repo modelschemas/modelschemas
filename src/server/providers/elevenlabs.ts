@@ -93,6 +93,7 @@ export const elevenlabsProvider: ProviderConfig = {
   id: 'elevenlabs',
   displayName: 'ElevenLabs',
   authEnvVar: 'ELEVENLABS_API_KEY',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,

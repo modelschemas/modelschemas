@@ -41,6 +41,22 @@ export function geminiIdSuffixDate(rawId: string): number | null {
 }
 
 /**
+ * BytePlus dated ids end in `-YYMMDD` (e.g. `seedance-1-5-pro-251215` →
+ * 2025-12-15) — the release stamp BytePlus itself versions models by.
+ * Returns null for undated ids (`seed-audio-1.0`, `seed-asr`) or an
+ * implausible month/day.
+ */
+export function byteplusIdSuffixDate(rawId: string): number | null {
+  const match = /-(\d{2})(\d{2})(\d{2})$/.exec(rawId)
+  if (!match) return null
+  const [, year, month, day] = match
+  const m = Number(month)
+  const d = Number(day)
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null
+  return dateToEpoch(`20${year}-${month}-${day}`)
+}
+
+/**
  * First public availability (preview counts), from ai.google.dev changelog
  * and Google announcement posts. Rolling `-latest` aliases and models with
  * no confirmable date are deliberately unmapped. Ids carrying a `-MM-YYYY`

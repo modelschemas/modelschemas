@@ -271,6 +271,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
 export const openrouterProvider: ProviderConfig = {
   id: 'openrouter',
   displayName: 'OpenRouter',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,

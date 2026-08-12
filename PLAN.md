@@ -884,3 +884,98 @@ Design settled with Tom (don't relitigate):
       shows date coverage openai 129/129, anthropic 10/10, grok 10/10,
       openrouter 344/344, fal 1399/1399; worker test walks insert/backdate/
       never-forward/update-compose cycles.
+
+## Phase 14 — BytePlus provider (2026-08-11)
+
+- [x] **14.1 BytePlus as the 8th provider — fully static, keyless.** BytePlus
+      publishes no machine-readable spec (its OpenAPI docs live behind the
+      console's API explorer) and the Ark data-plane `GET /models` needs a
+      region-bound key AND is documented non-exhaustive, so both surfaces are
+      embedded, ported from TanStack AI's `@tanstack/ai-byteplus` adapter
+      (whose wire types are hand-written, test-pinned, and probe-verified
+      against the ap-southeast host on 2026-07-31):
+      `src/server/providers/byteplus-spec.ts` synthesizes two OpenAPI 3.1
+      documents — Ark (`/chat/completions` OpenAI-compatible + thinking/
+      reasoning*effort/repetition_penalty/service_tier extensions,
+      `/images/generations` Seedream, `/contents/generations/tasks` Seedance
+      async task API whose 200 is just the `{id}` ack, post-200 precedent per
+      OpenRouter/ElevenLabs job acks) and Seed Speech (`/tts/create`,
+      `/auc/bigmodel/recognize/flash` — separate host and `X-Api-Key` product
+      key). `byteplus.ts` classifies by exact path and serves the curated
+      32-model catalog (18 chat / 7 video / 5 image / 2 speech) with context
+      windows, modalities, probed structured-output capabilities, and
+      `releasedAt` from the `-YYMMDD` id suffix
+      (`byteplusIdSuffixDate` in release-dates.ts). Provenance: sources point
+      at the human docs, hashes are `contentHash` of the built documents (FAL
+      embedded-spec precedent), so content changes only land through edits
+      here and version like any upstream change. NOTE the HMAC
+      `BYTEPLUS_ACCESS_KEY`/`SECRET_KEY` pair in the old providers-to-add
+      table only guards the control plane — never needed. \_Accepts:*
+      byteplus.test.ts walks classifyAndBundle over the embedded specs (5
+      endpoints, zero warnings, no dangling refs, deterministic hashes) and
+      the catalog counts; registry/seed tests updated to 8.
+
+## Phase 15 — BytePlus spec generated from the Go SDK (2026-08-12)
+
+- [x] **15.1 Generate the Ark spec from BytePlus's Go SDK at sync time.**
+      Probing the Ark data plane with a real `ARK_API_KEY` confirmed there is
+      no fetchable OpenAPI document (`/openapi.json`, `/swagger.json`,
+      `/docs`, `/models/{id}` all answer 200 with an EMPTY body). But
+      BytePlus's official Go SDK declares the whole Ark data plane as
+      `json:"…"`-tagged structs, and — unlike the Python SDK's Pydantic
+      models, which need a Python runtime to introspect — Go structs are
+      plain text. So `go-struct-parser.ts` (Workers-safe, pure string
+      parsing) turns them into component schemas and `byteplus-ark-build.ts`
+      maps them onto paths, letting `fetchSpec` regenerate the Ark document
+      from `raw.githubusercontent.com/byteplus-sdk/byteplus-go-sdk-v2` on the
+      daily cron. No codegen step, no committed artifact, no CI drift check —
+      upstream SDK releases flow in and the content-hash diff versions them
+      like any other provider's spec change.
+      Two deliberate seams: (a) the endpoint→type map is hand-maintained,
+      because the model package has no notion of HTTP paths and paths change
+      far more slowly than field sets; (b) an explicit curated overlay
+      re-applies the request fields the SDK omits (`reasoning_effort`,
+      `top_k`, `seed` on chat; `stream` on images; `output_format` on video)
+      and the hand-written descriptions carrying probe findings that a type
+      declaration cannot state. The overlay is an explicit list rather than a
+      blanket merge of the old document, so a field genuinely REMOVED
+      upstream disappears instead of being resurrected forever.
+      Falls back to the embedded document (with a warning on the sync
+      outcome, via the new `SpecFetchResult.warnings`) when GitHub is
+      unreachable or the SDK outgrows the parser — degraded freshness, not a
+      degraded service. Seed Speech stays hand-written: it appears in no
+      BytePlus SDK in any language.
+      _Accepts:_ generated-vs-hand-port diff loses ZERO fields and gains
+      three (`function_call`, image-response `tools`, task-response
+      `safety_identifier`); live end-to-end against GitHub bundles all 5
+      endpoints with no warnings and no dangling refs; parser unit tests
+      cover primitives/pointers/omitempty-requiredness, const-block enums,
+      slices/maps/interface{}/[]byte, `json:"-"` and embedded fields,
+      aliases and named composites, doc comments, closure-only emission, and
+      graceful degradation on unmapped types.
+
+- [x] **15.2 Per-endpoint schema provenance (`derivation` + `verifiedAt`).**
+      Surfaces how each schema's content was arrived at so agents can weigh
+      how far to trust it — and so a hand-written corner going stale is
+      visible rather than invisible. A four-rung trust ladder on
+      `provenance.derivation`: `upstream-spec` (extracted from a document the
+      provider publishes and we re-fetch every sync — the seven original
+      providers), `generated` (re-derived each sync from a provider artifact
+      that is not a spec — BytePlus Ark from the Go SDK), `probe-verified`
+      (hand-written but confirmed against live calls on `verifiedAt` —
+      BytePlus TTS, 2026-08-12) and `docs-derived` (hand-written, never
+      confirmed — BytePlus ASR, blocked on a Seed ASR account grant). The
+      first two self-heal; the last two are point-in-time claims.
+      Providers declare `defaultDerivation`, and any operation may override
+      it with an `x-modelschemas-provenance` marker (the FAL activity-marker
+      trick) — which is how the BytePlus Ark document downgrades itself from
+      `generated` to `probe-verified`/2026-07-31 when it falls back to the
+      embedded copy. A malformed marker falls back to the provider default
+      rather than throwing. Stored on `schema_versions` beside the existing
+      sourceUrl/sourceHash/extractorVersion provenance (nullable, additive
+      migration 0004), so it versions per schema version and can improve over
+      time as endpoints get probed. _Accepts:_ worker tests assert the
+      columns persist and the API surfaces them (including null for rows
+      synced before the field existed); byteplus tests pin all five endpoint
+      grades and the fallback downgrade; openapi.json, the typed client and
+      SKILL.md regenerated.

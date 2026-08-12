@@ -73,6 +73,7 @@ export const grokProvider: ProviderConfig = {
   id: 'grok',
   displayName: 'xAI Grok',
   authEnvVar: 'XAI_API_KEY',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,
