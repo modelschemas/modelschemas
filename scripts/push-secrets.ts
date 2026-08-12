@@ -75,6 +75,24 @@ function run(
   return result.stdout
 }
 
+/**
+ * Like `run`, but captures stderr so the caller can inspect a failure. Only
+ * used for the push itself: wrangler never echoes secret values, and we need
+ * to recognise Cloudflare error 10215 (see `pushSecrets`).
+ */
+function runCapturing(
+  command: string,
+  commandArgs: Array<string>,
+  stdin: string,
+): { ok: boolean; stderr: string } {
+  const result = spawnSync(command, commandArgs, {
+    input: stdin,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  })
+  return { ok: result.status === 0, stderr: result.stderr }
+}
+
 /** Secret names currently bound to the deployed Worker (names only). */
 function workerSecretNames(): Set<string> {
   const raw = run('bunx', ['wrangler', 'secret', 'list'])
@@ -166,7 +184,57 @@ if (count === 0) {
   process.exit(0)
 }
 
-// One API call, over stdin: no temp file, nothing in argv, nothing in shell
-// history. Deletions are impossible here because no key is ever set to null.
-run('bunx', ['wrangler', 'secret', 'bulk'], JSON.stringify(payload))
-console.log(`\nPushed ${count} secret(s) to the modelschemas Worker.\n`)
+/**
+ * One API call, over stdin: no temp file, nothing in argv, nothing in shell
+ * history. Deletions are impossible here because no key is ever set to null.
+ *
+ * Two APIs exist and they are not interchangeable:
+ *
+ * - `wrangler secret bulk` edits the LIVE Worker. It refuses with Cloudflare
+ *   error 10215 whenever the newest uploaded version is not the deployed one
+ *   — which is the normal state here, because Workers Builds uploads a
+ *   preview version for every non-production branch push.
+ * - `wrangler versions secret bulk` sidesteps that by creating a NEW version
+ *   carrying the secrets. It does not deploy, and it inherits from the newest
+ *   version — which on a branch is unmerged code. So the secrets are staged,
+ *   not live, and whoever deploys that version ships that code with it.
+ *
+ * The live path is the default because it is the one with no surprises. The
+ * versions path is opt-in via `--versions` so that staging secrets against
+ * undeployed code is always a deliberate choice.
+ */
+const body = JSON.stringify(payload)
+const useVersions = args.has('--versions')
+const pushArgs = useVersions
+  ? ['wrangler', 'versions', 'secret', 'bulk']
+  : ['wrangler', 'secret', 'bulk']
+
+const attempt = runCapturing('bunx', pushArgs, body)
+if (!attempt.ok) {
+  process.stderr.write(attempt.stderr)
+  if (!useVersions && attempt.stderr.includes('10215')) {
+    console.error(
+      `\nCloudflare refused the edit: the newest uploaded version of the Worker` +
+        `\nis not the one currently deployed, so the live-secret API is blocked.` +
+        `\nThat is expected while branch preview builds are uploading versions.` +
+        `\n\nPick one:` +
+        `\n  1. Deploy first, then re-run this. Merging to main triggers a` +
+        `\n     Workers Builds deploy, after which latest == deployed and this` +
+        `\n     command works unchanged. Best option in almost every case.` +
+        `\n  2. Re-run with --versions to stage the secrets into a NEW version` +
+        `\n     without deploying. Note it inherits the newest version's code,` +
+        `\n     which on a branch is unmerged — the secrets go live only when` +
+        `\n     that version is deployed.\n`,
+    )
+  }
+  process.exit(1)
+}
+
+if (useVersions) {
+  console.log(
+    `\nStaged ${count} secret(s) into a new (undeployed) version.` +
+      `\nThey are not live until that version is deployed.\n`,
+  )
+} else {
+  console.log(`\nPushed ${count} secret(s) to the modelschemas Worker.\n`)
+}
