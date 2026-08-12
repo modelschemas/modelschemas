@@ -17,29 +17,31 @@ best-known — confirm on signup.
 
 ## Simple API key (bearer) — the easy batch
 
-| Secret                | Provider          | Activity                          | Get it at                          |
-| --------------------- | ----------------- | --------------------------------- | ---------------------------------- |
-| `MISTRAL_API_KEY`     | Mistral           | chat · embed · moderation · audio | console.mistral.ai                 |
-| `REPLICATE_API_TOKEN` | Replicate         | chat · image · video · audio      | replicate.com/account/api-tokens   |
-| `GROQ_API_KEY`        | Groq              | chat · audio                      | console.groq.com/keys              |
-| `FIREWORKS_API_KEY`   | Fireworks AI      | chat                              | fireworks.ai → API keys            |
-| `TOGETHER_API_KEY`    | Together AI       | chat                              | api.together.ai → settings         |
-| `VOYAGE_API_KEY`      | Voyage AI         | embed                             | dashboard.voyageai.com             |
-| `COHERE_API_KEY`      | Cohere            | chat · embed                      | dashboard.cohere.com/api-keys      |
-| `DEEPSEEK_API_KEY`    | DeepSeek          | chat                              | platform.deepseek.com              |
-| `DEEPGRAM_API_KEY`    | Deepgram          | audio                             | console.deepgram.com               |
-| `ASSEMBLYAI_API_KEY`  | AssemblyAI        | audio                             | assemblyai.com → dashboard         |
-| `RUNWAY_API_KEY`      | Runway            | video · image                     | dev.runwayml.com                   |
-| `CARTESIA_API_KEY`    | Cartesia          | audio                             | play.cartesia.ai → API keys        |
-| `PERPLEXITY_API_KEY`  | Perplexity        | chat                              | perplexity.ai/settings/api         |
-| `CEREBRAS_API_KEY`    | Cerebras          | chat                              | cloud.cerebras.ai                  |
-| `SAMBANOVA_API_KEY`   | SambaNova         | chat                              | cloud.sambanova.ai                 |
-| `JINA_API_KEY`        | Jina AI           | embed                             | jina.ai → API                      |
-| `STABILITY_API_KEY`   | Stability AI      | image                             | platform.stability.ai/account/keys |
-| `BFL_API_KEY`         | Black Forest Labs | image                             | api.bfl.ai (FLUX)                  |
-| `KLING_API_KEY`       | Kling AI          | video · image                     | app.klingai.com → dev console      |
-| `HYPERBOLIC_API_KEY`  | Hyperbolic        | chat                              | app.hyperbolic.xyz                 |
-| `NOVITA_API_KEY`      | Novita AI         | chat · image                      | novita.ai → key management         |
+| Secret                | Provider                   | Activity                             | Get it at                                                                               |
+| --------------------- | -------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------- |
+| `MISTRAL_API_KEY`     | Mistral                    | chat · embed · moderation · audio    | [console.mistral.ai](https://console.mistral.ai)                                        |
+| `REPLICATE_API_TOKEN` | Replicate                  | chat · image · video · audio         | [replicate.com/account/api-tokens](https://replicate.com/account/api-tokens)            |
+| `GROQ_API_KEY`        | Groq                       | chat · audio                         | [console.groq.com/keys](https://console.groq.com/keys)                                  |
+| `FIREWORKS_API_KEY`   | Fireworks AI               | chat                                 | [fireworks.ai → API keys](https://fireworks.ai)                                         |
+| `TOGETHER_API_KEY`    | Together AI                | chat                                 | [api.together.ai → settings](https://api.together.ai/settings)                          |
+| `VOYAGE_API_KEY`      | Voyage AI                  | embed                                | [dashboard.voyageai.com](https://dashboard.voyageai.com)                                |
+| `COHERE_API_KEY`      | Cohere                     | chat · embed                         | [dashboard.cohere.com/api-keys](https://dashboard.cohere.com/api-keys)                  |
+| `DEEPSEEK_API_KEY`    | DeepSeek                   | chat                                 | [platform.deepseek.com](https://platform.deepseek.com)                                  |
+| `MOONSHOT_API_KEY`    | Moonshot (Kimi)            | chat                                 | [platform.moonshot.cn → API keys](https://platform.moonshot.cn)                         |
+| `DASHSCOPE_API_KEY`   | Alibaba Cloud Model Studio | chat · embed · image · audio · video | [Model Studio → API key](https://www.alibabacloud.com/help/en/model-studio/get-api-key) |
+| `DEEPGRAM_API_KEY`    | Deepgram                   | audio                                | [console.deepgram.com](https://console.deepgram.com)                                    |
+| `ASSEMBLYAI_API_KEY`  | AssemblyAI                 | audio                                | [assemblyai.com → dashboard](https://www.assemblyai.com/app)                            |
+| `RUNWAY_API_KEY`      | Runway                     | video · image                        | [dev.runwayml.com](https://dev.runwayml.com)                                            |
+| `CARTESIA_API_KEY`    | Cartesia                   | audio                                | [play.cartesia.ai → API keys](https://play.cartesia.ai)                                 |
+| `PERPLEXITY_API_KEY`  | Perplexity                 | chat                                 | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)                    |
+| `CEREBRAS_API_KEY`    | Cerebras                   | chat                                 | [cloud.cerebras.ai](https://cloud.cerebras.ai)                                          |
+| `SAMBANOVA_API_KEY`   | SambaNova                  | chat                                 | [cloud.sambanova.ai](https://cloud.sambanova.ai)                                        |
+| `JINA_API_KEY`        | Jina AI                    | embed                                | [jina.ai → API](https://jina.ai)                                                        |
+| `STABILITY_API_KEY`   | Stability AI               | image                                | [platform.stability.ai/account/keys](https://platform.stability.ai/account/keys)        |
+| `BFL_API_KEY`         | Black Forest Labs          | image                                | [api.bfl.ai (FLUX)](https://api.bfl.ai)                                                 |
+| `KLING_API_KEY`       | Kling AI                   | video · image                        | [app.klingai.com → dev console](https://app.klingai.com)                                |
+| `HYPERBOLIC_API_KEY`  | Hyperbolic                 | chat                                 | [app.hyperbolic.xyz](https://app.hyperbolic.xyz)                                        |
+| `NOVITA_API_KEY`      | Novita AI                  | chat · image                         | [novita.ai → key management](https://novita.ai)                                         |
 
 ## Special auth — higher effort, do these later
 
