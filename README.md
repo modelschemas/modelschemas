@@ -166,10 +166,9 @@ upstream spec, no service needed).
    ```
 
    It runs locally against your existing Doppler and wrangler logins, so no
-   token goes near CI. If Cloudflare refuses with error 10215, the newest
-   uploaded version is not the deployed one (normal while branch preview
-   builds are running) — deploy first, or pass `--versions` to stage the
-   secrets into a new undeployed version. The expected set is derived from each provider's
+   token goes near CI. Secrets are written into a new Worker version rather
+   than the live one (the live API refuses while an undeployed preview
+   version exists); the next deploy inherits them. The expected set is derived from each provider's
    `authEnvVar`, so it stays correct as providers are added; `DOPPLER_*`
    context vars are never pushed, and nothing is ever deleted. Deliberately
    NOT a CI job: that would need a long-lived Doppler service token plus a
