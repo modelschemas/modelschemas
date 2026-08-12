@@ -28,8 +28,8 @@ describe('providerSeeds', () => {
     }
   })
 
-  it('only OpenRouter and BytePlus are keyless', () => {
+  it('only OpenRouter is keyless', () => {
     const keyless = providerSeeds.filter((p) => p.authEnvVar == null)
-    expect(keyless.map((p) => p.id)).toEqual(['openrouter', 'byteplus'])
+    expect(keyless.map((p) => p.id)).toEqual(['openrouter'])
   })
 })

@@ -85,6 +85,12 @@ GLOBAL (KVNamespace, D1Database, …) — do not import from
 @cloudflare/workers-types (removed; its types conflict with the generated
 ones).
 
+- **BytePlus** is the one provider with no fetchable spec (its `/openapi.json`
+  is a catch-all 200-empty; the real documents sit behind the console's API
+  Explorer login), so `byteplus-spec.ts` embeds synthesized OpenAPI documents
+  ported from `@tanstack/ai-byteplus`. Its model catalog IS live when
+  `ARK_API_KEY` is set (Ark `GET /models`), with the embedded catalog filling
+  the gaps that listing omits — Seed Speech and unlisted-but-served ids.
 - **Ingest** (`src/server/providers/` + `src/server/ingest/`): per-provider
   `ProviderConfig` (fetchSpec/listModels/classify) → `bundle.ts` extracts
   request/response schemas and inlines `$ref` closures under `$defs` →

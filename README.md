@@ -151,9 +151,11 @@ upstream spec, no service needed).
 3. Secrets (`wrangler secret put <NAME>`): `BETTER_AUTH_SECRET` (32+ random
    bytes), `ADMIN_KEY`, and optionally provider keys — `OPENAI_API_KEY`,
    `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`,
-   `ELEVENLABS_API_KEY`, `FAL_KEY`. Providers without keys are skipped with
-   a recorded warning (OpenRouter and BytePlus need none; Anthropic's spec
-   sync is also keyless). Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
+   `ELEVENLABS_API_KEY`, `FAL_KEY`, `ARK_API_KEY`. Providers without keys are
+   skipped with a recorded warning (OpenRouter needs none; Anthropic's spec
+   sync is also keyless). `ARK_API_KEY` is the exception: it is optional and
+   only upgrades BytePlus's model catalog from the embedded one to Ark's live
+   listing — BytePlus still serves schemas and a catalog without it. Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
    deployed origin (agent JWT audiences are origin-bound).
 
 4. Deploy and warm:

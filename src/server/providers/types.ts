@@ -27,6 +27,12 @@ export interface ProviderSecrets {
   XAI_API_KEY?: string
   ELEVENLABS_API_KEY?: string
   FAL_KEY?: string
+  /**
+   * BytePlus Ark data plane. Optional: it upgrades BytePlus's model catalog
+   * from the embedded one to Ark's live listing. Region-isolated — a key
+   * issued for ap-southeast does not work against the EU host.
+   */
+  ARK_API_KEY?: string
 }
 
 /** Normalised model entry (maps onto the `models` table shape). */

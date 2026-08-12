@@ -83,9 +83,10 @@ export const providerSeeds: Array<ProviderSeed> = [
     displayName: 'BytePlus',
     // Human docs the embedded spec was derived from — nothing is fetched.
     specSourceUrl: 'https://docs.byteplus.com/en/docs/ModelArk',
-    // Ark's live listing (needs a region-bound key, documented non-exhaustive)
-    // is recorded for reference; listModels serves the embedded catalog.
+    // Polled live when ARK_API_KEY is set; the embedded catalog fills the
+    // gaps (Seed Speech, ids Ark serves but does not enumerate) and stands in
+    // entirely when it is not.
     modelsEndpoint: 'https://ark.ap-southeast.bytepluses.com/api/v3/models',
-    authEnvVar: null,
+    authEnvVar: 'ARK_API_KEY',
   },
 ]
