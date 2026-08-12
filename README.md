@@ -158,6 +158,21 @@ upstream spec, no service needed).
    listing — BytePlus still serves schemas and a catalog without it. Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
    deployed origin (agent JWT audiences are origin-bound).
 
+   Rather than setting them one at a time, reconcile against Doppler:
+
+   ```bash
+   bun run secrets:check   # three-way diff: code ↔ Doppler prd ↔ Worker
+   bun run secrets:push    # apply (one wrangler secret bulk call)
+   ```
+
+   It runs locally against your existing Doppler and wrangler logins, so no
+   token goes near CI. The expected set is derived from each provider's
+   `authEnvVar`, so it stays correct as providers are added; `DOPPLER_*`
+   context vars are never pushed, and nothing is ever deleted. Deliberately
+   NOT a CI job: that would need a long-lived Doppler service token plus a
+   Cloudflare API token in GitHub, turning repo write access into full
+   production compromise.
+
 4. Deploy and warm:
 
    ```bash
