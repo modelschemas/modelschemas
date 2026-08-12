@@ -33,6 +33,13 @@ export interface ProviderSecrets {
    * issued for ap-southeast does not work against the EU host.
    */
   ARK_API_KEY?: string
+  /**
+   * BytePlus Seed Speech (the voice host) — a separate product key from Ark;
+   * an Ark key there fails with `45000010 Invalid X-Api-Key`. Not consumed by
+   * the sync pipeline (Seed Speech exposes no spec or model-list endpoint);
+   * declared so local probe scripts share one canonical name.
+   */
+  SEED_SPEECH_API_KEY?: string
 }
 
 /** Normalised model entry (maps onto the `models` table shape). */

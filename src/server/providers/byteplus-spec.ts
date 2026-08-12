@@ -21,8 +21,17 @@
  * `service/arkruntime/model`, ~1,100 json-tagged fields; the same shapes back
  * `byteplus-python-sdk-v2` and `byteplus-java-sdk-v2-ark-runtime`). Fields
  * that exist only in those SDKs are marked SDK-derived at their declaration.
- * The SDKs cover Ark only — Seed Speech appears in none of them, so the voice
- * document below remains docs-derived.
+ * The SDKs cover Ark only — Seed Speech appears in none of them, in any
+ * language.
+ *
+ * SEED SPEECH VERIFICATION STATUS (probed with a real voice key 2026-08-12):
+ * `/tts/create` is now LIVE-VERIFIED end to end — request shape, the flat
+ * `references` member form TanStack could not resolve, the subtitle nesting,
+ * and the success body (which carries no code/message pair). ASR remains
+ * docs-derived: the endpoint answers `403 45000030 [resource_id=
+ * volc.seedasr.auc_turbo] requested resource not granted` on an account
+ * without Seed ASR provisioned, which at least confirms the resource-id
+ * header name and value are right.
  *
  * Two hosts, two products, two API keys:
  * - **Ark (ModelArk)** — chat (`/chat/completions`, OpenAI-compatible),
@@ -32,8 +41,10 @@
  *   work against the EU host).
  * - **Seed Speech** — TTS (`/tts/create`) and ASR
  *   (`/auc/bigmodel/recognize/flash`) on the voice host, authenticated with
- *   `X-Api-Key: $BYTEPLUS_VOICE_API_KEY` (an Ark key there fails with
- *   `45000010 Invalid X-Api-Key`).
+ *   `X-Api-Key: $SEED_SPEECH_API_KEY` (an Ark key there fails with
+ *   `45000010 Invalid X-Api-Key`). The voice host serves no spec of its own:
+ *   `/openapi.json` and friends return genuine 404s, unlike Ark's catch-all
+ *   200-empty.
  *
  * Each spec is built fresh per call so sync-time consumers can never
  * accidentally share (or mutate) module-scoped state across requests.
@@ -906,7 +917,7 @@ const voiceSchemas: Record<string, Schema> = {
   TTSReference: {
     type: 'object',
     description:
-      'Voice selection / cloning reference. Exactly one of speaker, audio_url or audio_data per entry; at most 3 audio references (30s / 10MB each) and 1 image reference (10MB), and image references are mutually exclusive with audio ones. The @Audio1..@Audio3 markers in text_prompt address audio references positionally.',
+      "Voice selection / cloning reference. FLAT shape — the members sit directly on the entry, with no discriminating `type` field (an entry carrying one is accepted only because unknown keys are ignored); an unknown speaker id fails 400 45001115 'speaker … not found in speaker_map, speaker_audio, or mega_info'. Live-verified 2026-08-12. Exactly one of speaker, audio_url or audio_data per entry; at most 3 audio references (30s / 10MB each) and 1 image reference (10MB), and image references are mutually exclusive with audio ones. The @Audio1..@Audio3 markers in text_prompt address audio references positionally.",
     properties: {
       speaker: {
         type: 'string',
@@ -942,9 +953,8 @@ const voiceSchemas: Record<string, Schema> = {
       },
       sample_rate: {
         type: 'integer',
-        enum: [8000, 16000, 24000, 32000, 44100, 48000],
         description:
-          'Output sample rate in Hz. (The documented default of 40000 is not a valid value — send an explicit rate.)',
+          'Output sample rate in Hz. The docs list 8000/16000/24000/32000/44100/48000, but the endpoint is not strict — 40000 (the documented default, absent from that list) is accepted with 200. Left unconstrained rather than enumerated so validation does not reject requests the API honours. Live-verified 2026-08-12.',
       },
       speech_rate: {
         type: 'integer',
@@ -974,7 +984,7 @@ const voiceSchemas: Record<string, Schema> = {
   TTSCreateRequest: {
     type: 'object',
     description:
-      'Seed Speech synthesis. Output audio is capped at 120 seconds (before rate adjustment).',
+      'Seed Speech synthesis. Output audio is capped at 120 seconds (before rate adjustment). model and text_prompt are the only required fields — live-verified 2026-08-12; references and audio_config are both optional, and unrecognised members inside a references entry are ignored rather than rejected.',
     properties: {
       model: {
         type: 'string',
@@ -992,61 +1002,73 @@ const voiceSchemas: Record<string, Schema> = {
       },
       audio_config: { $ref: '#/components/schemas/TTSAudioConfig' },
       watermark: {
-        type: 'boolean',
-        description: 'Watermark the generated audio.',
+        type: 'object',
+        description:
+          'Watermark the generated audio. NOT a boolean: `true` and a bare string both fail with 500 `55000000 kiteX processing … thrift marshal`, while an object is accepted with 200 — so the wire type is a struct. Its member names could not be confirmed (an unrecognised object is accepted unchanged), so no properties are asserted here. Live-probed 2026-08-12.',
       },
     },
     required: ['model', 'text_prompt'],
   },
-  TTSSubtitleEntry: {
+  TTSSubtitleWord: {
     type: 'object',
     description:
-      "One timed entry. Times are MILLISECONDS — unlike the response's duration fields, which are seconds.",
+      "One timed word. Times are MILLISECONDS — unlike the response's duration fields, which are seconds. Note the tokenizer emits whitespace as its own zero-or-near-zero-width entry.",
     properties: {
       text: { type: 'string' },
       start_time: { type: 'number' },
       end_time: { type: 'number' },
     },
   },
+  TTSSubtitleSentence: {
+    type: 'object',
+    description:
+      'One timed sentence, carrying its own word-level breakdown. Times are MILLISECONDS.',
+    properties: {
+      text: { type: 'string' },
+      start_time: { type: 'number' },
+      end_time: { type: 'number' },
+      words: {
+        type: 'array',
+        items: { $ref: '#/components/schemas/TTSSubtitleWord' },
+      },
+    },
+  },
   TTSCreateResponse: {
     type: 'object',
     description:
-      'Success envelope (docs-derived). Errors come back as a flat numeric code, e.g. {"code": 45000010, "message": "Invalid X-Api-Key"}.',
+      'Success body, live-verified 2026-08-12. There is NO code/message pair on success — those two appear only on failures, as a flat envelope such as {"code": 45001115, "message": "speaker … not found in speaker_map, speaker_audio, or mega_info"} with a 4xx/5xx status.',
     properties: {
-      code: {
-        description: '0 on success, a flat error code otherwise.',
-        oneOf: [{ type: 'integer' }, { type: 'string' }],
-      },
-      message: { type: 'string' },
       audio: {
         type: 'string',
         description: 'Base64-encoded audio in the requested format.',
       },
       duration: {
+        type: 'number',
         description:
           'Length of the delivered audio in SECONDS (float), after speech_rate is applied.',
-        oneOf: [{ type: 'number' }, { type: 'string' }],
       },
       original_duration: {
+        type: 'number',
         description:
           'Length in SECONDS before rate adjustment — the billing basis, capped at 120.',
-        oneOf: [{ type: 'number' }, { type: 'string' }],
       },
       url: {
         type: 'string',
         description:
-          'Temporary download URL for the same audio. Expires after ~2 hours.',
+          'Temporary download URL for the same audio, signed with an x-expires deadline.',
       },
       subtitle: {
         type: 'object',
+        description:
+          'Present when audio_config.enable_subtitle was set. Word timings are NESTED inside each sentence — there is no top-level words array — and the block repeats the full text alongside them.',
         properties: {
+          text: {
+            type: 'string',
+            description: 'The full spoken text.',
+          },
           sentences: {
             type: 'array',
-            items: { $ref: '#/components/schemas/TTSSubtitleEntry' },
-          },
-          words: {
-            type: 'array',
-            items: { $ref: '#/components/schemas/TTSSubtitleEntry' },
+            items: { $ref: '#/components/schemas/TTSSubtitleSentence' },
           },
         },
       },
@@ -1083,7 +1105,7 @@ const voiceSchemas: Record<string, Schema> = {
   ASRRecognizeRequest: {
     type: 'object',
     description:
-      "Flash (synchronous) recognition. The model is selected entirely by the X-Api-Resource-Id header ('volc.seedasr.auc_turbo') — there is no model field in the body. Files up to 2 hours / 100MB.",
+      "Flash (synchronous) recognition. The model is selected entirely by the X-Api-Resource-Id header ('volc.seedasr.auc_turbo') — there is no model field in the body. Files up to 2 hours / 100MB. STILL DOCS-DERIVED: probing 2026-08-12 with a valid voice key returned 403 45000030 '[resource_id=volc.seedasr.auc_turbo] requested resource not granted' (Seed ASR not provisioned on that account), so the request and response bodies below are unverified even though the header contract is now confirmed.",
     properties: {
       user: {
         type: 'object',
