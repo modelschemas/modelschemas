@@ -1185,7 +1185,7 @@ export function bytePlusVoiceSpec(): OpenApiDocument {
       title: 'BytePlus Seed Speech API',
       version: 'v3',
       description:
-        'Synthesized from @tanstack/ai-byteplus wire types (BytePlus Seed Speech docs + Volcengine flash-recognition reference). Auth: X-Api-Key: $BYTEPLUS_VOICE_API_KEY — a separate product key from Ark; an Ark key fails with 45000010 Invalid X-Api-Key.',
+        "Synthesized from @tanstack/ai-byteplus wire types (BytePlus Seed Speech docs + Volcengine flash-recognition reference); request/response BODIES remain docs-derived and unverified. Auth is a separate product from Ark and the host accepts two schemes: X-Api-Key, and the classic Volcengine triple X-Api-App-Key + X-Api-Access-Key + X-Api-Resource-Id (which additionally requires the service to be provisioned for the account — an unprovisioned one fails 'load grant: requested grant not found in SaaS storage'). An Ark key fails with 45000010 Invalid X-Api-Key. Errors surface both in the body and as x-api-status-code / x-api-message response headers. Probed 2026-08-12.",
     },
     servers: [{ url: BYTEPLUS_VOICE_BASE_URL }],
     paths: {
@@ -1220,6 +1220,14 @@ export function bytePlusVoiceSpec(): OpenApiDocument {
           summary:
             'Transcribe audio with Seed ASR (model selected via the X-Api-Resource-Id header)',
           parameters: [
+            {
+              name: 'X-Api-Request-Id',
+              in: 'header',
+              required: true,
+              schema: { type: 'string', format: 'uuid' },
+              description:
+                'Caller-generated request id. REQUIRED — omitting it fails routing before auth is even evaluated, with 400 `45000000 error extract basicHttpRoutingPreference missing X-Api-Request-Id`. Echoed back as `header.reqid` in the response body. Live-verified 2026-08-12.',
+            },
             {
               name: 'X-Api-Resource-Id',
               in: 'header',
