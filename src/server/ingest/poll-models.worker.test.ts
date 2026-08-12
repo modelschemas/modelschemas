@@ -12,6 +12,7 @@ function stubProvider(id: string, list: Array<ModelInfo>): ProviderConfig {
   return {
     id,
     displayName: 'Stub',
+    defaultDerivation: 'upstream-spec',
     fetchSpec: () =>
       Promise.resolve({
         specs: [],

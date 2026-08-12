@@ -98,6 +98,7 @@ export const anthropicProvider: ProviderConfig = {
   id: 'anthropic',
   displayName: 'Anthropic',
   authEnvVar: 'ANTHROPIC_API_KEY',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,

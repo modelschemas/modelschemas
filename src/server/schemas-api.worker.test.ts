@@ -56,6 +56,8 @@ beforeAll(async () => {
       kind: 'input',
       contentHash: 'f'.repeat(64),
       schema: JSON.stringify(INPUT_SCHEMA),
+      derivation: 'probe-verified',
+      verifiedAt: '2026-08-12',
       createdAt: NOW,
     },
     {
@@ -119,6 +121,30 @@ describe('getEndpointSchema', () => {
       where: eq(schemaVersions.id, 'sch-prov/v1/messages:input:current'),
     })
     expect(JSON.stringify(result?.schema)).toBe(stored?.schema)
+  })
+
+  it('surfaces the derivation grade and verified-on date', async () => {
+    const result = await getEndpointSchema(
+      db,
+      'sch-prov',
+      'chat',
+      'v1/messages',
+    )
+    expect(result?.provenance.derivation).toBe('probe-verified')
+    expect(result?.provenance.verifiedAt).toBe('2026-08-12')
+  })
+
+  it('reports null derivation for versions synced before it was recorded', async () => {
+    const result = await getEndpointSchema(
+      db,
+      'sch-prov',
+      'chat',
+      'v1/messages',
+      'input',
+      'e'.repeat(64),
+    )
+    expect(result?.provenance.derivation).toBeNull()
+    expect(result?.provenance.verifiedAt).toBeNull()
   })
 
   it('serves output schemas and historical versions by content hash', async () => {

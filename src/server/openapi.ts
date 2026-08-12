@@ -257,7 +257,8 @@ export const openApiDocument = {
           '200': {
             description:
               'Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. ' +
-              'JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable.',
+              'JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. ' +
+              '`provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal, while `probe-verified` (confirmed against live API calls on `provenance.verifiedAt`) and `docs-derived` (never confirmed) are point-in-time claims that can go stale.',
             content: {
               'application/json': { schema: { type: 'object' } },
               'text/typescript': { schema: { type: 'string' } },

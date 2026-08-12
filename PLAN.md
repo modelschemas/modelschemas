@@ -953,3 +953,29 @@ Design settled with Tom (don't relitigate):
       slices/maps/interface{}/[]byte, `json:"-"` and embedded fields,
       aliases and named composites, doc comments, closure-only emission, and
       graceful degradation on unmapped types.
+
+- [x] **15.2 Per-endpoint schema provenance (`derivation` + `verifiedAt`).**
+      Surfaces how each schema's content was arrived at so agents can weigh
+      how far to trust it — and so a hand-written corner going stale is
+      visible rather than invisible. A four-rung trust ladder on
+      `provenance.derivation`: `upstream-spec` (extracted from a document the
+      provider publishes and we re-fetch every sync — the seven original
+      providers), `generated` (re-derived each sync from a provider artifact
+      that is not a spec — BytePlus Ark from the Go SDK), `probe-verified`
+      (hand-written but confirmed against live calls on `verifiedAt` —
+      BytePlus TTS, 2026-08-12) and `docs-derived` (hand-written, never
+      confirmed — BytePlus ASR, blocked on a Seed ASR account grant). The
+      first two self-heal; the last two are point-in-time claims.
+      Providers declare `defaultDerivation`, and any operation may override
+      it with an `x-modelschemas-provenance` marker (the FAL activity-marker
+      trick) — which is how the BytePlus Ark document downgrades itself from
+      `generated` to `probe-verified`/2026-07-31 when it falls back to the
+      embedded copy. A malformed marker falls back to the provider default
+      rather than throwing. Stored on `schema_versions` beside the existing
+      sourceUrl/sourceHash/extractorVersion provenance (nullable, additive
+      migration 0004), so it versions per schema version and can improve over
+      time as endpoints get probed. _Accepts:_ worker tests assert the
+      columns persist and the API surfaces them (including null for rows
+      synced before the field existed); byteplus tests pin all five endpoint
+      grades and the fallback downgrade; openapi.json, the typed client and
+      SKILL.md regenerated.

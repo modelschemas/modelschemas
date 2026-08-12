@@ -442,6 +442,10 @@ export const byteplusProvider: ProviderConfig = {
   // live. fetchSpec never needs it, and listModels degrades to the curated
   // catalog without it.
   authEnvVar: 'ARK_API_KEY',
+  // Overridden per operation: the generated Ark document stamps
+  // 'generated', and the Seed Speech document stamps its own verified
+  // status. This default only applies if a marker is ever missing.
+  defaultDerivation: 'probe-verified',
   fetchSpec,
   listModels,
   classify,

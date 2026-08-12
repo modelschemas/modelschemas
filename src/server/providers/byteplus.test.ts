@@ -400,3 +400,43 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
     expect(ids.filter((id) => id === 'seed-2-0-lite-260428')).toHaveLength(1)
   })
 })
+
+describe('byteplus schema provenance', () => {
+  it('grades each endpoint by how its schema was arrived at', async () => {
+    const { result: fetched } = await withGoSdk('ok', () =>
+      byteplusProvider.fetchSpec({}),
+    )
+    const { endpoints } = classifyAndBundle(byteplusProvider, fetched)
+    const by = new Map(
+      endpoints.map((e) => [e.dbId, [e.derivation, e.verifiedAt] as const]),
+    )
+    // Ark is re-derived from the Go SDK every sync, so it self-heals and
+    // carries no point-in-time claim.
+    expect(by.get('byteplus/chat/completions')).toEqual(['generated', null])
+    expect(by.get('byteplus/images/generations')).toEqual(['generated', null])
+    expect(by.get('byteplus/contents/generations/tasks')).toEqual([
+      'generated',
+      null,
+    ])
+    // Seed Speech is hand-written: TTS was exercised live, ASR never was.
+    expect(by.get('byteplus/tts/create')).toEqual([
+      'probe-verified',
+      '2026-08-12',
+    ])
+    expect(by.get('byteplus/auc/bigmodel/recognize/flash')).toEqual([
+      'docs-derived',
+      null,
+    ])
+  })
+
+  it('downgrades Ark to a dated claim when it falls back to the embedded doc', async () => {
+    const { result: fetched } = await withGoSdk('unreachable', () =>
+      byteplusProvider.fetchSpec({}),
+    )
+    const { endpoints } = classifyAndBundle(byteplusProvider, fetched)
+    const chat = endpoints.find((e) => e.dbId === 'byteplus/chat/completions')
+    // No longer self-healing, and it says so.
+    expect(chat?.derivation).toBe('probe-verified')
+    expect(chat?.verifiedAt).toBe('2026-07-31')
+  })
+})

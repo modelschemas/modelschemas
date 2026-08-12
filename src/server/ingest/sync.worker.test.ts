@@ -64,6 +64,7 @@ function stubProvider(id: string, spec: OpenApiDocument): ProviderConfig {
   return {
     id,
     displayName: 'Stub',
+    defaultDerivation: 'upstream-spec',
     fetchSpec: () =>
       Promise.resolve({
         specs: [spec],
@@ -128,6 +129,10 @@ describe('syncProvider', () => {
     expect(inputVersion?.sourceUrl).toBe(STUB_SOURCE.url)
     expect(inputVersion?.sourceHash).toBe(STUB_SOURCE.hash)
     expect(inputVersion?.extractorVersion).toBe(EXTRACTOR_VERSION)
+    // Derivation falls back to the provider default when an operation
+    // carries no marker of its own.
+    expect(inputVersion?.derivation).toBe('upstream-spec')
+    expect(inputVersion?.verifiedAt).toBeNull()
 
     const providerRow = await db.query.providers.findFirst({
       where: eq(providers.id, id),

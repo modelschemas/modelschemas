@@ -31,6 +31,7 @@
  */
 import { parseGoSchemas } from './go-struct-parser.ts'
 import type { GoSourceFile, JsonSchema } from './go-struct-parser.ts'
+import { PROVENANCE_MARKER } from './types.ts'
 import type { OpenApiDocument } from './types.ts'
 
 export const BYTEPLUS_ARK_BASE_URL =
@@ -271,6 +272,9 @@ export function buildArkSpecFromGo(files: Array<GoSourceFile>): ArkSpecBuild {
   for (const endpoint of ARK_ENDPOINTS) {
     paths[endpoint.path] = {
       post: {
+        // Re-derived from the SDK every sync, so it self-heals: no
+        // verifiedAt, because freshness is the sync timestamp.
+        [PROVENANCE_MARKER]: { derivation: 'generated' },
         operationId: endpoint.operationId,
         summary: endpoint.summary,
         requestBody: {

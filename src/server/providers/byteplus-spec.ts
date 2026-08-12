@@ -49,6 +49,7 @@
  * Each spec is built fresh per call so sync-time consumers can never
  * accidentally share (or mutate) module-scoped state across requests.
  */
+import { PROVENANCE_MARKER } from './types.ts'
 import type { OpenApiDocument } from './types.ts'
 
 export const BYTEPLUS_ARK_BASE_URL =
@@ -822,6 +823,10 @@ export function bytePlusArkSpec(): OpenApiDocument {
     paths: {
       '/chat/completions': {
         post: {
+          [PROVENANCE_MARKER]: {
+            derivation: 'probe-verified',
+            verifiedAt: '2026-07-31',
+          },
           operationId: 'createChatCompletion',
           summary:
             'Chat completion (Seed / GLM / DeepSeek / gpt-oss) — OpenAI-compatible plus thinking, reasoning_effort, repetition_penalty and service_tier',
@@ -849,6 +854,10 @@ export function bytePlusArkSpec(): OpenApiDocument {
       },
       '/images/generations': {
         post: {
+          [PROVENANCE_MARKER]: {
+            derivation: 'probe-verified',
+            verifiedAt: '2026-07-31',
+          },
           operationId: 'createImageGeneration',
           summary: 'Generate or edit images with Seedream',
           requestBody: {
@@ -875,6 +884,10 @@ export function bytePlusArkSpec(): OpenApiDocument {
       },
       '/contents/generations/tasks': {
         post: {
+          [PROVENANCE_MARKER]: {
+            derivation: 'probe-verified',
+            verifiedAt: '2026-07-31',
+          },
           operationId: 'createContentsGenerationsTask',
           summary:
             'Open a Seedance video generation task (async — poll GET /contents/generations/tasks/{id} for the result)',
@@ -1213,6 +1226,11 @@ export function bytePlusVoiceSpec(): OpenApiDocument {
     paths: {
       '/tts/create': {
         post: {
+          // Every field below was exercised against the live endpoint.
+          [PROVENANCE_MARKER]: {
+            derivation: 'probe-verified',
+            verifiedAt: '2026-08-12',
+          },
           operationId: 'createSpeech',
           summary:
             'Synthesize speech with Seed Audio (stock voices or reference-clip cloning)',
@@ -1238,6 +1256,9 @@ export function bytePlusVoiceSpec(): OpenApiDocument {
       },
       '/auc/bigmodel/recognize/flash': {
         post: {
+          // Header contract confirmed, but the account has no Seed ASR grant
+          // so the request/response bodies were never exercised.
+          [PROVENANCE_MARKER]: { derivation: 'docs-derived' },
           operationId: 'recognizeFlash',
           summary:
             'Transcribe audio with Seed ASR (model selected via the X-Api-Resource-Id header)',

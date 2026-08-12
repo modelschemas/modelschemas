@@ -337,3 +337,25 @@ describe('byteplus classify', () => {
     ).toBeNull()
   })
 })
+
+describe('provider derivations', () => {
+  it('grades every registered provider', () => {
+    const byId = Object.fromEntries(
+      providerRegistry.map((p) => [p.id, p.defaultDerivation]),
+    )
+    // The seven that re-fetch a published spec document every sync.
+    for (const id of [
+      'openai',
+      'anthropic',
+      'gemini',
+      'grok',
+      'elevenlabs',
+      'openrouter',
+      'fal',
+    ]) {
+      expect(byId[id], id).toBe('upstream-spec')
+    }
+    // BytePlus stamps per operation; the default is only a backstop.
+    expect(byId.byteplus).toBe('probe-verified')
+  })
+})

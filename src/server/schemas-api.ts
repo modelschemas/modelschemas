@@ -116,6 +116,29 @@ export interface SchemaProvenance {
   fetchedAt: number
   /** Extraction-pipeline version that produced contentHash. */
   extractorVersion: string | null
+  /**
+   * How the content was arrived at — a trust ladder, strongest first:
+   * `upstream-spec` (extracted from a spec the provider publishes and we
+   * re-fetch every sync), `generated` (derived each sync from a
+   * provider-published artifact that is not a spec, e.g. SDK sources),
+   * `probe-verified` (hand-written but confirmed against live API calls on
+   * `verifiedAt`), `docs-derived` (hand-written from prose docs and NOT
+   * confirmed). The first two self-heal; the last two are point-in-time
+   * claims that can go stale. Null on versions synced before this was
+   * recorded.
+   */
+  derivation:
+    | 'upstream-spec'
+    | 'generated'
+    | 'probe-verified'
+    | 'docs-derived'
+    | null
+  /**
+   * `YYYY-MM-DD` the claim was last confirmed against the live API. Set for
+   * `probe-verified`; null for the self-healing derivations, whose freshness
+   * is `fetchedAt`.
+   */
+  verifiedAt: string | null
 }
 
 export interface EndpointSchemaResult {
@@ -173,6 +196,8 @@ export async function getEndpointSchema(
       sourceHash: row.sourceHash,
       fetchedAt: row.createdAt,
       extractorVersion: row.extractorVersion,
+      derivation: row.derivation,
+      verifiedAt: row.verifiedAt,
     },
     createdAt: row.createdAt,
     supersededAt: row.supersededAt,

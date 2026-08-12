@@ -279,6 +279,7 @@ export const geminiProvider: ProviderConfig = {
   id: 'gemini',
   displayName: 'Google Gemini',
   authEnvVar: 'GEMINI_API_KEY',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
   classify,
