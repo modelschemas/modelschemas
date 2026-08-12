@@ -85,10 +85,15 @@ GLOBAL (KVNamespace, D1Database, …) — do not import from
 @cloudflare/workers-types (removed; its types conflict with the generated
 ones).
 
-- **BytePlus** is the one provider with no fetchable spec (its `/openapi.json`
-  is a catch-all 200-empty; the real documents sit behind the console's API
-  Explorer login), so `byteplus-spec.ts` embeds synthesized OpenAPI documents
-  ported from `@tanstack/ai-byteplus`. Its model catalog IS live when
+- **BytePlus** publishes no OpenAPI document (`/openapi.json` is a catch-all
+  200-empty; the real ones sit behind the console's API Explorer login), so
+  its Ark spec is GENERATED at sync time from BytePlus's official Go SDK:
+  `fetchSpec` pulls `service/arkruntime/model/*.go` from GitHub,
+  `go-struct-parser.ts` turns the `json:"…"`-tagged structs into schemas, and
+  `byteplus-ark-build.ts` maps them onto paths and re-applies curated
+  descriptions plus the few request fields the SDK omits. `byteplus-spec.ts`
+  holds the hand-ported fallback used when that fetch/parse fails, and the
+  Seed Speech document, which no SDK covers. The model catalog is live when
   `ARK_API_KEY` is set (Ark `GET /models`), with the embedded catalog filling
   the gaps that listing omits — Seed Speech and unlisted-but-served ids.
 - **Ingest** (`src/server/providers/` + `src/server/ingest/`): per-provider

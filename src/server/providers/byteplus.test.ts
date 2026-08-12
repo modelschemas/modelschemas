@@ -4,13 +4,117 @@ import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 import { arkTaskActivity, byteplusProvider } from './byteplus.ts'
 
-describe('byteplus embedded spec', () => {
+/**
+ * Minimal stand-ins for the four `service/arkruntime/model` files fetchSpec
+ * pulls — enough Go to define every endpoint root and its closure.
+ */
+const GO_FIXTURES: Record<string, string> = {
+  'chat_completion.go': `
+type ThinkingType string
+const (
+	ThinkingTypeEnabled  ThinkingType = "enabled"
+	ThinkingTypeDisabled ThinkingType = "disabled"
+)
+type Thinking struct {
+	Type ThinkingType \`json:"type"\`
+}
+type ChatCompletionMessage struct {
+	Role    string \`json:"role"\`
+	Content string \`json:"content,omitempty"\`
+}
+type CreateChatCompletionRequest struct {
+	Model       string                   \`json:"model"\`
+	Messages    []*ChatCompletionMessage \`json:"messages"\`
+	MaxTokens   *int                     \`json:"max_tokens,omitempty"\`
+	Thinking    *Thinking                \`json:"thinking,omitempty"\`
+	ServiceTier *string                  \`json:"service_tier,omitempty"\`
+}
+type ChatCompletionResponse struct {
+	ID    string \`json:"id"\`
+	Model string \`json:"model"\`
+	Usage Usage  \`json:"usage"\`
+}
+`,
+  'images.go': `
+type GenerateImagesRequest struct {
+	Model     string  \`json:"model"\`
+	Prompt    string  \`json:"prompt"\`
+	Size      *string \`json:"size,omitempty"\`
+	Watermark *bool   \`json:"watermark,omitempty"\`
+}
+type ImagesResponse struct {
+	Model string \`json:"model"\`
+}
+`,
+  'content_generation.go': `
+type CreateContentGenerationContentItem struct {
+	Type string  \`json:"type"\`
+	Text *string \`json:"text,omitempty"\`
+}
+type ExtraBody map[string]interface{}
+type CreateContentGenerationTaskRequest struct {
+	Model      string                                \`json:"model"\`
+	Content    []*CreateContentGenerationContentItem \`json:"content"\`
+	Resolution *string                               \`json:"resolution,omitempty"\`
+	ExtraBody  \`json:"-"\`
+}
+type CreateContentGenerationTaskResponse struct {
+	ID string \`json:"id"\`
+}
+`,
+  'common.go': `
+type Usage struct {
+	PromptTokens int \`json:"prompt_tokens"\`
+	TotalTokens  int \`json:"total_tokens"\`
+}
+`,
+}
+
+/** Serve the Go fixtures (or fail them) for the duration of `run`. */
+async function withGoSdk<T>(
+  mode: 'ok' | 'unreachable',
+  run: () => Promise<T>,
+): Promise<{ result: T; urls: Array<string> }> {
+  const original = globalThis.fetch
+  const urls: Array<string> = []
+  globalThis.fetch = ((url: string) => {
+    const href = String(url)
+    urls.push(href)
+    if (mode === 'unreachable') return Promise.reject(new Error('network down'))
+    const file = Object.keys(GO_FIXTURES).find((f) => href.endsWith(f))
+    return Promise.resolve(
+      file
+        ? new Response(GO_FIXTURES[file])
+        : new Response('not found', { status: 404 }),
+    )
+  }) as typeof fetch
+  try {
+    return { result: await run(), urls }
+  } finally {
+    globalThis.fetch = original
+  }
+}
+
+describe('byteplus spec generated from the Go SDK', () => {
   it('classifies and bundles the five endpoints without warnings', async () => {
-    const fetched = await byteplusProvider.fetchSpec({})
+    const { result: fetched, urls } = await withGoSdk('ok', () =>
+      byteplusProvider.fetchSpec({}),
+    )
+    // All four model files come from the SDK's default branch.
+    expect(urls).toHaveLength(4)
+    for (const url of urls) {
+      expect(url).toMatch(
+        /^https:\/\/raw\.githubusercontent\.com\/byteplus-sdk\/byteplus-go-sdk-v2\/main\/service\/arkruntime\/model\/\w+\.go$/,
+      )
+    }
+    expect(fetched.warnings ?? []).toEqual([])
     expect(fetched.specs).toHaveLength(2)
-    expect(fetched.sources).toHaveLength(2)
+    // Ark is provenanced to the SDK; Seed Speech stays on the docs URL.
+    expect(fetched.sources[0]?.url).toBe(
+      'https://github.com/byteplus-sdk/byteplus-go-sdk-v2/tree/main/service/arkruntime/model',
+    )
+    expect(fetched.sources[1]?.url).toMatch(/^https:\/\/docs\.byteplus\.com\//)
     for (const source of fetched.sources) {
-      expect(source.url).toMatch(/^https:\/\/docs\.byteplus\.com\//)
       expect(source.hash).toMatch(/^[0-9a-f]{64}$/)
     }
 
@@ -39,11 +143,58 @@ describe('byteplus embedded spec', () => {
     expect(video?.input?.required).toEqual(['model', 'content'])
   })
 
+  it('re-applies curated fields and descriptions the SDK omits', async () => {
+    const { result: fetched } = await withGoSdk('ok', () =>
+      byteplusProvider.fetchSpec({}),
+    )
+    const { endpoints } = classifyAndBundle(byteplusProvider, fetched)
+    const chat = endpoints.find((e) => e.dbId === 'byteplus/chat/completions')
+    const props = chat?.input?.properties as Record<
+      string,
+      Record<string, unknown>
+    >
+    // Present in the fixture, so straight from the SDK.
+    expect(props.thinking).toBeDefined()
+    // Absent from the SDK entirely — restored from the curated list.
+    expect(props.reasoning_effort).toMatchObject({ type: 'string' })
+    expect(props.top_k).toMatchObject({ type: 'integer' })
+    expect(props.seed).toMatchObject({ type: 'integer' })
+    // Curated prose beats the (here absent) Go doc comment.
+    expect(String(props.model?.description)).toContain('Ark model id')
+
+    const image = endpoints.find(
+      (e) => e.dbId === 'byteplus/images/generations',
+    )
+    const imageProps = image?.input?.properties as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(String(imageProps.watermark?.description)).toContain(
+      'DEFAULTS TO TRUE',
+    )
+  })
+
+  it('falls back to the embedded document when the SDK is unreachable', async () => {
+    const { result: fetched } = await withGoSdk('unreachable', () =>
+      byteplusProvider.fetchSpec({}),
+    )
+    expect(fetched.specs).toHaveLength(2)
+    expect(fetched.sources[0]?.url).toMatch(/^https:\/\/docs\.byteplus\.com\//)
+    expect(fetched.warnings?.[0]).toContain('served the embedded Ark document')
+
+    // Degraded freshness, not a degraded service: all five endpoints survive.
+    const { endpoints, warnings } = classifyAndBundle(byteplusProvider, fetched)
+    expect(warnings).toEqual([])
+    expect(endpoints).toHaveLength(5)
+  })
+
   it('derives identical content hashes on every build (sync idempotence)', async () => {
-    const [a, b] = await Promise.all([
+    const { result: a } = await withGoSdk('ok', () =>
       byteplusProvider.fetchSpec({}),
+    )
+    const { result: b } = await withGoSdk('ok', () =>
       byteplusProvider.fetchSpec({}),
-    ])
+    )
     expect(a.sources.map((s) => s.hash)).toEqual(b.sources.map((s) => s.hash))
   })
 })

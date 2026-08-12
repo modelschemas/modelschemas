@@ -914,3 +914,42 @@ Design settled with Tom (don't relitigate):
       byteplus.test.ts walks classifyAndBundle over the embedded specs (5
       endpoints, zero warnings, no dangling refs, deterministic hashes) and
       the catalog counts; registry/seed tests updated to 8.
+
+## Phase 15 — BytePlus spec generated from the Go SDK (2026-08-12)
+
+- [x] **15.1 Generate the Ark spec from BytePlus's Go SDK at sync time.**
+      Probing the Ark data plane with a real `ARK_API_KEY` confirmed there is
+      no fetchable OpenAPI document (`/openapi.json`, `/swagger.json`,
+      `/docs`, `/models/{id}` all answer 200 with an EMPTY body). But
+      BytePlus's official Go SDK declares the whole Ark data plane as
+      `json:"…"`-tagged structs, and — unlike the Python SDK's Pydantic
+      models, which need a Python runtime to introspect — Go structs are
+      plain text. So `go-struct-parser.ts` (Workers-safe, pure string
+      parsing) turns them into component schemas and `byteplus-ark-build.ts`
+      maps them onto paths, letting `fetchSpec` regenerate the Ark document
+      from `raw.githubusercontent.com/byteplus-sdk/byteplus-go-sdk-v2` on the
+      daily cron. No codegen step, no committed artifact, no CI drift check —
+      upstream SDK releases flow in and the content-hash diff versions them
+      like any other provider's spec change.
+      Two deliberate seams: (a) the endpoint→type map is hand-maintained,
+      because the model package has no notion of HTTP paths and paths change
+      far more slowly than field sets; (b) an explicit curated overlay
+      re-applies the request fields the SDK omits (`reasoning_effort`,
+      `top_k`, `seed` on chat; `stream` on images; `output_format` on video)
+      and the hand-written descriptions carrying probe findings that a type
+      declaration cannot state. The overlay is an explicit list rather than a
+      blanket merge of the old document, so a field genuinely REMOVED
+      upstream disappears instead of being resurrected forever.
+      Falls back to the embedded document (with a warning on the sync
+      outcome, via the new `SpecFetchResult.warnings`) when GitHub is
+      unreachable or the SDK outgrows the parser — degraded freshness, not a
+      degraded service. Seed Speech stays hand-written: it appears in no
+      BytePlus SDK in any language.
+      _Accepts:_ generated-vs-hand-port diff loses ZERO fields and gains
+      three (`function_call`, image-response `tools`, task-response
+      `safety_identifier`); live end-to-end against GitHub bundles all 5
+      endpoints with no warnings and no dangling refs; parser unit tests
+      cover primitives/pointers/omitempty-requiredness, const-block enums,
+      slices/maps/interface{}/[]byte, `json:"-"` and embedded fields,
+      aliases and named composites, doc comments, closure-only emission, and
+      graceful degradation on unmapped types.

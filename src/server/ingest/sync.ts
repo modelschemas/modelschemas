@@ -136,6 +136,7 @@ export async function syncProvider(
   }
 
   const fetched = await provider.fetchSpec(secrets)
+  if (fetched.warnings) outcome.warnings.push(...fetched.warnings)
   if (fetched.skipped) {
     outcome.skipped = fetched.skipped
     outcome.warnings.push(fetched.skipped)

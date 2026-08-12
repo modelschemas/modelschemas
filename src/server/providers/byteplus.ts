@@ -1,13 +1,23 @@
 /**
- * BytePlus (ModelArk + Seed Speech) — embedded specs, live-augmented models.
+ * BytePlus (ModelArk + Seed Speech) — SDK-generated specs, live models.
  *
- * BytePlus publishes no public machine-readable spec: `/openapi.json`,
- * `/swagger.json` and `/docs` on the Ark data plane all answer 200 with an
- * EMPTY body (a catch-all, not a document — re-probed with a real key
- * 2026-08-12), and the genuine per-action OpenAPI documents live behind the
- * console's API Explorer, which needs an interactive login. So the spec stays
- * embedded in `byteplus-spec.ts`, ported from TanStack AI's
- * `@tanstack/ai-byteplus` hand-written, test-pinned wire types.
+ * BytePlus publishes no OpenAPI document: `/openapi.json`, `/swagger.json`
+ * and `/docs` on the Ark data plane all answer 200 with an EMPTY body (a
+ * catch-all, not a document — re-probed with a real key 2026-08-12), and the
+ * genuine per-action documents live behind the console's API Explorer, which
+ * needs an interactive login.
+ *
+ * It does, however, publish an official Go SDK whose model package declares
+ * the entire Ark data plane as `json:"…"`-tagged structs. Those are plain
+ * text, so `fetchSpec` pulls them from GitHub on the ordinary spec-sync cron
+ * and `byteplus-ark-build.ts` turns them into the Ark document — the spec
+ * tracks upstream SDK releases with no codegen step and no committed
+ * artifact. `byteplus-spec.ts` keeps the hand-ported document as the fallback
+ * for when GitHub is unreachable or the SDK is refactored past what the
+ * parser handles.
+ *
+ * Seed Speech appears in no BytePlus SDK in any language, so the voice
+ * document stays hand-written.
  *
  * The MODEL CATALOG is different: Ark's data-plane `GET /models` is a real,
  * richly-typed source (created / task_type / token_limits / modalities /
@@ -24,7 +34,14 @@
  * rather than reporting itself skipped.
  */
 import type { Activity } from '#/db/schema.ts'
+import { errorMessage } from '#/server/errors.ts'
 import { contentHash } from '#/server/kv.ts'
+import {
+  ARK_GO_FILES,
+  ARK_GO_SOURCE_URL,
+  arkGoFileUrl,
+  buildArkSpecFromGo,
+} from './byteplus-ark-build.ts'
 import {
   BYTEPLUS_ARK_DOCS_URL,
   BYTEPLUS_VOICE_DOCS_URL,
@@ -32,13 +49,15 @@ import {
   bytePlusVoiceSpec,
 } from './byteplus-spec.ts'
 import { byteplusIdSuffixDate } from './release-dates.ts'
-import { fetchJson } from './types.ts'
+import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
   ModelInfo,
+  OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
+  SpecSource,
 } from './types.ts'
 
 const ARK_MODELS_URL = 'https://ark.ap-southeast.bytepluses.com/api/v3/models'
@@ -57,19 +76,61 @@ function classify(path: string): Activity | null {
   return null
 }
 
+/**
+ * Ark half: generated from BytePlus's Go SDK so it tracks upstream releases.
+ * Falls back to the embedded document — never to nothing — if GitHub is
+ * unreachable or the SDK is refactored beyond what the parser handles, so a
+ * bad upstream day degrades the spec's freshness rather than the service.
+ */
+async function fetchArkSpec(): Promise<{
+  spec: OpenApiDocument
+  source: SpecSource
+  warnings: Array<string>
+}> {
+  try {
+    const files = await Promise.all(
+      ARK_GO_FILES.map(async (name) => ({
+        name,
+        text: await fetchText(arkGoFileUrl(name)),
+      })),
+    )
+    const { spec, warnings } = buildArkSpecFromGo(files)
+    return {
+      spec,
+      source: {
+        url: ARK_GO_SOURCE_URL,
+        // One document from many files: hash their concatenation in the
+        // fixed ARK_GO_FILES order so the digest is reproducible.
+        hash: await sha256Text(files.map((f) => f.text).join('')),
+      },
+      warnings,
+    }
+  } catch (error) {
+    const spec = bytePlusArkSpec()
+    return {
+      spec,
+      source: { url: BYTEPLUS_ARK_DOCS_URL, hash: await contentHash(spec) },
+      warnings: [
+        `byteplus: Go SDK spec generation failed (${errorMessage(error)}) — served the embedded Ark document instead`,
+      ],
+    }
+  }
+}
+
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const ark = bytePlusArkSpec()
+  const ark = await fetchArkSpec()
+  // Seed Speech appears in no BytePlus SDK in any language, so the voice
+  // document stays hand-written; provenance hashes the document itself (the
+  // FAL embedded-spec precedent).
   const voice = bytePlusVoiceSpec()
-  // Static embedded documents: provenance hashes the document itself (like
-  // FAL's response-embedded specs); the URL points at the human docs the
-  // shapes were derived from.
   return {
-    specs: [ark, voice],
+    specs: [ark.spec, voice],
     sources: [
-      { url: BYTEPLUS_ARK_DOCS_URL, hash: await contentHash(ark) },
+      ark.source,
       { url: BYTEPLUS_VOICE_DOCS_URL, hash: await contentHash(voice) },
     ],
     outputStrategy: 'post-200',
+    warnings: ark.warnings,
   }
 }
 

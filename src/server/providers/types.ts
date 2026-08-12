@@ -79,6 +79,12 @@ export interface SpecFetchResult {
   outputStrategy: 'post-200' | 'sibling-get'
   /** Upstream revision identifier when one exists (e.g. Anthropic's hash-stamped spec URL). */
   specRevision?: string
+  /**
+   * Non-fatal problems encountered while fetching/derivating the documents —
+   * e.g. BytePlus falling back to its embedded Ark document when the Go SDK
+   * it generates from is unreachable. Surfaced on the sync outcome.
+   */
+  warnings?: Array<string>
   /** Set when the provider was skipped (e.g. missing secret); specs will be empty. */
   skipped?: string
 }

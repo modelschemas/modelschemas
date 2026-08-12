@@ -1,7 +1,15 @@
 /**
- * BytePlus — synthesized OpenAPI documents. BytePlus publishes no public
- * machine-readable spec (its OpenAPI documents live behind the console's API
- * explorer), so the generation surface is embedded here, ported from
+ * BytePlus — hand-ported OpenAPI documents.
+ *
+ * NOTE ON ROLES: the Ark document here is now the FALLBACK. The live Ark spec
+ * is generated at sync time from BytePlus's Go SDK by
+ * `byteplus-ark-build.ts`; this copy is served only when that fetch or parse
+ * fails, so it should be kept roughly current but is no longer the primary
+ * source. The Seed Speech document below IS primary — no BytePlus SDK covers
+ * the voice host.
+ *
+ * BytePlus publishes no public machine-readable spec (its OpenAPI documents
+ * live behind the console's API explorer), so both were originally ported
  * TanStack AI's `@tanstack/ai-byteplus` wire types
  * (`packages/ai-byteplus/src/{video,image,audio}/wire-types.ts`,
  * `message-types.ts`, `text/text-provider-options.ts`), which record their
