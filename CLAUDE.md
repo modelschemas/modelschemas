@@ -133,8 +133,9 @@ ones).
   after adding routes, then typecheck.
 - **Env**: `.env.local` holds `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`
   (http://localhost:3100 — JWT audiences are origin-bound), `ADMIN_KEY`,
-  optional provider keys. Prod: `wrangler secret put`. README has the full
-  production-setup + runbook.
+  optional provider keys (`bun run secrets:pull` from Doppler `dev`;
+  `DOPPLER_*` is stripped). Prod: `bun run secrets:push` or
+  `wrangler secret put`. README has the full production-setup + runbook.
 
 API map: `GET /v1` (index) · `/v1/status` · `/v1/providers[/{p}/models]` ·
 `/v1/models[?activity,provider,capability,q]` · `/v1/models/{p}/{id}` ·

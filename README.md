@@ -124,8 +124,13 @@ bun run dev              # then, in another shell:
 curl -X POST http://localhost:3100/v1/admin/sync/openrouter -H "X-Admin-Key: $ADMIN_KEY"
 ```
 
-Secrets live in `.env.local` (see CLAUDE.md). `ADMIN_KEY` gates
-`POST /v1/admin/sync/{provider}`. Useful scripts:
+Secrets live in `.env.local` (see CLAUDE.md). Pull them from Doppler:
+
+```bash
+bun run secrets:pull     # Doppler `dev` → .env.local (strips DOPPLER_*)
+```
+
+`ADMIN_KEY` gates `POST /v1/admin/sync/{provider}`. Useful scripts:
 `bun scripts/agent-roundtrip.ts` (agent-auth end-to-end),
 `bun scripts/client-smoke.ts` (typed client), `bun run check:client`
 (client/spec drift), `bun scripts/emit-skill.ts` (regenerate SKILL.md),
@@ -161,19 +166,20 @@ upstream spec, no service needed).
    Rather than setting them one at a time, reconcile against Doppler:
 
    ```bash
-   bun run secrets:check   # three-way diff: code ↔ Doppler prd ↔ Worker
+   bun run secrets:check   # Doppler prd ↔ Worker (names only)
    bun run secrets:push    # apply (one wrangler secret bulk call)
    ```
 
    It runs locally against your existing Doppler and wrangler logins, so no
-   token goes near CI. Secrets are written into a new Worker version rather
+   token goes near CI. Doppler is the source of truth: every name in the
+   config is pushed except the remove list (`DOPPLER_*` context vars, and
+   `BETTER_AUTH_URL` which is already a wrangler `vars` binding).
+   Secrets are written into a new Worker version rather
    than the live one (the live API refuses while an undeployed preview
-   version exists); the next deploy inherits them. The expected set is derived from each provider's
-   `authEnvVar`, so it stays correct as providers are added; `DOPPLER_*`
-   context vars are never pushed, and nothing is ever deleted. Deliberately
-   NOT a CI job: that would need a long-lived Doppler service token plus a
-   Cloudflare API token in GitHub, turning repo write access into full
-   production compromise.
+   version exists); the next deploy inherits them. Nothing is ever deleted.
+   Deliberately NOT a CI job: that would need a long-lived Doppler service
+   token plus a Cloudflare API token in GitHub, turning repo write access
+   into full production compromise.
 
 4. Deploy and warm:
 

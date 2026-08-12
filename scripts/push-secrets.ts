@@ -12,9 +12,11 @@
  * leak:
  * - Values are held in memory only. Never written to disk, never passed as
  *   argv (visible in `ps`), never echoed. They reach wrangler over stdin.
- * - Only an ALLOWLIST derived from the code is pushed. Doppler configs carry
- *   `DOPPLER_*` context variables that are not application secrets; pushing
- *   those is how the deployed Worker ended up with three junk bindings.
+ * - Doppler is the source of truth. Everything in the config is pushed
+ *   except the remove list (`DOPPLER_*` context vars, plus
+ *   `BETTER_AUTH_URL` which is already a wrangler `vars` binding).
+ *   `DOPPLER_*` are not application secrets; pushing them is how the
+ *   deployed Worker ended up with three junk bindings.
  * - Nothing is ever deleted. `wrangler secret bulk` can delete via null, but
  *   this script never emits one — removing a secret stays a deliberate
  *   manual act.
@@ -28,55 +30,17 @@
  *   bun scripts/push-secrets.ts --push         # apply
  *   bun scripts/push-secrets.ts --config stg   # non-prod target
  */
-import { spawnSync } from 'node:child_process'
+import {
+  PUSH_REMOVE_LIST,
+  dopplerSecrets,
+  isRemoved,
+  parseConfigFlag,
+  run,
+  withoutRemoved,
+} from './secrets.ts'
 
-import { providerRegistry } from '../src/server/providers/index.ts'
-
-/** Secrets the service needs that are not a provider credential. */
-const SERVICE_SECRETS = ['ADMIN_KEY', 'BETTER_AUTH_SECRET'] as const
-
-/**
- * Doppler injects these into every config to describe itself. They are not
- * application secrets and must never become Worker bindings — they are
- * already on the deployed Worker by mistake and pollute the generated `Env`
- * type.
- */
-const NEVER_PUSH = /^DOPPLER_/
-
-const args = new Set(process.argv.slice(2))
-const push = args.has('--push')
-const configIndex = process.argv.indexOf('--config')
-const dopplerConfig =
-  configIndex !== -1 ? (process.argv[configIndex + 1] ?? 'prd') : 'prd'
-
-/**
- * The canonical set of secrets production should hold, derived from the
- * provider registry so it stays correct as providers are added.
- */
-function expectedSecrets(): Array<string> {
-  const fromProviders = providerRegistry
-    .map((p) => p.authEnvVar)
-    .filter((name): name is NonNullable<typeof name> => Boolean(name))
-  return [...new Set<string>([...SERVICE_SECRETS, ...fromProviders])].sort()
-}
-
-function run(
-  command: string,
-  commandArgs: Array<string>,
-  stdin?: string,
-): string {
-  const result = spawnSync(command, commandArgs, {
-    input: stdin,
-    encoding: 'utf8',
-    // Inherit stderr so auth prompts and errors are visible, but capture
-    // stdout so secret payloads never reach the terminal.
-    stdio: ['pipe', 'pipe', 'inherit'],
-  })
-  if (result.status !== 0) {
-    throw new Error(`${command} ${commandArgs[0] ?? ''} failed`)
-  }
-  return result.stdout
-}
+const push = process.argv.includes('--push')
+const dopplerConfig = parseConfigFlag(process.argv.slice(2), 'prd')
 
 /** Secret names currently bound to the deployed Worker (names only). */
 function workerSecretNames(): Set<string> {
@@ -85,41 +49,16 @@ function workerSecretNames(): Set<string> {
   return new Set(parsed.map((s) => s.name))
 }
 
-/** Every secret in the Doppler config. Held in memory; never persisted. */
-function dopplerSecrets(config: string): Record<string, string> {
-  const raw = run('doppler', [
-    'secrets',
-    'download',
-    '--no-file',
-    '--format',
-    'json',
-    '--config',
-    config,
-  ])
-  return JSON.parse(raw) as Record<string, string>
-}
-
-const expected = expectedSecrets()
-const doppler = dopplerSecrets(dopplerConfig)
+const rawDoppler = dopplerSecrets(dopplerConfig)
+const payload = withoutRemoved(rawDoppler, PUSH_REMOVE_LIST)
 const onWorker = workerSecretNames()
 
-const dopplerNames = Object.keys(doppler).filter((n) => !NEVER_PUSH.test(n))
-const payload: Record<string, string> = {}
 const rows: Array<[string, string]> = []
-
-for (const name of expected) {
-  const inDoppler = name in doppler
-  const deployed = onWorker.has(name)
-  if (inDoppler) {
-    const value = doppler[name]
-    if (value !== undefined && value !== '') payload[name] = value
-    rows.push([name, deployed ? 'update' : 'CREATE'])
-  } else {
-    rows.push([name, deployed ? 'worker-only (not in Doppler)' : 'MISSING'])
-  }
+for (const name of Object.keys(payload).sort()) {
+  rows.push([name, onWorker.has(name) ? 'update' : 'CREATE'])
 }
 
-const width = Math.max(...rows.map(([name]) => name.length))
+const width = rows.length > 0 ? Math.max(...rows.map(([n]) => n.length)) : 0
 console.log(
   `\nDoppler config: ${dopplerConfig}   Worker: modelschemas   mode: ${
     push ? 'PUSH' : 'dry run'
@@ -129,30 +68,30 @@ for (const [name, action] of rows) {
   console.log(`  ${name.padEnd(width)}  ${action}`)
 }
 
-// Anything in Doppler that the code does not expect: reported, never pushed.
-const unexpected = dopplerNames.filter((n) => !expected.includes(n))
-if (unexpected.length > 0) {
-  console.log(`\n  not in the allowlist, skipped: ${unexpected.join(', ')}`)
-}
-const contextVars = Object.keys(doppler).filter((n) => NEVER_PUSH.test(n))
-if (contextVars.length > 0) {
-  console.log(`  Doppler context vars, never pushed: ${contextVars.join(', ')}`)
+const dropped = Object.keys(rawDoppler)
+  .filter((name) => isRemoved(name, PUSH_REMOVE_LIST))
+  .sort()
+if (dropped.length > 0) {
+  console.log(`\n  remove list, skipped: ${dropped.join(', ')}`)
 }
 
-const missing = rows.filter(([, a]) => a === 'MISSING').map(([n]) => n)
-const workerOnly = rows
-  .filter(([, a]) => a.startsWith('worker-only'))
-  .map(([n]) => n)
-if (workerOnly.length > 0) {
+const workerOnly = [...onWorker].filter((name) => !(name in payload)).sort()
+const workerRemoved = workerOnly.filter((name) =>
+  isRemoved(name, PUSH_REMOVE_LIST),
+)
+const workerMissing = workerOnly.filter(
+  (name) => !isRemoved(name, PUSH_REMOVE_LIST),
+)
+if (workerRemoved.length > 0) {
   console.log(
-    `\n  ${workerOnly.length} secret(s) live on the Worker but not in Doppler,` +
-      ` so Doppler is not yet the source of truth:\n    ${workerOnly.join(', ')}` +
-      `\n  Add them to the '${dopplerConfig}' config before relying on this script.`,
+    `  on Worker, in the remove list (not deleted): ${workerRemoved.join(', ')}`,
   )
 }
-if (missing.length > 0) {
+if (workerMissing.length > 0) {
   console.log(
-    `\n  ${missing.length} expected secret(s) absent from BOTH:\n    ${missing.join(', ')}`,
+    `\n  ${workerMissing.length} secret(s) live on the Worker but not in Doppler,` +
+      ` so they will be left untouched:\n    ${workerMissing.join(', ')}` +
+      `\n  Add them to the '${dopplerConfig}' config before relying on this script.`,
   )
 }
 
