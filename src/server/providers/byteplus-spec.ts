@@ -8,6 +8,14 @@
  * provenance field-by-field: harvested OpenAPI 3.1 documents for the `ark`
  * service plus live probes against the ap-southeast host on 2026-07-31.
  *
+ * Cross-checked 2026-08-12 against BytePlus's own international SDKs
+ * (`github.com/byteplus-sdk/byteplus-go-sdk-v2` v1.0.32
+ * `service/arkruntime/model`, ~1,100 json-tagged fields; the same shapes back
+ * `byteplus-python-sdk-v2` and `byteplus-java-sdk-v2-ark-runtime`). Fields
+ * that exist only in those SDKs are marked SDK-derived at their declaration.
+ * The SDKs cover Ark only — Seed Speech appears in none of them, so the voice
+ * document below remains docs-derived.
+ *
  * Two hosts, two products, two API keys:
  * - **Ark (ModelArk)** — chat (`/chat/completions`, OpenAI-compatible),
  *   Seedance video (`/contents/generations/tasks`, async task API) and
@@ -489,6 +497,31 @@ const imageSchemas: Record<string, Schema> = {
             maximum: 15,
             description: 'Upper bound on images returned for this request.',
           },
+        },
+      },
+      seed: {
+        type: 'integer',
+        description:
+          'Randomness seed for reproducible generation. SDK-derived (byteplus-go-sdk-v2 GenerateImagesRequest.Seed; also in the Volcengine Python SDK) — not probe-verified.',
+      },
+      guidance_scale: {
+        type: 'number',
+        description:
+          'How strictly the result follows the prompt; higher values adhere more closely at some cost to diversity. SDK-derived (byteplus-go-sdk-v2 GenerateImagesRequest.GuidanceScale) — not probe-verified.',
+      },
+      optimize_prompt: {
+        type: 'boolean',
+        description:
+          'Toggle prompt rewriting. The finer-grained optimize_prompt_options selects the mode. SDK-derived (byteplus-go-sdk-v2) — not probe-verified.',
+      },
+      tools: {
+        type: 'array',
+        description:
+          'Provider tools to run during generation; the only documented member is web search, and its usage comes back under usage.tool_usage.web_search. SDK-derived (byteplus-go-sdk-v2 ContentGenerationTool) — not probe-verified.',
+        items: {
+          type: 'object',
+          properties: { type: { type: 'string' } },
+          required: ['type'],
         },
       },
       optimize_prompt_options: {
