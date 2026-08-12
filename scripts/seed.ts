@@ -5,20 +5,50 @@
 // script works against wrangler's local sqlite state without a node sqlite
 // driver dependency.
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { providerSeeds } from '../src/db/seed-providers.ts'
+import { providerSeeds, seedFromAdapter } from '../src/db/seed-providers.ts'
+import type { ProviderConfig } from '../src/server/providers/types.ts'
+
+const adaptersDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../src/server/providers/adapters',
+)
+
+async function loadAdapterSeeds(): Promise<
+  Array<(typeof providerSeeds)[number]>
+> {
+  const files = readdirSync(adaptersDir).filter(
+    (name) => name.endsWith('.ts') && !name.endsWith('.test.ts'),
+  )
+  const seeds: Array<(typeof providerSeeds)[number]> = []
+  for (const file of files) {
+    const mod = (await import(join(adaptersDir, file))) as {
+      provider?: ProviderConfig
+    }
+    if (!mod.provider) {
+      throw new Error(
+        `adapter ${file} must export const provider: ProviderConfig`,
+      )
+    }
+    seeds.push(seedFromAdapter(mod.provider))
+  }
+  return seeds
+}
 
 function sqlLiteral(value: string | null | undefined): string {
   if (value == null) return 'NULL'
   return `'${value.replaceAll("'", "''")}'`
 }
 
+const seeds = [...providerSeeds, ...(await loadAdapterSeeds())]
+
 // Idempotent upsert: refreshes the seeded config columns, preserves runtime
 // state (last_polled_at, last_synced_at, status).
-const statements = providerSeeds.map(
+const statements = seeds.map(
   (
     p,
   ) => `INSERT INTO providers (id, display_name, spec_source_url, models_endpoint, auth_env_var)
@@ -47,4 +77,4 @@ if (result.status !== 0) {
   console.error(`seed failed (wrangler exit ${String(result.status)})`)
   process.exit(result.status ?? 1)
 }
-console.log(`seeded ${String(providerSeeds.length)} providers (${target})`)
+console.log(`seeded ${String(seeds.length)} providers (${target})`)

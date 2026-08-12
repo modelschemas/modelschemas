@@ -1,6 +1,23 @@
+import type { ProviderConfig } from '#/server/providers/types.ts'
+
 import type { providers } from './schema.ts'
 
 export type ProviderSeed = typeof providers.$inferInsert
+
+/** Map an auto-registered adapter onto a seed row. */
+export function seedFromAdapter(provider: ProviderConfig): ProviderSeed {
+  const specSourceUrl = provider.specSourceUrl
+  if (!specSourceUrl) {
+    throw new Error(`adapter ${provider.id} is missing specSourceUrl`)
+  }
+  return {
+    id: provider.id,
+    displayName: provider.displayName,
+    specSourceUrl,
+    modelsEndpoint: provider.modelsEndpoint,
+    authEnvVar: provider.authEnvVar ?? null,
+  }
+}
 
 /**
  * Spec-source config for the 8 monitored providers, ported from TanStack AI
