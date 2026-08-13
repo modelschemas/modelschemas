@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { anthropicProvider } from './anthropic.ts'
 import { elevenlabsProvider } from './elevenlabs.ts'
 import { FAL_ACTIVITY_MARKER, falCategoryActivity, falProvider } from './fal.ts'
-import { discoveryToOpenApi, geminiProvider } from './gemini.ts'
+import {
+  discoveryToOpenApi,
+  geminiModelActivity,
+  geminiProvider,
+} from './gemini.ts'
 import { grokProvider } from './grok.ts'
 import { openaiProvider } from './openai.ts'
 import {
@@ -95,6 +99,51 @@ describe('gemini classify', () => {
       geminiProvider.classify('/v1beta/models/{id}:batchGenerateContent', {}),
     ).toBeNull()
     expect(geminiProvider.classify('/v1beta/files', {})).toBeNull()
+  })
+})
+
+describe('gemini model activity', () => {
+  const GENERATE = ['generateContent', 'countTokens', 'batchGenerateContent']
+
+  it('derives Imagen/Veo/embeddings from generation methods', () => {
+    expect(geminiModelActivity('imagen-4.0-generate-001', ['predict'])).toBe(
+      'image',
+    )
+    expect(
+      geminiModelActivity('veo-3.1-generate-preview', ['predictLongRunning']),
+    ).toBe('video')
+    expect(
+      geminiModelActivity('gemini-embedding-2', [
+        'embedContent',
+        'countTextTokens',
+        'countTokens',
+      ]),
+    ).toBe('embeddings')
+  })
+
+  it('splits the generateContent surface by id segment', () => {
+    expect(geminiModelActivity('gemini-3.1-flash-lite-image', GENERATE)).toBe(
+      'image',
+    )
+    expect(geminiModelActivity('gemini-3-pro-image-preview', GENERATE)).toBe(
+      'image',
+    )
+    expect(geminiModelActivity('gemini-2.5-flash-preview-tts', GENERATE)).toBe(
+      'audio',
+    )
+    expect(geminiModelActivity('gemini-3.1-flash', GENERATE)).toBe('chat')
+    // 'image'/'tts' must be a whole dash-separated segment, not a substring.
+    expect(geminiModelActivity('gemini-imagey-preview', GENERATE)).toBe('chat')
+  })
+
+  it('groups live models with chat and leaves inert models null', () => {
+    expect(
+      geminiModelActivity('gemini-3.1-flash-live-preview', [
+        'bidiGenerateContent',
+      ]),
+    ).toBe('chat')
+    expect(geminiModelActivity('aqa', ['generateAnswer'])).toBe('chat')
+    expect(geminiModelActivity('some-utility', ['countTokens'])).toBeNull()
   })
 })
 
