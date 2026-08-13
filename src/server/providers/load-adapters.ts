@@ -25,14 +25,14 @@ const CORE_PROVIDER_IDS = new Set([
   'byteplus',
 ])
 
+// Exclude `*.test.ts` in the glob itself. `{ eager: true }` on `*.ts`
+// would also load the tests, and a test that imports classifyAndBundle
+// (→ sync → this registry) then deadlocks: adapterProviders is still
+// undefined and `...adapterProviders` throws "not iterable".
 const modules = import.meta.glob<{ provider?: ProviderConfig }>(
-  './adapters/*.ts',
+  ['./adapters/*.ts', '!./adapters/*.test.ts'],
   { eager: true },
 )
-
-function isAdapterModulePath(path: string): boolean {
-  return path.endsWith('.ts') && !path.endsWith('.test.ts')
-}
 
 function isProvider(value: unknown): value is ProviderConfig {
   if (value === null || typeof value !== 'object') return false
@@ -50,7 +50,6 @@ function loadAdapters(): Array<ProviderConfig> {
   const loaded: Array<ProviderConfig> = []
   const seen = new Set<string>()
   for (const [path, mod] of Object.entries(modules)) {
-    if (!isAdapterModulePath(path)) continue
     const candidate = mod.provider
     if (!isProvider(candidate)) {
       throw new Error(
