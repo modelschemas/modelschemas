@@ -250,6 +250,33 @@ export async function fetchText(
   return response.text()
 }
 
+/**
+ * Read `openapi_spec_url` out of a Stainless SDK `.stats.yml`. The file is
+ * plain key-value YAML; we only need one field, so skip a full parse.
+ */
+export function stainlessSpecUrlFromStats(
+  text: string,
+  providerId: string,
+): string {
+  const url = text.match(/^openapi_spec_url:\s*(.+)$/m)?.[1]?.trim()
+  if (!url) {
+    throw new Error(`${providerId} .stats.yml: couldn't find openapi_spec_url`)
+  }
+  return url
+}
+
+/**
+ * Resolve the current spec URL from a Stainless SDK repo's `.stats.yml`
+ * (a hash-stamped YAML in GCS that updates whenever the provider ships a
+ * new API revision). The resolved URL doubles as the specRevision.
+ */
+export async function resolveStainlessSpecUrl(
+  providerId: string,
+  statsUrl: string,
+): Promise<string> {
+  return stainlessSpecUrlFromStats(await fetchText(statsUrl), providerId)
+}
+
 /** Standard skip result for providers whose secret is absent. */
 export function skippedResult(
   providerId: string,
