@@ -1,0 +1,238 @@
+{
+  "mistral": {
+    "displayName": "Mistral",
+    "secret": "MISTRAL_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://docs.mistral.ai/openapi.yaml",
+    "modelsUrl": "https://api.mistral.ai/v1/models",
+    "activities": ["chat", "embeddings", "moderation", "audio"],
+    "notes": "Public OpenAPI 3.1. Classify chat/fim/agents as chat, embeddings, moderation, audio/transcriptions; drop fine-tuning, batch, files, admin."
+  },
+  "replicate": {
+    "displayName": "Replicate",
+    "secret": "REPLICATE_API_TOKEN",
+    "strategy": "upstream-spec",
+    "specUrl": "https://api.replicate.com/openapi.json",
+    "modelsUrl": "https://api.replicate.com/v1/models",
+    "activities": ["chat", "image", "video", "audio"],
+    "notes": "Official OpenAPI. Generation is POST /v1/predictions (and official model run paths). Platform account/collections/hardware classify null. listModels is paginated. Auth: Bearer token. outputStrategy post-200 (prediction object is the ack)."
+  },
+  "groq": {
+    "displayName": "Groq",
+    "secret": "GROQ_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://console.groq.com/docs/openai",
+    "modelsUrl": "https://api.groq.com/openai/v1/models",
+    "serverUrl": "https://api.groq.com/openai/v1",
+    "include": [
+      "/chat/completions",
+      "/audio/transcriptions",
+      "/audio/translations",
+      "/audio/speech"
+    ],
+    "activities": ["chat", "audio"],
+    "notes": "OpenAI-compatible, no stable public spec URL. Use fetchOpenAiCompatibleSpec. Prefer resolving a live Stainless spec from groq-python/groq-typescript .stats.yml if one exists; otherwise generated from the OpenAI spec."
+  },
+  "fireworks": {
+    "displayName": "Fireworks AI",
+    "secret": "FIREWORKS_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://docs.fireworks.ai/api-reference/post-chatcompletions",
+    "modelsUrl": "https://api.fireworks.ai/inference/v1/models",
+    "serverUrl": "https://api.fireworks.ai/inference/v1",
+    "include": ["/chat/completions"],
+    "activities": ["chat"],
+    "notes": "OpenAI-compatible inference API. Use openai-compat helper. Confirm models URL; some docs use GET /inference/v1/models."
+  },
+  "together": {
+    "displayName": "Together AI",
+    "secret": "TOGETHER_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://docs.together.ai/openapi.yaml",
+    "modelsUrl": "https://api.together.xyz/v1/models",
+    "activities": ["chat"],
+    "notes": "Published OpenAPI 3.1 (generated file on docs.together.ai). Classify chat/completions; drop fine-tune, files, endpoints admin."
+  },
+  "voyage": {
+    "displayName": "Voyage AI",
+    "secret": "VOYAGE_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://raw.githubusercontent.com/voyage-ai/openapi/main/openapi.yaml",
+    "modelsUrl": "https://api.voyageai.com/v1/models",
+    "activities": ["embeddings"],
+    "notes": "Official spec repo voyage-ai/openapi. Embeddings + rerank. Rerank is not in our activity enum — classify null. Confirm the raw spec filename if yaml 404s."
+  },
+  "cohere": {
+    "displayName": "Cohere",
+    "secret": "COHERE_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://raw.githubusercontent.com/cohere-ai/cohere-developer-experience/main/cohere-openapi.yaml",
+    "modelsUrl": "https://api.cohere.com/v1/models",
+    "activities": ["chat", "embeddings"],
+    "notes": "Official YAML. Chat (v2/chat or /chat) + embed. Classify rerank/classify/datasets/finetune/admin as null. Auth Bearer."
+  },
+  "deepseek": {
+    "displayName": "DeepSeek",
+    "secret": "DEEPSEEK_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://api.deepseek.com",
+    "modelsUrl": "https://api.deepseek.com/models",
+    "serverUrl": "https://api.deepseek.com",
+    "include": ["/chat/completions"],
+    "activities": ["chat"],
+    "notes": "OpenAI-compatible. Paths may be /chat/completions (server already includes no /v1) or /v1/chat/completions. Confirm against docs and set serverUrl accordingly."
+  },
+  "moonshot": {
+    "displayName": "Moonshot",
+    "secret": "MOONSHOT_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://platform.moonshot.cn/docs/api/chat",
+    "modelsUrl": "https://api.moonshot.cn/v1/models",
+    "serverUrl": "https://api.moonshot.cn/v1",
+    "include": ["/chat/completions"],
+    "activities": ["chat"],
+    "notes": "Kimi / Moonshot OpenAI-compatible. International host may be api.moonshot.ai — prefer the host the key is issued for (cn vs ai) and document it."
+  },
+  "dashscope": {
+    "displayName": "Alibaba Cloud Model Studio",
+    "secret": "DASHSCOPE_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope",
+    "modelsUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models",
+    "serverUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "include": [
+      "/chat/completions",
+      "/embeddings",
+      "/images/generations",
+      "/audio/speech",
+      "/audio/transcriptions"
+    ],
+    "activities": ["chat", "embeddings", "image", "audio"],
+    "notes": "Use the OpenAI-compatible mode, not the native DashScope protocol. Intl host vs dashscope.aliyuncs.com (China). Prefer intl unless the key is CN-only."
+  },
+  "deepgram": {
+    "displayName": "Deepgram",
+    "secret": "DEEPGRAM_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://developers.deepgram.com/openapi.json",
+    "modelsUrl": "https://api.deepgram.com/v1/models",
+    "activities": ["audio"],
+    "notes": "Official OpenAPI (also github.com/deepgram/deepgram-api-specs). Listen/speak/agent audio. Drop project/key management. Auth is often Token or Authorization: Token."
+  },
+  "assemblyai": {
+    "displayName": "AssemblyAI",
+    "secret": "ASSEMBLYAI_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://www.assemblyai.com/openapi.json",
+    "modelsUrl": "https://api.assemblyai.com/v2/transcript",
+    "activities": ["audio"],
+    "notes": "Official OpenAPI titled AssemblyAI API. Transcript + streaming. No classic /models list — listModels may return a small curated set or skip with a documented empty catalog. Do not use the mintlify plant-store placeholder at /docs/api-reference/openapi.json."
+  },
+  "runway": {
+    "displayName": "Runway",
+    "secret": "RUNWAY_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://github.com/runwayml/openapi",
+    "modelsUrl": "https://api.dev.runwayml.com/v1/tasks",
+    "activities": ["video", "image"],
+    "notes": "Stainless spec in github.com/runwayml/openapi. Find the actual yaml path (branch may not be main). Auth X-Runway-Version + Bearer. Classify generation POSTs; drop task GET/cancel as platform."
+  },
+  "cartesia": {
+    "displayName": "Cartesia",
+    "secret": "CARTESIA_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://docs.cartesia.ai/llms.txt",
+    "modelsUrl": "https://api.cartesia.ai/voices",
+    "activities": ["audio"],
+    "notes": "Mintlify docs. Hunt for a real OpenAPI (docs.cartesia.ai/openapi.json may 429). TTS bytes/sse + STT. Requires Cartesia-Version header. Voices list stands in for models if there is no /models."
+  },
+  "perplexity": {
+    "displayName": "Perplexity",
+    "secret": "PERPLEXITY_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://docs.perplexity.ai/openapi.json",
+    "modelsUrl": "https://api.perplexity.ai/models",
+    "activities": ["chat"],
+    "notes": "Published OpenAPI 3.1. Paths include /v1/sonar (chat). May have no /models — if so listModels returns [] without skipped, or a documented static catalog."
+  },
+  "cerebras": {
+    "displayName": "Cerebras",
+    "secret": "CEREBRAS_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://inference-docs.cerebras.ai/api-reference/chat-completions",
+    "modelsUrl": "https://api.cerebras.ai/v1/models",
+    "serverUrl": "https://api.cerebras.ai/v1",
+    "include": ["/chat/completions"],
+    "activities": ["chat"],
+    "notes": "OpenAI-compatible. Use openai-compat helper."
+  },
+  "sambanova": {
+    "displayName": "SambaNova",
+    "secret": "SAMBANOVA_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://docs.sambanova.ai/cloud/api-reference/endpoints/chat",
+    "modelsUrl": "https://api.sambanova.ai/v1/models",
+    "serverUrl": "https://api.sambanova.ai/v1",
+    "include": ["/chat/completions"],
+    "activities": ["chat"],
+    "notes": "OpenAI-compatible. Use openai-compat helper."
+  },
+  "jina": {
+    "displayName": "Jina AI",
+    "secret": "JINA_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://api.jina.ai/openapi.json",
+    "modelsUrl": "https://api.jina.ai/v1/models",
+    "activities": ["embeddings"],
+    "notes": "Official OpenAPI (embeddings, rerank, classifier, reader). Only embeddings classify; rerank/classify/reader are null."
+  },
+  "stability": {
+    "displayName": "Stability AI",
+    "secret": "STABILITY_API_KEY",
+    "strategy": "docs-derived",
+    "specUrl": "https://platform.stability.ai/docs/api-reference",
+    "modelsUrl": "https://api.stability.ai/v1/engines/list",
+    "activities": ["image"],
+    "notes": "No clean public openapi.json (HTML docs). Prefer any official spec if found; otherwise a focused docs-derived spec for v2beta stable-image generate/upscale/edit. Auth Bearer. v1 engines/list may still work for models."
+  },
+  "bfl": {
+    "displayName": "Black Forest Labs",
+    "secret": "BFL_API_KEY",
+    "strategy": "upstream-spec",
+    "specUrl": "https://api.bfl.ai/openapi.json",
+    "modelsUrl": "https://api.bfl.ai/v1/models",
+    "activities": ["image"],
+    "notes": "Official OpenAPI at api.bfl.ai. FLUX image (and maybe video) POSTs. Utility/finetune/admin classify null. If no /models, derive model ids from path names or a small curated list."
+  },
+  "kling": {
+    "displayName": "Kling AI",
+    "secret": "KLING_API_KEY",
+    "strategy": "docs-derived",
+    "specUrl": "https://app.klingai.com/global/dev/document-api",
+    "modelsUrl": "https://api.klingai.com/v1/videos/text2video",
+    "activities": ["video", "image"],
+    "notes": "No public OpenAPI. Auth may be JWT from access key+secret rather than a single bearer — if the provided KLING_API_KEY is a ready-to-use bearer, use it; otherwise document skip of listModels and still ship the spec. Hand-write the text2video/image2video/image generation POSTs from official docs."
+  },
+  "hyperbolic": {
+    "displayName": "Hyperbolic",
+    "secret": "HYPERBOLIC_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://docs.hyperbolic.xyz",
+    "modelsUrl": "https://api.hyperbolic.xyz/v1/models",
+    "serverUrl": "https://api.hyperbolic.xyz/v1",
+    "include": ["/chat/completions"],
+    "activities": ["chat"],
+    "notes": "OpenAI-compatible. Use openai-compat helper."
+  },
+  "novita": {
+    "displayName": "Novita AI",
+    "secret": "NOVITA_API_KEY",
+    "strategy": "generated",
+    "specUrl": "https://docs.novita.ai",
+    "modelsUrl": "https://api.novita.ai/v3/openai/models",
+    "serverUrl": "https://api.novita.ai/v3/openai",
+    "include": ["/chat/completions", "/images/generations"],
+    "activities": ["chat", "image"],
+    "notes": "OpenAI-compatible plus image. Confirm path prefix (v3/openai). docs.novita.ai/openapi.json is markdown, not a spec."
+  }
+}

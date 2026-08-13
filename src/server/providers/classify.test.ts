@@ -16,18 +16,22 @@ import {
 import { getProvider, providerRegistry } from './index.ts'
 import type { OpenApiDocument } from './types.ts'
 
+const CORE_IDS = [
+  'anthropic',
+  'byteplus',
+  'elevenlabs',
+  'fal',
+  'gemini',
+  'grok',
+  'openai',
+  'openrouter',
+] as const
+
 describe('registry', () => {
-  it('contains the 8 providers, ids matching the seed data', () => {
-    expect(providerRegistry.map((p) => p.id).sort()).toEqual([
-      'anthropic',
-      'byteplus',
-      'elevenlabs',
-      'fal',
-      'gemini',
-      'grok',
-      'openai',
-      'openrouter',
-    ])
+  it('includes the original 8 providers and keeps ids unique', () => {
+    const ids = providerRegistry.map((p) => p.id)
+    expect(ids).toEqual(expect.arrayContaining([...CORE_IDS]))
+    expect(new Set(ids).size).toBe(ids.length)
     expect(getProvider('anthropic')?.displayName).toBe('Anthropic')
     expect(getProvider('nope')).toBeUndefined()
   })
@@ -339,7 +343,7 @@ describe('byteplus classify', () => {
 })
 
 describe('provider derivations', () => {
-  it('grades every registered provider', () => {
+  it('grades the original 8 providers', () => {
     const byId = Object.fromEntries(
       providerRegistry.map((p) => [p.id, p.defaultDerivation]),
     )

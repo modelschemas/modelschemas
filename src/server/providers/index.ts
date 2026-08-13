@@ -4,6 +4,7 @@ import { elevenlabsProvider } from './elevenlabs.ts'
 import { falProvider } from './fal.ts'
 import { geminiProvider } from './gemini.ts'
 import { grokProvider } from './grok.ts'
+import { adapterProviders } from './load-adapters.ts'
 import { openaiProvider } from './openai.ts'
 import { openrouterProvider } from './openrouter.ts'
 import type { ProviderConfig } from './types.ts'
@@ -17,6 +18,7 @@ export const providerRegistry: Array<ProviderConfig> = [
   openrouterProvider,
   falProvider,
   byteplusProvider,
+  ...adapterProviders,
 ]
 
 export function getProvider(id: string): ProviderConfig | undefined {

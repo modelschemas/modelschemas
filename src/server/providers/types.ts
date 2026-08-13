@@ -78,6 +78,31 @@ export interface ProviderSecrets {
    * declared so local probe scripts share one canonical name.
    */
   SEED_SPEECH_API_KEY?: string
+  // Adapter-batch secrets (docs/providers-to-add.md). Optional: a missing
+  // key skips listModels; fetchSpec stays keyless whenever the spec is public.
+  MISTRAL_API_KEY?: string
+  REPLICATE_API_TOKEN?: string
+  GROQ_API_KEY?: string
+  FIREWORKS_API_KEY?: string
+  TOGETHER_API_KEY?: string
+  VOYAGE_API_KEY?: string
+  COHERE_API_KEY?: string
+  DEEPSEEK_API_KEY?: string
+  MOONSHOT_API_KEY?: string
+  DASHSCOPE_API_KEY?: string
+  DEEPGRAM_API_KEY?: string
+  ASSEMBLYAI_API_KEY?: string
+  RUNWAY_API_KEY?: string
+  CARTESIA_API_KEY?: string
+  PERPLEXITY_API_KEY?: string
+  CEREBRAS_API_KEY?: string
+  SAMBANOVA_API_KEY?: string
+  JINA_API_KEY?: string
+  STABILITY_API_KEY?: string
+  BFL_API_KEY?: string
+  KLING_API_KEY?: string
+  HYPERBOLIC_API_KEY?: string
+  NOVITA_API_KEY?: string
 }
 
 /** Normalised model entry (maps onto the `models` table shape). */
@@ -147,6 +172,13 @@ export interface ProviderConfig {
   /** Env var holding the API key; undefined for keyless providers. */
   authEnvVar?: keyof ProviderSecrets
   /**
+   * Seed metadata. Required on auto-registered adapters under
+   * `./adapters/`; optional on the original 8, which keep their rows in
+   * `seed-providers.ts`.
+   */
+  specSourceUrl?: string
+  modelsEndpoint?: string
+  /**
    * Derivation recorded for this provider's endpoints unless an operation
    * carries its own {@link PROVENANCE_MARKER}. Providers that re-fetch a
    * published spec every sync declare `upstream-spec`.
@@ -161,6 +193,24 @@ export interface ProviderConfig {
    * surface — dropped from schema generation.
    */
   classify: (path: string, op: OpenApiOperation) => Activity | null
+}
+
+/** Fetch a JSON or YAML OpenAPI document and hash the raw bytes. */
+export async function fetchOpenApi(url: string): Promise<{
+  spec: OpenApiDocument
+  text: string
+  hash: string
+}> {
+  const { parse } = await import('yaml')
+  const text = await fetchText(url)
+  const hash = await sha256Text(text)
+  const trimmed = text.trimStart()
+  const spec = (
+    trimmed.startsWith('{') || trimmed.startsWith('[')
+      ? JSON.parse(text)
+      : parse(text)
+  ) as OpenApiDocument
+  return { spec, text, hash }
 }
 
 export async function fetchJson(
