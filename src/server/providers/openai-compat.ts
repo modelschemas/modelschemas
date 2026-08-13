@@ -7,6 +7,7 @@
  * document the provider itself publishes.
  */
 import type { Activity } from '#/db/schema.ts'
+import { OPENAI_SPEC_URL } from './openai.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -14,8 +15,7 @@ import type {
   ProviderSecrets,
 } from './types.ts'
 
-export const OPENAI_OPENAPI_URL =
-  'https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml'
+export { OPENAI_SPEC_URL as OPENAI_OPENAPI_URL }
 
 export const OPENAI_COMPAT_PATHS = [
   '/chat/completions',
@@ -88,10 +88,10 @@ export async function fetchOpenAiCompatibleSpec(
   url: string
   hash: string
 }> {
-  const { spec, hash } = await fetchOpenApi(OPENAI_OPENAPI_URL)
+  const { spec, hash } = await fetchOpenApi(OPENAI_SPEC_URL)
   return {
     spec: filterOpenAiSpec(spec, opts),
-    url: OPENAI_OPENAPI_URL,
+    url: OPENAI_SPEC_URL,
     hash,
   }
 }

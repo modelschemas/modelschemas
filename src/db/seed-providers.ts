@@ -23,6 +23,8 @@ export function seedFromAdapter(provider: ProviderConfig): ProviderSeed {
  * Spec-source config for the 8 monitored providers, ported from TanStack AI
  * PR #622 (`packages/ai-schemas/scripts/providers/*`):
  *
+ * - OpenAI's seeded URL is openai-node's Castiron `openapi.transformed.yml`,
+ *   which leads the public openai-openapi export.
  * - Anthropic's spec URL is not fetched directly: the seeded URL is the
  *   Stainless `.stats.yml` for the TypeScript SDK, whose `openapi_spec_url`
  *   field points at the current spec revision (resolved at sync time).
@@ -43,7 +45,7 @@ export const providerSeeds: Array<ProviderSeed> = [
     id: 'openai',
     displayName: 'OpenAI',
     specSourceUrl:
-      'https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml',
+      'https://raw.githubusercontent.com/openai/openai-node/main/api_reference/openapi.transformed.yml',
     modelsEndpoint: 'https://api.openai.com/v1/models',
     authEnvVar: 'OPENAI_API_KEY',
   },

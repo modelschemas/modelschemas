@@ -1,22 +1,21 @@
 /**
- * OpenAI — canonical OpenAPI spec from github.com/openai/openai-openapi
- * (raw YAML, public). Models endpoint requires OPENAI_API_KEY.
+ * OpenAI — spec from openai-node's `api_reference/openapi.transformed.yml`
+ * (Castiron generation input). This leads the public openai-openapi export,
+ * which lags API releases (gpt-image-2 is enum-typed here; the public repo
+ * still caps at gpt-image-1.5). Models endpoint requires OPENAI_API_KEY.
  */
-import { parse } from 'yaml'
-
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
+import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
-  OpenApiDocument,
   OpenApiOperation,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from './types.ts'
 
-const OPENAI_OPENAPI_URL =
-  'https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml'
+export const OPENAI_SPEC_URL =
+  'https://raw.githubusercontent.com/openai/openai-node/main/api_reference/openapi.transformed.yml'
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models'
 
 /**
@@ -50,12 +49,13 @@ function classify(path: string, op: OpenApiOperation): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const yamlText = await fetchText(OPENAI_OPENAPI_URL)
-  const spec = parse(yamlText) as OpenApiDocument
+  const { spec, hash } = await fetchOpenApi(OPENAI_SPEC_URL)
   return {
     specs: [spec],
-    sources: [{ url: OPENAI_OPENAPI_URL, hash: await sha256Text(yamlText) }],
+    sources: [{ url: OPENAI_SPEC_URL, hash }],
     outputStrategy: 'post-200',
+    // Floating `main` URL — the document hash is the revision id.
+    specRevision: hash,
   }
 }
 
