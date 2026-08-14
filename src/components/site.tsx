@@ -23,6 +23,7 @@ export function GithubIcon({ className = '' }: { className?: string }) {
 export function SiteNav({ active }: { active?: string }) {
   const links: Array<[label: string, href: string]> = [
     ['models', '/models'],
+    ['schemas', '/schemas'],
     ['changes', '/changes'],
     ['examples', '/examples'],
     ['docs', '/docs'],
@@ -327,6 +328,8 @@ export const STATUS_DOT: Record<string, string> = {
   active: 'bg-tok-green',
   degraded: 'bg-tok-amber',
   disabled: 'bg-ink-faint',
+  // Registered in code, first sync not yet landed.
+  pending: 'bg-tok-blue',
 }
 
 export function StatusDot({ status }: { status: string }) {

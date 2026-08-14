@@ -29,6 +29,57 @@ export async function providerExists(
   return row !== undefined
 }
 
+export interface ProviderSchemaGroup {
+  provider: string
+  count: number
+  activities: Partial<Record<Activity, Array<string>>>
+}
+
+/**
+ * GET /v1/schemas — the system-wide schema index: every provider that has
+ * extracted schemas, with its activities and endpoint ids. The one URL an
+ * agent (or the /schemas page) needs to discover every schema on the system.
+ */
+export async function getSystemSchemaIndex(db: Db) {
+  const rows = await db
+    .select({
+      id: endpoints.id,
+      providerId: endpoints.providerId,
+      activity: endpoints.activity,
+    })
+    .from(endpoints)
+    .orderBy(endpoints.id)
+
+  const byProvider = new Map<string, ProviderSchemaGroup>()
+  for (const row of rows) {
+    let group = byProvider.get(row.providerId)
+    if (!group) {
+      group = { provider: row.providerId, count: 0, activities: {} }
+      byProvider.set(row.providerId, group)
+    }
+    group.count++
+    ;(group.activities[row.activity] ??= []).push(
+      publicEndpointId(row.id, row.providerId),
+    )
+  }
+
+  const providerGroups = [...byProvider.values()].sort((a, b) =>
+    a.provider.localeCompare(b.provider),
+  )
+  return {
+    count: rows.length,
+    providers: providerGroups,
+    _links: {
+      self: halGet('/v1/schemas'),
+      provider: halGet('/v1/schemas/{provider}'),
+      activity: halGet('/v1/schemas/{provider}/{activity}'),
+      schema: halGet(
+        '/v1/schemas/{provider}/{activity}/{endpointId}{?kind,version}',
+      ),
+    },
+  }
+}
+
 /** GET /v1/schemas/{provider} — activities + endpoint ids. */
 export async function getProviderSchemaIndex(db: Db, providerId: string) {
   const rows = await db

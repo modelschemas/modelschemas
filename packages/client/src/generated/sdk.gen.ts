@@ -16,6 +16,8 @@ import type {
   GetServiceIndexResponses,
   GetStatusData,
   GetStatusResponses,
+  ListAllSchemasData,
+  ListAllSchemasResponses,
   ListChangesData,
   ListChangesResponses,
   ListModelsData,
@@ -125,6 +127,20 @@ export const getModel = <ThrowOnError extends boolean = false>(
     GetModelErrors,
     ThrowOnError
   >({ url: '/v1/models/{provider}/{modelId}', ...options })
+
+/**
+ * System-wide schema index
+ *
+ * Every provider with extracted schemas, each with its activities and endpoint ids — the discovery entry point for all schemas on the system.
+ */
+export const listAllSchemas = <ThrowOnError extends boolean = false>(
+  options?: Options<ListAllSchemasData, ThrowOnError>,
+) =>
+  (options?.client ?? client).get<
+    ListAllSchemasResponses,
+    unknown,
+    ThrowOnError
+  >({ url: '/v1/schemas', ...options })
 
 /**
  * Activities and endpoint ids for a provider

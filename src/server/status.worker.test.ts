@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test'
 
 import { getDb } from '../db/index.ts'
 import { endpoints, models, providers, schemaVersions } from '../db/schema.ts'
+import { providerRegistry } from '../server/providers/index.ts'
 import { getServiceStatus } from './status.ts'
 
 const NOW = 1_781_150_000
@@ -75,5 +76,20 @@ describe('getServiceStatus', () => {
       lastPolledAt: null,
       counts: { models: 0, endpoints: 0, schemas: 0 },
     })
+  })
+
+  it('lists every registered provider even before its first sync', async () => {
+    const db = getDb(env)
+    const status = await getServiceStatus(db, NOW)
+    // Nothing is seeded in the test DB, so every registry provider must
+    // surface as pending — the full roster is always visible.
+    for (const config of providerRegistry) {
+      const listed = status.providers.find((p) => p.id === config.id)
+      expect(listed).toMatchObject({
+        displayName: config.displayName,
+        status: 'pending',
+        counts: { models: 0, endpoints: 0, schemas: 0 },
+      })
+    }
   })
 })

@@ -221,6 +221,25 @@
         }
       }
     },
+    "/v1/schemas": {
+      "get": {
+        "operationId": "listAllSchemas",
+        "summary": "System-wide schema index",
+        "description": "Every provider with extracted schemas, each with its activities and endpoint ids — the discovery entry point for all schemas on the system.",
+        "responses": {
+          "200": {
+            "description": "Provider → activity → endpoint-id index.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/schemas/{provider}": {
       "get": {
         "operationId": "listProviderSchemas",
@@ -687,7 +706,8 @@
                   "enum": [
                     "active",
                     "degraded",
-                    "disabled"
+                    "disabled",
+                    "pending"
                   ]
                 },
                 "lastPolledAt": {

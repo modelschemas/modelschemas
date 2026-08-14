@@ -45,6 +45,7 @@ describe('WebMCP (task 10.6)', () => {
     }
     expect(tools.map((t) => t.name)).toEqual([
       'list_models',
+      'list_schemas',
       'get_schema',
       'validate_payload',
     ])

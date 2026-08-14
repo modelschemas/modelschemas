@@ -23,6 +23,7 @@ import { Route as AuthDotmdRouteImport } from './routes/auth[.]md'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as V1IndexRouteImport } from './routes/v1/index'
+import { Route as SchemasIndexRouteImport } from './routes/schemas/index'
 import { Route as ModelsIndexRouteImport } from './routes/models/index'
 import { Route as V1ValidateRouteImport } from './routes/v1/validate'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
@@ -32,6 +33,7 @@ import { Route as DotwellKnownOauthAuthorizationServerRouteImport } from './rout
 import { Route as DotwellKnownApiCatalogRouteImport } from './routes/[.]well-known/api-catalog'
 import { Route as DotwellKnownAgentConfigurationRouteImport } from './routes/[.]well-known/agent-configuration'
 import { Route as V1SubscriptionsIndexRouteImport } from './routes/v1/subscriptions/index'
+import { Route as V1SchemasIndexRouteImport } from './routes/v1/schemas/index'
 import { Route as V1ProvidersIndexRouteImport } from './routes/v1/providers/index'
 import { Route as V1ModelsIndexRouteImport } from './routes/v1/models/index'
 import { Route as V1SubscriptionsIdRouteImport } from './routes/v1/subscriptions/$id'
@@ -119,6 +121,11 @@ const V1IndexRoute = V1IndexRouteImport.update({
   path: '/v1/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SchemasIndexRoute = SchemasIndexRouteImport.update({
+  id: '/schemas/',
+  path: '/schemas/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModelsIndexRoute = ModelsIndexRouteImport.update({
   id: '/models/',
   path: '/models/',
@@ -165,6 +172,11 @@ const DotwellKnownAgentConfigurationRoute =
 const V1SubscriptionsIndexRoute = V1SubscriptionsIndexRouteImport.update({
   id: '/v1/subscriptions/',
   path: '/v1/subscriptions/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1SchemasIndexRoute = V1SchemasIndexRouteImport.update({
+  id: '/v1/schemas/',
+  path: '/v1/schemas/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const V1ProvidersIndexRoute = V1ProvidersIndexRouteImport.update({
@@ -276,6 +288,7 @@ export interface FileRoutesByFullPath {
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/models/': typeof ModelsIndexRoute
+  '/schemas/': typeof SchemasIndexRoute
   '/v1/': typeof V1IndexRoute
   '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
@@ -286,6 +299,7 @@ export interface FileRoutesByFullPath {
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
+  '/v1/schemas/': typeof V1SchemasIndexRoute
   '/v1/subscriptions/': typeof V1SubscriptionsIndexRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -317,6 +331,7 @@ export interface FileRoutesByTo {
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/models': typeof ModelsIndexRoute
+  '/schemas': typeof SchemasIndexRoute
   '/v1': typeof V1IndexRoute
   '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
@@ -327,6 +342,7 @@ export interface FileRoutesByTo {
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models': typeof V1ModelsIndexRoute
   '/v1/providers': typeof V1ProvidersIndexRoute
+  '/v1/schemas': typeof V1SchemasIndexRoute
   '/v1/subscriptions': typeof V1SubscriptionsIndexRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -359,6 +375,7 @@ export interface FileRoutesById {
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/models/': typeof ModelsIndexRoute
+  '/schemas/': typeof SchemasIndexRoute
   '/v1/': typeof V1IndexRoute
   '/.well-known/agent-skills/index.json': typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
@@ -369,6 +386,7 @@ export interface FileRoutesById {
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
+  '/v1/schemas/': typeof V1SchemasIndexRoute
   '/v1/subscriptions/': typeof V1SubscriptionsIndexRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -402,6 +420,7 @@ export interface FileRouteTypes {
     | '/v1/status'
     | '/v1/validate'
     | '/models/'
+    | '/schemas/'
     | '/v1/'
     | '/.well-known/agent-skills/index.json'
     | '/.well-known/mcp/server-card.json'
@@ -412,6 +431,7 @@ export interface FileRouteTypes {
     | '/v1/subscriptions/$id'
     | '/v1/models/'
     | '/v1/providers/'
+    | '/v1/schemas/'
     | '/v1/subscriptions/'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
@@ -443,6 +463,7 @@ export interface FileRouteTypes {
     | '/v1/status'
     | '/v1/validate'
     | '/models'
+    | '/schemas'
     | '/v1'
     | '/.well-known/agent-skills/index.json'
     | '/.well-known/mcp/server-card.json'
@@ -453,6 +474,7 @@ export interface FileRouteTypes {
     | '/v1/subscriptions/$id'
     | '/v1/models'
     | '/v1/providers'
+    | '/v1/schemas'
     | '/v1/subscriptions'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
@@ -484,6 +506,7 @@ export interface FileRouteTypes {
     | '/v1/status'
     | '/v1/validate'
     | '/models/'
+    | '/schemas/'
     | '/v1/'
     | '/.well-known/agent-skills/index.json'
     | '/.well-known/mcp/server-card.json'
@@ -494,6 +517,7 @@ export interface FileRouteTypes {
     | '/v1/subscriptions/$id'
     | '/v1/models/'
     | '/v1/providers/'
+    | '/v1/schemas/'
     | '/v1/subscriptions/'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
@@ -526,6 +550,7 @@ export interface RootRouteChildren {
   V1StatusRoute: typeof V1StatusRoute
   V1ValidateRoute: typeof V1ValidateRoute
   ModelsIndexRoute: typeof ModelsIndexRoute
+  SchemasIndexRoute: typeof SchemasIndexRoute
   V1IndexRoute: typeof V1IndexRoute
   DotwellKnownAgentSkillsIndexDotjsonRoute: typeof DotwellKnownAgentSkillsIndexDotjsonRoute
   DotwellKnownMcpServerCardDotjsonRoute: typeof DotwellKnownMcpServerCardDotjsonRoute
@@ -536,6 +561,7 @@ export interface RootRouteChildren {
   V1SubscriptionsIdRoute: typeof V1SubscriptionsIdRoute
   V1ModelsIndexRoute: typeof V1ModelsIndexRoute
   V1ProvidersIndexRoute: typeof V1ProvidersIndexRoute
+  V1SchemasIndexRoute: typeof V1SchemasIndexRoute
   V1SubscriptionsIndexRoute: typeof V1SubscriptionsIndexRoute
   SchemasProviderActivitySplatRoute: typeof SchemasProviderActivitySplatRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
@@ -646,6 +672,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/schemas/': {
+      id: '/schemas/'
+      path: '/schemas'
+      fullPath: '/schemas/'
+      preLoaderRoute: typeof SchemasIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/models/': {
       id: '/models/'
       path: '/models'
@@ -707,6 +740,13 @@ declare module '@tanstack/react-router' {
       path: '/v1/subscriptions'
       fullPath: '/v1/subscriptions/'
       preLoaderRoute: typeof V1SubscriptionsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/schemas/': {
+      id: '/v1/schemas/'
+      path: '/v1/schemas'
+      fullPath: '/v1/schemas/'
+      preLoaderRoute: typeof V1SchemasIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/providers/': {
@@ -848,6 +888,7 @@ const rootRouteChildren: RootRouteChildren = {
   V1StatusRoute: V1StatusRoute,
   V1ValidateRoute: V1ValidateRoute,
   ModelsIndexRoute: ModelsIndexRoute,
+  SchemasIndexRoute: SchemasIndexRoute,
   V1IndexRoute: V1IndexRoute,
   DotwellKnownAgentSkillsIndexDotjsonRoute:
     DotwellKnownAgentSkillsIndexDotjsonRoute,
@@ -859,6 +900,7 @@ const rootRouteChildren: RootRouteChildren = {
   V1SubscriptionsIdRoute: V1SubscriptionsIdRoute,
   V1ModelsIndexRoute: V1ModelsIndexRoute,
   V1ProvidersIndexRoute: V1ProvidersIndexRoute,
+  V1SchemasIndexRoute: V1SchemasIndexRoute,
   V1SubscriptionsIndexRoute: V1SubscriptionsIndexRoute,
   SchemasProviderActivitySplatRoute: SchemasProviderActivitySplatRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,

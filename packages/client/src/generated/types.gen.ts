@@ -17,7 +17,7 @@ export type ServiceStatus = {
   providers: Array<{
     id?: string
     displayName?: string
-    status?: 'active' | 'degraded' | 'disabled'
+    status?: 'active' | 'degraded' | 'disabled' | 'pending'
     lastPolledAt?: number | null
     lastSyncedAt?: number | null
     counts?: {
@@ -207,6 +207,25 @@ export type GetModelResponses = {
 }
 
 export type GetModelResponse = GetModelResponses[keyof GetModelResponses]
+
+export type ListAllSchemasData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v1/schemas'
+}
+
+export type ListAllSchemasResponses = {
+  /**
+   * Provider → activity → endpoint-id index.
+   */
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type ListAllSchemasResponse =
+  ListAllSchemasResponses[keyof ListAllSchemasResponses]
 
 export type ListProviderSchemasData = {
   body?: never

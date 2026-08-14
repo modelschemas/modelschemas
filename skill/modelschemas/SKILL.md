@@ -19,6 +19,8 @@ availability and schema questions.
 2. **Read without auth.** All reads are public at a low rate limit (60/h per
    IP). Go straight to:
    - `GET /v1/models?activity=chat&q=claude` — what can I use right now
+   - `GET /v1/schemas` — every schema on the system
+     (provider → activity → endpoint ids)
    - `GET /v1/schemas/{provider}` — endpoint ids per activity
    - `GET /v1/schemas/{provider}/{activity}/{endpointId}?kind=input` — a
      self-contained JSON Schema (URL-encode slashes in endpoint ids:
@@ -63,9 +65,10 @@ tools `list_models`, `get_model`, `get_schema`, `validate_payload`,
 # modelschemas
 
 Live AI model schema service. Per-endpoint request/response JSON Schemas and
-model metadata for monitored providers (OpenAI, Anthropic, Gemini, xAI Grok,
-ElevenLabs, OpenRouter, FAL), refreshed automatically: model lists every 15
-minutes, full OpenAPI spec syncs daily. Every response is JSON.
+model metadata for 30+ monitored providers (OpenAI, Anthropic, Gemini, xAI
+Grok, Mistral, Groq, DeepSeek, and more — GET /v1/providers for the full
+roster), refreshed automatically: model lists every 15 minutes, full OpenAPI
+spec syncs daily. Every response is JSON.
 
 ## Why use this
 
@@ -81,11 +84,13 @@ minutes, full OpenAPI spec syncs daily. Every response is JSON.
 
 1. GET /v1 — endpoint index.
 2. GET /v1/models?activity=chat — cross-provider catalog of chat models.
-3. GET /v1/schemas/anthropic — activities + endpoint ids for Anthropic.
-4. GET /v1/schemas/anthropic/chat/{endpointId}?kind=input — the JSON Schema
+3. GET /v1/schemas — system-wide index: every provider's activities and
+   endpoint ids in one response (all schemas on the system).
+4. GET /v1/schemas/anthropic — activities + endpoint ids for one provider.
+5. GET /v1/schemas/anthropic/chat/{endpointId}?kind=input — the JSON Schema
    for a request body (endpoint ids contain slashes; URL-encode them).
-5. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
-6. GET /v1/changes?since=<unix epoch> — what changed.
+6. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
+7. GET /v1/changes?since=<unix epoch> — what changed.
 
 ## TypeScript types
 

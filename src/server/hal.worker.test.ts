@@ -16,6 +16,7 @@ import {
   getActivitySchemaMap,
   getEndpointSchema,
   getProviderSchemaIndex,
+  getSystemSchemaIndex,
 } from './schemas-api.ts'
 import { getServiceStatus } from './status.ts'
 import { validatePayload } from './validate.ts'
@@ -112,16 +113,21 @@ async function resolve(target: string | Record<string, unknown>) {
     }
     case 'schemas': {
       const [provider, activity, ...endpointParts] = rest
+      if (!provider) {
+        // /v1/schemas — the system-wide index.
+        expect((await getSystemSchemaIndex(db)).count).toBeGreaterThan(0)
+        return
+      }
       if (!activity) {
         expect(
-          (await getProviderSchemaIndex(db, provider ?? '')).count,
+          (await getProviderSchemaIndex(db, provider)).count,
         ).toBeGreaterThan(0)
         return
       }
       if (endpointParts.length === 0) {
         expect(activity).toBe('chat')
         expect(
-          (await getActivitySchemaMap(db, provider ?? '', 'chat')).count,
+          (await getActivitySchemaMap(db, provider, 'chat')).count,
         ).toBeGreaterThan(0)
         return
       }
@@ -130,7 +136,7 @@ async function resolve(target: string | Record<string, unknown>) {
         url.searchParams.get('kind') === 'output' ? 'output' : 'input'
       expect(activity).toBe('chat')
       expect(
-        await getEndpointSchema(db, provider ?? '', 'chat', endpointId, kind),
+        await getEndpointSchema(db, provider, 'chat', endpointId, kind),
       ).not.toBeNull()
       return
     }

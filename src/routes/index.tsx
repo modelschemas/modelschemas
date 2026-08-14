@@ -140,6 +140,12 @@ function Landing() {
               GET /v1/models
             </a>
             <a
+              href="/schemas"
+              className="rounded-[4px] border border-rule-strong px-3.5 py-2 transition-colors hover:border-ink"
+            >
+              GET /v1/schemas
+            </a>
+            <a
               href="/docs"
               className="rounded-[4px] border border-rule-strong px-3.5 py-2 transition-colors hover:border-ink"
             >
@@ -235,7 +241,18 @@ function Landing() {
                     </td>
                     <td className="num">{fmt.format(p.counts.models)}</td>
                     <td className="num">{fmt.format(p.counts.endpoints)}</td>
-                    <td className="num">{fmt.format(p.counts.schemas)}</td>
+                    <td className="num">
+                      {p.counts.schemas > 0 ? (
+                        <a
+                          className="text-ink hover:text-tok-blue"
+                          href={`/schemas?provider=${p.id}`}
+                        >
+                          {fmt.format(p.counts.schemas)}
+                        </a>
+                      ) : (
+                        fmt.format(p.counts.schemas)
+                      )}
+                    </td>
                     <td className="num text-ink-faint max-sm:hidden">
                       {timeAgo(p.lastPolledAt)}
                     </td>

@@ -979,3 +979,50 @@ Design settled with Tom (don't relitigate):
       synced before the field existed); byteplus tests pin all five endpoint
       grades and the fallback downgrade; openapi.json, the typed client and
       SKILL.md regenerated.
+
+## Phase 16 — Full provider roster + system-wide schema discovery (2026-08-14)
+
+- [x] **16.1 Registry is the source of truth for provider listings.** The
+      landing page and `/v1/status`/`/v1/providers` only showed providers
+      whose rows happened to exist in D1, and the sync/poll engines only ever
+      UPDATE provider rows — so the adapter providers added in #18–#37 never
+      appeared in prod without a manual `bun run seed`. Two fixes, both
+      self-healing: `getServiceStatus` merges `providerRegistry` (code) over
+      the DB rows, surfacing never-synced providers as a new `pending` status
+      with zero counts (blue dot on the site; enum added to the OpenAPI
+      ServiceStatus schema); and `ensureProviderRow` (sync.ts) upserts the
+      seed row — `seedForProvider`: hand-written row for the original 8,
+      `seedFromAdapter` otherwise, no-op for configs without a
+      `specSourceUrl` (test stubs) — at the top of every syncProvider/
+      pollProviderModels run, matching scripts/seed.ts semantics (config
+      columns refresh, runtime state preserved). _Accepts:_
+      status.worker.test asserts every registry provider surfaces as
+      `pending` on an unseeded DB; sync/poll worker tests unchanged.
+
+- [x] **16.2 `GET /v1/schemas` — the system-wide schema index.**
+      `getSystemSchemaIndex` groups every endpoint into provider → activity →
+      endpoint-id lists (one D1 query, SWR-cached under `schema-index:all`,
+      ETag like every read). Discovery wiring: `_links.schemaIndex` on
+      `GET /v1`, an `/v1/schemas` path in openapi.ts (client + SKILL.md
+      regenerated), llms.txt quickstart step 3, and a `list_schemas` MCP tool
+      (optional `provider` arg narrows to the per-provider index) mirrored
+      into the WebMCP tool list. llms.txt no longer hard-codes the original
+      7-provider list.
+
+- [x] **16.3 `/schemas` — the human-browsable index.** New route modeled on
+      `/models`: the flattened endpoint list with provider/activity/q filters
+      (client-side; the whole index is one loader payload), capped at 300
+      rows with a pointer to the API, readable/json ViewToggle serving the
+      `/v1/schemas` body verbatim. Nav gains a `schemas` link; the landing
+      hero gains a `GET /v1/schemas` button; provider-table schema counts
+      link to `/schemas?provider=…`.
+
+- [x] **16.4 schema-studio browses every schema live.** The example keeps
+      its four vite-plugin-pinned, offline-verified schemas as instant
+      entries and adds a live rail: fetch `/v1/schemas` on mount, pick a
+      provider, fetch any input schema on demand and render the generated
+      form. Same-origin on the zone; from a local dev server it hits prod —
+      which works because the worker now serves CORS-open reads
+      (`Access-Control-Allow-Origin: *` + OPTIONS preflight) on GET/HEAD for
+      `/v1/*` (admin excluded), `/openapi.json` and `/llms.txt` — a public
+      keyless JSON API browsers can actually call.

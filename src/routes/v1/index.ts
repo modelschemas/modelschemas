@@ -20,6 +20,9 @@ export const serviceIndex = {
     model: halGet('/v1/models/{provider}/{modelId}', {
       example: '/v1/models/anthropic/claude-sonnet-4-5',
     }),
+    schemaIndex: halGet('/v1/schemas', {
+      example: '/v1/schemas',
+    }),
     schemas: halGet('/v1/schemas/{provider}', {
       example: '/v1/schemas/anthropic',
     }),
