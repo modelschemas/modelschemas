@@ -4,6 +4,20 @@ import type { providers } from './schema.ts'
 
 export type ProviderSeed = typeof providers.$inferInsert
 
+/**
+ * Seed row for any registered provider: the hand-written row for the
+ * original 8, `seedFromAdapter` for auto-registered adapters. Lets the
+ * sync/poll engines upsert provider rows so a fresh adapter appears without
+ * a manual `bun run seed` against prod. Null when no seed can be derived
+ * (a config without specSourceUrl, e.g. a test stub) — callers skip the
+ * upsert and rely on the row already existing.
+ */
+export function seedForProvider(provider: ProviderConfig): ProviderSeed | null {
+  const listed = providerSeeds.find((seed) => seed.id === provider.id)
+  if (listed) return listed
+  return provider.specSourceUrl ? seedFromAdapter(provider) : null
+}
+
 /** Map an auto-registered adapter onto a seed row. */
 export function seedFromAdapter(provider: ProviderConfig): ProviderSeed {
   const specSourceUrl = provider.specSourceUrl

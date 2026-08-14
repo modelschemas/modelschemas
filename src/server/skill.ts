@@ -27,6 +27,8 @@ availability and schema questions.
 2. **Read without auth.** All reads are public at a low rate limit (60/h per
    IP). Go straight to:
    - \`GET /v1/models?activity=chat&q=claude\` — what can I use right now
+   - \`GET /v1/schemas\` — every schema on the system
+     (provider → activity → endpoint ids)
    - \`GET /v1/schemas/{provider}\` — endpoint ids per activity
    - \`GET /v1/schemas/{provider}/{activity}/{endpointId}?kind=input\` — a
      self-contained JSON Schema (URL-encode slashes in endpoint ids:

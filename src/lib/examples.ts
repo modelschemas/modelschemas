@@ -14,7 +14,7 @@ export const EXAMPLES: Array<ExampleApp> = [
   {
     slug: 'schema-studio',
     blurb:
-      'generative UI — request forms rendered at runtime from live provider schemas',
+      'generative UI — request forms rendered at runtime from any schema on the system',
     package: '@modelschemas/vite',
   },
   {

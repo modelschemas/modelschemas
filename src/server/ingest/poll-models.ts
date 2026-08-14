@@ -10,6 +10,7 @@ import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
+import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 
 export interface PollOutcome {
@@ -78,6 +79,7 @@ export async function pollProviderModels(
     updated: 0,
     backdated: 0,
   }
+  await ensureProviderRow(db, provider)
 
   const listed = await provider.listModels(secrets)
   if (listed.skipped) {

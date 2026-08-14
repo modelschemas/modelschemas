@@ -73,7 +73,7 @@ beforeAll(async () => {
 })
 
 describe('MCP endpoint', () => {
-  it('initializes and lists the five tools', async () => {
+  it('initializes and lists the six tools', async () => {
     const init = await handleMcpRequest(db, rpc('initialize'))
     const initBody = (await init.json()) as {
       result: {
@@ -95,6 +95,7 @@ describe('MCP endpoint', () => {
       'get_model',
       'get_schema',
       'list_models',
+      'list_schemas',
       'recent_changes',
       'validate_payload',
     ])

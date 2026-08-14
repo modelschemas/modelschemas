@@ -10,6 +10,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import type { Db } from '#/db/index.ts'
 import { changes, endpoints, providers, schemaVersions } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
+import { seedForProvider } from '#/db/seed-providers.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
 import { PROVENANCE_MARKER } from '#/server/providers/types.ts'
@@ -161,6 +162,33 @@ export function classifyAndBundle(
 
 /** Sync one provider. Throws only on programmer error — upstream/storage
  * failures surface in the outcome's `error` via syncAllProviders. */
+/**
+ * Upsert the provider's row from its registry config: refreshes the seeded
+ * config columns, preserves runtime state (lastPolledAt/lastSyncedAt/status).
+ * Same semantics as `scripts/seed.ts`, run automatically so a newly
+ * registered provider self-heals into the DB on its first sync/poll instead
+ * of waiting on a manual seed against prod.
+ */
+export async function ensureProviderRow(
+  db: Db,
+  provider: ProviderConfig,
+): Promise<void> {
+  const seed = seedForProvider(provider)
+  if (seed === null) return
+  await db
+    .insert(providers)
+    .values(seed)
+    .onConflictDoUpdate({
+      target: providers.id,
+      set: {
+        displayName: seed.displayName,
+        specSourceUrl: seed.specSourceUrl,
+        modelsEndpoint: seed.modelsEndpoint ?? null,
+        authEnvVar: seed.authEnvVar ?? null,
+      },
+    })
+}
+
 export async function syncProvider(
   deps: SyncDeps,
   provider: ProviderConfig,
@@ -174,6 +202,7 @@ export async function syncProvider(
     changesWritten: 0,
     warnings: [],
   }
+  await ensureProviderRow(db, provider)
 
   const fetched = await provider.fetchSpec(secrets)
   if (fetched.warnings) outcome.warnings.push(...fetched.warnings)

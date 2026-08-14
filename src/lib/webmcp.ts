@@ -38,6 +38,20 @@ export const WEBMCP_TOOLS: Array<WebMcpToolDefinition> = [
     },
   },
   {
+    name: 'list_schemas',
+    description:
+      'Index of every schema on the system: provider → activity → endpoint ids. Pass provider to narrow to one provider. Use it to discover valid get_schema arguments.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: {
+          type: 'string',
+          description: 'Optional provider id to narrow the index.',
+        },
+      },
+    },
+  },
+  {
     name: 'get_schema',
     description:
       'Self-contained JSON Schema ($defs-bundled) for a provider endpoint — request (input) or response (output) shape.',

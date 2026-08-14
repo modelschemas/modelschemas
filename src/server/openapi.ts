@@ -183,6 +183,20 @@ export const openApiDocument = {
         },
       },
     },
+    '/v1/schemas': {
+      get: {
+        operationId: 'listAllSchemas',
+        summary: 'System-wide schema index',
+        description:
+          'Every provider with extracted schemas, each with its activities and endpoint ids — the discovery entry point for all schemas on the system.',
+        responses: {
+          '200': {
+            description: 'Provider → activity → endpoint-id index.',
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+        },
+      },
+    },
     '/v1/schemas/{provider}': {
       get: {
         operationId: 'listProviderSchemas',
@@ -395,7 +409,7 @@ export const openApiDocument = {
                 displayName: { type: 'string' },
                 status: {
                   type: 'string',
-                  enum: ['active', 'degraded', 'disabled'],
+                  enum: ['active', 'degraded', 'disabled', 'pending'],
                 },
                 lastPolledAt: { type: ['integer', 'null'] },
                 lastSyncedAt: { type: ['integer', 'null'] },

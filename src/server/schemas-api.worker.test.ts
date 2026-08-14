@@ -9,6 +9,7 @@ import {
   getActivitySchemaMap,
   getEndpointSchema,
   getProviderSchemaIndex,
+  getSystemSchemaIndex,
   knownEndpointIds,
   publicEndpointId,
 } from './schemas-api.ts'
@@ -88,6 +89,23 @@ describe('getProviderSchemaIndex', () => {
       image: ['v1/images/generations'],
     })
     expect(index.count).toBe(2)
+  })
+})
+
+describe('getSystemSchemaIndex', () => {
+  it('lists every provider with its activity → endpoint-id groups', async () => {
+    const index = await getSystemSchemaIndex(db)
+    expect(index.count).toBe(2)
+    const group = index.providers.find((p) => p.provider === 'sch-prov')
+    expect(group).toEqual({
+      provider: 'sch-prov',
+      count: 2,
+      activities: {
+        chat: ['v1/messages'],
+        image: ['v1/images/generations'],
+      },
+    })
+    expect(index._links.self.href).toBe('/v1/schemas')
   })
 })
 

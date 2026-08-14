@@ -10,7 +10,12 @@ import type { Activity, ChangeType } from '#/db/schema.ts'
 import { listChanges } from '#/server/changes-api.ts'
 import { getModelDetail, listModelsCatalog } from '#/server/catalog.ts'
 import { llmsTxt } from '#/server/llms-txt.ts'
-import { getEndpointSchema } from '#/server/schemas-api.ts'
+import {
+  getEndpointSchema,
+  getProviderSchemaIndex,
+  getSystemSchemaIndex,
+  providerExists,
+} from '#/server/schemas-api.ts'
 import { validatePayload } from '#/server/validate.ts'
 
 export const MCP_PROTOCOL_VERSION = '2025-03-26'
@@ -54,6 +59,20 @@ export const TOOLS: Array<ToolDefinition> = [
         modelId: { type: 'string' },
       },
       required: ['provider', 'modelId'],
+    },
+  },
+  {
+    name: 'list_schemas',
+    description:
+      'Index of every schema on the system: provider → activity → endpoint ids. Pass provider to narrow to one provider. Use it to discover valid get_schema arguments.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: {
+          type: 'string',
+          description: 'Optional provider id to narrow the index.',
+        },
+      },
     },
   },
   {
@@ -160,6 +179,22 @@ async function callTool(
         )
       }
       return toolText(model)
+    }
+    case 'list_schemas': {
+      const provider = args.provider as string | undefined
+      if (provider === undefined || provider === '') {
+        return toolText(await getSystemSchemaIndex(db))
+      }
+      if (!(await providerExists(db, provider))) {
+        return toolText(
+          {
+            error: 'unknown_provider',
+            hint: 'Call list_schemas without arguments for the full provider → endpoint index.',
+          },
+          true,
+        )
+      }
+      return toolText(await getProviderSchemaIndex(db, provider))
     }
     case 'get_schema': {
       const kind = args.kind === 'output' ? 'output' : 'input'

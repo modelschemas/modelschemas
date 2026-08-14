@@ -32,6 +32,26 @@ function syncDeps(env: WorkerEnv): SyncDeps {
   return { db: getDb(env), kv: env.SCHEMA_CACHE, secrets: env }
 }
 
+/**
+ * Public reads are keyless JSON meant for any client — including browser
+ * apps (the hosted examples fetch /v1/schemas live). CORS-open GETs on the
+ * read surface; admin and auth routes are excluded.
+ */
+function isCorsReadPath(pathname: string): boolean {
+  return (
+    (pathname.startsWith('/v1/') && !pathname.startsWith('/v1/admin/')) ||
+    pathname === '/openapi.json' ||
+    pathname === '/llms.txt'
+  )
+}
+
+function withCors(response: Response): Response {
+  // New Response: framework responses can carry immutable headers.
+  const wrapped = new Response(response.body, response)
+  wrapped.headers.set('Access-Control-Allow-Origin', '*')
+  return wrapped
+}
+
 export default {
   async fetch(
     request: Request,
@@ -42,6 +62,20 @@ export default {
     // endpoints have agent-auth's own protections).
     const url = new URL(request.url)
     const { pathname } = url
+    const corsRead =
+      isCorsReadPath(pathname) &&
+      (request.method === 'GET' || request.method === 'HEAD')
+    if (request.method === 'OPTIONS' && isCorsReadPath(pathname)) {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, If-None-Match',
+          'Access-Control-Max-Age': '86400',
+        },
+      })
+    }
     if (
       pathname.startsWith('/v1/') &&
       !isAdminRequest(request, env.ADMIN_KEY)
@@ -52,7 +86,7 @@ export default {
         env.SCHEMA_CACHE,
         request,
       )
-      if (limited) return limited
+      if (limited) return corsRead ? withCors(limited) : limited
     }
     // Narrative API root (task 11.2): JSON-accepting GET / gets the MCP
     // initialize instructions document instead of the SSR landing page.
@@ -71,7 +105,8 @@ export default {
     // the cloudflare:workers env module, not handler arguments. HTML pages
     // get RFC 8288 discovery Link headers (task 10.2).
     void ctx
-    return withDiscoveryLinks(await serverEntry.fetch(request))
+    const response = withDiscoveryLinks(await serverEntry.fetch(request))
+    return corsRead ? withCors(response) : response
   },
 
   scheduled(
