@@ -189,8 +189,11 @@ upstream spec, no service needed).
    curl -X POST https://<worker-url>/v1/admin/sync/openrouter -H "X-Admin-Key: ..."
    ```
 
-Cron triggers (`*/15 * * * *` models poll + webhook drain, `0 5 * * *` spec
-sync) start automatically on deploy.
+Cron triggers start automatically on deploy: `*/15 * * * *` (models poll +
+webhook drain) and four spec-sync shards (`0/10/20/30 5 * * *`) — each shard
+is its own invocation with its own subrequest/CPU budgets, FAL alone in
+shard 0, the rest of the registry round-robined across the other three
+(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`).
 
 ### Continuous deploys (Workers Builds)
 

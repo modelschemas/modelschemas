@@ -392,14 +392,41 @@ export async function syncProvider(
 }
 
 /**
- * Sync every registered provider, sequentially (subrequest limits), with
- * per-provider isolation: one provider's outage doesn't sink the run.
+ * Spec-sync shard schedule: each cron fires its own Worker invocation with
+ * a fresh subrequest/CPU/memory budget, so one provider's blowup can't
+ * starve the providers behind it (production data: FAL's oversized sync
+ * killed the shared 05:00 run mid-flight daily, leaving every provider
+ * after it in the registry permanently unsynced). Shard 0 is FAL alone —
+ * by far the largest (~1,400 per-model specs); the rest of the registry
+ * round-robins across the remaining shards, which also spreads the other
+ * big-spec providers (they're adjacent in the registry). Keep this array
+ * in lockstep with `triggers.crons` in wrangler.jsonc.
+ */
+export const SPEC_SYNC_SHARD_CRONS = [
+  '0 5 * * *',
+  '10 5 * * *',
+  '20 5 * * *',
+  '30 5 * * *',
+] as const
+
+export function specSyncShard(shardIndex: number): Array<ProviderConfig> {
+  const rest = providerRegistry.filter((p) => p.id !== 'fal')
+  if (shardIndex === 0) return providerRegistry.filter((p) => p.id === 'fal')
+  const restShards = SPEC_SYNC_SHARD_CRONS.length - 1
+  return rest.filter((_, i) => i % restShards === shardIndex - 1)
+}
+
+/**
+ * Sync the given providers (default: the full registry), sequentially
+ * (subrequest limits), with per-provider isolation: one provider's outage
+ * doesn't sink the run.
  */
 export async function syncAllProviders(
   deps: SyncDeps,
+  providersToSync: Array<ProviderConfig> = providerRegistry,
 ): Promise<Array<SyncOutcome>> {
   const outcomes: Array<SyncOutcome> = []
-  for (const provider of providerRegistry) {
+  for (const provider of providersToSync) {
     try {
       outcomes.push(await syncProvider(deps, provider))
     } catch (error) {
