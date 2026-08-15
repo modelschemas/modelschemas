@@ -14,8 +14,22 @@
   "workers_dev": true,
   "routes": [{ "pattern": "modelschemas.com", "custom_domain": true }],
   "triggers": {
-    // Fast tier: models poll. Slow tier: full spec sync (05:00 UTC).
-    "crons": ["*/15 * * * *", "0 5 * * *"],
+    // Fast tier: models poll. Slow tier: spec sync, sharded across four
+    // firings so each shard gets its own invocation budgets — keep in
+    // lockstep with SPEC_SYNC_SHARD_CRONS in src/server/ingest/sync.ts.
+    "crons": [
+      "*/15 * * * *",
+      "0 5 * * *",
+      "10 5 * * *",
+      "20 5 * * *",
+      "30 5 * * *",
+    ],
+  },
+  "limits": {
+    // Default is 30s CPU per invocation; FAL's shard parses and hashes
+    // ~1,400 per-model specs in one run, which can exceed that. Ceiling,
+    // not a floor — unused headroom costs nothing.
+    "cpu_ms": 300000,
   },
   "send_email": [
     {

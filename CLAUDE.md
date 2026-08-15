@@ -73,7 +73,9 @@ shares `classifyAndBundle` with the sync engine). Admin sync:
 TanStack Start (React 19, SSR) on Cloudflare Workers via the Cloudflare vite
 plugin + `wrangler.jsonc`. Tailwind v4. Worker entry is `src/worker.ts`:
 rate-limits `/v1/*`, delegates fetch to the Start handler, and runs the two
-crons (15-min models poll + webhook drain; daily 05:00 UTC spec sync).
+crons (15-min models poll + webhook drain; daily spec sync sharded across
+four 05:00–05:30 UTC firings — FAL alone in shard 0, the rest round-robin —
+so each shard gets its own invocation budgets; see `SPEC_SYNC_SHARD_CRONS`).
 
 Request path: route files in `src/routes/` (server handlers via
 `server.handlers`) → service functions in `src/server/` → drizzle/D1 +

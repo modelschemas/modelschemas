@@ -189,6 +189,11 @@ export async function ensureProviderRow(
     })
 }
 
+/** Composite map key for an endpoint's current version of one kind. */
+function versionKey(endpointId: string, kind: 'input' | 'output'): string {
+  return `${endpointId}\u0000${kind}`
+}
+
 export async function syncProvider(
   deps: SyncDeps,
   provider: ProviderConfig,
@@ -224,6 +229,30 @@ export async function syncProvider(
     .from(endpoints)
     .where(eq(endpoints.providerId, provider.id))
   const existingById = new Map(existingEndpoints.map((e) => [e.id, e]))
+
+  // Current (non-superseded) versions for the whole provider in one query.
+  // Per-endpoint lookups here are 2 D1 round trips per endpoint — FAL alone
+  // has ~1,400 endpoints, which blows the invocation's 1,000-subrequest
+  // budget (and its wall clock) before the sync can complete, leaving the
+  // provider stuck degraded. Same batching treatment as poll-models.
+  const currentVersionRows = await db
+    .select({
+      id: schemaVersions.id,
+      endpointId: schemaVersions.endpointId,
+      kind: schemaVersions.kind,
+      contentHash: schemaVersions.contentHash,
+    })
+    .from(schemaVersions)
+    .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+    .where(
+      and(
+        eq(endpoints.providerId, provider.id),
+        isNull(schemaVersions.supersededAt),
+      ),
+    )
+  const currentByEndpointKind = new Map(
+    currentVersionRows.map((v) => [versionKey(v.endpointId, v.kind), v]),
+  )
 
   for (const endpoint of classified) {
     const existing = existingById.get(endpoint.dbId)
@@ -264,13 +293,7 @@ export async function syncProvider(
     ] as const) {
       if (!schema) continue
       const hash = await contentHash(schema)
-      const current = await db.query.schemaVersions.findFirst({
-        where: and(
-          eq(schemaVersions.endpointId, endpoint.dbId),
-          eq(schemaVersions.kind, kind),
-          isNull(schemaVersions.supersededAt),
-        ),
-      })
+      const current = currentByEndpointKind.get(versionKey(endpoint.dbId, kind))
       if (current?.contentHash === hash) continue
 
       // The id is deterministic on content, so when upstream reverts to a
@@ -332,17 +355,23 @@ export async function syncProvider(
   }
 
   // Endpoints in D1 that vanished from the spec: record the removal but keep
-  // the rows — schema version history stays queryable.
+  // the rows — schema version history stays queryable. The already-recorded
+  // set loads in one query: vanished endpoints accumulate for good (rows are
+  // kept), so per-endpoint lookups would cost one subrequest each, forever.
   const seenIds = new Set(classified.map((e) => e.dbId))
+  const removalRows = await db
+    .select({ subjectId: changes.subjectId })
+    .from(changes)
+    .where(
+      and(
+        eq(changes.type, 'endpoint.removed'),
+        eq(changes.providerId, provider.id),
+      ),
+    )
+  const alreadyRemovedIds = new Set(removalRows.map((r) => r.subjectId))
   for (const existing of existingEndpoints) {
     if (seenIds.has(existing.id)) continue
-    const alreadyRemoved = await db.query.changes.findFirst({
-      where: and(
-        eq(changes.type, 'endpoint.removed'),
-        eq(changes.subjectId, existing.id),
-      ),
-    })
-    if (alreadyRemoved) continue
+    if (alreadyRemovedIds.has(existing.id)) continue
     await db.insert(changes).values({
       id: newChangeId(),
       type: 'endpoint.removed',
@@ -363,14 +392,41 @@ export async function syncProvider(
 }
 
 /**
- * Sync every registered provider, sequentially (subrequest limits), with
- * per-provider isolation: one provider's outage doesn't sink the run.
+ * Spec-sync shard schedule: each cron fires its own Worker invocation with
+ * a fresh subrequest/CPU/memory budget, so one provider's blowup can't
+ * starve the providers behind it (production data: FAL's oversized sync
+ * killed the shared 05:00 run mid-flight daily, leaving every provider
+ * after it in the registry permanently unsynced). Shard 0 is FAL alone —
+ * by far the largest (~1,400 per-model specs); the rest of the registry
+ * round-robins across the remaining shards, which also spreads the other
+ * big-spec providers (they're adjacent in the registry). Keep this array
+ * in lockstep with `triggers.crons` in wrangler.jsonc.
+ */
+export const SPEC_SYNC_SHARD_CRONS = [
+  '0 5 * * *',
+  '10 5 * * *',
+  '20 5 * * *',
+  '30 5 * * *',
+] as const
+
+export function specSyncShard(shardIndex: number): Array<ProviderConfig> {
+  const rest = providerRegistry.filter((p) => p.id !== 'fal')
+  if (shardIndex === 0) return providerRegistry.filter((p) => p.id === 'fal')
+  const restShards = SPEC_SYNC_SHARD_CRONS.length - 1
+  return rest.filter((_, i) => i % restShards === shardIndex - 1)
+}
+
+/**
+ * Sync the given providers (default: the full registry), sequentially
+ * (subrequest limits), with per-provider isolation: one provider's outage
+ * doesn't sink the run.
  */
 export async function syncAllProviders(
   deps: SyncDeps,
+  providersToSync: Array<ProviderConfig> = providerRegistry,
 ): Promise<Array<SyncOutcome>> {
   const outcomes: Array<SyncOutcome> = []
-  for (const provider of providerRegistry) {
+  for (const provider of providersToSync) {
     try {
       outcomes.push(await syncProvider(deps, provider))
     } catch (error) {
@@ -392,10 +448,22 @@ export async function syncAllProviders(
         error: message,
         warnings: [],
       })
-      await deps.db
-        .update(providers)
-        .set({ status: 'degraded' })
-        .where(eq(providers.id, provider.id))
+      try {
+        await deps.db
+          .update(providers)
+          .set({ status: 'degraded' })
+          .where(eq(providers.id, provider.id))
+      } catch (statusError) {
+        // Best-effort: if the failure was resource exhaustion (subrequest
+        // budget), this write fails too — don't let it sink the run.
+        console.error(
+          JSON.stringify({
+            job: 'spec-sync',
+            providerId: provider.id,
+            error: `degraded-status write failed: ${errorMessage(statusError)}`,
+          }),
+        )
+      }
     }
   }
   return outcomes

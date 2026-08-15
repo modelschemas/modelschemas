@@ -15,14 +15,17 @@ import {
 import { narrativeRoot, wantsJsonRoot } from '#/server/narrative.ts'
 import { enforceRateLimit } from '#/server/rate-limit.ts'
 import { pollAllProviders } from '#/server/ingest/poll-models.ts'
-import { syncAllProviders } from '#/server/ingest/sync.ts'
+import {
+  SPEC_SYNC_SHARD_CRONS,
+  specSyncShard,
+  syncAllProviders,
+} from '#/server/ingest/sync.ts'
 import { runWebhookTick } from '#/server/webhooks.ts'
 import type { SyncDeps } from '#/server/ingest/sync.ts'
 
 // Not exported: workerd treats named exports of the entry module as
 // entrypoints and requires them to be functions/ExportedHandlers.
 const MODELS_POLL_CRON = '*/15 * * * *'
-const SPEC_SYNC_CRON = '0 5 * * *'
 
 export interface WorkerEnv extends DbEnv, KvEnv, ProviderSecrets {
   ADMIN_KEY?: string
@@ -114,42 +117,45 @@ export default {
     env: WorkerEnv,
     ctx: ExecutionContext,
   ): void {
-    // Each tier runs all providers inside one waitUntil; the per-provider
-    // work is sequential inside pollAllProviders/syncAllProviders to respect
-    // Workers subrequest limits, with per-provider failure isolation.
-    switch (controller.cron) {
-      case MODELS_POLL_CRON:
-        ctx.waitUntil(
-          pollAllProviders(syncDeps(env))
-            .then((outcomes) => {
-              console.log(JSON.stringify({ job: 'models-poll', outcomes }))
-              // The 15-min cron also drains the webhook queue (task 6.2).
-              return runWebhookTick(getDb(env))
-            })
-            .then(({ enqueued, outcomes }) => {
-              console.log(
-                JSON.stringify({ job: 'webhooks', enqueued, outcomes }),
-              )
-            }),
-        )
-        break
-      case SPEC_SYNC_CRON:
-        ctx.waitUntil(
-          syncAllProviders(syncDeps(env)).then((outcomes) => {
+    // The models poll runs the full registry in one invocation; the spec
+    // sync is sharded across several cron firings so each shard gets its
+    // own subrequest/CPU/memory budgets (see SPEC_SYNC_SHARD_CRONS). Work
+    // inside each invocation stays sequential with per-provider isolation.
+    if (controller.cron === MODELS_POLL_CRON) {
+      ctx.waitUntil(
+        pollAllProviders(syncDeps(env))
+          .then((outcomes) => {
+            console.log(JSON.stringify({ job: 'models-poll', outcomes }))
+            // The 15-min cron also drains the webhook queue (task 6.2).
+            return runWebhookTick(getDb(env))
+          })
+          .then(({ enqueued, outcomes }) => {
+            console.log(JSON.stringify({ job: 'webhooks', enqueued, outcomes }))
+          }),
+      )
+      return
+    }
+    const shard = (SPEC_SYNC_SHARD_CRONS as ReadonlyArray<string>).indexOf(
+      controller.cron,
+    )
+    if (shard >= 0) {
+      ctx.waitUntil(
+        syncAllProviders(syncDeps(env), specSyncShard(shard)).then(
+          (outcomes) => {
             // Summarize warnings to a count: hundreds of dangling-ref lines
             // push the blob past what Workers Logs stores, losing the log.
             const summary = outcomes.map(({ warnings, ...rest }) => ({
               ...rest,
               warningCount: warnings.length,
             }))
-            console.log(JSON.stringify({ job: 'spec-sync', outcomes: summary }))
-          }),
-        )
-        break
-      default:
-        console.log(
-          JSON.stringify({ cron: controller.cron, job: 'unknown-cron' }),
-        )
+            console.log(
+              JSON.stringify({ job: 'spec-sync', shard, outcomes: summary }),
+            )
+          },
+        ),
+      )
+      return
     }
+    console.log(JSON.stringify({ cron: controller.cron, job: 'unknown-cron' }))
   },
 }

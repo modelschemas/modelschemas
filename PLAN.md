@@ -1026,3 +1026,31 @@ Design settled with Tom (don't relitigate):
       (`Access-Control-Allow-Origin: *` + OPTIONS preflight) on GET/HEAD for
       `/v1/*` (admin excluded), `/openapi.json` and `/llms.txt` — a public
       keyless JSON API browsers can actually call.
+
+## Phase 17 — sync scalability (the FAL degradation)
+
+- [x] **17.1 Root-cause FAL's stuck `degraded` status.** Production D1
+      showed the daily 05:00 spec sync dying mid-FAL every day since
+      Aug 1: fal + the four biggest core providers flapping degraded, and
+      every provider after fal in the registry (byteplus + all adapters)
+      with `last_synced_at` NULL — never synced once. Cause: the sync did
+      2 D1 `findFirst` round trips per endpoint (+1 per vanished endpoint,
+      forever) and FAL is ~1,400 endpoints — past the invocation's
+      1,000-subrequest budget and most of its wall clock, so a full
+      successful sync (the only thing that resets status to `active`)
+      could never complete. Fix mirrors poll-models' batching: one joined
+      query for the provider's current versions, one for the
+      endpoint.removed set; degraded-status write is best-effort so budget
+      exhaustion inside the catch can't sink the rest of the run. FAL's
+      paginated crawl also now retries 5xx/408/timeouts/network errors
+      (not just 429), honors Retry-After, 5 attempts.
+- [x] **17.2 Shard the spec-sync cron.** One shared invocation meant one
+      provider's blowup starved everyone behind it (and uncatchable
+      CPU/memory kills took out the rest of the registry silently). The
+      daily sync now fires four crons (05:00/05:10/05:20/05:30 UTC), each
+      a fresh invocation with its own budgets: shard 0 is FAL alone, the
+      rest round-robin (`specSyncShard`; keep `SPEC_SYNC_SHARD_CRONS` in
+      lockstep with wrangler.jsonc — a unit test enforces it).
+      `limits.cpu_ms` raised to 300s (ceiling, not floor) for FAL's
+      1,400-spec parse+hash. Models poll unchanged: it's already batched,
+      time-sensitive (15-min freshness), and carries the webhook drain.
