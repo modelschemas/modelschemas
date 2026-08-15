@@ -189,6 +189,11 @@ export async function ensureProviderRow(
     })
 }
 
+/** Composite map key for an endpoint's current version of one kind. */
+function versionKey(endpointId: string, kind: 'input' | 'output'): string {
+  return `${endpointId}\u0000${kind}`
+}
+
 export async function syncProvider(
   deps: SyncDeps,
   provider: ProviderConfig,
@@ -224,6 +229,30 @@ export async function syncProvider(
     .from(endpoints)
     .where(eq(endpoints.providerId, provider.id))
   const existingById = new Map(existingEndpoints.map((e) => [e.id, e]))
+
+  // Current (non-superseded) versions for the whole provider in one query.
+  // Per-endpoint lookups here are 2 D1 round trips per endpoint — FAL alone
+  // has ~1,400 endpoints, which blows the invocation's 1,000-subrequest
+  // budget (and its wall clock) before the sync can complete, leaving the
+  // provider stuck degraded. Same batching treatment as poll-models.
+  const currentVersionRows = await db
+    .select({
+      id: schemaVersions.id,
+      endpointId: schemaVersions.endpointId,
+      kind: schemaVersions.kind,
+      contentHash: schemaVersions.contentHash,
+    })
+    .from(schemaVersions)
+    .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+    .where(
+      and(
+        eq(endpoints.providerId, provider.id),
+        isNull(schemaVersions.supersededAt),
+      ),
+    )
+  const currentByEndpointKind = new Map(
+    currentVersionRows.map((v) => [versionKey(v.endpointId, v.kind), v]),
+  )
 
   for (const endpoint of classified) {
     const existing = existingById.get(endpoint.dbId)
@@ -264,13 +293,7 @@ export async function syncProvider(
     ] as const) {
       if (!schema) continue
       const hash = await contentHash(schema)
-      const current = await db.query.schemaVersions.findFirst({
-        where: and(
-          eq(schemaVersions.endpointId, endpoint.dbId),
-          eq(schemaVersions.kind, kind),
-          isNull(schemaVersions.supersededAt),
-        ),
-      })
+      const current = currentByEndpointKind.get(versionKey(endpoint.dbId, kind))
       if (current?.contentHash === hash) continue
 
       // The id is deterministic on content, so when upstream reverts to a
@@ -332,17 +355,23 @@ export async function syncProvider(
   }
 
   // Endpoints in D1 that vanished from the spec: record the removal but keep
-  // the rows — schema version history stays queryable.
+  // the rows — schema version history stays queryable. The already-recorded
+  // set loads in one query: vanished endpoints accumulate for good (rows are
+  // kept), so per-endpoint lookups would cost one subrequest each, forever.
   const seenIds = new Set(classified.map((e) => e.dbId))
+  const removalRows = await db
+    .select({ subjectId: changes.subjectId })
+    .from(changes)
+    .where(
+      and(
+        eq(changes.type, 'endpoint.removed'),
+        eq(changes.providerId, provider.id),
+      ),
+    )
+  const alreadyRemovedIds = new Set(removalRows.map((r) => r.subjectId))
   for (const existing of existingEndpoints) {
     if (seenIds.has(existing.id)) continue
-    const alreadyRemoved = await db.query.changes.findFirst({
-      where: and(
-        eq(changes.type, 'endpoint.removed'),
-        eq(changes.subjectId, existing.id),
-      ),
-    })
-    if (alreadyRemoved) continue
+    if (alreadyRemovedIds.has(existing.id)) continue
     await db.insert(changes).values({
       id: newChangeId(),
       type: 'endpoint.removed',
@@ -392,10 +421,22 @@ export async function syncAllProviders(
         error: message,
         warnings: [],
       })
-      await deps.db
-        .update(providers)
-        .set({ status: 'degraded' })
-        .where(eq(providers.id, provider.id))
+      try {
+        await deps.db
+          .update(providers)
+          .set({ status: 'degraded' })
+          .where(eq(providers.id, provider.id))
+      } catch (statusError) {
+        // Best-effort: if the failure was resource exhaustion (subrequest
+        // budget), this write fails too — don't let it sink the run.
+        console.error(
+          JSON.stringify({
+            job: 'spec-sync',
+            providerId: provider.id,
+            error: `degraded-status write failed: ${errorMessage(statusError)}`,
+          }),
+        )
+      }
     }
   }
   return outcomes
