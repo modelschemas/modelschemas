@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import { provider } from './moonshot.ts'
 
-const SPEC_URL = 'https://platform.kimi.com/docs/openapi.json'
+const SPEC_URL = 'https://platform.kimi.ai/docs/openapi.json'
 
 const FIXTURE_SPEC = {
   openapi: '3.1.0',
   info: { title: 'Moonshot AI API', version: '1.0.0' },
-  servers: [{ url: 'https://api.moonshot.cn' }],
+  servers: [{ url: 'https://api.moonshot.ai' }],
   paths: {
     '/v1/chat/completions': { post: { summary: 'Create Chat Completion' } },
     '/v1/files': { post: { summary: 'Upload File' } },
@@ -15,13 +15,13 @@ const FIXTURE_SPEC = {
 }
 
 describe('moonshot adapter', () => {
-  it('exports seed metadata for the China host', () => {
+  it('exports seed metadata for the international host', () => {
     expect(provider.id).toBe('moonshot')
     expect(provider.displayName).toBe('Moonshot')
     expect(provider.authEnvVar).toBe('MOONSHOT_API_KEY')
     expect(provider.defaultDerivation).toBe('upstream-spec')
     expect(provider.specSourceUrl).toBe(SPEC_URL)
-    expect(provider.modelsEndpoint).toBe('https://api.moonshot.cn/v1/models')
+    expect(provider.modelsEndpoint).toBe('https://api.moonshot.ai/v1/models')
   })
 
   it('classifies chat completions and drops platform paths', () => {
@@ -40,6 +40,33 @@ describe('moonshot adapter', () => {
     const result = await provider.listModels({})
     expect(result.models).toEqual([])
     expect(result.skipped).toBe('moonshot: MOONSHOT_API_KEY not set — skipped')
+  })
+
+  it('lists models from api.moonshot.ai, not the CN host', async () => {
+    const original = globalThis.fetch
+    const urls: Array<string> = []
+    globalThis.fetch = ((url: string) => {
+      urls.push(String(url))
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ id: 'kimi-k2.7-code', created: 1_786_418_420 }],
+          }),
+        ),
+      )
+    }) as typeof fetch
+    try {
+      const result = await provider.listModels({
+        MOONSHOT_API_KEY: 'test-key',
+      })
+      expect(urls).toEqual(['https://api.moonshot.ai/v1/models'])
+      expect(result.skipped).toBeUndefined()
+      expect(result.models).toEqual([
+        { rawId: 'kimi-k2.7-code', releasedAt: 1_786_418_420 },
+      ])
+    } finally {
+      globalThis.fetch = original
+    }
   })
 
   it('fetches the published spec without a key', async () => {
