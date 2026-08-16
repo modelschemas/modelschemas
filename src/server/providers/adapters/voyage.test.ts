@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 
-import { provider } from './voyage.ts'
+import { provider, voyageModelsFromSpec } from './voyage.ts'
 
 const SPEC_URL =
   'https://raw.githubusercontent.com/voyage-ai/openapi/main/voyage-openapi.yml'
@@ -86,7 +86,7 @@ describe('voyage adapter', () => {
     expect(provider.authEnvVar).toBe('VOYAGE_API_KEY')
     expect(provider.defaultDerivation).toBe('upstream-spec')
     expect(provider.specSourceUrl).toBe(SPEC_URL)
-    expect(provider.modelsEndpoint).toBe('https://api.voyageai.com/v1/models')
+    expect(provider.modelsEndpoint).toBe(SPEC_URL)
   })
 })
 
@@ -105,32 +105,66 @@ describe('voyage classify', () => {
   })
 })
 
-describe('voyage listModels', () => {
-  it('skips when VOYAGE_API_KEY is absent', async () => {
-    const result = await provider.listModels({})
-    expect(result.skipped).toBe('voyage: VOYAGE_API_KEY not set — skipped')
-    expect(result.models).toEqual([])
-  })
-
-  it('lists models when VOYAGE_API_KEY is set', async () => {
-    const result = await withStubbedFetch(
-      (url, init) => {
-        expect(url).toBe('https://api.voyageai.com/v1/models')
-        expect(new Headers(init?.headers).get('authorization')).toBe(
-          'Bearer test-key',
-        )
-        return new Response(
-          JSON.stringify({
-            data: [{ id: 'voyage-4-large', created: 1_737_000_000 }],
-          }),
-        )
+describe('voyageModelsFromSpec', () => {
+  it('collects documented voyage-* ids and drops rerankers', () => {
+    const models = voyageModelsFromSpec({
+      paths: {
+        '/embeddings': {
+          post: {
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: {
+                    properties: {
+                      model: {
+                        type: 'string',
+                        description:
+                          'Recommended: `voyage-3-large`, `voyage-3`. Also `rerank-2`.',
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
-      () => provider.listModels({ VOYAGE_API_KEY: 'test-key' }),
+    })
+    expect(models).toEqual([
+      { rawId: 'voyage-3', activity: 'embeddings' },
+      { rawId: 'voyage-3-large', activity: 'embeddings' },
+    ])
+  })
+})
+
+describe('voyage listModels', () => {
+  it('reads the catalog from the published spec, not /v1/models', async () => {
+    const urls: Array<string> = []
+    const result = await withStubbedFetch(
+      (url) => {
+        urls.push(url)
+        return new Response(`openapi: 3.0.2
+info: { title: Voyage API, version: "1.1" }
+paths:
+  /embeddings:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                model:
+                  type: string
+                  description: Recommended \`voyage-3-large\`.
+`)
+      },
+      () => provider.listModels({}),
     )
 
+    expect(urls).toEqual([SPEC_URL])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
-      { rawId: 'voyage-4-large', releasedAt: 1_737_000_000 },
+      { rawId: 'voyage-3-large', activity: 'embeddings' },
     ])
   })
 })
