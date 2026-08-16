@@ -1,9 +1,8 @@
 /**
- * Moonshot (Kimi) — official OpenAPI at platform.kimi.com/docs/openapi.json
- * (public; platform.moonshot.cn/docs/openapi.json 301s here). The
- * international twin is platform.kimi.ai/docs/openapi.json (same paths;
- * servers.url = https://api.moonshot.ai). Keys are region-bound: CN keys
- * work only on api.moonshot.cn, international keys only on api.moonshot.ai.
+ * Moonshot (Kimi) — international surface. Spec is
+ * platform.kimi.ai/docs/openapi.json (`servers.url` = api.moonshot.ai).
+ * Keys are region-bound: this host accepts international keys; a CN key
+ * 401s here the same way an international key 401s on api.moonshot.cn.
  * Generation is POST /v1/chat/completions; files, batches, billing, and
  * token-estimate classify as platform.
  */
@@ -19,8 +18,8 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-const MOONSHOT_OPENAPI_URL = 'https://platform.kimi.com/docs/openapi.json'
-const MOONSHOT_MODELS_URL = 'https://api.moonshot.cn/v1/models'
+const MOONSHOT_OPENAPI_URL = 'https://platform.kimi.ai/docs/openapi.json'
+const MOONSHOT_MODELS_URL = 'https://api.moonshot.ai/v1/models'
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const { spec, hash } = await fetchOpenApi(MOONSHOT_OPENAPI_URL)
