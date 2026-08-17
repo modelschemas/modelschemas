@@ -7,8 +7,9 @@ import type { Activity } from '#/db/schema.ts'
 import { jsonError } from '#/server/admin.ts'
 import { swr } from '#/server/cache.ts'
 import { cachedJson, cachedText } from '#/server/http-cache.ts'
+import { listModelsCatalog } from '#/server/catalog.ts'
 import { getEndpointSchema, knownEndpointIds } from '#/server/schemas-api.ts'
-import { emitTypesModule, typesEtag } from '#/server/typegen.ts'
+import { emitTypesModule, modelIdsKey, typesEtag } from '#/server/typegen.ts'
 
 export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
   server: {
@@ -80,22 +81,41 @@ export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
         }
         if (format === 'types') {
           const schema = result.value.schema
+          const record =
+            typeof schema === 'object' &&
+            schema !== null &&
+            !Array.isArray(schema)
+              ? (schema as Record<string, unknown>)
+              : {}
+          const overlayModel =
+            kindParam === 'input' &&
+            typeof record.properties === 'object' &&
+            record.properties !== null &&
+            'model' in record.properties
+          const modelIds = overlayModel
+            ? (
+                await listModelsCatalog(db, {
+                  provider: params.provider,
+                  activity,
+                })
+              ).models.map((m) => m.rawId)
+            : []
           const text = emitTypesModule({
             provider: params.provider,
             endpointId,
             kind: kindParam,
             contentHash: result.value.contentHash,
-            schema:
-              typeof schema === 'object' &&
-              schema !== null &&
-              !Array.isArray(schema)
-                ? (schema as Record<string, unknown>)
-                : {},
+            schema: record,
             optionalStyle,
             sourceUrl: `${url.origin}${url.pathname}?kind=${kindParam}`,
+            ...(modelIds.length > 0 ? { modelIds } : {}),
           })
           return cachedText(request, text, 'text/typescript; charset=utf-8', {
-            etag: typesEtag(result.value.contentHash, optionalStyle),
+            etag: typesEtag(
+              result.value.contentHash,
+              optionalStyle,
+              modelIds.length > 0 ? modelIdsKey(modelIds) : undefined,
+            ),
             fetchedAt: result.fetchedAt,
             staleAt: result.staleAt,
           })

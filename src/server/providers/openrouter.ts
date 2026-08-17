@@ -6,6 +6,7 @@
  * model like any other endpoint. Fully keyless.
  */
 import type { Activity } from '#/db/schema.ts'
+import { bearerConnect } from './connect.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
@@ -272,6 +273,8 @@ export const openrouterProvider: ProviderConfig = {
   id: 'openrouter',
   displayName: 'OpenRouter',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'provider',
+  connect: bearerConnect('https://openrouter.ai/api/v1'),
   fetchSpec,
   listModels,
   classify,

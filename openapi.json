@@ -449,6 +449,85 @@
         }
       }
     },
+    "/v1/openapi/{provider}": {
+      "get": {
+        "operationId": "getProviderOpenApi",
+        "summary": "Generation-only OpenAPI document for one provider",
+        "description": "Assembled from classified endpoints plus the provider connect profile (servers, auth, required headers). Not a raw upstream-spec mirror. Model-grained providers (FAL) require ?model=. Selections over 40 paths return 400 spec_requires_selector.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "description": "Provider slug (see GET /v1/providers).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "description": "Pin to one model (raw id or slug). Required for model-grained providers.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "activity",
+            "in": "query",
+            "description": "Restrict to one activity group.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "chat",
+                "image",
+                "video",
+                "audio",
+                "embeddings",
+                "moderation"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document.",
+            "content": {
+              "application/openapi+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/validate": {
       "post": {
         "operationId": "validatePayload",

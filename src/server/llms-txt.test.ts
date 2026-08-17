@@ -19,6 +19,7 @@ describe('llms.txt content', () => {
     for (const path of [
       '/v1/models',
       '/v1/schemas/',
+      '/v1/openapi/',
       '/v1/validate',
       '/v1/changes',
       '/openapi.json',

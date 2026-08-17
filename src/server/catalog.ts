@@ -10,6 +10,8 @@ import type { Db } from '#/db/index.ts'
 import { models, providers } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
+import { getProvider } from '#/server/providers/index.ts'
+import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import { getServiceStatus } from '#/server/status.ts'
 
 export interface ModelFilters {
@@ -27,6 +29,29 @@ function modelLinks(providerId: string) {
   return {
     provider: halGet(`/v1/providers/${providerId}/models`),
     schemas: halGet(`/v1/schemas/${providerId}`),
+    openapi: openApiLink(providerId),
+  }
+}
+
+function openApiLink(providerId: string) {
+  const config = getProvider(providerId)
+  const grain = config ? resolveSpecGrain(config) : 'provider'
+  if (grain === 'model') {
+    return halGet(`/v1/openapi/${providerId}{?model}`, {
+      example: `/v1/openapi/${providerId}?model=fal-ai/flux/dev`,
+    })
+  }
+  return halGet(`/v1/openapi/${providerId}`)
+}
+
+function specDescriptor(
+  providerId: string,
+  endpointCount: number,
+): { grain: 'provider' | 'model'; endpointCount: number } {
+  const config = getProvider(providerId)
+  return {
+    grain: config ? resolveSpecGrain(config) : 'provider',
+    endpointCount,
   }
 }
 
@@ -53,15 +78,17 @@ function toApiModel(row: ModelRow) {
 
 export type ApiModel = ReturnType<typeof toApiModel>
 
-/** GET /v1/providers — providers with sync status, counts, and links. */
+/** GET /v1/providers — status, counts, spec grain, and links. */
 export async function listProvidersCatalog(db: Db) {
   const status = await getServiceStatus(db)
   return {
     providers: status.providers.map((p) => ({
       ...p,
+      spec: specDescriptor(p.id, p.counts.endpoints),
       _links: {
         models: halGet(`/v1/providers/${p.id}/models`),
         schemas: halGet(`/v1/schemas/${p.id}`),
+        openapi: openApiLink(p.id),
       },
     })),
     _links: { self: halGet('/v1/providers'), catalog: halGet('/v1/models') },

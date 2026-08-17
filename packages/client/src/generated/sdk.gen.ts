@@ -9,6 +9,9 @@ import type {
   GetModelData,
   GetModelErrors,
   GetModelResponses,
+  GetProviderOpenApiData,
+  GetProviderOpenApiErrors,
+  GetProviderOpenApiResponses,
   GetSchemaData,
   GetSchemaErrors,
   GetSchemaResponses,
@@ -177,6 +180,20 @@ export const getSchema = <ThrowOnError extends boolean = false>(
     GetSchemaErrors,
     ThrowOnError
   >({ url: '/v1/schemas/{provider}/{activity}/{endpointId}', ...options })
+
+/**
+ * Generation-only OpenAPI document for one provider
+ *
+ * Assembled from classified endpoints plus the provider connect profile (servers, auth, required headers). Not a raw upstream-spec mirror. Model-grained providers (FAL) require ?model=. Selections over 40 paths return 400 spec_requires_selector.
+ */
+export const getProviderOpenApi = <ThrowOnError extends boolean = false>(
+  options: Options<GetProviderOpenApiData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<
+    GetProviderOpenApiResponses,
+    GetProviderOpenApiErrors,
+    ThrowOnError
+  >({ url: '/v1/openapi/{provider}', ...options })
 
 /**
  * Validate a payload against a provider endpoint schema

@@ -33,6 +33,8 @@ availability and schema questions.
    - \`GET /v1/schemas/{provider}/{activity}/{endpointId}?kind=input\` — a
      self-contained JSON Schema (URL-encode slashes in endpoint ids:
      \`chat%2Fcompletions\`)
+   - \`GET /v1/openapi/{provider}\` — connectable generation OpenAPI
+     (FAL and other model-grained providers require \`?model=\`)
 3. **Authenticate for more** (5k req/h + webhooks). Easiest: the CLI —
    \`modelschemas login\` (agent-auth, autonomous mode, keys stored locally)
    or \`modelschemas login --api-key\`. Raw HTTP alternative:

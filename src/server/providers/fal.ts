@@ -239,6 +239,19 @@ export const falProvider: ProviderConfig = {
   displayName: 'FAL',
   authEnvVar: 'FAL_KEY',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'model',
+  connect: {
+    servers: [{ url: 'https://queue.fal.run' }],
+    securitySchemes: {
+      apiKey: {
+        type: 'http',
+        scheme: 'Key',
+        description: 'Send `Authorization: Key <FAL_KEY>`.',
+      },
+    },
+    security: [{ apiKey: [] }],
+    siblingGet: true,
+  },
   fetchSpec,
   listModels,
   classify,

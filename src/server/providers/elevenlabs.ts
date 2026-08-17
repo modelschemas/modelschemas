@@ -4,6 +4,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { ELEVENLABS_RELEASE_DATES, curatedReleasedAt } from './release-dates.ts'
+import { headerApiKeyConnect } from './connect.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -94,6 +95,8 @@ export const elevenlabsProvider: ProviderConfig = {
   displayName: 'ElevenLabs',
   authEnvVar: 'ELEVENLABS_API_KEY',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'provider',
+  connect: headerApiKeyConnect('https://api.elevenlabs.io', 'xi-api-key'),
   fetchSpec,
   listModels,
   classify,

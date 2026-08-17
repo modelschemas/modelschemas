@@ -3,14 +3,100 @@
  *
  * Everything under ./generated is produced by @hey-api/openapi-ts from the
  * service's own openapi.json (bun run generate:client); this file is the
- * hand-written entry adding pluggable auth.
+ * hand-written entry adding pluggable auth and branded model ids.
  */
 import { createClient, createConfig } from './generated/client'
 
 import type { ClientOptions } from './generated/types.gen'
 
-export * from './generated/index'
+export {
+  getActivitySchemas,
+  getProviderOpenApi,
+  getSchema,
+  getServiceIndex,
+  getStatus,
+  listAllSchemas,
+  listChanges,
+  listProviders,
+  listProviderSchemas,
+  type Options,
+  syncProvider,
+  validatePayload,
+} from './generated/index'
+export type {
+  ClientOptions,
+  Error,
+  GetActivitySchemasData,
+  GetActivitySchemasError,
+  GetActivitySchemasErrors,
+  GetActivitySchemasResponse,
+  GetActivitySchemasResponses,
+  GetModelData,
+  GetModelError,
+  GetModelErrors,
+  GetModelResponse,
+  GetModelResponses,
+  GetProviderOpenApiData,
+  GetProviderOpenApiError,
+  GetProviderOpenApiErrors,
+  GetProviderOpenApiResponse,
+  GetProviderOpenApiResponses,
+  GetSchemaData,
+  GetSchemaError,
+  GetSchemaErrors,
+  GetSchemaResponse,
+  GetSchemaResponses,
+  GetServiceIndexData,
+  GetServiceIndexResponse,
+  GetServiceIndexResponses,
+  GetStatusData,
+  GetStatusResponse,
+  GetStatusResponses,
+  ListAllSchemasData,
+  ListAllSchemasResponse,
+  ListAllSchemasResponses,
+  ListChangesData,
+  ListChangesResponse,
+  ListChangesResponses,
+  ListModelsData,
+  ListModelsResponse,
+  ListModelsResponses,
+  ListProviderModelsData,
+  ListProviderModelsError,
+  ListProviderModelsErrors,
+  ListProviderModelsResponse,
+  ListProviderModelsResponses,
+  ListProviderSchemasData,
+  ListProviderSchemasError,
+  ListProviderSchemasErrors,
+  ListProviderSchemasResponse,
+  ListProviderSchemasResponses,
+  ListProvidersData,
+  ListProvidersResponse,
+  ListProvidersResponses,
+  ServiceStatus,
+  SyncProviderData,
+  SyncProviderError,
+  SyncProviderErrors,
+  SyncProviderResponse,
+  SyncProviderResponses,
+  ValidatePayloadData,
+  ValidatePayloadError,
+  ValidatePayloadErrors,
+  ValidatePayloadResponse,
+  ValidatePayloadResponses,
+  ValidateRequest,
+  ValidateResult,
+} from './generated/index'
 export { createClient, createConfig }
+export {
+  asListedModelId,
+  getModel,
+  listModels,
+  listProviderModels,
+  type ListedModel,
+  type ListedModelId,
+} from './listed-model.ts'
 
 export interface ModelschemasClientOptions {
   /** Service origin, e.g. https://modelschemas.example.com */

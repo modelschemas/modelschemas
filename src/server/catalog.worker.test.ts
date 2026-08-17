@@ -131,6 +131,11 @@ describe('listModelsCatalog filters', () => {
         method: 'GET',
         contentType: 'application/json',
       },
+      openapi: {
+        href: '/v1/openapi/cat-alpha',
+        method: 'GET',
+        contentType: 'application/json',
+      },
     })
   })
 })

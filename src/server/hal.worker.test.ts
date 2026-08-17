@@ -19,6 +19,7 @@ import {
   getSystemSchemaIndex,
 } from './schemas-api.ts'
 import { getServiceStatus } from './status.ts'
+import { assembleProviderOpenApi } from './provider-openapi.ts'
 import { validatePayload } from './validate.ts'
 import type { ValidateRequestBody } from './validate.ts'
 
@@ -143,6 +144,15 @@ async function resolve(target: string | Record<string, unknown>) {
     case 'changes': {
       const outcome = await listChanges(db, {})
       expect(outcome.ok).toBe(true)
+      return
+    }
+    case 'openapi': {
+      const [provider] = rest
+      const assembled = await assembleProviderOpenApi(db, provider ?? '', {
+        model: url.searchParams.get('model') ?? undefined,
+        activity: url.searchParams.get('activity') ?? undefined,
+      })
+      expect(assembled.ok).toBe(true)
       return
     }
     default:

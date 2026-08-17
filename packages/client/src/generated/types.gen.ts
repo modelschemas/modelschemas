@@ -356,6 +356,59 @@ export type GetSchemaResponses = {
 
 export type GetSchemaResponse = GetSchemaResponses[keyof GetSchemaResponses]
 
+export type GetProviderOpenApiData = {
+  body?: never
+  path: {
+    /**
+     * Provider slug (see GET /v1/providers).
+     */
+    provider: string
+  }
+  query?: {
+    /**
+     * Pin to one model (raw id or slug). Required for model-grained providers.
+     */
+    model?: string
+    /**
+     * Restrict to one activity group.
+     */
+    activity?:
+      | 'chat'
+      | 'image'
+      | 'video'
+      | 'audio'
+      | 'embeddings'
+      | 'moderation'
+  }
+  url: '/v1/openapi/{provider}'
+}
+
+export type GetProviderOpenApiErrors = {
+  /**
+   * Error
+   */
+  400: Error
+  /**
+   * Error
+   */
+  404: Error
+}
+
+export type GetProviderOpenApiError =
+  GetProviderOpenApiErrors[keyof GetProviderOpenApiErrors]
+
+export type GetProviderOpenApiResponses = {
+  /**
+   * OpenAPI 3.1 document.
+   */
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type GetProviderOpenApiResponse =
+  GetProviderOpenApiResponses[keyof GetProviderOpenApiResponses]
+
 export type ValidatePayloadData = {
   body: ValidateRequest
   path?: never
