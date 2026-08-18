@@ -202,12 +202,18 @@ Pushes to `main` deploy via Cloudflare Workers Builds (dashboard → Workers
 Settings:
 
 - **Build command:** `bun run build`
-- **Deploy command:**
-  `bunx wrangler d1 migrations apply DB --remote && bunx wrangler deploy -c dist/server/wrangler.json`
-  — the build **emits** the real worker config at `dist/server/wrangler.json`;
-  deploying the repo-root `wrangler.jsonc` directly will not work.
+- **Deploy command:** `bun run deploy:ci` — applies pending D1 migrations
+  (`wrangler d1 migrations apply modelschemas --remote`, by database name so
+  a binding rename can't retarget it) and then `wrangler deploy`, which
+  follows the build-emitted redirect (`.wrangler/deploy/config.json`) to the
+  real worker config at `dist/server/wrangler.json`. Deploying the repo-root
+  `wrangler.jsonc` directly will not work.
+- **Non-production branch deploy command:** leave as the default
+  `npx wrangler versions upload` — preview versions share the production D1
+  binding, so migrations must never run from non-production branches.
 
-`bun run deploy` remains the manual/emergency path.
+`bun run deploy` remains the manual/emergency path (build + the same
+migrate-then-deploy).
 
 ## Runbook: a provider sync is failing
 
