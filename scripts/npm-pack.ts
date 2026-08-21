@@ -1,18 +1,18 @@
 /**
  * Pack the public workspace packages for npm.
  *
- * Bun's packer rewrites `workspace:*` / `catalog:` to the concrete
- * versions npm consumers need. Staging and publishing themselves are
- * **not** done here: `npm stage publish` / `npm publish` with OIDC must
- * run from `.github/workflows/publish.yml` so the trusted-publisher
- * match (workflow filename + GitHub environment `npm`) holds and
- * provenance is issued. This script only writes tarballs.
+ * Bun's packer rewrites `workspace:*` to the concrete versions npm
+ * consumers need. This script only writes tarballs. Staging is
+ * `npm stage publish` from `.github/workflows/publish.yml` (OIDC, env
+ * `npm`, workflow filename `publish.yml`) so the trusted-publisher
+ * match holds. Future Actions stages get provenance; laptop `0.1.0`
+ * did not.
  *
  *   bun scripts/npm-pack.ts                  # dist/npm, then stop
  *   bun scripts/npm-pack.ts --pack-dir /tmp/npm
  *
- * A `vX.Y.Z` tag (or `--tag vX.Y.Z` / `RELEASE_TAG`) must match every
- * public package's version.
+ * If `--tag` or `RELEASE_TAG` is set, it must be `vMAJOR.MINOR.PATCH`
+ * (optional prerelease) and match every public package's version.
  */
 import {
   existsSync,
@@ -21,7 +21,7 @@ import {
   readFileSync,
   rmSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 export type PublicPackage = {
@@ -42,7 +42,7 @@ export function tarballFileName(name: string, version: string): string {
   return `${unscoped}-${version}.tgz`
 }
 
-/** `v0.1.0` or `refs/tags/v0.1.0` → `0.1.0`. Anything else → undefined. */
+/** `v0.1.0`, `refs/tags/v0.1.0`, or `v1.2.3-rc.1` → version. Else undefined. */
 export function versionFromTag(tag: string): string | undefined {
   const trimmed = tag.replace(/^refs\/tags\//, '')
   if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(trimmed)) return undefined
@@ -76,7 +76,7 @@ export function listPublicPackages(
   return pkgs
 }
 
-/** Workspace deps first so a laptop bootstrap `npm publish` can go in order. */
+/** Dependents last (client/codegen, then vite, CLI) — npmjs.com approve order. */
 export function publishOrder(
   packages: Array<PublicPackage>,
 ): Array<PublicPackage> {
@@ -162,11 +162,17 @@ export function packedEntryNames(tarball: string): Array<string> {
   return result.stdout.split('\n').filter((line) => line.length > 0)
 }
 
+/** Absolute dest so `bun pm pack` (cwd = package dir) writes where we look. */
+export function resolvePackDir(packDir: string): string {
+  return resolve(packDir)
+}
+
 export function packPackage(pkg: PublicPackage, packDir: string): string {
-  mkdirSync(packDir, { recursive: true })
+  const dest = resolvePackDir(packDir)
+  mkdirSync(dest, { recursive: true })
   const result = spawnSync(
     'bun',
-    ['pm', 'pack', '--destination', packDir, '--quiet'],
+    ['pm', 'pack', '--destination', dest, '--quiet'],
     { cwd: pkg.dir, encoding: 'utf8' },
   )
   if (result.status !== 0) {
@@ -174,7 +180,7 @@ export function packPackage(pkg: PublicPackage, packDir: string): string {
       `bun pm pack ${pkg.name} failed: ${result.stderr || result.stdout}`,
     )
   }
-  const tarball = join(packDir, tarballFileName(pkg.name, pkg.version))
+  const tarball = join(dest, tarballFileName(pkg.name, pkg.version))
   if (!existsSync(tarball)) {
     throw new Error(
       `expected ${tarball} after bun pm pack; stdout=${result.stdout.trim()}`,
@@ -187,11 +193,12 @@ export function packAll(
   packages: Array<PublicPackage>,
   packDir: string,
 ): Array<{ pkg: PublicPackage; tarball: string }> {
-  rmSync(packDir, { recursive: true, force: true })
-  mkdirSync(packDir, { recursive: true })
+  const dest = resolvePackDir(packDir)
+  rmSync(dest, { recursive: true, force: true })
+  mkdirSync(dest, { recursive: true })
   const packed: Array<{ pkg: PublicPackage; tarball: string }> = []
   for (const pkg of packages) {
-    const tarball = packPackage(pkg, packDir)
+    const tarball = packPackage(pkg, dest)
     assertPublishableManifest(readPackedManifest(tarball), tarball)
     const entries = packedEntryNames(tarball)
     const tests = entries.filter((entry) => entry.endsWith('.test.ts'))
@@ -258,7 +265,6 @@ function parseCli(argv: Array<string>): {
   let tag: string | undefined
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
-    if (arg === '--dry-run') continue
     if (arg === '--pack-dir') {
       const value = argv[i + 1]
       if (value === undefined) throw new Error('--pack-dir requires a path')
@@ -288,8 +294,11 @@ export function main(argv: Array<string> = process.argv.slice(2)): void {
   if (tag !== undefined && tag !== '') {
     assertVersionsMatchTag(packages, tag)
   }
-  const packDir =
-    flags.packDir ?? process.env.NPM_PACK_DIR ?? join(repoRoot(), 'dist', 'npm')
+  const packDir = resolvePackDir(
+    flags.packDir ??
+      process.env.NPM_PACK_DIR ??
+      join(repoRoot(), 'dist', 'npm'),
+  )
   const packed = packAll(packages, packDir)
   console.log(`packed ${packed.length} packages → ${packDir}\n`)
   for (const { pkg, tarball } of packed) {

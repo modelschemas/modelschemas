@@ -230,48 +230,27 @@ CI **never** holds an npm token. `.github/workflows/publish.yml` packs
 with Bun (rewrites `workspace:*`), then `npm stage publish` over GitHub
 OIDC. A human 2FA-approves each staged version before it is installable.
 
-### One-time bootstrap (you, on npmjs.com + a laptop)
+### Bootstrap (done 2026-08-21)
 
-`npm trust` and `npm stage publish` both require the package to already
-exist, so the first `0.1.0` of each cannot go through the Actions job.
+`npm trust` and `npm stage publish` require the package to already exist,
+so the first version of each name was a laptop `npm publish` with 2FA,
+then stage-only trusted publishers. Repeat that only when adding a **new
+package name**.
 
-1. Create the `@modelschemas` org at
-   [npmjs.com/org/create](https://www.npmjs.com/org/create). Enable 2FA on
-   the publishing account.
-2. Pack locally, then publish the tarballs with an interactive 2FA
-   prompt. Order is client → codegen → vite → CLI (workspace dependents
-   last):
+Trusted-publisher config on every package must match:
 
-   ```bash
-   bun scripts/npm-pack.ts --pack-dir /tmp/modelschemas-npm
-   cd /tmp/modelschemas-npm
-   npm login
-   npm publish modelschemas-client-0.1.0.tgz --access public
-   npm publish modelschemas-codegen-0.1.0.tgz --access public
-   npm publish modelschemas-vite-0.1.0.tgz --access public
-   npm publish modelschemas-0.1.0.tgz --access public
-   ```
+```bash
+npm install -g npm@11.19.0  # trust/stage need >= 11.15; npm 12 wants Node 24.15+
+npm trust github <name> \
+  --file publish.yml \
+  --repo modelschemas/modelschemas \
+  --env npm \
+  --allow-stage-publish
+```
 
-3. Bind each package to this repo's publish workflow (**stage-only**,
-   environment name `npm` — must match the GitHub Environment exactly):
-
-   ```bash
-   npm install -g npm@11.19.0  # trust/stage need >= 11.15; npm 12 wants Node 24.15+
-   for pkg in @modelschemas/client @modelschemas/codegen @modelschemas/vite modelschemas
-   do
-     npm trust github "$pkg" \
-       --file publish.yml \
-       --repo modelschemas/modelschemas \
-       --env npm \
-       --allow-stage-publish
-   done
-   ```
-
-4. On each package: **Settings → Publishing access → Require two-factor
-   authentication and disallow tokens → Update Package Settings**.
-   Delete any granular tokens that can still publish.
-5. GitHub repo **Settings → Environments → `npm`**: required reviewer
-   (you); deployment branches limited to `main` and tags `v*`.
+Each package: **Settings → Publishing access → Require two-factor
+authentication and disallow tokens**. GitHub Environment `npm`: required
+reviewer; deployment branches limited to `main` and tags `v*`.
 
 ### Ongoing releases
 
@@ -289,7 +268,7 @@ Dry-run the pipeline without staging:
 ```bash
 # Actions → Publish → Run workflow, leave dry_run checked
 # or locally:
-bun scripts/npm-pack.ts --pack-dir dist/npm --tag v0.1.0
+bun scripts/npm-pack.ts --pack-dir dist/npm
 ```
 
 Do not add `NPM_TOKEN` / `NODE_AUTH_TOKEN` to GitHub Secrets. `bun publish`
