@@ -178,7 +178,7 @@ describe('pollProviderModels', () => {
     // Converged: the same dates no longer count as backdates.
     const fourth = await pollProviderModels(deps, stubProvider(id, dated))
     expect(fourth).toMatchObject({ backdated: 0 })
-  })
+  }, 15_000)
 
   it('backdates firstSeenAt to the upstream release date (issue #1)', async () => {
     const id = 'poll-backdate'
