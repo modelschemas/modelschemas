@@ -16,6 +16,9 @@
     "@modelschemas/codegen": "workspace:*",
     "jose": "^6.2.3"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "homepage": "https://modelschemas.com",
   "repository": {
