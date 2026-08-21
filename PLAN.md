@@ -545,6 +545,13 @@ the agent-auth capability list (5.1). Spec drift breaks a CI check, not a user.
   - BLOCKED 2026-06-11: npm publish is irreversible and needs Tom's npm account +
     scope decision (@modelschemas org availability unverified) + a deployed prod URL
     (8.1). Packages are publish-shaped (files/bin/exports set).
+  - 2026-08-21 (#48): scope kept as `@modelschemas` (CLI unscoped). Pipeline
+    is OIDC trusted publishers + `npm stage publish` from
+    `.github/workflows/publish.yml` (no `NPM_TOKEN`; provenance automatic;
+    GitHub Environment `npm`). First `0.1.0` of each package still has to
+    be a laptop `npm publish` because `npm trust` / `npm stage` require
+    the package to already exist. Bootstrap of `0.1.0` landed 2026-08-21
+    (org, laptop publish, stage-only `npm trust`, tokens disallowed).
 - [x] **8.5 Update CLAUDE.md** with the new architecture (D1/KV bindings, cron
       entry point, ingest pipeline layout, workspace packages, API map) replacing the
       starter description. _Accepts:_ CLAUDE.md matches reality.

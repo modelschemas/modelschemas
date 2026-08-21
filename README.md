@@ -215,6 +215,86 @@ Settings:
 `bun run deploy` remains the manual/emergency path (build + the same
 migrate-then-deploy).
 
+## Releasing on npm
+
+Four public packages (`0.1.0` is on the registry):
+
+| Package                        | Directory          |
+| ------------------------------ | ------------------ |
+| `@modelschemas/client`         | `packages/client`  |
+| `@modelschemas/codegen`        | `packages/codegen` |
+| `@modelschemas/vite`           | `packages/vite`    |
+| `modelschemas` (CLI, unscoped) | `packages/cli`     |
+
+CI **never** holds an npm token. `.github/workflows/publish.yml` packs
+with Bun (rewrites `workspace:*`), then `npm stage publish` over GitHub
+OIDC. A human 2FA-approves each staged version before it is installable.
+
+### One-time bootstrap (you, on npmjs.com + a laptop)
+
+`npm trust` and `npm stage publish` both require the package to already
+exist, so the first `0.1.0` of each cannot go through the Actions job.
+
+1. Create the `@modelschemas` org at
+   [npmjs.com/org/create](https://www.npmjs.com/org/create). Enable 2FA on
+   the publishing account.
+2. Pack locally, then publish the tarballs with an interactive 2FA
+   prompt. Order is client → codegen → vite → CLI (workspace dependents
+   last):
+
+   ```bash
+   bun scripts/npm-pack.ts --pack-dir /tmp/modelschemas-npm
+   cd /tmp/modelschemas-npm
+   npm login
+   npm publish modelschemas-client-0.1.0.tgz --access public
+   npm publish modelschemas-codegen-0.1.0.tgz --access public
+   npm publish modelschemas-vite-0.1.0.tgz --access public
+   npm publish modelschemas-0.1.0.tgz --access public
+   ```
+
+3. Bind each package to this repo's publish workflow (**stage-only**,
+   environment name `npm` — must match the GitHub Environment exactly):
+
+   ```bash
+   npm install -g npm@11.19.0  # trust/stage need >= 11.15; npm 12 wants Node 24.15+
+   for pkg in @modelschemas/client @modelschemas/codegen @modelschemas/vite modelschemas
+   do
+     npm trust github "$pkg" \
+       --file publish.yml \
+       --repo modelschemas/modelschemas \
+       --env npm \
+       --allow-stage-publish
+   done
+   ```
+
+4. On each package: **Settings → Publishing access → Require two-factor
+   authentication and disallow tokens → Update Package Settings**.
+   Delete any granular tokens that can still publish.
+5. GitHub repo **Settings → Environments → `npm`**: required reviewer
+   (you); deployment branches limited to `main` and tags `v*`.
+
+### Ongoing releases
+
+1. Bump the four `package.json` versions together. Commit.
+2. Tag `vX.Y.Z` matching those versions (or create a GitHub Release
+   whose tag is that name) and push the tag.
+3. Actions runs CI, packs, then (after the `npm` environment approval)
+   `npm stage publish`. Inspect the tarball artifacts on the run.
+4. On [npmjs.com](https://www.npmjs.com) → **Staged Packages**, 2FA-approve
+   in the same order as bootstrap. Until you approve, `npm install` cannot
+   see the version.
+
+Dry-run the pipeline without staging:
+
+```bash
+# Actions → Publish → Run workflow, leave dry_run checked
+# or locally:
+bun scripts/npm-pack.ts --pack-dir dist/npm --tag v0.1.0
+```
+
+Do not add `NPM_TOKEN` / `NODE_AUTH_TOKEN` to GitHub Secrets. `bun publish`
+is token-auth only and is not used for releases.
+
 ## Runbook: a provider sync is failing
 
 1. `GET /v1/status` — the failing provider shows `status: "degraded"` and a

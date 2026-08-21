@@ -1,0 +1,117 @@
+# Stage public workspace packages to npm via OIDC trusted publishing.
+#
+# No NPM_TOKEN. The npm CLI (not bun) exchanges a GitHub OIDC token for a
+# short-lived, stage-only credential. A maintainer then 2FA-approves each
+# staged version on npmjs.com. See README "Releasing on npm".
+#
+# Trusted-publisher config on every package MUST match:
+#   repository: modelschemas/modelschemas
+#   workflow filename: publish.yml
+#   environment: npm
+#   allowed action: npm stage publish only
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Pack and verify tarballs; do not call npm stage publish
+        type: boolean
+        default: true
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  pack:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Pack public packages
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: bun scripts/npm-pack.ts --pack-dir dist/npm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: dist/npm/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  stage:
+    needs: pack
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarballs
+          path: tarballs
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Install npm CLI (staged publishing needs >= 11.15.0)
+        run: npm install -g npm@latest
+
+      - name: Require npm >= 11.15.0
+        run: |
+          v=$(npm --version)
+          echo "npm $v"
+          maj=${v%%.*}
+          rest=${v#*.}
+          min=${rest%%.*}
+          if [ "$maj" -lt 11 ] || { [ "$maj" -eq 11 ] && [ "$min" -lt 15 ]; }; then
+            echo "npm >= 11.15.0 required for npm stage publish, got $v" >&2
+            exit 1
+          fi
+
+      - name: Stage tarballs
+        working-directory: tarballs
+        run: |
+          shopt -s nullglob
+          tarballs=(*.tgz)
+          if [ ${#tarballs[@]} -eq 0 ]; then
+            echo "no tarballs downloaded" >&2
+            exit 1
+          fi
+          for tgz in "${tarballs[@]}"; do
+            echo "staging $tgz"
+            npm stage publish "$tgz" --access public
+          done
+          echo "Staged ${#tarballs[@]} package(s). Approve with 2FA at"
+          echo "https://www.npmjs.com/ (Staged Packages), in order:"
+          echo "  @modelschemas/client, @modelschemas/codegen,"
+          echo "  @modelschemas/vite, modelschemas"

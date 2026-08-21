@@ -15,8 +15,11 @@ extracted/bundled at runtime and served over HTTP/MCP.
 
 **`PLAN.md` is the build log** — every task, settled architecture decision,
 and gotcha note. All phases are complete and the service is live at
-https://modelschemas.openstory.workers.dev (npm publish, 8.4, still pends an
-npm scope decision). Don't relitigate PLAN.md's
+https://modelschemas.openstory.workers.dev. npm scope is `@modelschemas`
+(CLI unscoped `modelschemas`); first registry publish is a one-time
+laptop bootstrap, then OIDC staged publishing via
+`.github/workflows/publish.yml` — see README "Releasing on npm". Don't
+relitigate PLAN.md's
 "Architecture decisions" section.
 
 ## Commands
@@ -34,6 +37,7 @@ bun --bun run format     # prettier --write + eslint --fix
 bun --bun run check      # prettier --check
 bun --bun run build      # production build (emits dist/server/wrangler.json)
 bun run deploy           # build + wrangler deploy
+bun run npm:pack         # pack public packages to dist/npm (no publish)
 ```
 
 Database (drizzle-kit generates; wrangler applies):

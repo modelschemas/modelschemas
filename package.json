@@ -30,7 +30,8 @@
     "openapi:emit": "bun scripts/emit-openapi.ts",
     "generate:client": "bun run openapi:emit && cd packages/client && bunx openapi-ts",
     "check:client": "bun run generate:client && git diff --exit-code openapi.json packages/client",
-    "types": "wrangler types --include-runtime=false"
+    "types": "wrangler types --include-runtime=false",
+    "npm:pack": "bun scripts/npm-pack.ts"
   },
   "dependencies": {
     "@better-auth/agent-auth": "^0.5.1",
