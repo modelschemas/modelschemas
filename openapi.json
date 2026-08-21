@@ -398,7 +398,7 @@
           {
             "name": "format",
             "in": "query",
-            "description": "json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports).",
+            "description": "json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports). format=types on an input schema with a model property overlays the live catalog union plus ListedModelId; the schema const and content hash stay the bundled schema.",
             "schema": {
               "type": "string",
               "enum": [
@@ -437,6 +437,95 @@
             }
           },
           "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/openapi/{provider}": {
+      "get": {
+        "operationId": "getProviderOpenApi",
+        "summary": "Generation-only OpenAPI document for one provider",
+        "description": "Assembled from classified endpoints plus the provider connect profile (servers, auth, required headers). Not a raw upstream-spec mirror. Model-grained providers (today: FAL) require ?model=. Selections over 40 classified endpoints, or a filter that matches none, return 400 spec_requires_selector. An unsynced provider returns 404 no_endpoints. ?model= pins the live model enum on provider-grained specs; it does not drop endpoints.",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "description": "Provider slug (see GET /v1/providers).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "description": "Pin to one model (raw id or slug). Required for model-grained providers.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "activity",
+            "in": "query",
+            "description": "Restrict to one activity group.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "chat",
+                "image",
+                "video",
+                "audio",
+                "embeddings",
+                "moderation"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document.",
+            "content": {
+              "application/openapi+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
             "description": "Error",
             "content": {
               "application/json": {

@@ -16,6 +16,7 @@ import {
   sha256Text,
   skippedResult,
 } from './types.ts'
+import { headerApiKeyConnect } from './connect.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
@@ -97,6 +98,10 @@ export const anthropicProvider: ProviderConfig = {
   displayName: 'Anthropic',
   authEnvVar: 'ANTHROPIC_API_KEY',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'provider',
+  connect: headerApiKeyConnect('https://api.anthropic.com', 'x-api-key', {
+    requiredHeaders: { 'anthropic-version': ANTHROPIC_VERSION },
+  }),
   fetchSpec,
   listModels,
   classify,

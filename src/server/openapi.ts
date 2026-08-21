@@ -256,7 +256,7 @@ export const openApiDocument = {
             name: 'format',
             in: 'query',
             description:
-              'json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports).',
+              'json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports). format=types on an input schema with a model property overlays the live catalog union plus ListedModelId; the schema const and content hash stay the bundled schema.',
             schema: { type: 'string', enum: ['json', 'types'] },
           },
           {
@@ -279,6 +279,45 @@ export const openApiDocument = {
             },
           },
           '404': errorResponse,
+        },
+      },
+    },
+    '/v1/openapi/{provider}': {
+      get: {
+        operationId: 'getProviderOpenApi',
+        summary: 'Generation-only OpenAPI document for one provider',
+        description:
+          'Assembled from classified endpoints plus the provider connect profile (servers, auth, required headers). ' +
+          'Not a raw upstream-spec mirror. Model-grained providers (today: FAL) require ?model=. ' +
+          'Selections over 40 classified endpoints, or a filter that matches none, return 400 spec_requires_selector. ' +
+          'An unsynced provider returns 404 no_endpoints. ?model= pins the live model enum on provider-grained specs; it does not drop endpoints.',
+        parameters: [
+          providerParam,
+          {
+            name: 'model',
+            in: 'query',
+            description:
+              'Pin to one model (raw id or slug). Required for model-grained providers.',
+            schema: { type: 'string' },
+          },
+          {
+            name: 'activity',
+            in: 'query',
+            description: 'Restrict to one activity group.',
+            schema: { type: 'string', enum: activityEnum },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'OpenAPI 3.1 document.',
+            content: {
+              'application/openapi+json': { schema: { type: 'object' } },
+              'application/json': { schema: { type: 'object' } },
+            },
+          },
+          '400': errorResponse,
+          '404': errorResponse,
+          '500': errorResponse,
         },
       },
     },

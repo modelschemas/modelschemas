@@ -9,6 +9,9 @@ import type {
   GetModelData,
   GetModelErrors,
   GetModelResponses,
+  GetProviderOpenApiData,
+  GetProviderOpenApiErrors,
+  GetProviderOpenApiResponses,
   GetSchemaData,
   GetSchemaErrors,
   GetSchemaResponses,
@@ -177,6 +180,20 @@ export const getSchema = <ThrowOnError extends boolean = false>(
     GetSchemaErrors,
     ThrowOnError
   >({ url: '/v1/schemas/{provider}/{activity}/{endpointId}', ...options })
+
+/**
+ * Generation-only OpenAPI document for one provider
+ *
+ * Assembled from classified endpoints plus the provider connect profile (servers, auth, required headers). Not a raw upstream-spec mirror. Model-grained providers (today: FAL) require ?model=. Selections over 40 classified endpoints, or a filter that matches none, return 400 spec_requires_selector. An unsynced provider returns 404 no_endpoints. ?model= pins the live model enum on provider-grained specs; it does not drop endpoints.
+ */
+export const getProviderOpenApi = <ThrowOnError extends boolean = false>(
+  options: Options<GetProviderOpenApiData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<
+    GetProviderOpenApiResponses,
+    GetProviderOpenApiErrors,
+    ThrowOnError
+  >({ url: '/v1/openapi/{provider}', ...options })
 
 /**
  * Validate a payload against a provider endpoint schema

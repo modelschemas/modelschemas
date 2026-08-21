@@ -33,6 +33,8 @@ availability and schema questions.
    - \`GET /v1/schemas/{provider}/{activity}/{endpointId}?kind=input\` — a
      self-contained JSON Schema (URL-encode slashes in endpoint ids:
      \`chat%2Fcompletions\`)
+   - \`GET /v1/openapi/{provider}\` — connectable generation OpenAPI
+     (FAL, currently the only model-grained provider, requires \`?model=\`)
 3. **Authenticate for more** (5k req/h + webhooks). Easiest: the CLI —
    \`modelschemas login\` (agent-auth, autonomous mode, keys stored locally)
    or \`modelschemas login --api-key\`. Raw HTTP alternative:
@@ -66,7 +68,8 @@ Every command prints JSON (pretty in a TTY, compact when piped).
 
 The service is also an MCP server: streamable HTTP at \`{base}/mcp\` with
 tools \`list_models\`, \`get_model\`, \`get_schema\`, \`validate_payload\`,
-\`recent_changes\`.
+\`recent_changes\`. OpenAPI assembly is HTTP-only
+(\`GET /v1/openapi/{provider}\`); MCP has no equivalent tool.
 
 ## Service reference (llms.txt, verbatim)
 

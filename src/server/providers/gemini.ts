@@ -312,6 +312,14 @@ export const geminiProvider: ProviderConfig = {
   displayName: 'Google Gemini',
   authEnvVar: 'GEMINI_API_KEY',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'provider',
+  connect: {
+    servers: [{ url: 'https://generativelanguage.googleapis.com' }],
+    securitySchemes: {
+      apiKey: { type: 'apiKey', in: 'query', name: 'key' },
+    },
+    security: [{ apiKey: [] }],
+  },
   fetchSpec,
   listModels,
   classify,

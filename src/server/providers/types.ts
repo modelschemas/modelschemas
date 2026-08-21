@@ -165,6 +165,46 @@ export interface ListModelsResult {
   skipped?: string
 }
 
+/**
+ * How a provider's generation surface is addressed. `provider` — a handful
+ * of shared endpoints, model is a request field. `model` — one API per
+ * model (FAL); a combined OpenAPI document is not served.
+ */
+export type SpecGrain = 'provider' | 'model'
+
+/** OpenAPI 3 security scheme subset we emit on assembled provider specs. */
+export type OpenApiSecurityScheme =
+  | {
+      type: 'http'
+      scheme: string
+      bearerFormat?: string
+      description?: string
+    }
+  | {
+      type: 'apiKey'
+      in: 'header' | 'query' | 'cookie'
+      name: string
+      description?: string
+    }
+
+/**
+ * How to call this provider's data plane. Declared, not guessed from the
+ * upstream spec (those are often incomplete). Used to assemble
+ * `GET /v1/openapi/{provider}`.
+ */
+export interface ProviderConnect {
+  servers: Array<{ url: string; description?: string }>
+  securitySchemes: Record<string, OpenApiSecurityScheme>
+  security: Array<Record<string, Array<string>>>
+  /** Header name → const value (e.g. `anthropic-version`). */
+  requiredHeaders?: Record<string, string>
+  /**
+   * Include sibling `GET {path}/requests/{request_id}` carrying the output
+   * schema (FAL queue). The POST keeps the input schema only.
+   */
+  siblingGet?: boolean
+}
+
 export interface ProviderConfig {
   /** Lowercase slug; matches `providers.id` and the seed data. */
   id: string
@@ -184,6 +224,19 @@ export interface ProviderConfig {
    * published spec every sync declare `upstream-spec`.
    */
   defaultDerivation: Derivation
+  /**
+   * How this provider's generation surface is addressed. Defaults to
+   * `provider` when omitted (adapters).
+   */
+  specGrain?: SpecGrain
+  /** How to call the provider; assembled into GET /v1/openapi/{id}. */
+  connect?: ProviderConnect
+  /**
+   * Per-activity override when one provider has multiple data planes
+   * (BytePlus Ark vs Seed Speech). Mixed selections drop overridden
+   * activities from the default document.
+   */
+  connectByActivity?: Partial<Record<Activity, ProviderConnect>>
   /** Fetch + parse the provider's OpenAPI spec document(s). */
   fetchSpec: (env: ProviderSecrets) => Promise<SpecFetchResult>
   /** List currently served models from the provider's cheap models endpoint. */

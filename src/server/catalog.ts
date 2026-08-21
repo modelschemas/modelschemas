@@ -10,6 +10,9 @@ import type { Db } from '#/db/index.ts'
 import { models, providers } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
+import { getProvider } from '#/server/providers/index.ts'
+import { resolveSpecGrain } from '#/server/providers/connect.ts'
+import type { SpecGrain } from '#/server/providers/types.ts'
 import { getServiceStatus } from '#/server/status.ts'
 
 export interface ModelFilters {
@@ -23,10 +26,39 @@ export interface ModelFilters {
   includeDeprecated?: boolean
 }
 
+const OPENAPI_CONTENT_TYPE = 'application/openapi+json'
+
 function modelLinks(providerId: string) {
+  const openapi = openApiLink(providerId)
   return {
     provider: halGet(`/v1/providers/${providerId}/models`),
     schemas: halGet(`/v1/schemas/${providerId}`),
+    ...(openapi ? { openapi } : {}),
+  }
+}
+
+function openApiLink(providerId: string) {
+  const config = getProvider(providerId)
+  if (!config?.connect) return undefined
+  const grain = resolveSpecGrain(config)
+  if (grain === 'model') {
+    return halGet(`/v1/openapi/${providerId}{?model}`, {
+      contentType: OPENAPI_CONTENT_TYPE,
+      example: `/v1/openapi/${providerId}?model=fal-ai/flux/dev`,
+    })
+  }
+  return halGet(`/v1/openapi/${providerId}`, {
+    contentType: OPENAPI_CONTENT_TYPE,
+  })
+}
+
+function specDescriptor(
+  providerId: string,
+  endpointCount: number,
+): { grain: SpecGrain; endpointCount: number } {
+  return {
+    grain: resolveSpecGrain(getProvider(providerId)),
+    endpointCount,
   }
 }
 
@@ -53,17 +85,22 @@ function toApiModel(row: ModelRow) {
 
 export type ApiModel = ReturnType<typeof toApiModel>
 
-/** GET /v1/providers — providers with sync status, counts, and links. */
+/** GET /v1/providers — status, counts, spec grain, and links. */
 export async function listProvidersCatalog(db: Db) {
   const status = await getServiceStatus(db)
   return {
-    providers: status.providers.map((p) => ({
-      ...p,
-      _links: {
-        models: halGet(`/v1/providers/${p.id}/models`),
-        schemas: halGet(`/v1/schemas/${p.id}`),
-      },
-    })),
+    providers: status.providers.map((p) => {
+      const openapi = openApiLink(p.id)
+      return {
+        ...p,
+        spec: specDescriptor(p.id, p.counts.endpoints),
+        _links: {
+          models: halGet(`/v1/providers/${p.id}/models`),
+          schemas: halGet(`/v1/schemas/${p.id}`),
+          ...(openapi ? { openapi } : {}),
+        },
+      }
+    }),
     _links: { self: halGet('/v1/providers'), catalog: halGet('/v1/models') },
   }
 }

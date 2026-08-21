@@ -8,7 +8,8 @@ Live AI model schema service. Per-endpoint request/response JSON Schemas and
 model metadata for 30+ monitored providers (OpenAI, Anthropic, Gemini, xAI
 Grok, Mistral, Groq, DeepSeek, and more — GET /v1/providers for the full
 roster), refreshed automatically: model lists every 15 minutes, full OpenAPI
-spec syncs daily. Every response is JSON.
+spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
+\`application/openapi+json\`).
 
 ## Why use this
 
@@ -29,8 +30,11 @@ spec syncs daily. Every response is JSON.
 4. GET /v1/schemas/anthropic — activities + endpoint ids for one provider.
 5. GET /v1/schemas/anthropic/chat/{endpointId}?kind=input — the JSON Schema
    for a request body (endpoint ids contain slashes; URL-encode them).
-6. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
-7. GET /v1/changes?since=<unix epoch> — what changed.
+6. GET /v1/openapi/{provider} — generation-only OpenAPI (servers, auth,
+   paths). FAL requires ?model=. Over 40 endpoints, or a filter that
+   matches none: 400 spec_requires_selector. HTTP only (no MCP tool).
+7. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
+8. GET /v1/changes?since=<unix epoch> — what changed.
 
 ## TypeScript types
 
@@ -40,7 +44,10 @@ TypeScript module instead of JSON: the schema as a pure const plus generated
 interfaces (\`text/typescript\`, zero imports, tree-shakeable, same ETag
 discipline). \`?optional=undefined\` widens optional properties to
 \`T | undefined\` for exactOptionalPropertyTypes consumers; default is
-\`foo?: T\`.
+\`foo?: T\`. A request \`model\` field is the live catalog union plus
+\`ListedModelId<'provider'>\` (still branded when the catalog is empty).
+Minted by \`listModels\` / \`listProviderModels\` / \`getModel\` (or
+\`asListedModelId\`). Arbitrary \`string\` values do not assign.
 
 ## Hypermedia (HAL, extended)
 

@@ -40,6 +40,7 @@ describe('agent-auth provider surface', () => {
     const names = listed.capabilities.map((c) => c.name)
     for (const expected of [
       'getSchema',
+      'getProviderOpenApi',
       'listModels',
       'getModel',
       'listProviders',

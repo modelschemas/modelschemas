@@ -1,7 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 
-import { TYPEGEN_VERSION, emitTypesModule, moduleNames } from './typegen.ts'
+import type { ListedModelId as ClientListedModelId } from '../../packages/client/src/listed-model.ts'
+import {
+  TYPEGEN_VERSION,
+  emitTypesModule,
+  modelIdsKey,
+  moduleNames,
+  typesEtag,
+} from './typegen.ts'
+
+type InlinedListedModelId<TProvider extends string = string> = string & {
+  readonly __modelschemasListed: TProvider
+}
+const clientBrandMatchesInline: ClientListedModelId<'anthropic'> =
+  '' as InlinedListedModelId<'anthropic'>
 
 /** Typecheck `source` as a standalone module with the real compiler. */
 function diagnostics(
@@ -201,6 +214,117 @@ describe('emitTypesModule', () => {
     expect(diagnostics(refRooted)).toEqual([])
   })
 
+  it('overlays model as Known | ListedModelId when modelIds are passed', () => {
+    const source = emitFixture()
+    expect(source).toContain('model: string')
+    expect(source).not.toContain('ListedModelId')
+    void clientBrandMatchesInline
+
+    const overlaid = emitTypesModule({
+      provider: 'anthropic',
+      endpointId: 'v1/messages',
+      kind: 'input',
+      contentHash: 'abc123def456',
+      schema: fixture,
+      modelIds: ['claude-sonnet-4-5', 'claude-opus-4-1'],
+    })
+    expect(overlaid).toContain('export type ListedModelId')
+    expect(overlaid).toContain(
+      'model: "claude-opus-4-1" | "claude-sonnet-4-5" | ListedModelId<"anthropic">',
+    )
+    expect(overlaid).not.toMatch(/^import /m)
+    expect(diagnostics(overlaid)).toEqual([])
+    expect(overlaid).toContain('"model": {\n      "type": "string"')
+  })
+
+  it('overlays ListedModelId only when the catalog is empty', () => {
+    const overlaid = emitTypesModule({
+      provider: 'anthropic',
+      endpointId: 'v1/messages',
+      kind: 'input',
+      contentHash: 'abc123def456',
+      schema: fixture,
+      modelIds: [],
+    })
+    expect(overlaid).toContain('model: ListedModelId<"anthropic">')
+    expect(overlaid).not.toContain('model: string')
+    expect(diagnostics(overlaid)).toEqual([])
+  })
+
+  it('does not overlay output schemas or schemas without a model field', () => {
+    const output = emitTypesModule({
+      provider: 'anthropic',
+      endpointId: 'v1/messages',
+      kind: 'output',
+      contentHash: 'abc',
+      schema: fixture,
+      modelIds: ['claude-sonnet-4-5'],
+    })
+    expect(output).not.toContain('ListedModelId')
+
+    const noModel = emitTypesModule({
+      provider: 'fal',
+      endpointId: 'fal-ai/flux/dev',
+      kind: 'input',
+      contentHash: 'abc',
+      schema: {
+        type: 'object',
+        properties: { prompt: { type: 'string' } },
+      },
+      modelIds: ['fal-ai/flux/dev'],
+    })
+    expect(noModel).not.toContain('ListedModelId')
+  })
+
+  it('keys the types ETag by the live model list, not the schema hash', () => {
+    const hash = 'f'.repeat(64)
+    expect(typesEtag(hash, 'exact', modelIdsKey(['b', 'a']))).toBe(
+      typesEtag(hash, 'exact', modelIdsKey(['a', 'b'])),
+    )
+    expect(typesEtag(hash, 'exact', modelIdsKey(['a']))).not.toBe(
+      typesEtag(hash, 'exact', modelIdsKey(['a', 'c'])),
+    )
+    expect(typesEtag(hash, 'exact')).not.toContain('-m')
+  })
+
+  it('accepts a structural ListedModelId from the client on an overlaid request', () => {
+    const module = emitTypesModule({
+      provider: 'anthropic',
+      endpointId: 'v1/messages',
+      kind: 'input',
+      contentHash: 'abc123def456',
+      schema: fixture,
+      modelIds: ['claude-sonnet-4-5'],
+    })
+    const listed = `
+type ClientListed<TProvider extends string = string> = string & {
+  readonly __modelschemasListed: TProvider
+}
+declare function asListed<TProvider extends string>(
+  provider: TProvider,
+  rawId: string,
+): ClientListed<TProvider>
+const body: AnthropicV1MessagesRequest = {
+  model: asListed("anthropic", "brand-new"),
+  max_tokens: 1,
+  messages: [{ role: "user", content: "hi" }],
+}
+`
+    expect(diagnostics(module + listed)).toEqual([])
+    expect(
+      diagnostics(
+        module +
+          `
+const bad: AnthropicV1MessagesRequest = {
+  model: "totally-new",
+  max_tokens: 1,
+  messages: [{ role: "user", content: "hi" }],
+}
+`,
+      ),
+    ).not.toEqual([])
+  })
+
   it('derives stable export names', () => {
     expect(moduleNames('anthropic', 'v1/messages', 'input')).toEqual({
       rootType: 'AnthropicV1MessagesRequest',
@@ -210,5 +334,71 @@ describe('emitTypesModule', () => {
       moduleNames('elevenlabs', 'v1/text-to-speech/{voice_id}', 'output')
         .rootType,
     ).toBe('ElevenlabsV1TextToSpeechVoiceIdResponse')
+  })
+})
+
+/**
+ * `model` accepts a snapshot literal *or* a value that came from
+ * `listModels` (a branded string). An arbitrary string — literal or
+ * variable — is not assignable. TypeScript cannot see the live catalog
+ * members; the brand only records provenance.
+ */
+describe('listed-model brand (Known | ListedModelId)', () => {
+  const prelude = `
+type ListedModelId<TProvider extends string = string> = string & {
+  readonly __modelschemasListed: TProvider
+}
+type KnownModel = "claude-sonnet-4-5" | "claude-opus-4-1"
+type Model = KnownModel | ListedModelId<"anthropic">
+interface ChatRequest {
+  model: Model
+  max_tokens: number
+}
+declare function send(req: ChatRequest): void
+declare function listModels(): Array<ListedModelId<"anthropic">>
+`
+
+  function check(statement: string): Array<string> {
+    return diagnostics(`${prelude}\n${statement}`)
+  }
+
+  it('accepts a model that was in the build-time snapshot', () => {
+    expect(
+      check('send({ model: "claude-sonnet-4-5", max_tokens: 1024 })'),
+    ).toEqual([])
+  })
+
+  it('accepts a model id returned by listModels, even if it is not in the snapshot', () => {
+    expect(check('send({ model: listModels()[0], max_tokens: 1024 })')).toEqual(
+      [],
+    )
+  })
+
+  it('rejects a string literal that is not in the snapshot', () => {
+    expect(check('send({ model: "totally-new", max_tokens: 1024 })')).toEqual([
+      `Type '"totally-new"' is not assignable to type 'Model'.`,
+    ])
+  })
+
+  it('rejects an arbitrary string variable', () => {
+    expect(
+      check(
+        'const id: string = "claude-sonnet-4-5"; send({ model: id, max_tokens: 1024 })',
+      ),
+    ).toEqual([`Type 'string' is not assignable to type 'Model'.`])
+  })
+
+  it('rejects a ListedModelId from another provider', () => {
+    expect(
+      check(
+        'const id = "gpt-4o" as ListedModelId<"openai">; send({ model: id, max_tokens: 1024 })',
+      ),
+    ).not.toEqual([])
+  })
+
+  it('still rejects a wrong max_tokens when the model came from listModels', () => {
+    expect(
+      check('send({ model: listModels()[0], max_tokens: "nope" })'),
+    ).toEqual(["Type 'string' is not assignable to type 'number'."])
   })
 })

@@ -3,14 +3,35 @@
  *
  * Everything under ./generated is produced by @hey-api/openapi-ts from the
  * service's own openapi.json (bun run generate:client); this file is the
- * hand-written entry adding pluggable auth.
+ * hand-written entry adding pluggable auth and branded model ids.
  */
 import { createClient, createConfig } from './generated/client'
 
 import type { ClientOptions } from './generated/types.gen'
 
-export * from './generated/index'
+export {
+  getActivitySchemas,
+  getProviderOpenApi,
+  getSchema,
+  getServiceIndex,
+  getStatus,
+  listAllSchemas,
+  listChanges,
+  listProviders,
+  listProviderSchemas,
+  syncProvider,
+  validatePayload,
+} from './generated/index'
+export type * from './generated/index'
 export { createClient, createConfig }
+export {
+  asListedModelId,
+  getModel,
+  listModels,
+  listProviderModels,
+  type ListedModel,
+  type ListedModelId,
+} from './listed-model.ts'
 
 export interface ModelschemasClientOptions {
   /** Service origin, e.g. https://modelschemas.example.com */

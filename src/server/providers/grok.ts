@@ -4,6 +4,7 @@
  * though xAI titles the spec "xAI's REST API".
  */
 import type { Activity } from '#/db/schema.ts'
+import { bearerConnect } from './connect.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -74,6 +75,8 @@ export const grokProvider: ProviderConfig = {
   displayName: 'xAI Grok',
   authEnvVar: 'XAI_API_KEY',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'provider',
+  connect: bearerConnect('https://api.x.ai'),
   fetchSpec,
   listModels,
   classify,

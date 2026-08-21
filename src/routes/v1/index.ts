@@ -35,6 +35,9 @@ export const serviceIndex = {
         example: '/v1/schemas/anthropic/chat/v1%2Fmessages?kind=input',
       },
     ),
+    providerOpenapi: halGet('/v1/openapi/{provider}{?model,activity}', {
+      example: '/v1/openapi/anthropic',
+    }),
     validate: halPost('/v1/validate', {
       example: {
         provider: 'anthropic',

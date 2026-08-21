@@ -18,6 +18,8 @@ export interface CacheHeaderOptions {
   maxAge?: number
   /** Cache-Control stale-while-revalidate window (seconds). */
   staleWhileRevalidate?: number
+  /** Defaults to application/json. */
+  contentType?: string
 }
 
 function buildHeaders(
@@ -64,7 +66,7 @@ export async function cachedJson(
     JSON.stringify(value),
     etag,
     options,
-    'application/json',
+    options.contentType ?? 'application/json',
   )
 }
 

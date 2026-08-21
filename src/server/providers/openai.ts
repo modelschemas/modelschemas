@@ -5,6 +5,7 @@
  * still caps at gpt-image-1.5). Models endpoint requires OPENAI_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { bearerConnect } from './connect.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -84,6 +85,8 @@ export const openaiProvider: ProviderConfig = {
   displayName: 'OpenAI',
   authEnvVar: 'OPENAI_API_KEY',
   defaultDerivation: 'upstream-spec',
+  specGrain: 'provider',
+  connect: bearerConnect('https://api.openai.com/v1'),
   fetchSpec,
   listModels,
   classify,
