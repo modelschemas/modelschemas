@@ -26,7 +26,7 @@ availability and schema questions.
      self-contained JSON Schema (URL-encode slashes in endpoint ids:
      `chat%2Fcompletions`)
    - `GET /v1/openapi/{provider}` — connectable generation OpenAPI
-     (FAL and other model-grained providers require `?model=`)
+     (FAL, currently the only model-grained provider, requires `?model=`)
 3. **Authenticate for more** (5k req/h + webhooks). Easiest: the CLI —
    `modelschemas login` (agent-auth, autonomous mode, keys stored locally)
    or `modelschemas login --api-key`. Raw HTTP alternative:
@@ -60,7 +60,8 @@ Every command prints JSON (pretty in a TTY, compact when piped).
 
 The service is also an MCP server: streamable HTTP at `{base}/mcp` with
 tools `list_models`, `get_model`, `get_schema`, `validate_payload`,
-`recent_changes`.
+`recent_changes`. OpenAPI assembly is HTTP-only
+(`GET /v1/openapi/{provider}`); MCP has no equivalent tool.
 
 ## Service reference (llms.txt, verbatim)
 
@@ -92,9 +93,9 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
 4. GET /v1/schemas/anthropic — activities + endpoint ids for one provider.
 5. GET /v1/schemas/anthropic/chat/{endpointId}?kind=input — the JSON Schema
    for a request body (endpoint ids contain slashes; URL-encode them).
-6. GET /v1/openapi/{provider} — generation-only OpenAPI you can generate a
-   client from (servers, auth, paths). Model-grained providers (FAL)
-   require ?model={rawId}; selections over 40 endpoints return 400.
+6. GET /v1/openapi/{provider} — generation-only OpenAPI (servers, auth,
+   paths). FAL requires ?model=. Over 40 endpoints, or a filter that
+   matches none: 400 spec_requires_selector. HTTP only (no MCP tool).
 7. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
 8. GET /v1/changes?since=<unix epoch> — what changed.
 
@@ -106,10 +107,10 @@ TypeScript module instead of JSON: the schema as a pure const plus generated
 interfaces (`text/typescript`, zero imports, tree-shakeable, same ETag
 discipline). `?optional=undefined` widens optional properties to
 `T | undefined` for exactOptionalPropertyTypes consumers; default is
-`foo?: T`. When the request schema has a `model` field, the emitted type
-is the live catalog union plus `ListedModelId<'provider'>` — minted by
-`listModels`, `listProviderModels`, and `getModel` (or
-`asListedModelId`). Arbitrary string literals/variables do not assign.
+`foo?: T`. A request `model` field is the live catalog union plus
+`ListedModelId<'provider'>` (still branded when the catalog is empty).
+Minted by `listModels` / `listProviderModels` / `getModel` (or
+`asListedModelId`). Arbitrary `string` values do not assign.
 
 ## Hypermedia (HAL, extended)
 

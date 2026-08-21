@@ -3,7 +3,7 @@
  */
 import type { ProviderConfig, ProviderConnect, SpecGrain } from './types.ts'
 
-/** Refuse assembly above this many endpoints (same number as the model page). */
+/** Refuse assembly above this many classified generation endpoints. */
 export const MAX_SPEC_PATHS = 40
 
 export function bearerConnect(
@@ -26,7 +26,7 @@ export function bearerConnect(
 export function headerApiKeyConnect(
   serverUrl: string,
   headerName: string,
-  extra?: Partial<ProviderConnect>,
+  extra?: Pick<ProviderConnect, 'requiredHeaders' | 'siblingGet'>,
 ): ProviderConnect {
   return {
     servers: [{ url: serverUrl }],
@@ -42,24 +42,18 @@ export function headerApiKeyConnect(
   }
 }
 
-export function resolveSpecGrain(provider: ProviderConfig): SpecGrain {
-  return provider.specGrain ?? 'provider'
+export function resolveSpecGrain(
+  provider: ProviderConfig | undefined,
+): SpecGrain {
+  return provider?.specGrain ?? 'provider'
 }
 
 /**
- * Declared connect profile, or a Bearer default derived from
- * `modelsEndpoint` (strip a trailing `/models`) for adapters that have
- * not set one.
+ * Declared connect profile only. Adapters without `connect` are not
+ * guessed from `modelsEndpoint` (that URL is often not the data plane).
  */
-export function resolveConnect(provider: ProviderConfig): ProviderConnect {
-  if (provider.connect) return provider.connect
-  const modelsEndpoint = provider.modelsEndpoint
-  if (modelsEndpoint) {
-    return bearerConnect(modelsEndpoint.replace(/\/models\/?$/, ''))
-  }
-  return {
-    servers: [],
-    securitySchemes: {},
-    security: [],
-  }
+export function resolveConnect(
+  provider: ProviderConfig | undefined,
+): ProviderConnect | null {
+  return provider?.connect ?? null
 }

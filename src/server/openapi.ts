@@ -288,8 +288,9 @@ export const openApiDocument = {
         summary: 'Generation-only OpenAPI document for one provider',
         description:
           'Assembled from classified endpoints plus the provider connect profile (servers, auth, required headers). ' +
-          'Not a raw upstream-spec mirror. Model-grained providers (FAL) require ?model=. ' +
-          'Selections over 40 endpoints return 400 spec_requires_selector.',
+          'Not a raw upstream-spec mirror. Model-grained providers (today: FAL) require ?model=. ' +
+          'Selections over 40 classified endpoints, or a filter that matches none, return 400 spec_requires_selector. ' +
+          'An unsynced provider returns 404 no_endpoints. ?model= pins the live model enum on provider-grained specs; it does not drop endpoints.',
         parameters: [
           providerParam,
           {
@@ -316,6 +317,7 @@ export const openApiDocument = {
           },
           '400': errorResponse,
           '404': errorResponse,
+          '500': errorResponse,
         },
       },
     },

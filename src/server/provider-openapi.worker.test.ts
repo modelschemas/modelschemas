@@ -242,6 +242,107 @@ describe('assembleProviderOpenApi', () => {
     })
   })
 
+  it('refuses empty paths instead of returning 200', async () => {
+    expect(
+      await assembleProviderOpenApi(db, 'anthropic', { activity: 'video' }),
+    ).toMatchObject({
+      ok: false,
+      status: 400,
+      code: 'spec_requires_selector',
+    })
+
+    await db
+      .insert(providers)
+      .values({
+        id: 'grok',
+        displayName: 'xAI Grok',
+        specSourceUrl: 'https://example.com/g.json',
+      })
+      .onConflictDoNothing()
+    expect(await assembleProviderOpenApi(db, 'grok')).toMatchObject({
+      ok: false,
+      status: 404,
+      code: 'no_endpoints',
+    })
+  })
+
+  it('does not assemble adapters that have no declared connect profile', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'voyage',
+        displayName: 'Voyage',
+        specSourceUrl: 'https://example.com/v.json',
+      })
+      .onConflictDoNothing()
+    await db
+      .insert(endpoints)
+      .values({
+        id: 'voyage/embeddings',
+        providerId: 'voyage',
+        activity: 'embeddings',
+        method: 'POST',
+        path: '/embeddings',
+      })
+      .onConflictDoNothing()
+    expect(await assembleProviderOpenApi(db, 'voyage')).toMatchObject({
+      ok: false,
+      status: 500,
+      code: 'missing_connect',
+    })
+  })
+
+  it('splits BytePlus Ark and Seed Speech onto their own connect profiles', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'byteplus',
+        displayName: 'BytePlus',
+        specSourceUrl: 'https://example.com/b.json',
+      })
+      .onConflictDoNothing()
+    await db
+      .insert(endpoints)
+      .values([
+        {
+          id: 'byteplus/chat/completions',
+          providerId: 'byteplus',
+          activity: 'chat',
+          method: 'POST',
+          path: '/chat/completions',
+        },
+        {
+          id: 'byteplus/tts/create',
+          providerId: 'byteplus',
+          activity: 'audio',
+          method: 'POST',
+          path: '/tts/create',
+        },
+      ])
+      .onConflictDoNothing()
+    const combined = await assembleProviderOpenApi(db, 'byteplus')
+    expect(combined.ok).toBe(true)
+    if (!combined.ok) return
+    const combinedPaths = combined.document.paths as Record<string, unknown>
+    expect(combinedPaths['/chat/completions']).toBeDefined()
+    expect(combinedPaths['/tts/create']).toBeUndefined()
+    expect((combined.document.servers as Array<{ url: string }>)[0]?.url).toBe(
+      'https://ark.ap-southeast.bytepluses.com/api/v3',
+    )
+
+    const audio = await assembleProviderOpenApi(db, 'byteplus', {
+      activity: 'audio',
+    })
+    expect(audio.ok).toBe(true)
+    if (!audio.ok) return
+    const audioPaths = audio.document.paths as Record<string, unknown>
+    expect(audioPaths['/tts/create']).toBeDefined()
+    expect(audioPaths['/chat/completions']).toBeUndefined()
+    expect((audio.document.servers as Array<{ url: string }>)[0]?.url).toBe(
+      'https://voice.ap-southeast-1.bytepluses.com/api/v3',
+    )
+  })
+
   it('refuses assembly over the endpoint cap', async () => {
     await db
       .insert(providers)
@@ -264,11 +365,15 @@ describe('assembleProviderOpenApi', () => {
         .values(rows.slice(i, i + 10))
         .onConflictDoNothing()
     }
-    expect(await assembleProviderOpenApi(db, 'cap-prov')).toMatchObject({
+    const overCap = await assembleProviderOpenApi(db, 'cap-prov')
+    expect(overCap).toMatchObject({
       ok: false,
       status: 400,
       code: 'spec_requires_selector',
     })
+    if (overCap.ok) return
+    expect(overCap.message).toContain('does not drop endpoints')
+    expect(overCap.message).toContain('?activity=')
   })
 
   it('404s unknown provider and unknown model', async () => {

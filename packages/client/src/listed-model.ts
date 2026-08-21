@@ -1,7 +1,6 @@
 /**
- * Provenance brand for model ids that flowed through our catalog reads.
- * Structural (string key, not unique symbol) so zero-import generated
- * request types agree with this package.
+ * Structural brand so zero-import generated request types match this package.
+ * Provenance only — not liveness.
  */
 import {
   getModel as getModelRaw,
@@ -19,6 +18,12 @@ export type ListedModelId<TProvider extends string = string> = string & {
   readonly __modelschemasListed: TProvider
 }
 
+export type ListedModel<TProvider extends string = string> = {
+  id: string
+  provider: TProvider
+  rawId: ListedModelId<TProvider>
+}
+
 /** Compile-time mint. Does not mean the id is still live. */
 export function asListedModelId<TProvider extends string>(
   _provider: TProvider,
@@ -27,80 +32,66 @@ export function asListedModelId<TProvider extends string>(
   return rawId as ListedModelId<TProvider>
 }
 
-export interface ListedModel<TProvider extends string = string> {
-  id: string
-  provider: TProvider
-  rawId: ListedModelId<TProvider>
-}
+type Result<T> = { data?: T; error?: unknown }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function brandModel(provider: string, value: unknown): unknown {
-  if (!isRecord(value) || typeof value.rawId !== 'string') return value
-  return {
-    ...value,
-    rawId: asListedModelId(provider, value.rawId),
-  }
+function brandModel<TProvider extends string>(
+  provider: TProvider,
+  value: unknown,
+): ListedModel<TProvider> {
+  const record = isRecord(value) ? value : {}
+  const rawId = typeof record.rawId === 'string' ? record.rawId : ''
+  const id = typeof record.id === 'string' ? record.id : rawId
+  return { ...record, id, provider, rawId: asListedModelId(provider, rawId) }
 }
 
-function brandCatalog(data: unknown): unknown {
-  if (!isRecord(data) || !Array.isArray(data.models)) return data
-  return {
-    ...data,
-    models: data.models.map((entry: unknown) => {
-      if (!isRecord(entry)) return entry
-      const provider =
-        typeof entry.provider === 'string' ? entry.provider : undefined
-      return provider ? brandModel(provider, entry) : entry
-    }),
+function brandModelList<TProvider extends string>(
+  data: unknown,
+  fallbackProvider?: TProvider,
+): { models: Array<ListedModel<TProvider>> } {
+  const record = isRecord(data) ? data : {}
+  const models: Array<ListedModel<TProvider>> = []
+  for (const entry of Array.isArray(record.models) ? record.models : []) {
+    if (!isRecord(entry)) continue
+    const fromRow =
+      typeof entry.provider === 'string' ? entry.provider : undefined
+    const provider = (fallbackProvider ?? fromRow) as TProvider | undefined
+    if (provider) models.push(brandModel(provider, entry))
   }
+  return { ...record, models }
 }
 
-function brandProviderList(provider: string, data: unknown): unknown {
-  if (!isRecord(data) || !Array.isArray(data.models)) return data
-  return {
-    ...data,
-    models: data.models.map((model) => brandModel(provider, model)),
-  }
-}
-
-/** Cross-provider catalog; brands `rawId` with each row's provider. */
-export async function listModels<TThrowOnError extends boolean = false>(
-  options?: Options<ListModelsData, TThrowOnError>,
-) {
+export async function listModels<const TProvider extends string = string>(
+  options?: Options<ListModelsData> & { query?: { provider?: TProvider } },
+): Promise<Result<{ models: Array<ListedModel<TProvider>> }>> {
   const result = await listModelsRaw(options)
-  if (result.data !== undefined) {
-    ;(result as { data: unknown }).data = brandCatalog(result.data)
+  if (result.data === undefined) return result
+  return {
+    ...result,
+    data: brandModelList(result.data, options?.query?.provider),
   }
-  return result
 }
 
-/** One provider's models; brands `rawId` with that provider. */
-export async function listProviderModels<TThrowOnError extends boolean = false>(
-  options: Options<ListProviderModelsData, TThrowOnError>,
-) {
+export async function listProviderModels<const TProvider extends string>(
+  options: Options<ListProviderModelsData> & { path: { provider: TProvider } },
+): Promise<Result<{ models: Array<ListedModel<TProvider>> }>> {
   const result = await listProviderModelsRaw(options)
-  if (result.data !== undefined) {
-    ;(result as { data: unknown }).data = brandProviderList(
-      options.path.provider,
-      result.data,
-    )
+  if (result.data === undefined) return result
+  return {
+    ...result,
+    data: brandModelList(result.data, options.path.provider),
   }
-  return result
 }
 
-/** One model; brands `rawId` with the path provider. */
-export async function getModel<TThrowOnError extends boolean = false>(
-  options: Options<GetModelData, TThrowOnError>,
-) {
+export async function getModel<const TProvider extends string>(
+  options: Options<GetModelData> & {
+    path: { provider: TProvider; modelId: string }
+  },
+): Promise<Result<ListedModel<TProvider>>> {
   const result = await getModelRaw(options)
-  if (result.data !== undefined) {
-    ;(result as { data: unknown }).data = brandModel(
-      options.path.provider,
-      result.data,
-    )
-  }
-  return result
+  if (result.data === undefined) return result
+  return { ...result, data: brandModel(options.path.provider, result.data) }
 }

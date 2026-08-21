@@ -244,9 +244,11 @@ export const falProvider: ProviderConfig = {
     servers: [{ url: 'https://queue.fal.run' }],
     securitySchemes: {
       apiKey: {
-        type: 'http',
-        scheme: 'Key',
-        description: 'Send `Authorization: Key <FAL_KEY>`.',
+        type: 'apiKey',
+        in: 'header',
+        name: 'Authorization',
+        description:
+          'Send `Key <FAL_KEY>` (literal prefix "Key ", then the token).',
       },
     },
     security: [{ apiKey: [] }],

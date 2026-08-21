@@ -92,14 +92,16 @@ export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
             typeof record.properties === 'object' &&
             record.properties !== null &&
             'model' in record.properties
+          // Provider-wide catalog: many listModels implementations leave
+          // `activity` null, so filtering by the schema's activity would
+          // skip the overlay and leave `model: string`.
           const modelIds = overlayModel
             ? (
                 await listModelsCatalog(db, {
                   provider: params.provider,
-                  activity,
                 })
               ).models.map((m) => m.rawId)
-            : []
+            : undefined
           const text = emitTypesModule({
             provider: params.provider,
             endpointId,
@@ -108,13 +110,13 @@ export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
             schema: record,
             optionalStyle,
             sourceUrl: `${url.origin}${url.pathname}?kind=${kindParam}`,
-            ...(modelIds.length > 0 ? { modelIds } : {}),
+            ...(modelIds !== undefined ? { modelIds } : {}),
           })
           return cachedText(request, text, 'text/typescript; charset=utf-8', {
             etag: typesEtag(
               result.value.contentHash,
               optionalStyle,
-              modelIds.length > 0 ? modelIdsKey(modelIds) : undefined,
+              modelIds !== undefined ? modelIdsKey(modelIds) : undefined,
             ),
             fetchedAt: result.fetchedAt,
             staleAt: result.staleAt,

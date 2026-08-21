@@ -231,6 +231,12 @@ export interface ProviderConfig {
   specGrain?: SpecGrain
   /** How to call the provider; assembled into GET /v1/openapi/{id}. */
   connect?: ProviderConnect
+  /**
+   * Per-activity override when one provider has multiple data planes
+   * (BytePlus Ark vs Seed Speech). Mixed selections drop overridden
+   * activities from the default document.
+   */
+  connectByActivity?: Partial<Record<Activity, ProviderConnect>>
   /** Fetch + parse the provider's OpenAPI spec document(s). */
   fetchSpec: (env: ProviderSecrets) => Promise<SpecFetchResult>
   /** List currently served models from the provider's cheap models endpoint. */

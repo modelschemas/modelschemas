@@ -325,7 +325,7 @@ export type GetSchemaData = {
      */
     version?: string
     /**
-     * json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports).
+     * json (default) or types — a self-contained TypeScript module (schema const + generated types, tree-shakeable, zero imports). format=types on an input schema with a model property overlays the live catalog union plus ListedModelId; the schema const and content hash stay the bundled schema.
      */
     format?: 'json' | 'types'
     /**
@@ -392,6 +392,10 @@ export type GetProviderOpenApiErrors = {
    * Error
    */
   404: Error
+  /**
+   * Error
+   */
+  500: Error
 }
 
 export type GetProviderOpenApiError =

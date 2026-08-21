@@ -30,9 +30,11 @@ export interface EmitInput {
   /** Canonical URL the schema was fetched from — printed in the banner. */
   sourceUrl?: string
   /**
-   * Live catalog ids. Input-only: replaces the root `model` type with
-   * `"id" | … | ListedModelId<P>`. The schema const stays the bundled
-   * schema. Omit (or pass on output) to keep the schema's own type.
+   * Live catalog ids. Input-only: when passed (even as `[]`), replaces
+   * the root `model` type with `"id" | … | ListedModelId<P>`. An empty
+   * list still emits `ListedModelId<P>` so arbitrary strings do not
+   * assign. The schema const stays the bundled schema. Omit (or pass on
+   * output) to keep the schema's own type.
    */
   modelIds?: Array<string>
 }
@@ -248,7 +250,7 @@ function objectExpr(node: SchemaNode, ctx: EmitCtx, indent: string): string {
     const optional = !required.has(key)
     const nested: EmitCtx = { ...ctx, overlayModel: false }
     let expr =
-      ctx.overlayModel && key === 'model' && ctx.modelIds.length > 0
+      ctx.overlayModel && key === 'model'
         ? union([
             ...ctx.modelIds.map((id) => JSON.stringify(id)),
             `ListedModelId<${JSON.stringify(ctx.provider)}>`,
@@ -346,7 +348,7 @@ export function emitTypesModule(input: EmitInput): string {
   const modelIds = [...(input.modelIds ?? [])].sort()
   const overlayModel =
     input.kind === 'input' &&
-    modelIds.length > 0 &&
+    input.modelIds !== undefined &&
     isObject(input.schema.properties) &&
     'model' in input.schema.properties
   const taken = new Set([

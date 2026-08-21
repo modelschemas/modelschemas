@@ -1,11 +1,31 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
-import { asListedModelId } from './listed-model.ts'
+import { listProviderModels as listProviderModelsRaw } from './generated/sdk.gen'
+import { listProviderModels } from './listed-model.ts'
+import type { ListedModelId } from './listed-model.ts'
 
-describe('asListedModelId', () => {
-  it('is a compile-time brand — the runtime value is the raw string', () => {
-    const id = asListedModelId('anthropic', 'claude-sonnet-4-5')
-    expect(id).toBe('claude-sonnet-4-5')
-    expect(typeof id).toBe('string')
+vi.mock('./generated/sdk.gen', () => ({
+  getModel: vi.fn(),
+  listModels: vi.fn(),
+  listProviderModels: vi.fn(),
+}))
+
+describe('listProviderModels', () => {
+  it('mints ListedModelId on rawId', async () => {
+    vi.mocked(listProviderModelsRaw).mockResolvedValue({
+      data: {
+        models: [
+          { id: 'anthropic-claude-sonnet-4-5', rawId: 'claude-sonnet-4-5' },
+        ],
+      },
+      error: undefined,
+    })
+    const { data } = await listProviderModels({
+      path: { provider: 'anthropic' },
+    })
+    expect(data?.models[0]?.rawId).toBe('claude-sonnet-4-5')
+    expectTypeOf(data?.models[0]?.rawId).toEqualTypeOf<
+      ListedModelId<'anthropic'> | undefined
+    >()
   })
 })

@@ -131,11 +131,27 @@ describe('listModelsCatalog filters', () => {
         method: 'GET',
         contentType: 'application/json',
       },
-      openapi: {
-        href: '/v1/openapi/cat-alpha',
-        method: 'GET',
-        contentType: 'application/json',
-      },
+    })
+    expect(result.models[0]?._links).not.toHaveProperty('openapi')
+  })
+
+  it('advertises spec grain and OpenAPI links for registered providers', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'fal',
+        displayName: 'FAL',
+        specSourceUrl: 'https://example.com/f.json',
+      })
+      .onConflictDoNothing()
+    const fal = (await listProvidersCatalog(db)).providers.find(
+      (p) => p.id === 'fal',
+    )
+    expect(fal?.spec.grain).toBe('model')
+    expect(fal?._links.openapi).toMatchObject({
+      href: '/v1/openapi/fal{?model}',
+      contentType: 'application/openapi+json',
+      templated: true,
     })
   })
 })

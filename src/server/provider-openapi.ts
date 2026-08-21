@@ -17,15 +17,12 @@ import {
 } from '#/server/catalog.ts'
 import { contentHash } from '#/server/kv.ts'
 import { getProvider } from '#/server/providers/index.ts'
-import {
-  MAX_SPEC_PATHS,
-  resolveConnect,
-  resolveSpecGrain,
-} from '#/server/providers/connect.ts'
-import type { ProviderConnect } from '#/server/providers/types.ts'
+import { MAX_SPEC_PATHS, resolveSpecGrain } from '#/server/providers/connect.ts'
+import type {
+  ProviderConfig,
+  ProviderConnect,
+} from '#/server/providers/types.ts'
 import { providerExists, publicEndpointId } from '#/server/schemas-api.ts'
-
-export { MAX_SPEC_PATHS }
 
 export interface AssembleOpenApiQuery {
   model?: string
@@ -34,7 +31,7 @@ export interface AssembleOpenApiQuery {
 
 export type AssembleOpenApiResult =
   | { ok: true; document: Record<string, unknown>; etag: string }
-  | { ok: false; status: 400 | 404; code: string; message: string }
+  | { ok: false; status: 400 | 404 | 500; code: string; message: string }
 
 interface LoadedEndpoint {
   id: string
@@ -133,6 +130,10 @@ export function endpointMatchesModel(
   return endpointId === rawId || path === rawId || path === `/${rawId}`
 }
 
+function siblingRequestPath(path: string): string {
+  return `${path}/requests/{request_id}`
+}
+
 function refuseSelector(
   providerId: string,
   grain: 'provider' | 'model',
@@ -140,14 +141,38 @@ function refuseSelector(
   reason: string,
 ): AssembleOpenApiResult {
   const example = `GET /v1/openapi/${providerId}?model=`
+  const schemas = `GET /v1/schemas/${providerId}`
+  const models = `GET /v1/providers/${providerId}/models`
   return {
     ok: false,
     status: 400,
     code: 'spec_requires_selector',
     message:
       grain === 'model'
-        ? `Provider '${providerId}' is model-grained (${String(count)} endpoints) — there is no combined OpenAPI document. Pass ?model={rawId}, e.g. ${example}<rawId>. List models: GET /v1/providers/${providerId}/models.`
-        : `${reason} Pass ?model={rawId} or ?activity= to narrow, e.g. ${example}<rawId>.`,
+        ? `Provider '${providerId}' is model-grained (${String(count)} endpoints) — there is no combined OpenAPI document. Pass ?model={rawId}, e.g. ${example}<rawId>. List models: ${models}.`
+        : `${reason} ?model= pins the live model enum; it does not drop endpoints on provider-grained specs. Narrow with ?activity= (${activities.join(', ')}). List endpoints: ${schemas}. List models: ${models}.`,
+  }
+}
+
+function applyConnectProfile(
+  config: ProviderConfig | undefined,
+  selected: Array<LoadedEndpoint>,
+): { connect: ProviderConnect | null; selected: Array<LoadedEndpoint> } {
+  if (!config?.connect) return { connect: null, selected }
+  const overrides = config.connectByActivity
+  if (!overrides) return { connect: config.connect, selected }
+
+  const present = new Set(selected.map((endpoint) => endpoint.activity))
+  if (present.size === 1) {
+    const only = selected[0]?.activity
+    const override = only !== undefined ? overrides[only] : undefined
+    return { connect: override ?? config.connect, selected }
+  }
+  return {
+    connect: config.connect,
+    selected: selected.filter(
+      (endpoint) => overrides[endpoint.activity] === undefined,
+    ),
   }
 }
 
@@ -217,10 +242,7 @@ function buildOperation(
   modelIds: Array<string>,
   pinnedModel: string | undefined,
 ): Record<string, unknown> {
-  const input = applyModelEnum(
-    endpoint.input,
-    pinnedModel ? [pinnedModel] : modelIds,
-  )
+  const input = applyModelEnum(endpoint.input, modelIds)
   const parameters = [
     ...pathParamsFromPath(endpoint.path),
     ...headerParams(connect.requiredHeaders),
@@ -248,7 +270,7 @@ function buildSiblingGet(
   providerId: string,
   endpoint: LoadedEndpoint,
 ): Record<string, unknown> {
-  const requestPath = `${endpoint.path}/requests/{request_id}`
+  const requestPath = siblingRequestPath(endpoint.path)
   return {
     operationId: operationId(providerId, 'get', requestPath),
     summary: 'Fetch a queued request result',
@@ -304,10 +326,7 @@ export async function assembleProviderOpenApi(
   }
 
   const config = getProvider(providerId)
-  const grain = config ? resolveSpecGrain(config) : 'provider'
-  const connect = config
-    ? resolveConnect(config)
-    : { servers: [], securitySchemes: {}, security: [] }
+  const grain = resolveSpecGrain(config)
 
   let pinnedModel: string | undefined
   if (query.model !== undefined) {
@@ -338,7 +357,7 @@ export async function assembleProviderOpenApi(
         ok: false,
         status: 404,
         code: 'unknown_model',
-        message: `No generation endpoint for model '${pinnedModel}' on provider '${providerId}'.`,
+        message: `Model '${pinnedModel}' is listed for '${providerId}' but has no classified generation endpoint (no path matching that raw id). List endpoints: GET /v1/schemas/${providerId}. If the model is new, wait for spec sync or POST /v1/admin/sync/${providerId}. Catalog: GET /v1/providers/${providerId}/models.`,
       }
     }
   }
@@ -352,6 +371,22 @@ export async function assembleProviderOpenApi(
     )
   }
 
+  const profile = applyConnectProfile(config, selected)
+  const connect = profile.connect
+  selected = profile.selected
+
+  if (selected.length === 0) {
+    const filtered = activity !== undefined || pinnedModel !== undefined
+    return {
+      ok: false,
+      status: filtered ? 400 : 404,
+      code: filtered ? 'spec_requires_selector' : 'no_endpoints',
+      message: filtered
+        ? `No generation endpoints for provider '${providerId}'${activity ? ` activity '${activity}'` : ''}${pinnedModel ? ` model '${pinnedModel}'` : ''}. List endpoints: GET /v1/schemas/${providerId}. Valid activities: ${activities.join(', ')}.`
+        : `Provider '${providerId}' has no synced generation endpoints yet. Check GET /v1/status or POST /v1/admin/sync/${providerId}. Index: GET /v1/schemas/${providerId}.`,
+    }
+  }
+
   if (selected.length > MAX_SPEC_PATHS) {
     return refuseSelector(
       providerId,
@@ -361,11 +396,23 @@ export async function assembleProviderOpenApi(
     )
   }
 
-  const live = await listModelsCatalog(db, {
-    provider: providerId,
-    activity,
-  })
-  const modelIds = pinnedModel ? [pinnedModel] : live.models.map((m) => m.rawId)
+  if (!connect || connect.servers.length === 0) {
+    return {
+      ok: false,
+      status: 500,
+      code: 'missing_connect',
+      message: `Provider '${providerId}' has no declared connect profile (servers/auth). GET /v1/openapi/${providerId} is not assembled until ProviderConfig.connect is set. Use GET /v1/schemas/${providerId} and the provider's own docs.`,
+    }
+  }
+
+  const modelIds = pinnedModel
+    ? [pinnedModel]
+    : (
+        await listModelsCatalog(db, {
+          provider: providerId,
+          activity,
+        })
+      ).models.map((m) => m.rawId)
   const paths: Record<string, Record<string, unknown>> = {}
   for (const endpoint of selected) {
     const item = paths[endpoint.path] ?? {}
@@ -377,7 +424,7 @@ export async function assembleProviderOpenApi(
       pinnedModel,
     )
     if (connect.siblingGet) {
-      const siblingPath = `${endpoint.path}/requests/{request_id}`
+      const siblingPath = siblingRequestPath(endpoint.path)
       paths[siblingPath] = { get: buildSiblingGet(providerId, endpoint) }
     }
     paths[endpoint.path] = item

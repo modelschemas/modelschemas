@@ -42,10 +42,11 @@ import {
   arkGoFileUrl,
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
-import { bearerConnect } from './connect.ts'
+import { bearerConnect, headerApiKeyConnect } from './connect.ts'
 import {
   BYTEPLUS_ARK_BASE_URL,
   BYTEPLUS_ARK_DOCS_URL,
+  BYTEPLUS_VOICE_BASE_URL,
   BYTEPLUS_VOICE_DOCS_URL,
   bytePlusArkSpec,
   bytePlusVoiceSpec,
@@ -449,9 +450,13 @@ export const byteplusProvider: ProviderConfig = {
   // status. This default only applies if a marker is ever missing.
   defaultDerivation: 'probe-verified',
   specGrain: 'provider',
-  // Ark only — Seed Speech uses a different host and X-Api-Key. A combined
-  // connect profile would send Bearer to the voice host.
+  // Default document is Ark. Seed Speech (`?activity=audio`) uses a
+  // different host and X-Api-Key — a combined profile would send Bearer
+  // to the voice host.
   connect: bearerConnect(BYTEPLUS_ARK_BASE_URL, 'Ark'),
+  connectByActivity: {
+    audio: headerApiKeyConnect(BYTEPLUS_VOICE_BASE_URL, 'X-Api-Key'),
+  },
   fetchSpec,
   listModels,
   classify,

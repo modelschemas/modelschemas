@@ -30,9 +30,9 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
 4. GET /v1/schemas/anthropic — activities + endpoint ids for one provider.
 5. GET /v1/schemas/anthropic/chat/{endpointId}?kind=input — the JSON Schema
    for a request body (endpoint ids contain slashes; URL-encode them).
-6. GET /v1/openapi/{provider} — generation-only OpenAPI you can generate a
-   client from (servers, auth, paths). Model-grained providers (FAL)
-   require ?model={rawId}; selections over 40 endpoints return 400.
+6. GET /v1/openapi/{provider} — generation-only OpenAPI (servers, auth,
+   paths). FAL requires ?model=. Over 40 endpoints, or a filter that
+   matches none: 400 spec_requires_selector. HTTP only (no MCP tool).
 7. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
 8. GET /v1/changes?since=<unix epoch> — what changed.
 
@@ -44,10 +44,10 @@ TypeScript module instead of JSON: the schema as a pure const plus generated
 interfaces (\`text/typescript\`, zero imports, tree-shakeable, same ETag
 discipline). \`?optional=undefined\` widens optional properties to
 \`T | undefined\` for exactOptionalPropertyTypes consumers; default is
-\`foo?: T\`. When the request schema has a \`model\` field, the emitted type
-is the live catalog union plus \`ListedModelId<'provider'>\` — minted by
-\`listModels\`, \`listProviderModels\`, and \`getModel\` (or
-\`asListedModelId\`). Arbitrary string literals/variables do not assign.
+\`foo?: T\`. A request \`model\` field is the live catalog union plus
+\`ListedModelId<'provider'>\` (still branded when the catalog is empty).
+Minted by \`listModels\` / \`listProviderModels\` / \`getModel\` (or
+\`asListedModelId\`). Arbitrary \`string\` values do not assign.
 
 ## Hypermedia (HAL, extended)
 

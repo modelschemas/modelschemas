@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 
+import type { ListedModelId as ClientListedModelId } from '../../packages/client/src/listed-model.ts'
 import {
   TYPEGEN_VERSION,
   emitTypesModule,
@@ -8,6 +9,12 @@ import {
   moduleNames,
   typesEtag,
 } from './typegen.ts'
+
+type InlinedListedModelId<TProvider extends string = string> = string & {
+  readonly __modelschemasListed: TProvider
+}
+const clientBrandMatchesInline: ClientListedModelId<'anthropic'> =
+  '' as InlinedListedModelId<'anthropic'>
 
 /** Typecheck `source` as a standalone module with the real compiler. */
 function diagnostics(
@@ -211,6 +218,7 @@ describe('emitTypesModule', () => {
     const source = emitFixture()
     expect(source).toContain('model: string')
     expect(source).not.toContain('ListedModelId')
+    void clientBrandMatchesInline
 
     const overlaid = emitTypesModule({
       provider: 'anthropic',
@@ -225,6 +233,21 @@ describe('emitTypesModule', () => {
       'model: "claude-opus-4-1" | "claude-sonnet-4-5" | ListedModelId<"anthropic">',
     )
     expect(overlaid).not.toMatch(/^import /m)
+    expect(diagnostics(overlaid)).toEqual([])
+    expect(overlaid).toContain('"model": {\n      "type": "string"')
+  })
+
+  it('overlays ListedModelId only when the catalog is empty', () => {
+    const overlaid = emitTypesModule({
+      provider: 'anthropic',
+      endpointId: 'v1/messages',
+      kind: 'input',
+      contentHash: 'abc123def456',
+      schema: fixture,
+      modelIds: [],
+    })
+    expect(overlaid).toContain('model: ListedModelId<"anthropic">')
+    expect(overlaid).not.toContain('model: string')
     expect(diagnostics(overlaid)).toEqual([])
   })
 
@@ -363,6 +386,14 @@ declare function listModels(): Array<ListedModelId<"anthropic">>
         'const id: string = "claude-sonnet-4-5"; send({ model: id, max_tokens: 1024 })',
       ),
     ).toEqual([`Type 'string' is not assignable to type 'Model'.`])
+  })
+
+  it('rejects a ListedModelId from another provider', () => {
+    expect(
+      check(
+        'const id = "gpt-4o" as ListedModelId<"openai">; send({ model: id, max_tokens: 1024 })',
+      ),
+    ).not.toEqual([])
   })
 
   it('still rejects a wrong max_tokens when the model came from listModels', () => {

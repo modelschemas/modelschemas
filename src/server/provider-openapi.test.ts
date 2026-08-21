@@ -8,6 +8,7 @@ import {
 } from './provider-openapi.ts'
 import { falProvider } from './providers/fal.ts'
 import { anthropicProvider } from './providers/anthropic.ts'
+import { getProvider } from './providers/index.ts'
 import {
   MAX_SPEC_PATHS,
   resolveConnect,
@@ -92,8 +93,25 @@ describe('connect profiles', () => {
 
   it('carries Anthropic version + x-api-key and FAL sibling GET', () => {
     const anthropic = resolveConnect(anthropicProvider)
-    expect(anthropic.servers[0]?.url).toBe('https://api.anthropic.com')
-    expect(anthropic.requiredHeaders?.['anthropic-version']).toBe('2023-06-01')
-    expect(resolveConnect(falProvider).siblingGet).toBe(true)
+    expect(anthropic?.servers[0]?.url).toBe('https://api.anthropic.com')
+    expect(anthropic?.requiredHeaders?.['anthropic-version']).toBe('2023-06-01')
+    expect(
+      anthropic?.securitySchemes.apiKey &&
+        anthropic.securitySchemes.apiKey.type === 'apiKey'
+        ? anthropic.securitySchemes.apiKey.name
+        : undefined,
+    ).toBe('x-api-key')
+    const fal = resolveConnect(falProvider)
+    expect(fal?.siblingGet).toBe(true)
+    expect(
+      fal?.securitySchemes.apiKey &&
+        fal.securitySchemes.apiKey.type === 'apiKey'
+        ? fal.securitySchemes.apiKey.name
+        : undefined,
+    ).toBe('Authorization')
+  })
+
+  it('does not guess a connect profile from modelsEndpoint', () => {
+    expect(resolveConnect(getProvider('voyage'))).toBeNull()
   })
 })
