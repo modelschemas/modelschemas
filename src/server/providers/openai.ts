@@ -6,6 +6,11 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
+import {
+  displayNameFromRawId,
+  openaiGenerationEndpointId,
+  openaiModelActivity,
+} from './model-meta.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -75,6 +80,8 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   return {
     models: (body.data ?? []).map((m) => ({
       rawId: m.id,
+      displayName: displayNameFromRawId(m.id),
+      activity: openaiModelActivity(m.id),
       releasedAt: m.created ?? null,
     })),
   }
@@ -90,4 +97,6 @@ export const openaiProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId, activity }) =>
+    openaiGenerationEndpointId(rawId, activity),
 }

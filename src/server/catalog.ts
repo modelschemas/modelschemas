@@ -13,6 +13,7 @@ import { halGet } from '#/server/hal.ts'
 import { getProvider } from '#/server/providers/index.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import type { SpecGrain } from '#/server/providers/types.ts'
+import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
 
 export interface ModelFilters {
@@ -64,13 +65,32 @@ function specDescriptor(
 
 type ModelRow = typeof models.$inferSelect
 
+function encodeEndpointId(endpointId: string): string {
+  return endpointId.split('/').map(encodeURIComponent).join('/')
+}
+
 function toApiModel(row: ModelRow) {
+  const schemaEndpointId = resolveSchemaEndpointId({
+    providerId: row.providerId,
+    rawId: row.rawId,
+    activity: row.activity,
+    capabilities: row.capabilities,
+  })
+  const schemaPath =
+    schemaEndpointId !== null && row.activity !== null
+      ? `/v1/schemas/${row.providerId}/${row.activity}/${encodeEndpointId(schemaEndpointId)}`
+      : null
+  const schemaLink =
+    schemaPath === null
+      ? undefined
+      : halGet(schemaPath, { example: `${schemaPath}?kind=input` })
   return {
     id: row.id,
     provider: row.providerId,
     rawId: row.rawId,
     activity: row.activity,
     displayName: row.displayName,
+    schemaEndpointId,
     contextWindow: row.contextWindow,
     maxOutput: row.maxOutput,
     modalities: row.modalities,
@@ -79,7 +99,10 @@ function toApiModel(row: ModelRow) {
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
-    _links: modelLinks(row.providerId),
+    _links: {
+      ...modelLinks(row.providerId),
+      ...(schemaLink ? { schema: schemaLink } : {}),
+    },
   }
 }
 

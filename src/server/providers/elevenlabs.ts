@@ -100,4 +100,5 @@ export const elevenlabsProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: () => 'v1/text-to-speech/{voice_id}',
 }

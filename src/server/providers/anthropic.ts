@@ -85,6 +85,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       models.push({
         rawId: m.id,
         displayName: m.display_name ?? null,
+        activity: 'chat',
         releasedAt: isoToEpochSeconds(m.created_at),
       })
     }
@@ -105,4 +106,5 @@ export const anthropicProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: () => 'v1/messages',
 }

@@ -3,7 +3,7 @@ import { env } from 'cloudflare:test'
 
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
-import { endpoints, providers, schemaVersions } from '../db/schema.ts'
+import { endpoints, models, providers, schemaVersions } from '../db/schema.ts'
 import { parseValidateBody, validatePayload } from './validate.ts'
 
 const NOW = 1_781_150_000
@@ -127,6 +127,54 @@ describe('validatePayload', () => {
       status: 404,
       code: 'no_schema',
     })
+  })
+
+  it('resolves a grok model rawId onto the bound generation route', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'grok',
+        displayName: 'xAI Grok',
+        specSourceUrl: 'https://example.com/g.json',
+      })
+      .onConflictDoNothing()
+    await db.insert(endpoints).values({
+      id: 'grok/v1/images/generations',
+      providerId: 'grok',
+      activity: 'image',
+      method: 'POST',
+      path: '/v1/images/generations',
+    })
+    await db.insert(schemaVersions).values({
+      id: 'grok/v1/images/generations:input:1',
+      endpointId: 'grok/v1/images/generations',
+      kind: 'input',
+      contentHash: 'd'.repeat(64),
+      schema: JSON.stringify({
+        type: 'object',
+        properties: { model: { type: 'string' }, prompt: { type: 'string' } },
+      }),
+      createdAt: NOW,
+    })
+    await db.insert(models).values({
+      id: 'grok-grok-imagine-image-2-0',
+      providerId: 'grok',
+      rawId: 'grok-imagine-image-2.0',
+      activity: 'image',
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    })
+
+    const outcome = await validatePayload(db, {
+      provider: 'grok',
+      endpointId: 'grok-imagine-image-2.0',
+      payload: { model: 'grok-imagine-image-2.0', prompt: 'a cat' },
+    })
+    expect(outcome.ok).toBe(true)
+    if (outcome.ok) {
+      expect(outcome.result.valid).toBe(true)
+      expect(outcome.result.endpointId).toBe('v1/images/generations')
+    }
   })
 })
 

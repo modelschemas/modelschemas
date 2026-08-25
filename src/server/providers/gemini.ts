@@ -5,6 +5,7 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
+import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
   curatedReleasedAt,
@@ -323,4 +324,6 @@ export const geminiProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity, capabilities }) =>
+    geminiGenerationEndpointId(activity, capabilities),
 }

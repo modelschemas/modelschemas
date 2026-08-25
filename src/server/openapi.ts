@@ -176,7 +176,8 @@ export const openApiDocument = {
         ],
         responses: {
           '200': {
-            description: 'Model metadata with _links.schemas.',
+            description:
+              'Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), and _links.schema when bound.',
             content: { 'application/json': { schema: { type: 'object' } } },
           },
           '404': errorResponse,
@@ -237,7 +238,8 @@ export const openApiDocument = {
             name: 'endpointId',
             in: 'path',
             required: true,
-            description: 'Endpoint id (path-derived; URL-encode slashes).',
+            description:
+              "Path-derived endpoint id (URL-encode slashes), or a listed model rawId/slug which aliases onto that activity's generation route and pins the request `model` field.",
             schema: { type: 'string' },
           },
           {
