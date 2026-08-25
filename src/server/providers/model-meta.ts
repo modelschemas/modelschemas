@@ -158,3 +158,76 @@ export function geminiGenerationEndpointId(
       return null
   }
 }
+
+function outputModalities(value: unknown): Array<string> {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+/**
+ * OpenRouter activity from architecture.output_modalities. Video and
+ * embeddings are unique; image/audio only win when text is absent so
+ * GPT-4o-style image-capable chat stays in chat.
+ */
+export function openrouterModelActivity(output: unknown): Activity {
+  const out = outputModalities(output).map((item) => item.toLowerCase())
+  if (out.includes('video')) return 'video'
+  if (out.includes('embedding') || out.includes('embeddings')) {
+    return 'embeddings'
+  }
+  if (out.includes('image') && !out.includes('text')) return 'image'
+  if (out.includes('audio') && !out.includes('text')) return 'audio'
+  return 'chat'
+}
+
+/**
+ * OpenRouter generation route. Video models have a synthesised per-id
+ * path; image has no classified generation route on the spec.
+ */
+export function openrouterGenerationEndpointId(
+  rawId: string,
+  activity: Activity,
+): string | null {
+  switch (activity) {
+    case 'video':
+      return `videos/${rawId}`
+    case 'chat':
+      return 'chat/completions'
+    case 'embeddings':
+      return 'embeddings'
+    case 'audio':
+      return 'audio/speech'
+    default:
+      return null
+  }
+}
+
+/** BFL model ids are the path suffix (`flux-2-pro` → `/v1/flux-2-pro`). */
+export function bflModelActivity(rawId: string): Activity {
+  return rawId.toLowerCase().includes('video') ? 'video' : 'image'
+}
+
+export function bflGenerationEndpointId(rawId: string): string {
+  return `v1/${rawId}`
+}
+
+/** BytePlus Ark/Seed Speech generation routes. ASR vs TTS split on the id. */
+export function byteplusGenerationEndpointId(
+  rawId: string,
+  activity: Activity,
+): string | null {
+  switch (activity) {
+    case 'chat':
+      return 'chat/completions'
+    case 'image':
+      return 'images/generations'
+    case 'video':
+      return 'contents/generations/tasks'
+    case 'audio':
+      return /asr|recognize/i.test(rawId)
+        ? 'auc/bigmodel/recognize/flash'
+        : 'tts/create'
+    default:
+      return null
+  }
+}

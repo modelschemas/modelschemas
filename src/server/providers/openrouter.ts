@@ -7,6 +7,10 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
+import {
+  openrouterGenerationEndpointId,
+  openrouterModelActivity,
+} from './model-meta.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
@@ -254,6 +258,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
     models: (body.data ?? []).map((m) => ({
       rawId: m.id,
       displayName: m.name ?? null,
+      activity: openrouterModelActivity(m.architecture?.output_modalities),
       releasedAt: m.created ?? null,
       contextWindow: m.context_length ?? null,
       maxOutput: m.top_provider?.max_completion_tokens ?? null,
@@ -278,4 +283,6 @@ export const openrouterProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId, activity }) =>
+    openrouterGenerationEndpointId(rawId, activity),
 }

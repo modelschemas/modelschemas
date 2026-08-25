@@ -1081,3 +1081,7 @@ Design settled with Tom (don't relitigate):
       id so a Run form can be built the same way as for FAL. Validate
       accepts the same alias. `?format=types` overlays same-activity catalog
       ids (falling back to the full list when activity is still null).
+      Follow-up on the same PR: OpenRouter activity from
+      `architecture.output_modalities` (video → synthesised `videos/{id}`;
+      image-only has no classified route); BFL `v1/{rawId}`; BytePlus
+      chat/image/video plus Seed Speech TTS vs ASR.

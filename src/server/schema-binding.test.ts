@@ -32,6 +32,27 @@ describe('resolveSchemaEndpointId', () => {
         activity: 'chat',
       }),
     ).toBe('v1/messages')
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'openrouter',
+        rawId: 'google/veo-3.1',
+        activity: 'video',
+      }),
+    ).toBe('videos/google/veo-3.1')
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'bfl',
+        rawId: 'flux-2-pro',
+        activity: 'image',
+      }),
+    ).toBe('v1/flux-2-pro')
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'byteplus',
+        rawId: 'seedream-5-0-260128',
+        activity: 'image',
+      }),
+    ).toBe('images/generations')
   })
 
   it('uses the raw id for model-grained providers and null when unbound', () => {

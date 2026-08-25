@@ -51,6 +51,7 @@ import {
   bytePlusArkSpec,
   bytePlusVoiceSpec,
 } from './byteplus-spec.ts'
+import { byteplusGenerationEndpointId } from './model-meta.ts'
 import { byteplusIdSuffixDate } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
@@ -460,4 +461,6 @@ export const byteplusProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId, activity }) =>
+    byteplusGenerationEndpointId(rawId, activity),
 }

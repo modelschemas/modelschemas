@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  bflGenerationEndpointId,
+  bflModelActivity,
+  byteplusGenerationEndpointId,
   displayNameFromRawId,
   geminiGenerationEndpointId,
   grokGenerationEndpointId,
   grokModelActivity,
   openaiGenerationEndpointId,
   openaiModelActivity,
+  openrouterGenerationEndpointId,
+  openrouterModelActivity,
 } from './model-meta.ts'
 
 describe('displayNameFromRawId', () => {
@@ -111,6 +116,53 @@ describe('generation endpoint ids', () => {
     )
     expect(geminiGenerationEndpointId('embeddings', ['embedContent'])).toBe(
       'v1beta/models/{modelsId}:embedContent',
+    )
+  })
+
+  it('derives OpenRouter activity from output modalities', () => {
+    expect(openrouterModelActivity(['video'])).toBe('video')
+    expect(openrouterModelActivity(['image'])).toBe('image')
+    expect(openrouterModelActivity(['text', 'image'])).toBe('chat')
+    expect(openrouterModelActivity(['embeddings'])).toBe('embeddings')
+    expect(openrouterModelActivity(['audio'])).toBe('audio')
+    expect(openrouterModelActivity(['text'])).toBe('chat')
+    expect(openrouterModelActivity(undefined)).toBe('chat')
+  })
+
+  it('binds OpenRouter video onto the per-model synthesised path', () => {
+    expect(openrouterGenerationEndpointId('google/veo-3.1', 'video')).toBe(
+      'videos/google/veo-3.1',
+    )
+    expect(openrouterGenerationEndpointId('openai/gpt-4o', 'chat')).toBe(
+      'chat/completions',
+    )
+    expect(
+      openrouterGenerationEndpointId('black-forest-labs/flux.2-pro', 'image'),
+    ).toBeNull()
+  })
+
+  it('binds BFL model ids onto /v1/{rawId}', () => {
+    expect(bflModelActivity('flux-2-pro')).toBe('image')
+    expect(bflModelActivity('flux-3-video')).toBe('video')
+    expect(bflGenerationEndpointId('flux-2-pro')).toBe('v1/flux-2-pro')
+    expect(bflGenerationEndpointId('flux-3-video')).toBe('v1/flux-3-video')
+  })
+
+  it('binds BytePlus activities, splitting Seed Speech ASR vs TTS', () => {
+    expect(byteplusGenerationEndpointId('seed-2-0-pro-260328', 'chat')).toBe(
+      'chat/completions',
+    )
+    expect(byteplusGenerationEndpointId('seedream-5-0-260128', 'image')).toBe(
+      'images/generations',
+    )
+    expect(
+      byteplusGenerationEndpointId('seedance-1-0-pro-250528', 'video'),
+    ).toBe('contents/generations/tasks')
+    expect(byteplusGenerationEndpointId('seed-audio-1.0', 'audio')).toBe(
+      'tts/create',
+    )
+    expect(byteplusGenerationEndpointId('seed-asr', 'audio')).toBe(
+      'auc/bigmodel/recognize/flash',
     )
   })
 })

@@ -6,6 +6,7 @@
  * back to path-derived ids. Auth header is `x-key`.
  */
 import type { Activity } from '#/db/schema.ts'
+import { bflGenerationEndpointId, bflModelActivity } from '../model-meta.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -91,6 +92,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       .filter((m) => typeof m.id === 'string' && m.id.length > 0)
       .map((m) => ({
         rawId: m.id as string,
+        activity: bflModelActivity(m.id as string),
         releasedAt: m.created ?? null,
       }))
     if (models.length > 0) return { models }
@@ -110,4 +112,5 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId }) => bflGenerationEndpointId(rawId),
 }

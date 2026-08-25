@@ -75,7 +75,13 @@ describe('bfl listModels', () => {
     try {
       const result = await provider.listModels({ BFL_API_KEY: 'test-key' })
       expect(result).toEqual({
-        models: [{ rawId: 'flux-2-pro', releasedAt: 1_700_000_000 }],
+        models: [
+          {
+            rawId: 'flux-2-pro',
+            activity: 'image',
+            releasedAt: 1_700_000_000,
+          },
+        ],
       })
     } finally {
       globalThis.fetch = original
