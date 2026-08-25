@@ -169,7 +169,65 @@ describe('provider-scoped queries', () => {
     expect(bySlug?.id).toBe('cat-beta-chatter')
     expect(byRaw?.id).toBe('cat-beta-chatter')
     expect(byRaw?._links.schemas.href).toBe('/v1/schemas/cat-beta')
+    expect(byRaw?.schemaEndpointId).toBeNull()
     expect(await getModelDetail(db, 'cat-beta', 'missing')).toBeNull()
+  })
+
+  it('binds grain=provider models to a generation route and FAL to its raw id', async () => {
+    await db
+      .insert(providers)
+      .values([
+        {
+          id: 'grok',
+          displayName: 'xAI Grok',
+          specSourceUrl: 'https://example.com/g.json',
+        },
+        {
+          id: 'fal',
+          displayName: 'FAL',
+          specSourceUrl: 'https://example.com/f.json',
+        },
+      ])
+      .onConflictDoNothing()
+    await db.insert(models).values([
+      {
+        id: 'grok-grok-imagine-image-2-0',
+        providerId: 'grok',
+        rawId: 'grok-imagine-image-2.0',
+        activity: 'image',
+        displayName: 'Grok Imagine Image 2.0',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'fal-xai-grok-imagine',
+        providerId: 'fal',
+        rawId: 'xai/grok-imagine-image/v2.0/text-to-image',
+        activity: 'image',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+    ])
+
+    const grok = await getModelDetail(db, 'grok', 'grok-imagine-image-2.0')
+    expect(grok?.schemaEndpointId).toBe('v1/images/generations')
+    expect(grok?._links.schema).toMatchObject({
+      href: '/v1/schemas/grok/image/v1/images/generations',
+      method: 'GET',
+    })
+    expect(
+      (await listModelsCatalog(db, { provider: 'grok', activity: 'image' }))
+        .models,
+    ).toHaveLength(1)
+
+    const fal = await getModelDetail(
+      db,
+      'fal',
+      'xai/grok-imagine-image/v2.0/text-to-image',
+    )
+    expect(fal?.schemaEndpointId).toBe(
+      'xai/grok-imagine-image/v2.0/text-to-image',
+    )
   })
 
   it('lists providers with status and links', async () => {

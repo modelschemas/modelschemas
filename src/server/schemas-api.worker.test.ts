@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
-import { endpoints, providers, schemaVersions } from '../db/schema.ts'
+import { endpoints, models, providers, schemaVersions } from '../db/schema.ts'
 import {
   getActivitySchemaMap,
   getEndpointSchema,
@@ -201,6 +201,81 @@ describe('getEndpointSchema', () => {
         'input',
         'deadbeef',
       ),
+    ).toBeNull()
+  })
+
+  it('aliases a grok model rawId onto the shared generation route and pins model', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'grok',
+        displayName: 'xAI Grok',
+        specSourceUrl: 'https://example.com/g.json',
+      })
+      .onConflictDoNothing()
+    await db.insert(endpoints).values({
+      id: 'grok/v1/images/generations',
+      providerId: 'grok',
+      activity: 'image',
+      method: 'POST',
+      path: '/v1/images/generations',
+    })
+    const imageInput = {
+      type: 'object',
+      properties: {
+        model: { type: 'string', example: 'grok-imagine-image' },
+        prompt: { type: 'string' },
+      },
+    }
+    await db.insert(schemaVersions).values({
+      id: 'grok/v1/images/generations:input:current',
+      endpointId: 'grok/v1/images/generations',
+      kind: 'input',
+      contentHash: 'c'.repeat(64),
+      schema: JSON.stringify(imageInput),
+      createdAt: NOW,
+    })
+    await db.insert(models).values({
+      id: 'grok-grok-imagine-image-2-0',
+      providerId: 'grok',
+      rawId: 'grok-imagine-image-2.0',
+      activity: 'image',
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    })
+
+    const aliased = await getEndpointSchema(
+      db,
+      'grok',
+      'image',
+      'grok-imagine-image-2.0',
+    )
+    expect(aliased?.endpointId).toBe('v1/images/generations')
+    expect(aliased?.aliasedFrom).toBe('grok-imagine-image-2.0')
+    expect(aliased?.contentHash).toBe('c'.repeat(64))
+    expect(aliased?.schema).toEqual({
+      type: 'object',
+      properties: {
+        model: {
+          type: 'string',
+          example: 'grok-imagine-image-2.0',
+          enum: ['grok-imagine-image-2.0'],
+        },
+        prompt: { type: 'string' },
+      },
+    })
+
+    const direct = await getEndpointSchema(
+      db,
+      'grok',
+      'image',
+      'v1/images/generations',
+    )
+    expect(direct?.aliasedFrom).toBeUndefined()
+    expect(direct?.schema).toEqual(imageInput)
+
+    expect(
+      await getEndpointSchema(db, 'grok', 'chat', 'grok-imagine-image-2.0'),
     ).toBeNull()
   })
 })

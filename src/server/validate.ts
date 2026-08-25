@@ -8,7 +8,8 @@ import { and, eq, isNull } from 'drizzle-orm'
 import type { Schema } from '@cfworker/json-schema'
 
 import type { Db } from '#/db/index.ts'
-import { endpoints, schemaVersions } from '#/db/schema.ts'
+import { schemaVersions } from '#/db/schema.ts'
+import { resolveEndpointAlias } from '#/server/schema-binding.ts'
 
 export interface ValidateRequestBody {
   provider: string
@@ -62,12 +63,12 @@ export async function validatePayload(
   body: ValidateRequestBody,
 ): Promise<ValidateOutcome> {
   const kind = body.kind ?? 'input'
-  const dbId = `${body.provider}/${body.endpointId}`
-
-  const endpoint = await db.query.endpoints.findFirst({
-    where: eq(endpoints.id, dbId),
-  })
-  if (!endpoint) {
+  const resolved = await resolveEndpointAlias(
+    db,
+    body.provider,
+    body.endpointId,
+  )
+  if (!resolved) {
     return {
       ok: false,
       status: 404,
@@ -78,7 +79,7 @@ export async function validatePayload(
 
   const version = await db.query.schemaVersions.findFirst({
     where: and(
-      eq(schemaVersions.endpointId, dbId),
+      eq(schemaVersions.endpointId, resolved.dbId),
       eq(schemaVersions.kind, kind),
       isNull(schemaVersions.supersededAt),
     ),
@@ -88,7 +89,7 @@ export async function validatePayload(
       ok: false,
       status: 404,
       code: 'no_schema',
-      message: `No current ${kind} schema for endpoint '${body.endpointId}' (${body.provider}). It may stream binary media or not be synced yet — check GET /v1/schemas/${body.provider}/${endpoint.activity}.`,
+      message: `No current ${kind} schema for endpoint '${resolved.publicId}' (${body.provider}). It may stream binary media or not be synced yet — check GET /v1/schemas/${body.provider}/${resolved.activity}.`,
     }
   }
 
@@ -106,7 +107,7 @@ export async function validatePayload(
         keyword: e.keyword,
       })),
       provider: body.provider,
-      endpointId: body.endpointId,
+      endpointId: resolved.publicId,
       kind,
       contentHash: version.contentHash,
     },

@@ -5,6 +5,11 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
+import {
+  displayNameFromRawId,
+  grokGenerationEndpointId,
+  grokModelActivity,
+} from './model-meta.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -65,6 +70,8 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   return {
     models: (body.data ?? []).map((m) => ({
       rawId: m.id,
+      displayName: displayNameFromRawId(m.id),
+      activity: grokModelActivity(m.id),
       releasedAt: m.created ?? null,
     })),
   }
@@ -80,4 +87,5 @@ export const grokProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity }) => grokGenerationEndpointId(activity),
 }

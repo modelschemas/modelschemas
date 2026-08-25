@@ -7,7 +7,7 @@ import type { Activity } from '#/db/schema.ts'
 import { jsonError } from '#/server/admin.ts'
 import { swr } from '#/server/cache.ts'
 import { cachedJson, cachedText } from '#/server/http-cache.ts'
-import { listModelsCatalog } from '#/server/catalog.ts'
+import { getModelDetail, listModelsCatalog } from '#/server/catalog.ts'
 import { getEndpointSchema, knownEndpointIds } from '#/server/schemas-api.ts'
 import { emitTypesModule, modelIdsKey, typesEtag } from '#/server/typegen.ts'
 
@@ -70,12 +70,19 @@ export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
         )
         if (result.value === null) {
           const valid = await knownEndpointIds(db, params.provider, activity)
+          const model = await getModelDetail(db, params.provider, endpointId)
+          const modelHint =
+            model?.activity !== null &&
+            model?.activity !== undefined &&
+            model.activity !== activity
+              ? ` Model '${model.rawId}' is activity '${model.activity}', not '${activity}'.`
+              : ''
           return jsonError(
             404,
             'unknown_schema',
-            `No ${kindParam} schema${version ? ` at version '${version}'` : ''} for endpoint '${endpointId}' (${params.provider}/${activity}). ` +
+            `No ${kindParam} schema${version ? ` at version '${version}'` : ''} for endpoint '${endpointId}' (${params.provider}/${activity}).${modelHint} ` +
               (valid.length > 0
-                ? `Valid endpoint ids: ${valid.join(', ')}.`
+                ? `Valid endpoint ids: ${valid.join(', ')}. A listed model rawId also aliases onto that activity's generation route.`
                 : `No endpoints synced for this provider/activity yet — try POST /v1/admin/sync/${params.provider} or check /v1/status.`),
           )
         }
@@ -92,19 +99,29 @@ export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
             typeof record.properties === 'object' &&
             record.properties !== null &&
             'model' in record.properties
-          // Provider-wide catalog: many listModels implementations leave
-          // `activity` null, so filtering by the schema's activity would
-          // skip the overlay and leave `model: string`.
-          const modelIds = overlayModel
-            ? (
-                await listModelsCatalog(db, {
-                  provider: params.provider,
-                })
-              ).models.map((m) => m.rawId)
+          // Prefer same-activity ids so an image schema isn't unioned with
+          // chat models. Providers that still leave activity null fall back
+          // to the full catalog (otherwise the overlay would be empty).
+          const catalog = overlayModel
+            ? await listModelsCatalog(db, { provider: params.provider })
             : undefined
+          const matching =
+            catalog === undefined
+              ? undefined
+              : catalog.models.filter((row) => row.activity === activity)
+          const overlayIds =
+            catalog === undefined
+              ? undefined
+              : matching !== undefined && matching.length > 0
+                ? matching
+                : catalog.models
+          const modelIds =
+            result.value.aliasedFrom !== undefined
+              ? [result.value.aliasedFrom]
+              : overlayIds?.map((m) => m.rawId)
           const text = emitTypesModule({
             provider: params.provider,
-            endpointId,
+            endpointId: result.value.endpointId,
             kind: kindParam,
             contentHash: result.value.contentHash,
             schema: record,
@@ -123,7 +140,11 @@ export const Route = createFileRoute('/v1/schemas/$provider/$activity/$')({
           })
         }
         return cachedJson(request, result.value, {
-          etag: result.value.contentHash,
+          // Aliased (model-id) reads pin `model` on the body; hash that
+          // view so two models sharing a route don't 304 each other.
+          ...(result.value.aliasedFrom === undefined
+            ? { etag: result.value.contentHash }
+            : {}),
           fetchedAt: result.fetchedAt,
           staleAt: result.staleAt,
         })

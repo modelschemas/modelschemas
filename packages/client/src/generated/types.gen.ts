@@ -199,7 +199,7 @@ export type GetModelError = GetModelErrors[keyof GetModelErrors]
 
 export type GetModelResponses = {
   /**
-   * Model metadata with _links.schemas.
+   * Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), and _links.schema when bound.
    */
   200: {
     [key: string]: unknown
@@ -311,7 +311,7 @@ export type GetSchemaData = {
      */
     activity: 'chat' | 'image' | 'video' | 'audio' | 'embeddings' | 'moderation'
     /**
-     * Endpoint id (path-derived; URL-encode slashes).
+     * Path-derived endpoint id (URL-encode slashes), or a listed model rawId/slug which aliases onto that activity's generation route and pins the request `model` field.
      */
     endpointId: string
   }

@@ -32,7 +32,8 @@ availability and schema questions.
    - \`GET /v1/schemas/{provider}\` — endpoint ids per activity
    - \`GET /v1/schemas/{provider}/{activity}/{endpointId}?kind=input\` — a
      self-contained JSON Schema (URL-encode slashes in endpoint ids:
-     \`chat%2Fcompletions\`)
+     \`chat%2Fcompletions\`). A listed model rawId also works as
+     \`{endpointId}\` on grain=provider catalogs.
    - \`GET /v1/openapi/{provider}\` — connectable generation OpenAPI
      (FAL, currently the only model-grained provider, requires \`?model=\`)
 3. **Authenticate for more** (5k req/h + webhooks). Easiest: the CLI —

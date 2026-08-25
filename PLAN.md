@@ -1060,3 +1060,24 @@ Design settled with Tom (don't relitigate):
       `limits.cpu_ms` raised to 300s (ceiling, not floor) for FAL's
       1,400-spec parse+hash. Models poll unchanged: it's already batched,
       time-sensitive (15-min freshness), and carries the webhook drain.
+
+## Phase 18 — grain=provider model activity + route binding (issue #50)
+
+- [x] **18.1 Activity + displayName on grain=provider catalog rows.** Grok
+      and OpenAI `/models` payloads are `id` + `created` only, so every row
+      listed `activity: null` and `GET /v1/models?provider=grok&activity=image`
+      returned empty. Derive activity from the raw id (Grok Imagine
+      image/video/voice vs chat; OpenAI `gpt-image`/`sora`/`whisper`/`tts`
+      before the `gpt-` chat default) and a display name from the id.
+      Anthropic listed models are `chat`. Persisted by the 15-min poller
+      like Gemini already was.
+- [x] **18.2 Bind each model to its generation route schema.** Catalog rows
+      gain `schemaEndpointId` (and `_links.schema`) pointing at the shared
+      HTTP route — `v1/images/generations` for Grok Imagine image,
+      `images/generations` for `gpt-image-2`, `v1/messages` for Anthropic,
+      Gemini's `:predict` / `:generateContent` / `:predictLongRunning`.
+      Model-grained FAL falls back to the raw id. `GET /v1/schemas/{p}/{activity}/{rawId}`
+      aliases onto that route and pins the request `model` field to the one
+      id so a Run form can be built the same way as for FAL. Validate
+      accepts the same alias. `?format=types` overlays same-activity catalog
+      ids (falling back to the full list when activity is still null).

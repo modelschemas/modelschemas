@@ -11,6 +11,7 @@ import type { Db } from '#/db/index.ts'
 import { endpoints, providers, schemaVersions } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
+import { pinModelField, resolveEndpointAlias } from '#/server/schema-binding.ts'
 
 export function publicEndpointId(dbId: string, providerId: string): string {
   return dbId.startsWith(`${providerId}/`)
@@ -203,6 +204,11 @@ export interface EndpointSchemaResult {
   createdAt: number
   supersededAt: number | null
   schema: unknown
+  /**
+   * Set when `{endpointId}` was a listed model rawId/slug aliased onto
+   * the canonical generation route. The served `endpointId` is that route.
+   */
+  aliasedFrom?: string
 }
 
 /**
@@ -218,15 +224,17 @@ export async function getEndpointSchema(
   kind: 'input' | 'output' = 'input',
   version?: string,
 ): Promise<EndpointSchemaResult | null> {
-  const dbId = `${providerId}/${endpointId}`
-  const endpoint = await db.query.endpoints.findFirst({
-    where: and(eq(endpoints.id, dbId), eq(endpoints.activity, activity)),
-  })
-  if (!endpoint) return null
+  const resolved = await resolveEndpointAlias(
+    db,
+    providerId,
+    endpointId,
+    activity,
+  )
+  if (!resolved) return null
 
   const row = await db.query.schemaVersions.findFirst({
     where: and(
-      eq(schemaVersions.endpointId, dbId),
+      eq(schemaVersions.endpointId, resolved.dbId),
       eq(schemaVersions.kind, kind),
       version !== undefined
         ? eq(schemaVersions.contentHash, version)
@@ -235,10 +243,16 @@ export async function getEndpointSchema(
   })
   if (!row) return null
 
+  const schema = JSON.parse(row.schema) as unknown
+  const pinned =
+    resolved.pinRawId !== null && kind === 'input'
+      ? pinModelField(schema, resolved.pinRawId)
+      : schema
+
   return {
     provider: providerId,
     activity,
-    endpointId,
+    endpointId: resolved.publicId,
     kind,
     contentHash: row.contentHash,
     specRevision: row.specRevision,
@@ -252,7 +266,8 @@ export async function getEndpointSchema(
     },
     createdAt: row.createdAt,
     supersededAt: row.supersededAt,
-    schema: JSON.parse(row.schema) as unknown,
+    schema: pinned,
+    ...(resolved.pinRawId !== null ? { aliasedFrom: resolved.pinRawId } : {}),
   }
 }
 

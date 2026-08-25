@@ -14,9 +14,14 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
 ## Why use this
 
 - Discover which models exist *right now*, across providers, by activity
-  (chat, image, video, audio, embeddings, moderation).
+  (chat, image, video, audio, embeddings, moderation). Grain=provider
+  catalogs (Grok, OpenAI, …) set \`activity\` on each row and
+  \`schemaEndpointId\` pointing at the shared generation route
+  (\`v1/images/generations\`, \`images/generations\`, …).
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
+  A listed model rawId also works as \`{endpointId}\`: it aliases onto that
+  route and pins the request \`model\` field to the one id.
 - Validate a payload server-side before spending tokens on a provider call.
 - Poll /v1/changes (or subscribe via webhooks) to hear about new models and
   API revisions.
@@ -30,6 +35,8 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
 4. GET /v1/schemas/anthropic — activities + endpoint ids for one provider.
 5. GET /v1/schemas/anthropic/chat/{endpointId}?kind=input — the JSON Schema
    for a request body (endpoint ids contain slashes; URL-encode them).
+   Grain=provider models also accept the raw id:
+   \`/v1/schemas/grok/image/grok-imagine-image-2.0?kind=input\`.
 6. GET /v1/openapi/{provider} — generation-only OpenAPI (servers, auth,
    paths). FAL requires ?model=. Over 40 endpoints, or a filter that
    matches none: 400 spec_requires_selector. HTTP only (no MCP tool).

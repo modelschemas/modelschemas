@@ -246,6 +246,18 @@ export interface ProviderConfig {
    * surface — dropped from schema generation.
    */
   classify: (path: string, op: OpenApiOperation) => Activity | null
+  /**
+   * Canonical generation route (public endpoint id) for a listed model.
+   * Grain=provider catalogs use this so a client can go model id → input
+   * schema without hardcoding `v1/images/generations`. Omitted providers
+   * have no model→route binding unless they are model-grained (the raw
+   * id *is* the endpoint id).
+   */
+  generationEndpointId?: (model: {
+    rawId: string
+    activity: Activity
+    capabilities?: unknown
+  }) => string | null
 }
 
 /** Fetch a JSON or YAML OpenAPI document and hash the raw bytes. */

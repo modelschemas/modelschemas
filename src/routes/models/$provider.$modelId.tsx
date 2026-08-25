@@ -56,10 +56,15 @@ const getModelDetail = createServerFn({ method: 'GET' })
     const all: Array<EndpointLink> = Object.entries(index.activities).flatMap(
       ([activity, ids]) => ids.map((endpointId) => ({ activity, endpointId })),
     )
-    // Aggregator providers expose one endpoint per model; matching on the
-    // rawId keeps the list to this model instead of the whole catalog.
-    const matching = all.filter((e) => e.endpointId.includes(model.rawId))
-    const endpointsFiltered = all.length > 40 && matching.length > 0
+    const boundId =
+      typeof model.schemaEndpointId === 'string' ? model.schemaEndpointId : null
+    // Prefer the bound generation route; aggregator providers (FAL) match
+    // on rawId. Fall back to the provider's first 40 endpoints.
+    const matching = boundId
+      ? all.filter((e) => e.endpointId === boundId)
+      : all.filter((e) => e.endpointId.includes(model.rawId))
+    const endpointsFiltered =
+      matching.length > 0 && matching.length < all.length
     return {
       // drizzle json columns are typed unknown; the values are plain JSON
       model: model as unknown as SerializableModel,
@@ -189,6 +194,18 @@ function ModelDetail() {
                       {model.activity ?? (
                         <span className="text-ink-faint">
                           not declared by the provider
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="font-mono text-xs text-ink-faint">
+                      schemaEndpointId
+                    </td>
+                    <td className="font-mono text-[12.5px]">
+                      {model.schemaEndpointId ?? (
+                        <span className="text-ink-faint">
+                          no bound generation route
                         </span>
                       )}
                     </td>

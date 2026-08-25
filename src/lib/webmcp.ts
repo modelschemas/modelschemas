@@ -63,7 +63,7 @@ export const WEBMCP_TOOLS: Array<WebMcpToolDefinition> = [
         endpointId: {
           type: 'string',
           description:
-            "Path-derived id, e.g. 'v1/messages' or 'chat/completions'.",
+            "Path-derived id (e.g. 'v1/messages' or 'chat/completions') or a listed model rawId, which aliases onto that activity's generation route.",
         },
         kind: { type: 'string', enum: ['input', 'output'] },
         version: {
