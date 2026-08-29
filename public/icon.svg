@@ -1,16 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="modelschemas">
-  <rect width="64" height="64" rx="14" fill="#14171c"/>
-  <!-- left brace -->
-  <path d="M25 13 C20 13 18.5 16 18.5 20 L18.5 26 C18.5 29.5 16.5 31.5 13.5 32 C16.5 32.5 18.5 34.5 18.5 38 L18.5 44 C18.5 48 20 51 25 51"
-        fill="none" stroke="#d5dae1" stroke-width="3.5" stroke-linecap="round"/>
-  <!-- right brace -->
-  <path d="M39 13 C44 13 45.5 16 45.5 20 L45.5 26 C45.5 29.5 47.5 31.5 50.5 32 C47.5 32.5 45.5 34.5 45.5 38 L45.5 44 C45.5 48 44 51 39 51"
-        fill="none" stroke="#d5dae1" stroke-width="3.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="9 9 46 46" width="64" height="64" role="img" aria-label="modelschemas">
+  <style>
+    .s { stroke: #23272d; }
+    .f { fill: #23272d; }
+    @media (prefers-color-scheme: dark) {
+      .s { stroke: #d5dae1; }
+      .f { fill: #d5dae1; }
+    }
+  </style>
+  <!-- braces -->
+  <path class="s" d="M25 13 C20 13 18.5 16 18.5 20 L18.5 26 C18.5 29.5 16.5 31.5 13.5 32 C16.5 32.5 18.5 34.5 18.5 38 L18.5 44 C18.5 48 20 51 25 51"
+        fill="none" stroke-width="3.5" stroke-linecap="round"/>
+  <path class="s" d="M39 13 C44 13 45.5 16 45.5 20 L45.5 26 C45.5 29.5 47.5 31.5 50.5 32 C47.5 32.5 45.5 34.5 45.5 38 L45.5 44 C45.5 48 44 51 39 51"
+        fill="none" stroke-width="3.5" stroke-linecap="round"/>
   <!-- typed schema fields: key dot + value dash per row -->
-  <circle cx="25.5" cy="22" r="2.8" fill="#8ab8f5"/>
-  <path d="M31 22 L38.5 22" stroke="#8ab8f5" stroke-width="3.2" stroke-linecap="round" opacity="0.55"/>
-  <circle cx="25.5" cy="32" r="2.8" fill="#94c99e"/>
-  <path d="M31 32 L36 32" stroke="#94c99e" stroke-width="3.2" stroke-linecap="round" opacity="0.55"/>
-  <circle cx="25.5" cy="42" r="2.8" fill="#d8ad6e"/>
-  <path d="M31 42 L38.5 42" stroke="#d8ad6e" stroke-width="3.2" stroke-linecap="round" opacity="0.55"/>
+  <circle class="f" cx="25.5" cy="22" r="2.8"/>
+  <path class="s" d="M31 22 L38.5 22" stroke-width="3.2" stroke-linecap="round" opacity="0.45"/>
+  <circle class="f" cx="25.5" cy="32" r="2.8"/>
+  <path class="s" d="M31 32 L36 32" stroke-width="3.2" stroke-linecap="round" opacity="0.45"/>
+  <circle class="f" cx="25.5" cy="42" r="2.8"/>
+  <path class="s" d="M31 42 L38.5 42" stroke-width="3.2" stroke-linecap="round" opacity="0.45"/>
 </svg>
