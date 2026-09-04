@@ -8,13 +8,20 @@
  * Activity comes from the model's `<source>-to-<target>` category, not the
  * path, so fetchSpec annotates every operation with FAL_ACTIVITY_MARKER and
  * classify reads it back.
+ *
+ * Listed models with a classifiable activity but no OpenAPI POST are probed
+ * for a WMA AsyncAPI contract (llms.txt `AsyncAPI Contract` link, then
+ * `/api/apps/{app}/asyncapi.json`). Misses do not fail the sync. Classic
+ * realtime apps that reuse HTTP OpenAPI over WebSocket are not AsyncAPI.
  */
 import type { Activity } from '#/db/schema.ts'
 import { activities } from '#/db/schema.ts'
+import { extractAsyncApiSchemas } from '#/server/ingest/asyncapi.ts'
 import { contentHash } from '#/server/kv.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
-import { skippedResult } from './types.ts'
+import { sha256Text, skippedResult } from './types.ts'
 import type {
+  BundledEndpoint,
   ListModelsResult,
   ModelInfo,
   OpenApiDocument,
@@ -182,6 +189,90 @@ function annotateOperations(spec: OpenApiDocument, activity: Activity): void {
   }
 }
 
+function hasPostOperation(spec: OpenApiDocument): boolean {
+  for (const operations of Object.values(spec.paths ?? {})) {
+    if (operations.post) return true
+  }
+  return false
+}
+
+/** `minimax/h3-max/director` → `fal-ai/minimax-h3-max-director`. */
+export function falAppSlug(rawId: string): string {
+  return `fal-ai/${rawId.replaceAll('/', '-')}`
+}
+
+export function falAsyncApiUrl(rawId: string): string {
+  return `https://fal.ai/api/apps/${falAppSlug(rawId)}/asyncapi.json`
+}
+
+export function falLlmsTxtUrl(rawId: string): string {
+  return `https://fal.ai/models/${rawId}/llms.txt`
+}
+
+const ASYNCAPI_CONTRACT_LINK = /\[AsyncAPI Contract\]\((https?:\/\/[^)\s]+)\)/i
+
+export function parseAsyncApiContractUrl(llmsTxt: string): string | null {
+  const match = ASYNCAPI_CONTRACT_LINK.exec(llmsTxt)
+  return match?.[1] ?? null
+}
+
+async function fetchTextOrNull(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    return await response.text()
+  } catch {
+    return null
+  }
+}
+
+async function discoverAsyncApiDocument(
+  rawId: string,
+): Promise<{ url: string; text: string } | null> {
+  const llms = await fetchTextOrNull(falLlmsTxtUrl(rawId))
+  const fromLlms = llms ? parseAsyncApiContractUrl(llms) : null
+  const candidates = [...new Set([fromLlms, falAsyncApiUrl(rawId)])].filter(
+    (url): url is string => typeof url === 'string' && url.length > 0,
+  )
+  for (const url of candidates) {
+    const text = await fetchTextOrNull(url)
+    if (text === null) continue
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'asyncapi' in parsed &&
+        typeof parsed.asyncapi === 'string'
+      ) {
+        return { url, text }
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+function asyncApiDescription(document: unknown, rawId: string): string | null {
+  if (typeof document !== 'object' || document === null) {
+    return `AsyncAPI ${rawId}`
+  }
+  const info =
+    'info' in document &&
+    typeof document.info === 'object' &&
+    document.info !== null
+      ? document.info
+      : null
+  if (info && 'title' in info && typeof info.title === 'string') {
+    return info.title
+  }
+  if (info && 'description' in info && typeof info.description === 'string') {
+    return info.description
+  }
+  return `AsyncAPI ${rawId}`
+}
+
 async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
   const apiKey = env.FAL_KEY
   if (!apiKey) {
@@ -195,11 +286,13 @@ async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
   const models = await fetchFalModels(apiKey, true)
   const specs: Array<OpenApiDocument> = []
   const sources: Array<SpecSource> = []
+  const openApiPosted = new Set<string>()
   for (const model of models) {
     if (!model.openapi) continue
     const activity = falCategoryActivity(model.metadata.category)
     if (activity === null) continue
     const spec = model.openapi
+    if (hasPostOperation(spec)) openApiPosted.add(model.endpoint_id)
     // FAL specs arrive embedded in the models API response (no standalone
     // file URL), so provenance hashes the embedded document as delivered —
     // before our annotations below.
@@ -214,7 +307,51 @@ async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
     annotateOperations(spec, activity)
     specs.push(spec)
   }
-  return { specs, sources, outputStrategy: 'sibling-get' }
+
+  const bundledEndpoints: Array<BundledEndpoint> = []
+  const asyncApiRawIds: Array<string> = []
+  const warnings: Array<string> = []
+  for (const model of models) {
+    if (openApiPosted.has(model.endpoint_id)) continue
+    const activity = falCategoryActivity(model.metadata.category)
+    if (activity === null) continue
+    try {
+      const discovered = await discoverAsyncApiDocument(model.endpoint_id)
+      if (!discovered) continue
+      const document: unknown = JSON.parse(discovered.text)
+      const extracted = extractAsyncApiSchemas(document)
+      warnings.push(...extracted.warnings)
+      if (!extracted.input && !extracted.output) continue
+      bundledEndpoints.push({
+        path: `/${model.endpoint_id}`,
+        activity,
+        description: asyncApiDescription(document, model.endpoint_id),
+        source: {
+          url: discovered.url,
+          hash: await sha256Text(discovered.text),
+        },
+        derivation: 'upstream-spec',
+        input: extracted.input,
+        output: extracted.output,
+        asyncapi: true,
+      })
+      asyncApiRawIds.push(model.endpoint_id)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      warnings.push(
+        `fal ${model.endpoint_id}: asyncapi ingest failed: ${message}`,
+      )
+    }
+  }
+
+  return {
+    specs,
+    sources,
+    outputStrategy: 'sibling-get',
+    bundledEndpoints,
+    asyncApiRawIds,
+    ...(warnings.length > 0 ? { warnings } : {}),
+  }
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {

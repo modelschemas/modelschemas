@@ -376,6 +376,56 @@ describe('assembleProviderOpenApi', () => {
     expect(overCap.message).toContain('?activity=')
   })
 
+  it('refuses OpenAPI assembly for AsyncAPI-flagged FAL models', async () => {
+    await db
+      .insert(models)
+      .values({
+        id: 'fal-minimax-h3-max-director',
+        providerId: 'fal',
+        rawId: 'minimax/h3-max/director',
+        activity: 'video',
+        capabilities: { category: 'text-to-video', asyncapi: true },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      })
+      .onConflictDoNothing()
+    await db
+      .insert(endpoints)
+      .values({
+        id: 'fal/minimax/h3-max/director',
+        providerId: 'fal',
+        activity: 'video',
+        method: 'POST',
+        path: '/minimax/h3-max/director',
+      })
+      .onConflictDoNothing()
+    await db
+      .insert(schemaVersions)
+      .values({
+        id: 'fal/minimax/h3-max/director:input',
+        endpointId: 'fal/minimax/h3-max/director',
+        kind: 'input',
+        contentHash: 'aa'.repeat(32),
+        schema: JSON.stringify({
+          oneOf: [
+            { type: 'object', properties: { type: { const: 'configure' } } },
+          ],
+        }),
+        createdAt: NOW,
+      })
+      .onConflictDoNothing()
+
+    const result = await assembleProviderOpenApi(db, 'fal', {
+      model: 'minimax/h3-max/director',
+    })
+    expect(result).toMatchObject({
+      ok: false,
+      status: 404,
+      code: 'unknown_model',
+    })
+    if (!result.ok) expect(result.message).toContain('AsyncAPI')
+  })
+
   it('404s unknown provider and unknown model', async () => {
     expect(await assembleProviderOpenApi(db, 'nope')).toMatchObject({
       ok: false,
