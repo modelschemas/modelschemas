@@ -142,6 +142,24 @@ export interface SpecSource {
   hash: string
 }
 
+/**
+ * Already-extracted generation endpoint that is not an OpenAPI path
+ * (FAL WMA AsyncAPI). Merged into classifyAndBundle; not assembled into
+ * GET /v1/openapi/{provider}.
+ */
+export interface BundledEndpoint {
+  path: string
+  activity: Activity
+  description: string | null
+  source: SpecSource
+  derivation: Derivation
+  verifiedAt?: string | null
+  input?: Record<string, unknown>
+  output?: Record<string, unknown>
+  /** Catalog `capabilities.asyncapi` and skip HTTP OpenAPI assembly. */
+  asyncapi?: boolean
+}
+
 export interface SpecFetchResult {
   specs: Array<OpenApiDocument>
   /** Per-document provenance, index-aligned with `specs`. */
@@ -163,6 +181,16 @@ export interface SpecFetchResult {
   warnings?: Array<string>
   /** Set when the provider was skipped (e.g. missing secret); specs will be empty. */
   skipped?: string
+  /**
+   * Extra bundled endpoints (AsyncAPI) appended after OpenAPI classify.
+   */
+  bundledEndpoints?: Array<BundledEndpoint>
+  /**
+   * Listed model rawIds whose generation surface is AsyncAPI. Present
+   * (including `[]`) when the fetch evaluated that; omitted when skipped.
+   * Sync writes `capabilities.asyncapi` on matching catalog rows.
+   */
+  asyncApiRawIds?: Array<string>
 }
 
 export interface ListModelsResult {

@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchPageWithRetry } from './fal.ts'
+import directorAsyncApi from '../ingest/fixtures/fal-minimax-h3-max-director.asyncapi.json'
+import {
+  falAppSlug,
+  falAsyncApiUrl,
+  falLlmsTxtUrl,
+  falProvider,
+  fetchPageWithRetry,
+  parseAsyncApiContractUrl,
+} from './fal.ts'
 
 const PAGE = { models: [], has_more: false, next_cursor: null }
 
@@ -82,5 +90,198 @@ describe('fetchPageWithRetry', () => {
       withTimersFlushed(fetchPageWithRetry('https://x', 'key', 3)),
     ).rejects.toThrow('fal models fetch failed after 3 attempts: 429')
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+})
+
+const DIRECTOR_LLMS = [
+  '# H3 Max Director',
+  '- [OpenAPI Schema](https://fal.ai/api/openapi/queue/openapi.json?endpoint_id=minimax/h3-max/director)',
+  '- [AsyncAPI Contract](https://fal.ai/api/apps/fal-ai/minimax-h3-max-director/asyncapi.json)',
+].join('\n')
+
+const FLUX_OPENAPI = {
+  openapi: '3.0.0',
+  paths: {
+    '/fal-ai/flux/dev': {
+      post: {
+        requestBody: {
+          content: {
+            'application/json': { schema: { type: 'object' } },
+          },
+        },
+        responses: { '200': { content: {} } },
+      },
+    },
+  },
+}
+
+function jsonBody(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+describe('fal AsyncAPI discovery', () => {
+  const fetchMock = vi.fn<typeof fetch>()
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('maps raw ids to the apps asyncapi.json URL', () => {
+    expect(falAppSlug('minimax/h3-max/director')).toBe(
+      'fal-ai/minimax-h3-max-director',
+    )
+    expect(falAsyncApiUrl('minimax/h3-max/director')).toBe(
+      'https://fal.ai/api/apps/fal-ai/minimax-h3-max-director/asyncapi.json',
+    )
+    expect(falLlmsTxtUrl('minimax/h3-max/director')).toBe(
+      'https://fal.ai/models/minimax/h3-max/director/llms.txt',
+    )
+    expect(parseAsyncApiContractUrl(DIRECTOR_LLMS)).toBe(
+      'https://fal.ai/api/apps/fal-ai/minimax-h3-max-director/asyncapi.json',
+    )
+    expect(parseAsyncApiContractUrl('# no contract')).toBeNull()
+  })
+
+  it('probes AsyncAPI only for listed models with no OpenAPI POST', async () => {
+    fetchMock.mockImplementation((input) => {
+      const url = String(input)
+      if (url.startsWith('https://api.fal.ai/v1/models')) {
+        return Promise.resolve(
+          jsonBody({
+            models: [
+              {
+                endpoint_id: 'fal-ai/flux/dev',
+                openapi: FLUX_OPENAPI,
+                metadata: { category: 'text-to-image', display_name: 'Flux' },
+              },
+              {
+                endpoint_id: 'minimax/h3-max/director',
+                metadata: {
+                  category: 'text-to-video',
+                  display_name: 'H3 Max Director',
+                },
+              },
+              {
+                endpoint_id: 'ghost/no-spec',
+                metadata: { category: 'text-to-image' },
+              },
+              {
+                endpoint_id: 'fal-ai/trainer',
+                metadata: { category: 'training' },
+              },
+            ],
+            has_more: false,
+            next_cursor: null,
+          }),
+        )
+      }
+      if (url === falLlmsTxtUrl('minimax/h3-max/director')) {
+        return Promise.resolve(new Response(DIRECTOR_LLMS))
+      }
+      if (url === falAsyncApiUrl('minimax/h3-max/director')) {
+        return Promise.resolve(jsonBody(directorAsyncApi))
+      }
+      return Promise.resolve(new Response('nope', { status: 404 }))
+    })
+
+    const fetched = await falProvider.fetchSpec({ FAL_KEY: 'test-key' })
+    expect(fetched.skipped).toBeUndefined()
+    expect(fetched.specs).toHaveLength(1)
+    expect(fetched.specs[0]?.info?.['x-fal-endpoint-id']).toBe(
+      'fal-ai/flux/dev',
+    )
+    expect(fetched.asyncApiRawIds).toEqual(['minimax/h3-max/director'])
+    expect(fetched.bundledEndpoints).toHaveLength(1)
+    expect(fetched.bundledEndpoints?.[0]).toMatchObject({
+      path: '/minimax/h3-max/director',
+      activity: 'video',
+      asyncapi: true,
+      derivation: 'upstream-spec',
+      source: {
+        url: 'https://fal.ai/api/apps/fal-ai/minimax-h3-max-director/asyncapi.json',
+      },
+    })
+    const inputOneOf = fetched.bundledEndpoints?.[0]?.input?.oneOf
+    expect(Array.isArray(inputOneOf)).toBe(true)
+    if (Array.isArray(inputOneOf)) {
+      expect(inputOneOf.length).toBeGreaterThan(0)
+    }
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]))
+    expect(
+      urls.some((u) => u.includes('fal-ai/flux/dev') && u.includes('llms')),
+    ).toBe(false)
+    expect(urls.some((u) => u.includes('fal-ai-flux-dev'))).toBe(false)
+    expect(urls).toContain(falLlmsTxtUrl('minimax/h3-max/director'))
+    expect(urls).toContain(falLlmsTxtUrl('ghost/no-spec'))
+    expect(urls).not.toContain(falLlmsTxtUrl('fal-ai/trainer'))
+  })
+
+  it('falls back to the constructed asyncapi.json URL when llms.txt has no link', async () => {
+    fetchMock.mockImplementation((input) => {
+      const url = String(input)
+      if (url.startsWith('https://api.fal.ai/v1/models')) {
+        return Promise.resolve(
+          jsonBody({
+            models: [
+              {
+                endpoint_id: 'minimax/h3-max/director',
+                metadata: { category: 'text-to-video' },
+              },
+            ],
+            has_more: false,
+            next_cursor: null,
+          }),
+        )
+      }
+      if (url === falLlmsTxtUrl('minimax/h3-max/director')) {
+        return Promise.resolve(new Response('# no contract here'))
+      }
+      if (url === falAsyncApiUrl('minimax/h3-max/director')) {
+        return Promise.resolve(jsonBody(directorAsyncApi))
+      }
+      return Promise.resolve(new Response('nope', { status: 404 }))
+    })
+
+    const fetched = await falProvider.fetchSpec({ FAL_KEY: 'test-key' })
+    expect(fetched.asyncApiRawIds).toEqual(['minimax/h3-max/director'])
+    expect(fetched.bundledEndpoints?.[0]?.source.url).toBe(
+      falAsyncApiUrl('minimax/h3-max/director'),
+    )
+  })
+
+  it('does not fail the fetch when AsyncAPI is missing', async () => {
+    fetchMock.mockImplementation((input) => {
+      const url = String(input)
+      if (url.startsWith('https://api.fal.ai/v1/models')) {
+        return Promise.resolve(
+          jsonBody({
+            models: [
+              {
+                endpoint_id: 'ghost/no-spec',
+                metadata: { category: 'text-to-image' },
+              },
+            ],
+            has_more: false,
+            next_cursor: null,
+          }),
+        )
+      }
+      return Promise.resolve(new Response('nope', { status: 404 }))
+    })
+
+    const fetched = await falProvider.fetchSpec({ FAL_KEY: 'test-key' })
+    expect(fetched.skipped).toBeUndefined()
+    expect(fetched.specs).toEqual([])
+    expect(fetched.bundledEndpoints).toEqual([])
+    expect(fetched.asyncApiRawIds).toEqual([])
   })
 })
