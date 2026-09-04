@@ -3,19 +3,96 @@ import { describe, expect, it } from 'vitest'
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 
-import { REACTOR_DOCS_URL, REACTOR_PRICING_URL, provider } from './reactor.ts'
+import {
+  REACTOR_PRICING_URL,
+  extractOpenApiFromHtml,
+  modelApiPageUrl,
+  provider,
+} from './reactor.ts'
+
+const MINI_SPEC = {
+  openapi: '3.1.0',
+  info: { title: 'helios', version: 'v1.0.1' },
+  paths: {
+    '/events/set_prompt': {
+      post: {
+        operationId: 'set_prompt',
+        summary: 'Set the prompt',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['prompt'],
+                properties: { prompt: { type: 'string' } },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'ok',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { prompt: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/events/start': {
+      post: {
+        operationId: 'start',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { type: 'object', properties: {} },
+            },
+          },
+        },
+        responses: { '202': { description: 'accepted' } },
+      },
+    },
+  },
+  components: { schemas: {} },
+}
+
+function htmlWithSpec(spec: unknown): string {
+  const chunk = JSON.stringify(JSON.stringify(spec))
+  return `<!doctype html><script>self.__next_f.push([1,${chunk}])</script>`
+}
+
+describe('extractOpenApiFromHtml', () => {
+  it('reads the OpenAPI document out of a Next.js RSC string chunk', () => {
+    const extracted = extractOpenApiFromHtml(htmlWithSpec(MINI_SPEC))
+    expect(extracted?.info?.title).toBe('helios')
+    expect(extracted?.paths?.['/events/set_prompt']?.post).toBeDefined()
+  })
+
+  it('returns null when the page has no spec chunk', () => {
+    expect(extractOpenApiFromHtml('<html>nope</html>')).toBeNull()
+  })
+})
 
 describe('reactor classify', () => {
-  it('maps session + per-model command paths and drops platform', () => {
-    expect(provider.classify('/sessions', {})).toBe('video')
-    expect(provider.classify('/models/reactor/helios', {})).toBe('video')
-    expect(provider.classify('/models/x2', {})).toBe('video')
-    expect(provider.classify('/models/reactor/lingbot-world-2', {})).toBe(
+  it('maps namespaced model command paths and drops platform', () => {
+    expect(provider.classify('/reactor/helios', {})).toBe('video')
+    expect(provider.classify('/reactor/helios/events/set_prompt', {})).toBe(
       'video',
     )
+    expect(provider.classify('/x2/events/set_prompt', {})).toBe('video')
+    expect(
+      provider.classify('/reactor/happy-oyster-adventure/create_world', {}),
+    ).toBe('video')
     expect(provider.classify('/tokens', {})).toBeNull()
+    expect(provider.classify('/sessions', {})).toBeNull()
     expect(provider.classify('/pricing', {})).toBeNull()
-    expect(provider.classify('/models', {})).toBeNull()
   })
 })
 
@@ -59,14 +136,13 @@ describe('reactor listModels', () => {
     }
   })
 
-  it('falls back to the docs-derived catalog when /pricing fails', async () => {
+  it('falls back to the curated catalog when /pricing fails', async () => {
     const original = globalThis.fetch
     globalThis.fetch = () =>
       Promise.resolve(new Response('nope', { status: 500 }))
     try {
       const result = await provider.listModels({})
       expect(result.skipped).toBeUndefined()
-      expect(result.models.length).toBeGreaterThan(0)
       expect(result.models.map((m) => m.rawId)).toEqual(
         expect.arrayContaining([
           'reactor/helios',
@@ -82,63 +158,86 @@ describe('reactor listModels', () => {
 })
 
 describe('reactor fetchSpec', () => {
-  it('serves the embedded spec without touching the network', async () => {
+  it('extracts upstream OpenAPI from model API pages and namespaces paths', async () => {
     const original = globalThis.fetch
     const calls: Array<string> = []
     globalThis.fetch = ((url: string) => {
-      calls.push(String(url))
-      return Promise.reject(new Error('network should not be used'))
+      const href = String(url)
+      calls.push(href)
+      if (href === modelApiPageUrl('helios')) {
+        return Promise.resolve(
+          new Response(htmlWithSpec(MINI_SPEC), {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          }),
+        )
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
     }) as typeof fetch
     try {
       const fetched = await provider.fetchSpec({})
-      expect(calls).toEqual([])
+      expect(calls).toContain(modelApiPageUrl('helios'))
+      expect(calls).toContain(modelApiPageUrl('ltx'))
       expect(fetched.outputStrategy).toBe('post-200')
-      expect(fetched.sources[0]?.url).toBe(REACTOR_DOCS_URL)
-      expect(fetched.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
+      expect(fetched.warnings?.length).toBeGreaterThan(0)
+
+      const heliosSource = fetched.sources.find((s) =>
+        s.url.includes('helios/api#reactor/helios'),
+      )
+      expect(heliosSource?.hash).toMatch(/^[0-9a-f]{64}$/)
 
       const { endpoints, warnings } = classifyAndBundle(provider, fetched)
       expect(warnings).toEqual([])
       const byId = new Map(endpoints.map((e) => [e.dbId, e]))
-      expect(byId.get('reactor/sessions')?.activity).toBe('video')
-      expect(byId.get('reactor/models/reactor/helios')?.activity).toBe('video')
-      expect(byId.get('reactor/models/x2')?.activity).toBe('video')
-      expect(byId.has('reactor/tokens')).toBe(false)
-      expect(endpoints.length).toBeGreaterThanOrEqual(12)
-      expect(endpoints.every((e) => e.activity === 'video')).toBe(true)
-      expect(endpoints.every((e) => e.derivation === 'docs-derived')).toBe(true)
+      expect(byId.get('reactor/reactor/helios')?.activity).toBe('video')
+      expect(
+        byId.get('reactor/reactor/helios/events/set_prompt')?.activity,
+      ).toBe('video')
+      expect(byId.get('reactor/reactor/helios/events/start')?.activity).toBe(
+        'video',
+      )
+      expect(endpoints.every((e) => e.derivation === 'upstream-spec')).toBe(
+        true,
+      )
 
       for (const endpoint of endpoints) {
-        expect(endpoint.input, endpoint.dbId).toBeDefined()
-        expect(endpoint.output, endpoint.dbId).toBeDefined()
+        expect(endpoint.input ?? endpoint.output, endpoint.dbId).toBeDefined()
         if (endpoint.input) expect(findDanglingRefs(endpoint.input)).toEqual([])
         if (endpoint.output) {
           expect(findDanglingRefs(endpoint.output)).toEqual([])
         }
       }
 
-      const helios = byId.get('reactor/models/reactor/helios')
-      const oneOf = helios?.input?.oneOf
-      expect(Array.isArray(oneOf)).toBe(true)
-      const commands = (
-        oneOf as Array<{ properties?: { command?: { const?: string } } }>
-      ).map((entry) => entry.properties?.command?.const)
-      expect(commands).toEqual(
-        expect.arrayContaining([
-          'set_prompt',
-          'set_conditioning',
-          'start',
-          'save_snapshot',
-        ]),
-      )
+      const setPrompt = byId.get('reactor/reactor/helios/events/set_prompt')
+      expect(setPrompt?.input?.required).toEqual(['prompt'])
+
+      const envelope = byId.get('reactor/reactor/helios')
+      expect(Array.isArray(envelope?.input?.oneOf)).toBe(true)
     } finally {
       globalThis.fetch = original
     }
   })
 
-  it('hashes the embedded document stably', async () => {
-    const a = await provider.fetchSpec({})
-    const b = await provider.fetchSpec({})
-    expect(a.sources.map((s) => s.hash)).toEqual(b.sources.map((s) => s.hash))
+  it('hashes the extracted OpenAPI, not the surrounding HTML', async () => {
+    const original = globalThis.fetch
+    let n = 0
+    globalThis.fetch = ((url: string) => {
+      if (String(url) !== modelApiPageUrl('helios')) {
+        return Promise.resolve(new Response('not found', { status: 404 }))
+      }
+      n += 1
+      const html = htmlWithSpec(MINI_SPEC) + `<!-- ${String(n)} -->`
+      return Promise.resolve(new Response(html, { status: 200 }))
+    }) as typeof fetch
+    try {
+      const a = await provider.fetchSpec({})
+      const b = await provider.fetchSpec({})
+      const hashA = a.sources.find((s) => s.url.includes('helios'))?.hash
+      const hashB = b.sources.find((s) => s.url.includes('helios'))?.hash
+      expect(hashA).toBe(hashB)
+    } finally {
+      globalThis.fetch = original
+    }
   })
 })
 
@@ -147,18 +246,9 @@ describe('reactor seed metadata', () => {
     expect(provider.id).toBe('reactor')
     expect(provider.displayName).toBe('Reactor')
     expect(provider.authEnvVar).toBe('REACTOR_API_KEY')
-    expect(provider.defaultDerivation).toBe('docs-derived')
-    expect(provider.specGrain).toBe('provider')
+    expect(provider.defaultDerivation).toBe('upstream-spec')
+    expect(provider.specGrain).toBe('model')
     expect(provider.specSourceUrl).toMatch(/^https:\/\//)
     expect(provider.modelsEndpoint).toBe(REACTOR_PRICING_URL)
-    expect(
-      provider.generationEndpointId?.({
-        rawId: 'reactor/helios',
-        activity: 'video',
-      }),
-    ).toBe('models/reactor/helios')
-    expect(
-      provider.generationEndpointId?.({ rawId: 'x2', activity: 'video' }),
-    ).toBe('models/x2')
   })
 })
