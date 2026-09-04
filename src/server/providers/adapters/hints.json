@@ -234,5 +234,14 @@
     "include": ["/chat/completions", "/images/generations"],
     "activities": ["chat", "image"],
     "notes": "OpenAI-compatible plus image. Confirm path prefix (v3/openai). docs.novita.ai/openapi.json is markdown, not a spec."
+  },
+  "reactor": {
+    "displayName": "Reactor",
+    "secret": "REACTOR_API_KEY",
+    "strategy": "docs-derived",
+    "specUrl": "https://docs.reactor.inc",
+    "modelsUrl": "https://api.reactor.inc/pricing",
+    "activities": ["video"],
+    "notes": "No public OpenAPI (api.reactor.inc/openapi.json 404s). Real-time world/video models over WebRTC sendCommand; HTTP control plane is POST /tokens (Reactor-API-Key) and POST /sessions. Catalog is public GET /pricing (keyless). Connect slugs come from each model's docs page (reactor/helios, x2, …). Runtime compiles per-model OpenAPI after session connect — we cannot fetch that without a GPU session."
   }
 }

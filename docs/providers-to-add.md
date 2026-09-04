@@ -55,6 +55,7 @@ best-known — confirm on signup.
 | [x]  | `KLING_API_KEY`       | Kling AI                   | video · image                        | [app.klingai.com → dev console](https://app.klingai.com)                                |
 | [x]  | `HYPERBOLIC_API_KEY`  | Hyperbolic                 | chat                                 | [app.hyperbolic.xyz](https://app.hyperbolic.xyz)                                        |
 | [x]  | `NOVITA_API_KEY`      | Novita AI                  | chat · image                         | [novita.ai → key management](https://novita.ai)                                         |
+| [x]  | `REACTOR_API_KEY`     | Reactor                    | video                                | [reactor.inc/dashboard](https://reactor.inc/dashboard)                                  |
 
 ### Next — AI SDK first-party we don't have
 

@@ -103,6 +103,12 @@ export interface ProviderSecrets {
   KLING_API_KEY?: string
   HYPERBOLIC_API_KEY?: string
   NOVITA_API_KEY?: string
+  /**
+   * Reactor (reactor.inc). Optional for sync/poll: `GET /pricing` is public
+   * and the spec is embedded. The key (`rk_...`) is the data-plane
+   * `Reactor-API-Key` header for `POST /tokens` and live sessions.
+   */
+  REACTOR_API_KEY?: string
 }
 
 /** Normalised model entry (maps onto the `models` table shape). */
