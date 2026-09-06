@@ -8,13 +8,20 @@
 import { and, eq, isNull } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import { changes, endpoints, providers, schemaVersions } from '#/db/schema.ts'
+import {
+  changes,
+  endpoints,
+  models,
+  providers,
+  schemaVersions,
+} from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
 import { seedForProvider } from '#/db/seed-providers.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
 import { PROVENANCE_MARKER } from '#/server/providers/types.ts'
 import type {
+  BundledEndpoint,
   Derivation,
   EndpointProvenance,
   OpenApiOperation,
@@ -23,6 +30,7 @@ import type {
   SpecFetchResult,
   SpecSource,
 } from '#/server/providers/types.ts'
+import { hasAsyncApiFlag, withAsyncApiFlag } from './asyncapi.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import {
   EXTRACTOR_VERSION,
@@ -64,6 +72,8 @@ export interface ClassifiedEndpoint {
   verifiedAt: string | null
   input?: Record<string, JsonValue>
   output?: Record<string, JsonValue>
+  /** WMA AsyncAPI — catalog flag; skip HTTP OpenAPI assembly. */
+  asyncapi?: boolean
 }
 
 function newChangeId(): string {
@@ -157,7 +167,70 @@ export function classifyAndBundle(
       })
     }
   }
+  for (const extra of fetched.bundledEndpoints ?? []) {
+    if (!extra.input && !extra.output) continue
+    classified.push(classifiedFromBundled(provider.id, extra, warnings))
+  }
   return { endpoints: classified, warnings }
+}
+
+function asBundledSchema(
+  schema: Record<string, unknown> | undefined,
+): Record<string, JsonValue> | undefined {
+  return schema as Record<string, JsonValue> | undefined
+}
+
+function classifiedFromBundled(
+  providerId: string,
+  extra: BundledEndpoint,
+  warnings: Array<string>,
+): ClassifiedEndpoint {
+  const input = asBundledSchema(extra.input)
+  const output = asBundledSchema(extra.output)
+  const pathKey = extra.path
+  for (const [kind, schema] of [
+    ['input', input],
+    ['output', output],
+  ] as const) {
+    if (schema && findDanglingRefs(schema).length > 0) {
+      warnings.push(
+        `${providerId}${pathKey}: bundled ${kind} schema has dangling refs`,
+      )
+    }
+  }
+  return {
+    dbId: `${providerId}/${endpointIdFromPath(pathKey)}`,
+    path: pathKey,
+    activity: extra.activity,
+    description: extra.description,
+    source: extra.source,
+    derivation: extra.derivation,
+    verifiedAt: extra.verifiedAt ?? null,
+    input,
+    output,
+    asyncapi: extra.asyncapi,
+  }
+}
+
+async function applyAsyncApiCatalogFlags(
+  db: Db,
+  providerId: string,
+  asyncApiRawIds: Array<string>,
+): Promise<void> {
+  const flagged = new Set(asyncApiRawIds)
+  const rows = await db
+    .select()
+    .from(models)
+    .where(eq(models.providerId, providerId))
+  for (const row of rows) {
+    const want = flagged.has(row.rawId)
+    const has = hasAsyncApiFlag(row.capabilities)
+    if (want === has) continue
+    await db
+      .update(models)
+      .set({ capabilities: withAsyncApiFlag(row.capabilities, want) })
+      .where(eq(models.id, row.id))
+  }
 }
 
 /** Sync one provider. Throws only on programmer error — upstream/storage
@@ -381,6 +454,10 @@ export async function syncProvider(
       createdAt: now,
     })
     outcome.changesWritten++
+  }
+
+  if (fetched.asyncApiRawIds !== undefined) {
+    await applyAsyncApiCatalogFlags(db, provider.id, fetched.asyncApiRawIds)
   }
 
   await db

@@ -10,6 +10,7 @@ import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
+import { preserveAsyncApiFlag } from './asyncapi.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -151,7 +152,13 @@ export async function pollProviderModels(
       capabilities: existing.capabilities,
       deprecated: existing.deprecatedAt !== null,
     }
-    const after = comparable(info)
+    const after = comparable({
+      ...info,
+      capabilities: preserveAsyncApiFlag(
+        existing.capabilities,
+        info.capabilities ?? null,
+      ),
+    })
     const dirty = stableStringify(before) !== stableStringify(after)
 
     // Upstream reports a release date earlier than our observed firstSeenAt
@@ -180,7 +187,7 @@ export async function pollProviderModels(
         maxOutput: info.maxOutput ?? null,
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
-        capabilities: info.capabilities ?? null,
+        capabilities: after.capabilities ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.
         deprecatedAt:

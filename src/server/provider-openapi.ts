@@ -22,6 +22,7 @@ import type {
   ProviderConfig,
   ProviderConnect,
 } from '#/server/providers/types.ts'
+import { hasAsyncApiFlag } from '#/server/ingest/asyncapi.ts'
 import { providerExists, publicEndpointId } from '#/server/schemas-api.ts'
 
 export interface AssembleOpenApiQuery {
@@ -342,6 +343,17 @@ export async function assembleProviderOpenApi(
     pinnedModel = model.rawId
     if (activity === undefined && model.activity) {
       activity = model.activity
+    }
+    if (hasAsyncApiFlag(model.capabilities)) {
+      const schemaHint = model.activity
+        ? `GET /v1/schemas/${providerId}/${model.activity}/${pinnedModel}`
+        : `GET /v1/schemas/${providerId}`
+      return {
+        ok: false,
+        status: 404,
+        code: 'unknown_model',
+        message: `Model '${pinnedModel}' is listed for '${providerId}' but publishes an AsyncAPI contract, not HTTP OpenAPI. Use ${schemaHint} (kind=input|output). Catalog: GET /v1/models/${providerId}/${pinnedModel}.`,
+      }
     }
   }
 

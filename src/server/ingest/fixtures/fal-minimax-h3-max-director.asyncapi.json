@@ -1,0 +1,230 @@
+{
+  "asyncapi": "3.1.0",
+  "info": {
+    "title": "MiniMaxH3MaxDirector realtime client API",
+    "version": "1.0.0",
+    "description": "Client contract for the WebRTC session created by the linked OpenAPI operation."
+  },
+  "defaultContentType": "application/json",
+  "operations": {
+    "sendControl": {
+      "action": "send",
+      "channel": { "$ref": "#/channels/control" },
+      "messages": [
+        { "$ref": "#/channels/control/messages/client.configure" },
+        { "$ref": "#/channels/control/messages/client.ping" },
+        { "$ref": "#/channels/control/messages/client.prompt" },
+        { "$ref": "#/channels/control/messages/client.stop" }
+      ]
+    },
+    "receiveEvents": {
+      "action": "receive",
+      "channel": { "$ref": "#/channels/control" },
+      "messages": [
+        { "$ref": "#/channels/control/messages/server.session_info" },
+        { "$ref": "#/channels/control/messages/server.chunk" },
+        { "$ref": "#/channels/control/messages/server.configured" },
+        { "$ref": "#/channels/control/messages/server.error" }
+      ]
+    }
+  },
+  "channels": {
+    "control": {
+      "address": "fal",
+      "messages": {
+        "client.configure": {
+          "$ref": "#/components/messages/client.configure"
+        },
+        "client.ping": { "$ref": "#/components/messages/client.ping" },
+        "client.prompt": { "$ref": "#/components/messages/client.prompt" },
+        "client.stop": { "$ref": "#/components/messages/client.stop" },
+        "server.session_info": {
+          "$ref": "#/components/messages/server.session_info"
+        },
+        "server.chunk": { "$ref": "#/components/messages/server.chunk" },
+        "server.configured": {
+          "$ref": "#/components/messages/server.configured"
+        },
+        "server.error": { "$ref": "#/components/messages/server.error" }
+      }
+    }
+  },
+  "components": {
+    "messages": {
+      "client.configure": {
+        "name": "configure",
+        "title": "Client configure message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorClientConfigureMessage"
+        }
+      },
+      "client.ping": {
+        "name": "ping",
+        "title": "Client ping message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorClientPingMessage"
+        }
+      },
+      "client.prompt": {
+        "name": "prompt",
+        "title": "Client prompt message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorClientPromptMessage"
+        }
+      },
+      "client.stop": {
+        "name": "stop",
+        "title": "Client stop message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorClientStopMessage"
+        }
+      },
+      "server.session_info": {
+        "name": "session_info",
+        "title": "Server session_info message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorServerSessionInfoMessage"
+        }
+      },
+      "server.chunk": {
+        "name": "chunk",
+        "title": "Server chunk message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorServerChunkMessage"
+        }
+      },
+      "server.configured": {
+        "name": "configured",
+        "title": "Server configured message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorServerConfiguredMessage"
+        }
+      },
+      "server.error": {
+        "name": "error",
+        "title": "Server error message",
+        "payload": {
+          "$ref": "#/components/schemas/MiniMaxH3MaxDirectorServerErrorMessage"
+        }
+      }
+    },
+    "schemas": {
+      "MiniMaxH3MaxDirectorClientConfigureMessage": {
+        "type": "object",
+        "title": "ConfigureMessage",
+        "additionalProperties": false,
+        "required": ["type", "prompt_version", "prompt"],
+        "properties": {
+          "type": { "type": "string", "const": "configure" },
+          "prompt_version": { "type": "integer", "minimum": 1 },
+          "prompt": { "type": "string", "minLength": 1, "maxLength": 50000 },
+          "protocol_version": { "type": "integer", "const": 1, "default": 1 },
+          "resolution": {
+            "type": "string",
+            "enum": ["480p", "768p"],
+            "default": "768p"
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": ["16:9", "9:16", "1:1"],
+            "default": "16:9"
+          }
+        }
+      },
+      "MiniMaxH3MaxDirectorClientPingMessage": {
+        "type": "object",
+        "title": "PingMessage",
+        "additionalProperties": false,
+        "required": ["type", "ts"],
+        "properties": {
+          "type": { "type": "string", "const": "ping" },
+          "ts": { "type": "number" }
+        }
+      },
+      "MiniMaxH3MaxDirectorClientPromptMessage": {
+        "type": "object",
+        "title": "PromptMessage",
+        "additionalProperties": false,
+        "required": ["type", "prompt_version", "prompt"],
+        "properties": {
+          "type": { "type": "string", "const": "prompt" },
+          "prompt_version": { "type": "integer", "minimum": 1 },
+          "prompt": { "type": "string", "minLength": 1, "maxLength": 50000 }
+        }
+      },
+      "MiniMaxH3MaxDirectorClientStopMessage": {
+        "type": "object",
+        "title": "StopMessage",
+        "additionalProperties": false,
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "const": "stop" }
+        }
+      },
+      "MiniMaxH3MaxDirectorServerSessionInfoMessage": {
+        "type": "object",
+        "title": "SessionInfoMessage",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "const": "session_info" },
+          "app": { "type": "string", "const": "minimax-h3-max-director" },
+          "protocol_version": { "type": "integer", "const": 1 }
+        }
+      },
+      "MiniMaxH3MaxDirectorServerDispatchAccounting": {
+        "type": "object",
+        "title": "DispatchAccounting",
+        "required": ["wall_ms", "classified_ms", "overhead_ms", "phases_ms"],
+        "properties": {
+          "wall_ms": { "type": "number", "minimum": 0 },
+          "overhead_ms": { "type": "number", "minimum": 0 },
+          "phases_ms": {
+            "type": "object",
+            "additionalProperties": { "type": "number" }
+          },
+          "classified_ms": { "type": "number", "minimum": 0 }
+        }
+      },
+      "MiniMaxH3MaxDirectorServerChunkMessage": {
+        "type": "object",
+        "title": "ChunkMessage",
+        "required": ["type", "chunk_index", "dispatch"],
+        "properties": {
+          "type": { "type": "string", "const": "chunk" },
+          "chunk_index": { "type": "integer", "minimum": 0 },
+          "dispatch": {
+            "$ref": "#/components/schemas/MiniMaxH3MaxDirectorServerDispatchAccounting"
+          }
+        }
+      },
+      "MiniMaxH3MaxDirectorServerConfiguredMessage": {
+        "type": "object",
+        "title": "ConfiguredMessage",
+        "required": ["type", "prompt_version"],
+        "properties": {
+          "type": { "type": "string", "const": "configured" },
+          "prompt_version": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "MiniMaxH3MaxDirectorServerErrorMessage": {
+        "type": "object",
+        "title": "ErrorMessage",
+        "required": ["type", "code", "error"],
+        "properties": {
+          "type": { "type": "string", "const": "error" },
+          "error": { "type": "string" },
+          "code": {
+            "type": "string",
+            "enum": [
+              "content_policy",
+              "configuration_timeout",
+              "generation_failed",
+              "invalid_message",
+              "not_configured"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

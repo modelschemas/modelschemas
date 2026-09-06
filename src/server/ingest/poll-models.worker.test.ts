@@ -135,6 +135,40 @@ describe('pollProviderModels', () => {
     expect(providerRow?.lastPolledAt).not.toBeNull()
   })
 
+  it('preserves capabilities.asyncapi when the listing omits it', async () => {
+    const id = 'poll-asyncapi'
+    const deps = await freshDeps(id)
+    const rawId = 'minimax/h3-max/director'
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId,
+          activity: 'video',
+          capabilities: { category: 'text-to-video', asyncapi: true },
+        },
+      ]),
+    )
+    const again = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId,
+          activity: 'video',
+          capabilities: { category: 'text-to-video' },
+        },
+      ]),
+    )
+    expect(again).toMatchObject({ added: 0, removed: 0, updated: 0 })
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, rawId)),
+    })
+    expect(row?.capabilities).toEqual({
+      category: 'text-to-video',
+      asyncapi: true,
+    })
+  })
+
   it('bulk-bumps lastSeenAt across chunk boundaries for unchanged models', async () => {
     const id = 'poll-bulk'
     const deps = await freshDeps(id)
