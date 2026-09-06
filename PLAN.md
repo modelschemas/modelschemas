@@ -1085,3 +1085,24 @@ Design settled with Tom (don't relitigate):
       `architecture.output_modalities` (video → synthesised `videos/{id}`;
       image-only has no classified route); BFL `v1/{rawId}`; BytePlus
       chat/image/video plus Seed Speech TTS vs ASR.
+- [x] **18.3 Fill contextWindow / maxOutput / modalities / pricing /
+      request-feature capabilities on grain=provider rows (issue #53).**
+      Native `/models` payloads publish none of these (OpenAI, xAI) or only
+      token limits (Anthropic `max_input_tokens`/`max_tokens` since 2026-03,
+      Gemini `inputTokenLimit`/`outputTokenLimit`). `model-facts.ts` pulls
+      the rest from models.dev's `api.json` — one fetch per poll, memoised
+      10 min across the four providers, dated snapshot ids fall back to the
+      alias key — and emits OpenRouter's shapes: per-token USD strings
+      (`prompt`/`completion`/`input_cache_read`/`input_cache_write`),
+      `file` for documents, `supported_parameters` names as feature flags
+      (`tools`, `tool_choice`, `reasoning`, `reasoning_effort`,
+      `temperature`, `top_p`, `structured_outputs`, `response_format`).
+      First-party limits override. Anthropic adds `reasoning_mandatory` on
+      the Fable/Mythos tier (thinking cannot be disabled; docs-derived — the
+      Models API capability tree doesn't distinguish it from Opus 5). Gemini
+      `capabilities` no longer holds `supportedGenerationMethods`; its route
+      binding keys `:predict` off the `imagen-` id prefix instead. A failed
+      models.dev fetch fails that provider's poll for the tick rather than
+      nulling populated rows (which would fan out a bogus `model.updated`
+      per model and again on recovery). Gotcha: the first poll after deploy
+      legitimately emits one `model.updated` per newly filled row.

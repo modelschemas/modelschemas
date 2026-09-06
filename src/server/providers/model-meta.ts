@@ -134,17 +134,17 @@ export function openaiGenerationEndpointId(
   }
 }
 
-/** Gemini path-templated generation route from activity + methods. */
+/**
+ * Gemini path-templated generation route. Imagen is the only `predict`
+ * family; Gemini-native image models generate through generateContent.
+ */
 export function geminiGenerationEndpointId(
+  rawId: string,
   activity: Activity,
-  capabilities: unknown,
 ): string | null {
-  const methods = Array.isArray(capabilities)
-    ? capabilities.filter((value): value is string => typeof value === 'string')
-    : []
   switch (activity) {
     case 'image':
-      return methods.includes('predict')
+      return rawId.toLowerCase().startsWith('imagen')
         ? 'v1beta/models/{modelsId}:predict'
         : 'v1beta/models/{modelsId}:generateContent'
     case 'video':

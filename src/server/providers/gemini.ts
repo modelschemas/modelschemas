@@ -5,6 +5,7 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
+import { modelFactsLookup } from './model-facts.ts'
 import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
@@ -276,6 +277,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   if (!key) {
     return { models: [], ...skippedResult('gemini', 'GEMINI_API_KEY') }
   }
+  const facts = await modelFactsLookup('google')
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -286,6 +288,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     const body = (await fetchJson(url.toString())) as GeminiModelList
     for (const m of body.models ?? []) {
       const rawId = m.name.replace(/^models\//, '')
+      const f = facts(rawId)
       models.push({
         rawId,
         displayName: m.displayName ?? null,
@@ -293,9 +296,9 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
           rawId,
           m.supportedGenerationMethods ?? [],
         ),
-        contextWindow: m.inputTokenLimit ?? null,
-        maxOutput: m.outputTokenLimit ?? null,
-        capabilities: m.supportedGenerationMethods,
+        ...f,
+        contextWindow: m.inputTokenLimit ?? f.contextWindow,
+        maxOutput: m.outputTokenLimit ?? f.maxOutput,
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
         releasedAt:
@@ -324,6 +327,6 @@ export const geminiProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
-  generationEndpointId: ({ activity, capabilities }) =>
-    geminiGenerationEndpointId(activity, capabilities),
+  generationEndpointId: ({ rawId, activity }) =>
+    geminiGenerationEndpointId(rawId, activity),
 }

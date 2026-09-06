@@ -8,6 +8,7 @@
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
+import { modelFactsLookup } from './model-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import {
   fetchJson,
@@ -60,8 +61,21 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
+/**
+ * Thinking cannot be turned off on the Fable/Mythos tier (`thinking:
+ * {type: "disabled"}` is a 400); the Models API capability tree does not
+ * distinguish that from adaptive-by-default Opus 5. Docs-derived.
+ */
+const ALWAYS_THINKING = /^claude-(fable|mythos)-/
+
 interface AnthropicModelList {
-  data?: Array<{ id: string; display_name?: string; created_at?: string }>
+  data?: Array<{
+    id: string
+    display_name?: string
+    created_at?: string
+    max_input_tokens?: number
+    max_tokens?: number
+  }>
   has_more?: boolean
   last_id?: string
 }
@@ -72,6 +86,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     return { models: [], ...skippedResult('anthropic', 'ANTHROPIC_API_KEY') }
   }
   const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION }
+  const facts = await modelFactsLookup('anthropic')
   const models: ListModelsResult['models'] = []
   let afterId: string | undefined
   do {
@@ -82,11 +97,23 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       headers,
     })) as AnthropicModelList
     for (const m of body.data ?? []) {
+      const f = facts(m.id)
+      const capabilities = Array.isArray(f.capabilities)
+        ? (f.capabilities as Array<string>)
+        : null
       models.push({
         rawId: m.id,
         displayName: m.display_name ?? null,
         activity: 'chat',
         releasedAt: isoToEpochSeconds(m.created_at),
+        ...f,
+        // First-party limits (Models API, since 2026-03) win over models.dev.
+        contextWindow: m.max_input_tokens ?? f.contextWindow,
+        maxOutput: m.max_tokens ?? f.maxOutput,
+        capabilities:
+          capabilities?.includes('reasoning') && ALWAYS_THINKING.test(m.id)
+            ? [...capabilities, 'reasoning_mandatory']
+            : capabilities,
       })
     }
     afterId = body.has_more ? body.last_id : undefined

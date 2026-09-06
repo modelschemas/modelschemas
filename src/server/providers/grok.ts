@@ -10,6 +10,7 @@ import {
   grokGenerationEndpointId,
   grokModelActivity,
 } from './model-meta.ts'
+import { modelFactsLookup } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -64,15 +65,19 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   if (!key) {
     return { models: [], ...skippedResult('grok', 'XAI_API_KEY') }
   }
-  const body = (await fetchJson(GROK_MODELS_URL, {
-    headers: { Authorization: `Bearer ${key}` },
-  })) as GrokModelList
+  const [body, facts] = await Promise.all([
+    fetchJson(GROK_MODELS_URL, {
+      headers: { Authorization: `Bearer ${key}` },
+    }) as Promise<GrokModelList>,
+    modelFactsLookup('xai'),
+  ])
   return {
     models: (body.data ?? []).map((m) => ({
       rawId: m.id,
       displayName: displayNameFromRawId(m.id),
       activity: grokModelActivity(m.id),
       releasedAt: m.created ?? null,
+      ...facts(m.id),
     })),
   }
 }
