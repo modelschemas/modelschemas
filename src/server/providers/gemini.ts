@@ -5,7 +5,12 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
-import { modelFactsLookup } from './model-facts.ts'
+import {
+  assertParsed,
+  dollars,
+  memoized,
+  pricingPerMillion,
+} from './model-facts.ts'
 import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
@@ -261,15 +266,108 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
+/**
+ * Pricing page (HTML; no markdown variant). Each family is a `<h2>`
+ * section listing its model codes in `<code>` before the first
+ * `pricing-table` (the standard tier): rows "Input price", "Output
+ * price…", "Context caching price", paid-tier cell last. The first
+ * per-token dollar amount in a cell is the text rate (audio and per-image
+ * figures share the cell).
+ */
+export const GEMINI_PRICING_URL =
+  'https://ai.google.dev/gemini-api/docs/pricing'
+
+interface GeminiModel {
+  name: string
+  displayName?: string
+  inputTokenLimit?: number
+  outputTokenLimit?: number
+  supportedGenerationMethods?: Array<string>
+  temperature?: number
+  topP?: number
+  topK?: number
+  thinking?: boolean
+}
+
 interface GeminiModelList {
-  models?: Array<{
-    name: string
-    displayName?: string
-    inputTokenLimit?: number
-    outputTokenLimit?: number
-    supportedGenerationMethods?: Array<string>
-  }>
+  models?: Array<GeminiModel>
   nextPageToken?: string
+}
+
+export function parseGeminiPricing(
+  html: string,
+): Map<string, Record<string, string> | null> {
+  const out = new Map<string, Record<string, string> | null>()
+  for (const section of html.split(/<h2 id="/).slice(1)) {
+    const [head = '', table] = section.split(/<table class="pricing-table"/)
+    if (!table) continue
+    const ids = [...head.matchAll(/<code[^>]*>([a-z0-9][a-z0-9.-]*)<\/code>/g)]
+      .map((m) => m[1] ?? '')
+      .filter((id) => id !== '' && !out.has(id))
+    if (ids.length === 0) continue
+    const paidCell = (label: string): string | undefined =>
+      table.match(
+        new RegExp(
+          `<td>${label}[^<]*</td>\\s*<td>[^]*?</td>\\s*<td>([^]*?)</td>`,
+        ),
+      )?.[1]
+    const pricing = pricingPerMillion({
+      prompt: dollars(paidCell('Input price')),
+      completion: dollars(paidCell('Output price')),
+      input_cache_read: dollars(paidCell('Context caching price')),
+    })
+    if (pricing) for (const id of ids) out.set(id, pricing)
+  }
+  return out
+}
+
+/**
+ * Modalities by activity, docs-derived: every Gemini generateContent model
+ * takes text, image, audio, video and documents; TTS is text→audio;
+ * embeddings and Imagen/Veo take text (+image for the media models).
+ */
+export function geminiModalities(
+  rawId: string,
+  activity: Activity | null,
+): { input: Array<string>; output: Array<string> } | null {
+  switch (activity) {
+    case 'chat':
+      return {
+        input: ['text', 'image', 'audio', 'video', 'file'],
+        output: ['text'],
+      }
+    case 'audio':
+      return { input: ['text'], output: ['audio'] }
+    case 'image':
+      return rawId.toLowerCase().startsWith('imagen')
+        ? { input: ['text'], output: ['image'] }
+        : { input: ['text', 'image'], output: ['image', 'text'] }
+    case 'video':
+      return { input: ['text', 'image'], output: ['video'] }
+    case 'embeddings':
+      return { input: ['text'], output: ['embeddings'] }
+    default:
+      return null
+  }
+}
+
+/**
+ * Request features from the Models API row (`thinking`, sampling defaults
+ * present ⇒ accepted) plus the docs rule that every generateContent chat
+ * model takes function calling and structured output.
+ */
+export function geminiCapabilities(
+  m: Pick<GeminiModel, 'temperature' | 'topP' | 'topK' | 'thinking'>,
+  activity: Activity | null,
+): Array<string> | null {
+  const out: Array<string> = []
+  if (activity === 'chat') out.push('tools', 'tool_choice')
+  if (m.thinking) out.push('reasoning')
+  if (m.temperature !== undefined) out.push('temperature')
+  if (m.topP !== undefined) out.push('top_p')
+  if (m.topK !== undefined) out.push('top_k')
+  if (activity === 'chat') out.push('structured_outputs', 'response_format')
+  return out.length > 0 ? out : null
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -277,7 +375,11 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   if (!key) {
     return { models: [], ...skippedResult('gemini', 'GEMINI_API_KEY') }
   }
-  const facts = await modelFactsLookup('google')
+  const pricing = await memoized(GEMINI_PRICING_URL, async () => {
+    const parsed = parseGeminiPricing(await fetchText(GEMINI_PRICING_URL))
+    assertParsed(parsed, 'gemini pricing docs')
+    return parsed
+  })
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -288,17 +390,19 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     const body = (await fetchJson(url.toString())) as GeminiModelList
     for (const m of body.models ?? []) {
       const rawId = m.name.replace(/^models\//, '')
-      const f = facts(rawId)
+      const activity = geminiModelActivity(
+        rawId,
+        m.supportedGenerationMethods ?? [],
+      )
       models.push({
         rawId,
         displayName: m.displayName ?? null,
-        activity: geminiModelActivity(
-          rawId,
-          m.supportedGenerationMethods ?? [],
-        ),
-        ...f,
-        contextWindow: m.inputTokenLimit ?? f.contextWindow,
-        maxOutput: m.outputTokenLimit ?? f.maxOutput,
+        activity,
+        contextWindow: m.inputTokenLimit ?? null,
+        maxOutput: m.outputTokenLimit ?? null,
+        modalities: geminiModalities(rawId, activity),
+        pricing: pricing.get(rawId) ?? null,
+        capabilities: geminiCapabilities(m, activity),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
         releasedAt:

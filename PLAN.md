@@ -1088,21 +1088,34 @@ Design settled with Tom (don't relitigate):
 - [x] **18.3 Fill contextWindow / maxOutput / modalities / pricing /
       request-feature capabilities on grain=provider rows (issue #53).**
       Native `/models` payloads publish none of these (OpenAI, xAI) or only
-      token limits (Anthropic `max_input_tokens`/`max_tokens` since 2026-03,
-      Gemini `inputTokenLimit`/`outputTokenLimit`). `model-facts.ts` pulls
-      the rest from models.dev's `api.json` — one fetch per poll, memoised
-      10 min across the four providers, dated snapshot ids fall back to the
-      alias key — and emits OpenRouter's shapes: per-token USD strings
+      token limits plus a capability tree (Anthropic, since 2026-03) or
+      limits + `thinking`/sampling defaults (Gemini). The rest comes from
+      each provider's own published sources — never a third-party catalog
+      (a model catalog that mirrors another one caps its accuracy at
+      theirs): OpenAI per-model markdown pages (`developers.openai.com/api/
+docs/models/{slug}.md`, fetched only for the ~65 pages the listed ids
+      resolve to), Anthropic's pricing page as markdown (matched on
+      Models API `display_name`), Gemini's pricing HTML (stable
+      `pricing-table` sections keyed by the `<code>` model ids), xAI's
+      `/v1/{language,image-generation,video-generation}-models` (modalities,
+      prices in 1e-10 USD units) plus `docs.x.ai/docs/models.md` for context
+      windows. Output uses OpenRouter's shapes: per-token USD strings
       (`prompt`/`completion`/`input_cache_read`/`input_cache_write`),
       `file` for documents, `supported_parameters` names as feature flags
       (`tools`, `tool_choice`, `reasoning`, `reasoning_effort`,
-      `temperature`, `top_p`, `structured_outputs`, `response_format`).
-      First-party limits override. Anthropic adds `reasoning_mandatory` on
-      the Fable/Mythos tier (thinking cannot be disabled; docs-derived — the
-      Models API capability tree doesn't distinguish it from Opus 5). Gemini
-      `capabilities` no longer holds `supportedGenerationMethods`; its route
-      binding keys `:predict` off the `imagen-` id prefix instead. A failed
-      models.dev fetch fails that provider's poll for the tick rather than
-      nulling populated rows (which would fan out a bogus `model.updated`
-      per model and again on recovery). Gotcha: the first poll after deploy
-      legitimately emits one `model.updated` per newly filled row.
+      `temperature`, `top_p`, `top_k`, `structured_outputs`,
+      `response_format`). Docs-derived rules are marked in code: Anthropic
+      `reasoning_mandatory` on Fable/Mythos and sampling removed from
+      Opus 4.7 on; OpenAI sampling only on non-reasoning text models; Grok
+      reasoning unless the id says `non-reasoning`. Per-image / per-second
+      / per-minute rates stay null (they don't fit per-token keys). Gemini
+      `capabilities` no longer holds `supportedGenerationMethods`; its
+      `:predict` route binding keys off the `imagen-` prefix. Docs parses
+      are memoised in-isolate for 6h and fail closed: zero parsed rows throws
+      and fails that provider's poll for the tick rather than nulling
+      populated rows (which would fan out a bogus `model.updated` per model
+      and again on recovery). Gotcha: the first poll after deploy legitimately
+      emits one `model.updated` per newly filled row. Follow-up: ten
+      adapters (groq, jina, sambanova, hyperbolic, mistral, moonshot,
+      fireworks, cohere, perplexity, together) already receive these fields
+      on their `/models` rows and drop them — map them the same way.

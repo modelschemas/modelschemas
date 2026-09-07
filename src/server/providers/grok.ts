@@ -10,7 +10,15 @@ import {
   grokGenerationEndpointId,
   grokModelActivity,
 } from './model-meta.ts'
-import { modelFactsLookup } from './model-facts.ts'
+import {
+  NO_FACTS,
+  assertParsed,
+  markdownTableRows,
+  memoized,
+  pricingPerMillion,
+  tokenCount,
+} from './model-facts.ts'
+import type { ModelFacts } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -22,6 +30,16 @@ import type {
 
 const GROK_OPENAPI_URL = 'https://docs.x.ai/openapi.json'
 const GROK_MODELS_URL = 'https://api.x.ai/v1/models'
+/**
+ * First-party extras: per-family model endpoints carry modalities and
+ * prices (integer units of 1e-10 USD — `12500` is $1.25/MTok, an
+ * `image_price` of `200000000` is $0.02/image). Context windows are only
+ * in the docs, served as markdown with a `| Model | Context | … |` table.
+ */
+const GROK_LANGUAGE_MODELS_URL = 'https://api.x.ai/v1/language-models'
+const GROK_IMAGE_MODELS_URL = 'https://api.x.ai/v1/image-generation-models'
+const GROK_VIDEO_MODELS_URL = 'https://api.x.ai/v1/video-generation-models'
+export const GROK_DOCS_MODELS_URL = 'https://docs.x.ai/docs/models.md'
 
 /**
  * xAI tags every operation `v1`, so classify by path. The text-generation
@@ -60,16 +78,98 @@ interface GrokModelList {
   data?: Array<{ id: string; created?: number }>
 }
 
+interface GrokExtrasModel {
+  id: string
+  aliases?: Array<string>
+  input_modalities?: Array<string>
+  output_modalities?: Array<string>
+  prompt_text_token_price?: number
+  cached_prompt_text_token_price?: number
+  completion_text_token_price?: number
+}
+
+/** 1e-10 USD units → USD per million tokens. */
+const perMillion = (units: number | undefined) =>
+  typeof units === 'number' ? units / 1e4 : null
+
+/** Context windows keyed by model id from the docs pricing table. */
+export function parseGrokContextWindows(markdown: string): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const [model = '', context = ''] of markdownTableRows(markdown)) {
+    const id = model.replace(/\s*\(.*$/, '').trim()
+    if (!/^grok-/.test(id) || !/^[\d,.]+\s*[kKmM]?$/.test(context)) continue
+    const tokens = tokenCount(context)
+    if (tokens !== null && !out.has(id)) out.set(id, tokens)
+  }
+  return out
+}
+
+/**
+ * Request features, docs-derived: every chat model takes tools, sampling
+ * and structured output; Grok 4 onward reasons unless the id says
+ * `non-reasoning`. Nothing published distinguishes effort support.
+ */
+export function grokCapabilities(rawId: string): Array<string> | null {
+  if (grokModelActivity(rawId) !== 'chat') return null
+  const out = ['tools', 'tool_choice', 'temperature', 'top_p']
+  if (!/non-reasoning/.test(rawId)) out.push('reasoning')
+  out.push('structured_outputs', 'response_format')
+  return out
+}
+
+async function grokModelFacts(
+  headers: HeadersInit,
+): Promise<(rawId: string) => ModelFacts> {
+  const extras = (url: string) =>
+    fetchJson(url, { headers }) as Promise<{ models?: Array<GrokExtrasModel> }>
+  const [language, image, video, contexts] = await Promise.all([
+    extras(GROK_LANGUAGE_MODELS_URL),
+    extras(GROK_IMAGE_MODELS_URL),
+    extras(GROK_VIDEO_MODELS_URL),
+    memoized(GROK_DOCS_MODELS_URL, async () => {
+      const parsed = parseGrokContextWindows(
+        await fetchText(GROK_DOCS_MODELS_URL),
+      )
+      assertParsed(parsed, 'xai models docs')
+      return parsed
+    }),
+  ])
+  const byId = new Map<string, GrokExtrasModel>()
+  for (const m of [
+    ...(language.models ?? []),
+    ...(image.models ?? []),
+    ...(video.models ?? []),
+  ]) {
+    for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
+  }
+  return (rawId) => {
+    const m = byId.get(rawId)
+    if (!m) return NO_FACTS
+    return {
+      contextWindow: contexts.get(rawId) ?? null,
+      maxOutput: null,
+      modalities: m.input_modalities
+        ? { input: m.input_modalities, output: m.output_modalities ?? [] }
+        : null,
+      pricing: pricingPerMillion({
+        prompt: perMillion(m.prompt_text_token_price),
+        completion: perMillion(m.completion_text_token_price),
+        input_cache_read: perMillion(m.cached_prompt_text_token_price),
+      }),
+      capabilities: grokCapabilities(rawId),
+    }
+  }
+}
+
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const key = env.XAI_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('grok', 'XAI_API_KEY') }
   }
+  const headers = { Authorization: `Bearer ${key}` }
   const [body, facts] = await Promise.all([
-    fetchJson(GROK_MODELS_URL, {
-      headers: { Authorization: `Bearer ${key}` },
-    }) as Promise<GrokModelList>,
-    modelFactsLookup('xai'),
+    fetchJson(GROK_MODELS_URL, { headers }) as Promise<GrokModelList>,
+    grokModelFacts(headers),
   ])
   return {
     models: (body.data ?? []).map((m) => ({
