@@ -2,19 +2,15 @@
  * OpenAI model facts from OpenAI's own docs. `GET /v1/models` is `id` +
  * `created` only; developers.openai.com serves every model page as
  * markdown (`/api/docs/models/{slug}.md`) with a fixed "Model details"
- * bullet list, a "Text tokens" pricing table, a "Supported features" list,
- * and the page's snapshot ids. The index (`/api/docs/models.md`) is the
+ * bullet list, a "Supported features" list, and the page's snapshot ids. The index (`/api/docs/models.md`) is the
  * slug list. Only pages the listed ids resolve to are fetched (~65 of the
  * ~130 listed ids share a page), bounded-concurrency, memoised six hours.
  */
 import {
   NO_FACTS,
   assertParsed,
-  dollars,
   mapConcurrent,
-  markdownTableRows,
   memoized,
-  pricingPerMillion,
   tokenCount,
   undatedId,
 } from './model-facts.ts'
@@ -56,11 +52,7 @@ function listValues(block: string, label: string): Array<string> {
     : []
 }
 
-/**
- * Parse one model page. Pricing comes from the first "Text tokens" table
- * (standard tier; batch/flex tables follow it). Image, audio-per-minute
- * and per-image pricing are left null — they don't fit per-token keys.
- */
+/** Parse one model page's details, features and snapshot ids. */
 export function parseModelPage(markdown: string): OpenAiModelPage | null {
   const modelId = markdown.match(/^Model ID: `([^`]+)`/m)?.[1]
   if (!modelId) return null
@@ -104,15 +96,6 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
     capabilities.push('structured_outputs', 'response_format')
   }
 
-  const pricingBlock = section(markdown, 'Pricing')
-  const textTokens = pricingBlock.indexOf('### Text tokens')
-  const price = (label: string) => {
-    if (textTokens < 0) return null
-    const table = pricingBlock.slice(textTokens).split('\n### ')[0] ?? ''
-    const row = markdownTableRows(table).find((cells) => cells[0] === label)
-    return dollars(row?.[1])
-  }
-
   return {
     ids: [...ids],
     facts: {
@@ -120,11 +103,6 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
       maxOutput,
       modalities:
         input.length > 0 || output.length > 0 ? { input, output } : null,
-      pricing: pricingPerMillion({
-        prompt: price('Input'),
-        completion: price('Output'),
-        input_cache_read: price('Cached input'),
-      }),
       capabilities: capabilities.length > 0 ? capabilities : null,
     },
   }

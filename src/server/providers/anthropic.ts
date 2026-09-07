@@ -8,13 +8,6 @@
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
-import {
-  assertParsed,
-  dollars,
-  markdownTableRows,
-  memoized,
-  pricingPerMillion,
-} from './model-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import {
   fetchJson,
@@ -36,14 +29,6 @@ const ANTHROPIC_STATS_URL =
   'https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/.stats.yml'
 const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models'
 const ANTHROPIC_VERSION = '2023-06-01'
-/**
- * Pricing table, served as markdown by Anthropic's docs. Columns: model |
- * base input | 5m cache write | 1h cache write | cache hit | output, all
- * USD/MTok. Rows are display names (matching the Models API
- * `display_name`), sometimes with a trailing parenthetical.
- */
-export const ANTHROPIC_PRICING_URL =
-  'https://platform.claude.com/docs/en/about-claude/pricing.md'
 
 /**
  * Anthropic's generation surface is messages + the legacy text completion
@@ -111,38 +96,6 @@ interface AnthropicModelList {
   last_id?: string
 }
 
-/**
- * Parse the pricing table: display name → USD/MTok figures. Parentheticals
- * (`Claude Opus 4.1 ([retired…](…))`) are stripped before matching.
- */
-export function parseAnthropicPricing(
-  markdown: string,
-): Map<string, Record<string, string> | null> {
-  const out = new Map<string, Record<string, string> | null>()
-  for (const [
-    label = '',
-    input,
-    write5m,
-    ,
-    cacheHit,
-    output,
-  ] of markdownTableRows(markdown)) {
-    if (!label.startsWith('Claude ') || output === undefined) continue
-    const name = label.replace(/\s*\(.*$/, '').trim()
-    if (out.has(name)) continue // batch table repeats the names further down
-    out.set(
-      name,
-      pricingPerMillion({
-        prompt: dollars(input),
-        input_cache_write: dollars(write5m),
-        input_cache_read: dollars(cacheHit),
-        completion: dollars(output),
-      }),
-    )
-  }
-  return out
-}
-
 /** Request features from the Models API capability tree + the docs rules. */
 export function anthropicCapabilities(m: AnthropicModel): Array<string> {
   const caps = m.capabilities
@@ -165,11 +118,6 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     return { models: [], ...skippedResult('anthropic', 'ANTHROPIC_API_KEY') }
   }
   const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION }
-  const pricing = await memoized(ANTHROPIC_PRICING_URL, async () => {
-    const parsed = parseAnthropicPricing(await fetchText(ANTHROPIC_PRICING_URL))
-    assertParsed(parsed, 'anthropic pricing docs')
-    return parsed
-  })
   const models: ListModelsResult['models'] = []
   let afterId: string | undefined
   do {
@@ -192,7 +140,6 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         contextWindow: m.max_input_tokens ?? null,
         maxOutput: m.max_tokens ?? null,
         modalities: m.capabilities ? { input, output: ['text'] } : null,
-        pricing: (m.display_name && pricing.get(m.display_name)) ?? null,
         capabilities: m.capabilities ? anthropicCapabilities(m) : null,
       })
     }

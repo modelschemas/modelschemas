@@ -3,6 +3,8 @@
  * Models listing requires MISTRAL_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { openAiCompatModelFacts } from '../openai-compat.ts'
+import type { OpenAiCompatModelRow } from '../openai-compat.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -48,7 +50,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 }
 
 interface MistralModelList {
-  data?: Array<{ id: string; created?: number }>
+  data?: Array<OpenAiCompatModelRow>
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -65,6 +67,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       .map((m) => ({
         rawId: m.id,
         releasedAt: m.created ?? null,
+        ...openAiCompatModelFacts(m),
       })),
   }
 }

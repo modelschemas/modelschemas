@@ -1,7 +1,7 @@
 /**
  * Shared helpers for catalog facts the native `/models` endpoints omit
- * (issue #53): context window, max output, modalities, per-token pricing,
- * request-feature capabilities.
+ * (issue #53): context window, max output, modalities, request-feature
+ * capabilities. Pricing is a separate PR.
  *
  * Every provider fills these from its own sources — a first-party extras
  * endpoint where one exists, else the provider's published docs (all four
@@ -13,50 +13,26 @@
  * fails that provider's poll for the tick instead of writing nulls over
  * populated rows (that would fan out a bogus `model.updated` per model,
  * then another on recovery). Parsed docs are memoised in-isolate for six
- * hours; pricing pages change on release cadence, not poll cadence.
+ * hours; model docs change on release cadence, not poll cadence.
  *
  * Output shapes follow OpenRouter's catalog rows so consumers read one
- * vocabulary: pricing is USD-per-token strings (`prompt`, `completion`,
- * `input_cache_read`, `input_cache_write`), modalities use `file` for
- * documents, and capabilities are OpenRouter `supported_parameters` names
- * used as feature flags — the native wire names differ (Gemini `toolConfig`,
- * Anthropic `output_config.format`).
+ * vocabulary: modalities use `file` for documents, and capabilities are
+ * OpenRouter `supported_parameters` names used as feature flags — the
+ * native wire names differ (Gemini `toolConfig`, Anthropic
+ * `output_config.format`).
  */
 import type { ModelInfo } from './types.ts'
 
 export type ModelFacts = Pick<
   ModelInfo,
-  'contextWindow' | 'maxOutput' | 'modalities' | 'pricing' | 'capabilities'
+  'contextWindow' | 'maxOutput' | 'modalities' | 'capabilities'
 >
 
 export const NO_FACTS: ModelFacts = {
   contextWindow: null,
   maxOutput: null,
   modalities: null,
-  pricing: null,
   capabilities: null,
-}
-
-/** USD/1M → USD/token as a plain decimal string (no exponent notation). */
-export function perTokenPrice(usdPerMillion: number): string {
-  return (usdPerMillion / 1e6).toFixed(12).replace(/\.?0+$/, '')
-}
-
-/**
- * OpenRouter-shaped pricing from USD-per-million figures; keys with no
- * figure are omitted, an empty result is null.
- */
-export function pricingPerMillion(usd: {
-  prompt?: number | null
-  completion?: number | null
-  input_cache_read?: number | null
-  input_cache_write?: number | null
-}): Record<string, string> | null {
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(usd)) {
-    if (typeof value === 'number') out[key] = perTokenPrice(value)
-  }
-  return Object.keys(out).length > 0 ? out : null
 }
 
 /**
@@ -65,24 +41,6 @@ export function pricingPerMillion(usd: {
  */
 export function undatedId(rawId: string): string {
   return rawId.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '')
-}
-
-/**
- * First per-token `$` amount in a docs cell (`$0.30 (text / image)` →
- * 0.3). Per-unit figures sharing the cell (`$0.039 per image`,
- * `$0.35 / sec`, `$1.00 / 1,000,000 tokens per hour`) are skipped.
- */
-export function dollars(cell: string | undefined): number | null {
-  if (!cell) return null
-  for (const m of cell.matchAll(/\$\s*([\d,]*\.?\d+)([^$]*)/g)) {
-    if (
-      /^\s*(per|\/)\s*(image|sec|min|hour|hr|\d|1K|2K|4K)/i.test(m[2] ?? '')
-    ) {
-      continue
-    }
-    if (m[1]) return Number(m[1].replace(/,/g, ''))
-  }
-  return null
 }
 
 /** `1,048,576` / `500k` / `1M` → number. */

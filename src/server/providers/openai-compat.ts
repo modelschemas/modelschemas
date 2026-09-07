@@ -7,6 +7,7 @@
  * document the provider itself publishes.
  */
 import type { Activity } from '#/db/schema.ts'
+import type { ModelFacts } from './model-facts.ts'
 import { OPENAI_SPEC_URL } from './openai.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
@@ -96,13 +97,97 @@ export async function fetchOpenAiCompatibleSpec(
   }
 }
 
+/**
+ * Extension fields OpenAI-compatible providers put on their `/models` rows
+ * (issue #53). Names vary per host; this is the union seen across groq,
+ * jina, fireworks, moonshot, sambanova, hyperbolic and mistral. Absent
+ * fields stay null — nothing is inferred beyond what the row says.
+ */
+export interface OpenAiCompatModelRow {
+  id: string
+  created?: number
+  context_window?: number
+  context_length?: number
+  max_context_length?: number
+  max_completion_tokens?: number
+  max_output_length?: number
+  input_modalities?: Array<string>
+  output_modalities?: Array<string>
+  supports_image_input?: boolean
+  supports_image_in?: boolean
+  supports_video_in?: boolean
+  supports_tools?: boolean
+  supports_reasoning?: boolean
+  /** groq/jina: `tools`, `json_mode`, `structured_outputs`, `reasoning`. */
+  supported_features?: Array<string>
+  /** groq/jina: `temperature`, `top_p`, `stop`, `seed`, `max_tokens`. */
+  supported_sampling_parameters?: Array<string>
+  /** mistral: `{ function_calling, reasoning, vision, … }`. */
+  capabilities?: Record<string, boolean | undefined>
+}
+
+const positive = (n: number | undefined) =>
+  typeof n === 'number' && n > 0 ? n : null
+
+/**
+ * Catalog facts from whatever extension fields a compat row carries. Only
+ * facts the row states are returned, so bare `id`+`created` rows stay bare.
+ */
+export function openAiCompatModelFacts(
+  m: OpenAiCompatModelRow,
+): Partial<ModelFacts> {
+  const flags = m.capabilities ?? {}
+  const features = new Set(m.supported_features ?? [])
+  const sampling = new Set(m.supported_sampling_parameters ?? [])
+
+  let modalities: ModelFacts['modalities'] = null
+  if (m.input_modalities || m.output_modalities) {
+    modalities = {
+      input: m.input_modalities ?? [],
+      output: m.output_modalities ?? [],
+    }
+  } else if (
+    m.supports_image_input !== undefined ||
+    m.supports_image_in !== undefined ||
+    flags.vision !== undefined
+  ) {
+    const input = ['text']
+    if (m.supports_image_input || m.supports_image_in || flags.vision) {
+      input.push('image')
+    }
+    if (m.supports_video_in) input.push('video')
+    modalities = { input, output: ['text'] }
+  }
+
+  const caps: Array<string> = []
+  if (features.has('tools') || m.supports_tools || flags.function_calling) {
+    caps.push('tools', 'tool_choice')
+  }
+  if (features.has('reasoning') || m.supports_reasoning || flags.reasoning) {
+    caps.push('reasoning')
+  }
+  for (const param of ['temperature', 'top_p', 'top_k']) {
+    if (sampling.has(param)) caps.push(param)
+  }
+  if (features.has('structured_outputs')) caps.push('structured_outputs')
+  if (features.has('json_mode') || features.has('structured_outputs')) {
+    caps.push('response_format')
+  }
+
+  const facts: Partial<ModelFacts> = {}
+  const contextWindow = positive(
+    m.context_window ?? m.context_length ?? m.max_context_length,
+  )
+  const maxOutput = positive(m.max_completion_tokens ?? m.max_output_length)
+  if (contextWindow !== null) facts.contextWindow = contextWindow
+  if (maxOutput !== null) facts.maxOutput = maxOutput
+  if (modalities) facts.modalities = modalities
+  if (caps.length > 0) facts.capabilities = caps
+  return facts
+}
+
 interface OpenAiModelList {
-  data?: Array<{
-    id: string
-    created?: number
-    owned_by?: string
-    object?: string
-  }>
+  data?: Array<OpenAiCompatModelRow>
 }
 
 export async function listOpenAiCompatibleModels(opts: {
@@ -132,6 +217,7 @@ export async function listOpenAiCompatibleModels(opts: {
       .map((m) => ({
         rawId: m.id,
         releasedAt: m.created ?? null,
+        ...openAiCompatModelFacts(m),
       })),
   }
 }

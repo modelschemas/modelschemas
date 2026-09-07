@@ -15,7 +15,6 @@ import {
   assertParsed,
   markdownTableRows,
   memoized,
-  pricingPerMillion,
   tokenCount,
 } from './model-facts.ts'
 import type { ModelFacts } from './model-facts.ts'
@@ -31,10 +30,9 @@ import type {
 const GROK_OPENAPI_URL = 'https://docs.x.ai/openapi.json'
 const GROK_MODELS_URL = 'https://api.x.ai/v1/models'
 /**
- * First-party extras: per-family model endpoints carry modalities and
- * prices (integer units of 1e-10 USD — `12500` is $1.25/MTok, an
- * `image_price` of `200000000` is $0.02/image). Context windows are only
- * in the docs, served as markdown with a `| Model | Context | … |` table.
+ * First-party extras: per-family model endpoints carry modalities (and
+ * prices — a separate PR). Context windows are only in the docs, served
+ * as markdown with a `| Model | Context | … |` table.
  */
 const GROK_LANGUAGE_MODELS_URL = 'https://api.x.ai/v1/language-models'
 const GROK_IMAGE_MODELS_URL = 'https://api.x.ai/v1/image-generation-models'
@@ -83,14 +81,7 @@ interface GrokExtrasModel {
   aliases?: Array<string>
   input_modalities?: Array<string>
   output_modalities?: Array<string>
-  prompt_text_token_price?: number
-  cached_prompt_text_token_price?: number
-  completion_text_token_price?: number
 }
-
-/** 1e-10 USD units → USD per million tokens. */
-const perMillion = (units: number | undefined) =>
-  typeof units === 'number' ? units / 1e4 : null
 
 /** Context windows keyed by model id from the docs pricing table. */
 export function parseGrokContextWindows(markdown: string): Map<string, number> {
@@ -151,11 +142,6 @@ async function grokModelFacts(
       modalities: m.input_modalities
         ? { input: m.input_modalities, output: m.output_modalities ?? [] }
         : null,
-      pricing: pricingPerMillion({
-        prompt: perMillion(m.prompt_text_token_price),
-        completion: perMillion(m.completion_text_token_price),
-        input_cache_read: perMillion(m.cached_prompt_text_token_price),
-      }),
       capabilities: grokCapabilities(rawId),
     }
   }

@@ -5,12 +5,6 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
-import {
-  assertParsed,
-  dollars,
-  memoized,
-  pricingPerMillion,
-} from './model-facts.ts'
 import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
@@ -266,17 +260,6 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-/**
- * Pricing page (HTML; no markdown variant). Each family is a `<h2>`
- * section listing its model codes in `<code>` before the first
- * `pricing-table` (the standard tier): rows "Input price", "Output
- * price…", "Context caching price", paid-tier cell last. The first
- * per-token dollar amount in a cell is the text rate (audio and per-image
- * figures share the cell).
- */
-export const GEMINI_PRICING_URL =
-  'https://ai.google.dev/gemini-api/docs/pricing'
-
 interface GeminiModel {
   name: string
   displayName?: string
@@ -292,33 +275,6 @@ interface GeminiModel {
 interface GeminiModelList {
   models?: Array<GeminiModel>
   nextPageToken?: string
-}
-
-export function parseGeminiPricing(
-  html: string,
-): Map<string, Record<string, string> | null> {
-  const out = new Map<string, Record<string, string> | null>()
-  for (const section of html.split(/<h2 id="/).slice(1)) {
-    const [head = '', table] = section.split(/<table class="pricing-table"/)
-    if (!table) continue
-    const ids = [...head.matchAll(/<code[^>]*>([a-z0-9][a-z0-9.-]*)<\/code>/g)]
-      .map((m) => m[1] ?? '')
-      .filter((id) => id !== '' && !out.has(id))
-    if (ids.length === 0) continue
-    const paidCell = (label: string): string | undefined =>
-      table.match(
-        new RegExp(
-          `<td>${label}[^<]*</td>\\s*<td>[^]*?</td>\\s*<td>([^]*?)</td>`,
-        ),
-      )?.[1]
-    const pricing = pricingPerMillion({
-      prompt: dollars(paidCell('Input price')),
-      completion: dollars(paidCell('Output price')),
-      input_cache_read: dollars(paidCell('Context caching price')),
-    })
-    if (pricing) for (const id of ids) out.set(id, pricing)
-  }
-  return out
 }
 
 /**
@@ -375,11 +331,6 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   if (!key) {
     return { models: [], ...skippedResult('gemini', 'GEMINI_API_KEY') }
   }
-  const pricing = await memoized(GEMINI_PRICING_URL, async () => {
-    const parsed = parseGeminiPricing(await fetchText(GEMINI_PRICING_URL))
-    assertParsed(parsed, 'gemini pricing docs')
-    return parsed
-  })
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -401,7 +352,6 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
         modalities: geminiModalities(rawId, activity),
-        pricing: pricing.get(rawId) ?? null,
         capabilities: geminiCapabilities(m, activity),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
