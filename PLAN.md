@@ -1102,9 +1102,13 @@ Design settled with Tom (don't relitigate):
       `context_length` / `max_context_length`, `max_completion_tokens`,
       `input_modalities`, `supports_*` booleans, groq/jina
       `supported_features` + `supported_sampling_parameters`, mistral
-      `capabilities`) — one mapper in `listOpenAiCompatibleModels` covers
-      groq, fireworks, moonshot, sambanova, hyperbolic; mistral and jina
-      call it too. Output uses OpenRouter's shapes: `file` for documents,
+      `capabilities`) — one mapper in `listOpenAiCompatibleModels` covers groq, fireworks,
+      moonshot, sambanova, hyperbolic, novita (`context_size`, hyphenated
+      `features`); mistral, jina and cohere (`features`) call it too.
+      Speech/media hosts (elevenlabs, deepgram, cartesia, stability,
+      replicate, bfl, fal, byteplus, reactor) keep their own capability
+      objects — token limits and request params don't apply; deepseek,
+      cerebras, dashscope, perplexity, together publish bare rows. Output uses OpenRouter's shapes: `file` for documents,
       `supported_parameters` names as feature flags (`tools`,
       `tool_choice`, `reasoning`, `reasoning_effort`, `temperature`,
       `top_p`, `top_k`, `structured_outputs`, `response_format`).
