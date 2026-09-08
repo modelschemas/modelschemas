@@ -121,6 +121,12 @@ export interface ModelInfo {
   modalities?: unknown
   pricing?: unknown
   capabilities?: unknown
+  /**
+   * Generation route (public endpoint id) when it depends on listing data
+   * the read path cannot see — Gemini's `supportedGenerationMethods`.
+   * Omit to let the provider's `generationEndpointId` bind by activity.
+   */
+  schemaEndpointId?: string | null
   deprecated?: boolean
   /**
    * Upstream release/creation time (epoch seconds) when the provider reports

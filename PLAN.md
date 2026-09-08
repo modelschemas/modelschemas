@@ -1115,9 +1115,12 @@ Design settled with Tom (don't relitigate):
       Docs-derived rules are marked in code: Anthropic `reasoning_mandatory`
       on Fable/Mythos and sampling removed from Opus 4.7 on; OpenAI sampling
       only on non-reasoning text models; Grok reasoning unless the id says
-      `non-reasoning`; Gemini modalities by activity. Gemini `capabilities`
-      no longer holds `supportedGenerationMethods`; its `:predict` route
-      binding keys off the `imagen-` prefix. Docs parses are memoised
+      `non-reasoning`; Gemini modalities by activity. Gemini `capabilities` no longer holds `supportedGenerationMethods`; the
+      `:predict` vs `:generateContent` decision those methods drive is now
+      made at list time and stored as `models.schema_endpoint_id`
+      (migration 0005), which the read path prefers over the config
+      binding — first-party data kept, no id-prefix guessing. Deploy needs
+      `db:migrate:remote` first (deploys do not run migrations). Docs parses are memoised
       in-isolate for 6h and fail closed: zero parsed rows throws and fails
       that provider's poll for the tick rather than nulling populated rows
       (which would fan out a bogus `model.updated` per model and again on

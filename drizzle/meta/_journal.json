@@ -36,6 +36,13 @@
       "when": 1786504104192,
       "tag": "0004_lethal_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788844578070,
+      "tag": "0005_exotic_joseph",
+      "breakpoints": true
     }
   ]
 }

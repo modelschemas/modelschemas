@@ -75,6 +75,7 @@ function toApiModel(row: ModelRow) {
     rawId: row.rawId,
     activity: row.activity,
     capabilities: row.capabilities,
+    schemaEndpointId: row.schemaEndpointId,
   })
   const schemaPath =
     schemaEndpointId !== null && row.activity !== null

@@ -341,14 +341,16 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     const body = (await fetchJson(url.toString())) as GeminiModelList
     for (const m of body.models ?? []) {
       const rawId = m.name.replace(/^models\//, '')
-      const activity = geminiModelActivity(
-        rawId,
-        m.supportedGenerationMethods ?? [],
-      )
+      const methods = m.supportedGenerationMethods ?? []
+      const activity = geminiModelActivity(rawId, methods)
       models.push({
         rawId,
         displayName: m.displayName ?? null,
         activity,
+        schemaEndpointId:
+          activity === null
+            ? null
+            : geminiGenerationEndpointId(activity, methods),
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
         modalities: geminiModalities(rawId, activity),
@@ -381,6 +383,6 @@ export const geminiProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
-  generationEndpointId: ({ rawId, activity }) =>
-    geminiGenerationEndpointId(rawId, activity),
+  generationEndpointId: ({ activity }) =>
+    geminiGenerationEndpointId(activity, []),
 }

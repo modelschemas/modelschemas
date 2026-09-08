@@ -105,18 +105,18 @@ describe('generation endpoint ids', () => {
   })
 
   it('binds gemini by activity, using predict for Imagen', () => {
-    expect(geminiGenerationEndpointId('imagen-4.0-generate-001', 'image')).toBe(
+    expect(geminiGenerationEndpointId('image', ['predict'])).toBe(
       'v1beta/models/{modelsId}:predict',
     )
-    expect(geminiGenerationEndpointId('gemini-2.5-flash-image', 'image')).toBe(
+    expect(geminiGenerationEndpointId('image', ['generateContent'])).toBe(
       'v1beta/models/{modelsId}:generateContent',
     )
-    expect(
-      geminiGenerationEndpointId('veo-3.1-generate-preview', 'video'),
-    ).toBe('v1beta/models/{modelsId}:predictLongRunning')
-    expect(
-      geminiGenerationEndpointId('gemini-embedding-001', 'embeddings'),
-    ).toBe('v1beta/models/{modelsId}:embedContent')
+    expect(geminiGenerationEndpointId('video', ['predictLongRunning'])).toBe(
+      'v1beta/models/{modelsId}:predictLongRunning',
+    )
+    expect(geminiGenerationEndpointId('embeddings', ['embedContent'])).toBe(
+      'v1beta/models/{modelsId}:embedContent',
+    )
   })
 
   it('derives OpenRouter activity from output modalities', () => {

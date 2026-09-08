@@ -383,6 +383,10 @@ export const models = sqliteTable(
     modalities: text('modalities', { mode: 'json' }),
     pricing: text('pricing', { mode: 'json' }),
     capabilities: text('capabilities', { mode: 'json' }),
+    // Generation route decided from listing data the read path cannot see
+    // (Gemini's supportedGenerationMethods → :predict vs :generateContent).
+    // Null → the provider config binds by activity at read time.
+    schemaEndpointId: text('schema_endpoint_id'),
     // Upstream release date when the provider reports one (backdated by the
     // poller, issue #1); otherwise when our poller first observed the model.
     firstSeenAt: integer('first_seen_at').notNull(),

@@ -19,6 +19,8 @@ export interface SchemaBindingModel {
   rawId: string
   activity: Activity | null
   capabilities?: unknown
+  /** Stored at poll time when the route depends on listing data. */
+  schemaEndpointId?: string | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -32,6 +34,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function resolveSchemaEndpointId(
   row: SchemaBindingModel,
 ): string | null {
+  if (row.schemaEndpointId) return row.schemaEndpointId
   const config = getProvider(row.providerId)
   if (row.activity !== null && config?.generationEndpointId) {
     const bound = config.generationEndpointId({
@@ -116,6 +119,7 @@ export async function resolveEndpointAlias(
     rawId: model.rawId,
     activity: model.activity,
     capabilities: model.capabilities,
+    schemaEndpointId: model.schemaEndpointId,
   })
   if (!bound || bound === endpointId) return null
 
