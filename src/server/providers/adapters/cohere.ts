@@ -3,6 +3,7 @@
  * (public). Models list requires COHERE_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { openAiCompatModelFacts } from '../openai-compat.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -49,6 +50,7 @@ interface CohereModel {
   is_deprecated?: boolean
   endpoints?: Array<string>
   context_length?: number
+  features?: Array<string> | null
 }
 
 interface CohereModelList {
@@ -89,9 +91,13 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       if (typeof m.name !== 'string' || m.name.length === 0) continue
       models.push({
         rawId: m.name,
-        contextWindow: m.context_length ?? null,
         activity: activityFromEndpoints(m.endpoints),
         deprecated: m.is_deprecated ?? false,
+        ...openAiCompatModelFacts({
+          id: m.name,
+          context_length: m.context_length,
+          features: m.features ?? undefined,
+        }),
       })
     }
     const next = body.next_page_token

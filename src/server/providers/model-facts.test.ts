@@ -251,3 +251,40 @@ describe('openai-compatible model rows', () => {
     )
   })
 })
+
+describe('openai-compatible model rows (novita / cohere vocab)', () => {
+  it('normalises hyphenated features and cohere feature names', () => {
+    expect(
+      openAiCompatModelFacts({
+        id: 'zai-org/glm-5.3-flash',
+        context_size: 1_048_576,
+        max_output_tokens: 131_072,
+        input_modalities: ['text', 'image', 'video'],
+        output_modalities: ['text'],
+        features: ['function-calling', 'structured-outputs', 'reasoning'],
+      }),
+    ).toEqual({
+      contextWindow: 1_048_576,
+      maxOutput: 131_072,
+      modalities: { input: ['text', 'image', 'video'], output: ['text'] },
+      capabilities: [
+        'tools',
+        'tool_choice',
+        'reasoning',
+        'structured_outputs',
+        'response_format',
+      ],
+    })
+    expect(
+      openAiCompatModelFacts({
+        id: 'c4ai-aya-vision-32b',
+        context_length: 16_384,
+        features: ['logprobs', 'vision', 'json_mode', 'tools'],
+      }),
+    ).toEqual({
+      contextWindow: 16_384,
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      capabilities: ['tools', 'tool_choice', 'response_format'],
+    })
+  })
+})
