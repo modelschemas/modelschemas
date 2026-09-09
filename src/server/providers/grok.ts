@@ -95,19 +95,6 @@ export function parseGrokContextWindows(markdown: string): Map<string, number> {
   return out
 }
 
-/**
- * Request features, docs-derived: every chat model takes tools, sampling
- * and structured output; Grok 4 onward reasons unless the id says
- * `non-reasoning`. Nothing published distinguishes effort support.
- */
-export function grokCapabilities(rawId: string): Array<string> | null {
-  if (grokModelActivity(rawId) !== 'chat') return null
-  const out = ['tools', 'tool_choice', 'temperature', 'top_p']
-  if (!/non-reasoning/.test(rawId)) out.push('reasoning')
-  out.push('structured_outputs', 'response_format')
-  return out
-}
-
 async function grokModelFacts(
   headers: HeadersInit,
 ): Promise<(rawId: string) => ModelFacts> {
@@ -142,7 +129,8 @@ async function grokModelFacts(
       modalities: m.input_modalities
         ? { input: m.input_modalities, output: m.output_modalities ?? [] }
         : null,
-      capabilities: grokCapabilities(rawId),
+      // xAI publishes no request-feature flags on any endpoint or doc table.
+      capabilities: null,
     }
   }
 }

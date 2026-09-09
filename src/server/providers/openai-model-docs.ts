@@ -80,18 +80,10 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
   )
   const reasoning = /^- Reasoning token support/m.test(details)
   const capabilities: Array<string> = []
-  if (features.has('function_calling')) {
-    capabilities.push('tools', 'tool_choice')
-  }
+  if (features.has('function_calling')) capabilities.push('tools')
   if (reasoning) capabilities.push('reasoning')
-  if (/Reasoning\.effort supports/i.test(markdown)) {
-    capabilities.push('reasoning_effort')
-  }
-  // Sampling params are rejected on reasoning models; accepted on the rest
-  // of the chat surface. The pages don't state it — docs-derived rule.
-  if (!reasoning && output.includes('text') && contextWindow !== null) {
-    capabilities.push('temperature', 'top_p')
-  }
+  // Effort levels and sampling-param support appear only in prose on the
+  // page; neither is a field, so neither is asserted here.
   if (features.has('structured_outputs')) {
     capabilities.push('structured_outputs', 'response_format')
   }

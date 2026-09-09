@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
-import { geminiCapabilities, geminiModalities } from './gemini.ts'
-import { grokCapabilities, parseGrokContextWindows } from './grok.ts'
+import { geminiCapabilities } from './gemini.ts'
+import { parseGrokContextWindows } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
 import { openAiCompatModelFacts } from './openai-compat.ts'
 import {
@@ -37,63 +37,34 @@ describe('model-facts helpers', () => {
 })
 
 describe('anthropic models api', () => {
-  it('derives request features from the capability tree + docs rules', () => {
-    const tree = {
-      thinking: { supported: true },
-      effort: { supported: true },
-      structured_outputs: { supported: true },
-    }
+  it('derives request features only from the capability tree', () => {
     expect(
-      anthropicCapabilities({ id: 'claude-fable-5-1', capabilities: tree }),
+      anthropicCapabilities({
+        id: 'claude-fable-5-1',
+        capabilities: {
+          thinking: { supported: true },
+          effort: { supported: true },
+          structured_outputs: { supported: true },
+        },
+      }),
     ).toEqual([
-      'tools',
-      'tool_choice',
       'reasoning',
       'reasoning_effort',
-      'reasoning_mandatory',
       'structured_outputs',
       'response_format',
     ])
     expect(
-      anthropicCapabilities({
-        id: 'claude-haiku-4-5-20251001',
-        capabilities: { thinking: { supported: true } },
-      }),
-    ).toEqual([
-      'tools',
-      'tool_choice',
-      'reasoning',
-      'temperature',
-      'top_p',
-      'top_k',
-    ])
+      anthropicCapabilities({ id: 'claude-x', capabilities: {} }),
+    ).toBeNull()
   })
 })
 
 describe('gemini models api', () => {
-  it('derives modalities and features by activity + list row', () => {
-    expect(geminiModalities('gemini-2.5-flash', 'chat')?.input).toContain(
-      'file',
-    )
-    expect(geminiModalities('imagen-4.0-generate-001', 'image')).toEqual({
-      input: ['text'],
-      output: ['image'],
-    })
+  it('derives request features only from row fields', () => {
     expect(
-      geminiCapabilities(
-        { thinking: true, temperature: 1, topP: 0.95 },
-        'chat',
-      ),
-    ).toEqual([
-      'tools',
-      'tool_choice',
-      'reasoning',
-      'temperature',
-      'top_p',
-      'structured_outputs',
-      'response_format',
-    ])
-    expect(geminiCapabilities({}, 'embeddings')).toBeNull()
+      geminiCapabilities({ thinking: true, temperature: 1, topP: 0.95 }),
+    ).toEqual(['reasoning', 'temperature', 'top_p'])
+    expect(geminiCapabilities({})).toBeNull()
   })
 })
 
@@ -114,14 +85,6 @@ describe('xai model docs', () => {
       ['grok-4.6', 500_000],
       ['grok-4.3', 1_000_000],
     ])
-  })
-
-  it('flags reasoning unless the id says non-reasoning; media models null', () => {
-    expect(grokCapabilities('grok-4.6')).toContain('reasoning')
-    expect(grokCapabilities('grok-4.20-0309-non-reasoning')).not.toContain(
-      'reasoning',
-    )
-    expect(grokCapabilities('grok-imagine-image')).toBeNull()
   })
 })
 
@@ -168,9 +131,7 @@ Reasoning.effort supports: minimal, low, medium, and high.
       modalities: { input: ['text', 'image'], output: ['text'] },
       capabilities: [
         'tools',
-        'tool_choice',
         'reasoning',
-        'reasoning_effort',
         'structured_outputs',
         'response_format',
       ],
@@ -210,7 +171,6 @@ describe('openai-compatible model rows', () => {
       modalities: { input: ['text'], output: ['text'] },
       capabilities: [
         'tools',
-        'tool_choice',
         'reasoning',
         'temperature',
         'top_p',
@@ -222,15 +182,9 @@ describe('openai-compatible model rows', () => {
       openAiCompatModelFacts({
         id: 'kimi-k2.6',
         context_length: 262144,
-        supports_image_in: true,
-        supports_video_in: true,
         supports_reasoning: true,
       }),
-    ).toEqual({
-      contextWindow: 262144,
-      modalities: { input: ['text', 'image', 'video'], output: ['text'] },
-      capabilities: ['reasoning'],
-    })
+    ).toEqual({ contextWindow: 262144, capabilities: ['reasoning'] })
     expect(
       openAiCompatModelFacts({
         id: 'mistral-large-latest',
@@ -241,11 +195,7 @@ describe('openai-compatible model rows', () => {
           reasoning: false,
         },
       }),
-    ).toMatchObject({
-      contextWindow: 262144,
-      modalities: { input: ['text', 'image'], output: ['text'] },
-      capabilities: ['tools', 'tool_choice'],
-    })
+    ).toEqual({ contextWindow: 262144, capabilities: ['tools'] })
     expect(openAiCompatModelFacts({ id: 'x', max_output_length: 0 })).toEqual(
       {},
     )
@@ -269,7 +219,6 @@ describe('openai-compatible model rows (novita / cohere vocab)', () => {
       modalities: { input: ['text', 'image', 'video'], output: ['text'] },
       capabilities: [
         'tools',
-        'tool_choice',
         'reasoning',
         'structured_outputs',
         'response_format',
@@ -277,14 +226,18 @@ describe('openai-compatible model rows (novita / cohere vocab)', () => {
     })
     expect(
       openAiCompatModelFacts({
-        id: 'c4ai-aya-vision-32b',
-        context_length: 16_384,
-        features: ['logprobs', 'vision', 'json_mode', 'tools'],
+        id: 'command-a-03-2025',
+        context_length: 288_000,
+        features: ['json_mode', 'json_schema', 'tools', 'tool_choice'],
       }),
     ).toEqual({
-      contextWindow: 16_384,
-      modalities: { input: ['text', 'image'], output: ['text'] },
-      capabilities: ['tools', 'tool_choice', 'response_format'],
+      contextWindow: 288_000,
+      capabilities: [
+        'tools',
+        'tool_choice',
+        'structured_outputs',
+        'response_format',
+      ],
     })
   })
 })

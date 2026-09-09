@@ -278,51 +278,18 @@ interface GeminiModelList {
 }
 
 /**
- * Modalities by activity, docs-derived: every Gemini generateContent model
- * takes text, image, audio, video and documents; TTS is text→audio;
- * embeddings and Imagen/Veo take text (+image for the media models).
- */
-export function geminiModalities(
-  rawId: string,
-  activity: Activity | null,
-): { input: Array<string>; output: Array<string> } | null {
-  switch (activity) {
-    case 'chat':
-      return {
-        input: ['text', 'image', 'audio', 'video', 'file'],
-        output: ['text'],
-      }
-    case 'audio':
-      return { input: ['text'], output: ['audio'] }
-    case 'image':
-      return rawId.toLowerCase().startsWith('imagen')
-        ? { input: ['text'], output: ['image'] }
-        : { input: ['text', 'image'], output: ['image', 'text'] }
-    case 'video':
-      return { input: ['text', 'image'], output: ['video'] }
-    case 'embeddings':
-      return { input: ['text'], output: ['embeddings'] }
-    default:
-      return null
-  }
-}
-
-/**
- * Request features from the Models API row (`thinking`, sampling defaults
- * present ⇒ accepted) plus the docs rule that every generateContent chat
- * model takes function calling and structured output.
+ * Request features the Models API row states: `thinking`, and a sampling
+ * default present ⇒ that param is accepted. Tool use and structured output
+ * are not on the row and stay unset. Modalities are not on the row either.
  */
 export function geminiCapabilities(
   m: Pick<GeminiModel, 'temperature' | 'topP' | 'topK' | 'thinking'>,
-  activity: Activity | null,
 ): Array<string> | null {
   const out: Array<string> = []
-  if (activity === 'chat') out.push('tools', 'tool_choice')
   if (m.thinking) out.push('reasoning')
   if (m.temperature !== undefined) out.push('temperature')
   if (m.topP !== undefined) out.push('top_p')
   if (m.topK !== undefined) out.push('top_k')
-  if (activity === 'chat') out.push('structured_outputs', 'response_format')
   return out.length > 0 ? out : null
 }
 
@@ -353,8 +320,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
             : geminiGenerationEndpointId(activity, methods),
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
-        modalities: geminiModalities(rawId, activity),
-        capabilities: geminiCapabilities(m, activity),
+        capabilities: geminiCapabilities(m),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
         releasedAt:

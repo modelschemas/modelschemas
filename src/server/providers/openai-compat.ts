@@ -116,9 +116,6 @@ export interface OpenAiCompatModelRow {
   max_output_tokens?: number
   input_modalities?: Array<string>
   output_modalities?: Array<string>
-  supports_image_input?: boolean
-  supports_image_in?: boolean
-  supports_video_in?: boolean
   supports_tools?: boolean
   supports_reasoning?: boolean
   /** groq/jina: `tools`, `json_mode`, `structured_outputs`, `reasoning`. */
@@ -153,30 +150,12 @@ export function openAiCompatModelFacts(
   )
   const sampling = new Set(m.supported_sampling_parameters ?? [])
 
-  let modalities: ModelFacts['modalities'] = null
-  if (m.input_modalities || m.output_modalities) {
-    modalities = {
-      input: m.input_modalities ?? [],
-      output: m.output_modalities ?? [],
-    }
-  } else if (
-    m.supports_image_input !== undefined ||
-    m.supports_image_in !== undefined ||
-    flags.vision !== undefined ||
-    features.has('vision')
-  ) {
-    const input = ['text']
-    if (
-      m.supports_image_input ||
-      m.supports_image_in ||
-      flags.vision ||
-      features.has('vision')
-    ) {
-      input.push('image')
-    }
-    if (m.supports_video_in) input.push('video')
-    modalities = { input, output: ['text'] }
-  }
+  // Modalities only when the row lists them outright. A lone image/vision
+  // boolean does not say what else the model takes or emits.
+  const modalities: ModelFacts['modalities'] =
+    m.input_modalities || m.output_modalities
+      ? { input: m.input_modalities ?? [], output: m.output_modalities ?? [] }
+      : null
 
   const caps: Array<string> = []
   if (
@@ -185,8 +164,9 @@ export function openAiCompatModelFacts(
     m.supports_tools ||
     flags.function_calling
   ) {
-    caps.push('tools', 'tool_choice')
+    caps.push('tools')
   }
+  if (features.has('tool_choice')) caps.push('tool_choice')
   if (features.has('reasoning') || m.supports_reasoning || flags.reasoning) {
     caps.push('reasoning')
   }

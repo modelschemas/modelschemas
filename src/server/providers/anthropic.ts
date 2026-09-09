@@ -60,17 +60,6 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-/**
- * Docs-derived rules the Models API capability tree does not carry:
- * thinking cannot be turned off on the Fable/Mythos tier (`{type:
- * "disabled"}` is a 400 — the tree reads the same as adaptive-by-default
- * Opus 5), and sampling params (temperature/top_p/top_k) are rejected from
- * Opus 4.7 onward (Fable, Opus 4.7/4.8/5, Sonnet 5).
- */
-const ALWAYS_THINKING = /^claude-(fable|mythos)-/
-const SAMPLING_REMOVED =
-  /^claude-(fable|mythos|opus-5|opus-4-[78]|sonnet-5)(-|$)/
-
 interface Supported {
   supported?: boolean
 }
@@ -96,20 +85,20 @@ interface AnthropicModelList {
   last_id?: string
 }
 
-/** Request features from the Models API capability tree + the docs rules. */
-export function anthropicCapabilities(m: AnthropicModel): Array<string> {
+/**
+ * Request features the Models API capability tree states. The tree does
+ * not cover tool use, sampling params, or whether thinking can be turned
+ * off (Fable/Mythos) — those live in prose docs and stay unset here.
+ */
+export function anthropicCapabilities(m: AnthropicModel): Array<string> | null {
   const caps = m.capabilities
-  const out = ['tools', 'tool_choice']
+  const out: Array<string> = []
   if (caps?.thinking?.supported) out.push('reasoning')
   if (caps?.effort?.supported) out.push('reasoning_effort')
-  if (caps?.thinking?.supported && ALWAYS_THINKING.test(m.id)) {
-    out.push('reasoning_mandatory')
-  }
-  if (!SAMPLING_REMOVED.test(m.id)) out.push('temperature', 'top_p', 'top_k')
   if (caps?.structured_outputs?.supported) {
     out.push('structured_outputs', 'response_format')
   }
-  return out
+  return out.length > 0 ? out : null
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {

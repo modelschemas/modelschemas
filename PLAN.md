@@ -1112,10 +1112,14 @@ Design settled with Tom (don't relitigate):
       `supported_parameters` names as feature flags (`tools`,
       `tool_choice`, `reasoning`, `reasoning_effort`, `temperature`,
       `top_p`, `top_k`, `structured_outputs`, `response_format`).
-      Docs-derived rules are marked in code: Anthropic `reasoning_mandatory`
-      on Fable/Mythos and sampling removed from Opus 4.7 on; OpenAI sampling
-      only on non-reasoning text models; Grok reasoning unless the id says
-      `non-reasoning`; Gemini modalities by activity. Gemini `capabilities` no longer holds `supportedGenerationMethods`; the
+      Nothing is inferred: a value is stored only when a provider field or
+      table cell states it. So Grok has no capabilities (xAI publishes no
+      feature flags), Gemini has no modalities (not on the row), a lone
+      image/vision boolean does not produce a modalities object,
+      `tool_choice` needs its own flag, and Anthropic's tool use, sampling
+      params and Fable-tier mandatory thinking stay unset (prose only). Those
+      prose-only facts are the target of the AI docs-extraction follow-up,
+      which will attach the backing quote to each value. Gemini `capabilities` no longer holds `supportedGenerationMethods`; the
       `:predict` vs `:generateContent` decision those methods drive is now
       made at list time and stored as `models.schema_endpoint_id`
       (migration 0005), which the read path prefers over the config
