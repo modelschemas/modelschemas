@@ -113,17 +113,10 @@ export interface ProviderSecrets {
 
 /**
  * How one catalog fact was arrived at (issue #53). Strongest first:
- * listing → bound schema (upstream-spec / generated / probe-verified /
- * docs-derived) → docs-extracted → openrouter.
+ * listing → bound schema (`Derivation` rungs). `generated` schemas are
+ * not walked onto catalog rows.
  */
-export type FactDerivation =
-  | 'listing'
-  | 'upstream-spec'
-  | 'generated'
-  | 'probe-verified'
-  | 'docs-derived'
-  | 'docs-extracted'
-  | 'openrouter'
+export type FactDerivation = Derivation | 'listing'
 
 /** Provenance for one stored catalog field or capability flag. */
 export interface FactSource {
@@ -135,8 +128,6 @@ export interface FactSource {
   endpointId?: string
   /** JSON pointer or field name in the source document. */
   path?: string
-  /** Verbatim sentence; required for `docs-extracted`. */
-  quote?: string
 }
 
 /** Per-field (and per-flag) provenance for a catalog row. */
@@ -322,7 +313,10 @@ export interface ProviderConfig {
   /** Fetch + parse the provider's OpenAPI spec document(s). */
   fetchSpec: (env: ProviderSecrets) => Promise<SpecFetchResult>
   /** List currently served models from the provider's cheap models endpoint. */
-  listModels: (env: ProviderSecrets) => Promise<ListModelsResult>
+  listModels: (
+    env: ProviderSecrets,
+    kv?: KVNamespace,
+  ) => Promise<ListModelsResult>
   /**
    * Classify an endpoint to an activity group; `null` means platform/admin
    * surface — dropped from schema generation.

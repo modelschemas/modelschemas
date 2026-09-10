@@ -48,7 +48,6 @@ describe('walkRequestSchema', () => {
       derivation: 'upstream-spec',
       endpointId: 'v1/messages',
       sourceUrl: 'https://api.anthropic.com/openapi.json',
-      activity: 'chat',
     })
     expect(walk?.flags.sort()).toEqual(
       [
@@ -65,8 +64,8 @@ describe('walkRequestSchema', () => {
       endpointId: 'v1/messages',
       path: '/properties/tools',
     })
-    expect(walk?.modalities?.input.sort()).toEqual(['image', 'text'].sort())
-    expect(walk?.modalities?.output).toEqual(['text'])
+    expect(walk?.modalities?.input.sort()).toEqual(['image'])
+    expect(walk?.modalities?.output).toEqual([])
   })
 
   it('walks Gemini generationConfig and responseSchema', () => {
@@ -157,6 +156,20 @@ describe('provenance helpers', () => {
     })
   })
 
+  it('overlays provider tags on listing defaults', () => {
+    expect(
+      listingSources({
+        rawId: 'x',
+        contextWindow: 8_000,
+        maxOutput: 4_000,
+        factSources: { contextWindow: { derivation: 'docs-derived' } },
+      }),
+    ).toEqual({
+      contextWindow: { derivation: 'docs-derived' },
+      maxOutput: { derivation: 'listing' },
+    })
+  })
+
   it('tags docs facts per field', () => {
     const sources = tagDocsFacts(
       {
@@ -174,7 +187,7 @@ describe('provenance helpers', () => {
   it('skips generated schemas at the rung check', () => {
     expect(schemaRung('generated')).toBeNull()
     expect(schemaRung('upstream-spec')).toBe('upstream-spec')
-    expect(schemaRung(null)).toBe('upstream-spec')
+    expect(schemaRung(null)).toBeNull()
   })
 })
 
@@ -183,6 +196,13 @@ describe('OpenRouter compare', () => {
     expect(openRouterJoinIds('openai', 'gpt-5-2025-08-07')).toEqual([
       'openai/gpt-5-2025-08-07',
       'openai/gpt-5',
+    ])
+    expect(
+      openRouterJoinIds('anthropic', 'claude-sonnet-4-5-20250929'),
+    ).toEqual([
+      'anthropic/claude-sonnet-4-5-20250929',
+      'anthropic/claude-sonnet-4-5',
+      'anthropic/claude-sonnet-4.5',
     ])
     expect(openRouterJoinIds('grok', 'grok-4.6')).toEqual(['x-ai/grok-4.6'])
     expect(openRouterJoinIds('fal', 'x')).toEqual([])
@@ -193,7 +213,7 @@ describe('OpenRouter compare', () => {
       {
         contextWindow: 200_000,
         maxOutput: 8_192,
-        modalities: null,
+        modalities: { input: ['text', 'image'], output: ['text'] },
         capabilities: ['tools', 'temperature'],
         factSources: {
           capabilities: { tools: { derivation: 'upstream-spec' } },
@@ -203,12 +223,16 @@ describe('OpenRouter compare', () => {
         rawId: 'anthropic/claude-sonnet-4.5',
         contextWindow: 200_000,
         maxOutput: 8_192,
-        modalities: null,
+        modalities: { input: ['text'], output: ['text'] },
         capabilities: ['tools', 'top_p'],
       },
     )
     expect(diffs).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          field: 'modalities',
+          oursDerivation: null,
+        }),
         expect.objectContaining({
           field: 'capabilities.temperature',
           ours: true,

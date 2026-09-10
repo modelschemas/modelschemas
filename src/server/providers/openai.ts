@@ -70,7 +70,10 @@ interface OpenAiModelList {
   data?: Array<{ id: string; created?: number }>
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.OPENAI_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('openai', 'OPENAI_API_KEY') }
@@ -79,7 +82,10 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     headers: { Authorization: `Bearer ${key}` },
   })) as OpenAiModelList
   const listed = body.data ?? []
-  const facts = await openaiModelFacts(listed.map((m) => m.id))
+  const facts = await openaiModelFacts(
+    listed.map((m) => m.id),
+    kv,
+  )
   return {
     models: listed.map((m) => ({
       rawId: m.id,

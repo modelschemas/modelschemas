@@ -170,7 +170,7 @@ describe('provider-scoped queries', () => {
     expect(byRaw?.id).toBe('cat-beta-chatter')
     expect(byRaw?._links.schemas.href).toBe('/v1/schemas/cat-beta')
     expect(byRaw?.schemaEndpointId).toBeNull()
-    expect(byRaw?.factSources).toEqual({})
+    expect(byRaw?.factSources).toBeNull()
     expect(byRaw?.discrepancies).toEqual([])
     expect(await getModelDetail(db, 'cat-beta', 'missing')).toBeNull()
   })
@@ -182,7 +182,7 @@ describe('provider-scoped queries', () => {
       provider: 'cat-alpha',
       provenance: true,
     })
-    expect(withProv.models[0]?.factSources).toEqual({})
+    expect(withProv.models[0]?.factSources).toBeNull()
   })
 
   it('binds grain=provider models to a generation route and FAL to its raw id', async () => {

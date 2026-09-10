@@ -1,26 +1,11 @@
 /**
  * Shared helpers for catalog facts the native `/models` endpoints omit
  * (issue #53): context window, max output, modalities, request-feature
- * capabilities. Pricing is a separate PR.
- *
- * Every provider fills these from its own sources — a first-party extras
- * endpoint where one exists, else the provider's published docs (all four
- * serve model/pricing pages as markdown or stably-classed HTML). No
- * third-party catalog: this service is meant to be the source, not a
- * mirror of one. Rows nothing covers stay null.
- *
- * Docs fetches fail closed: a parse that yields zero rows throws, which
- * fails that provider's poll for the tick instead of writing nulls over
- * populated rows (that would fan out a bogus `model.updated` per model,
- * then another on recovery). Parsed docs are memoised in-isolate for six
- * hours; model docs change on release cadence, not poll cadence.
- *
- * Output shapes follow OpenRouter's catalog rows so consumers read one
- * vocabulary: modalities use `file` for documents, and capabilities are
- * OpenRouter `supported_parameters` names used as feature flags — the
- * native wire names differ (Gemini `toolConfig`, Anthropic
- * `output_config.format`).
+ * capabilities. Docs parses fail closed (zero rows throws). Parsed docs
+ * live in KV for six hours so cron isolates do not refetch every tick.
  */
+import { getJson, putJson } from '#/server/kv.ts'
+
 import type { ModelInfo } from './types.ts'
 
 export type ModelFacts = Pick<
@@ -70,21 +55,27 @@ export function markdownTableRows(text: string): Array<Array<string>> {
   return rows
 }
 
-const memo = new Map<string, { at: number; value: Promise<unknown> }>()
-const MEMO_TTL_MS = 6 * 60 * 60_000
+const DOCS_TTL_SECONDS = 6 * 60 * 60
 
 /**
- * In-isolate memo for parsed docs. A rejected fetch is evicted so the next
- * poll retries. Keyed by URL; the value is whatever the parser returns.
+ * KV cache for parsed docs, keyed by source URL. A failed load is not
+ * stored, so the next poll retries. `kv` is omitted in unit tests that
+ * never hit the network.
  */
-export function memoized<T>(key: string, load: () => Promise<T>): Promise<T> {
-  const hit = memo.get(key)
-  if (hit && Date.now() - hit.at < MEMO_TTL_MS) return hit.value as Promise<T>
-  const value = load()
-  memo.set(key, { at: Date.now(), value })
-  value.catch(() => {
-    if (memo.get(key)?.value === value) memo.delete(key)
-  })
+export async function cachedDocs<T>(
+  kv: KVNamespace | undefined,
+  url: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  const key = `docs:${url}`
+  if (kv) {
+    const hit = await getJson<T>(kv, key)
+    if (hit !== null) return hit
+  }
+  const value = await load()
+  if (kv) {
+    await putJson(kv, key, value, { expirationTtl: DOCS_TTL_SECONDS })
+  }
   return value
 }
 
@@ -104,7 +95,9 @@ export async function mapConcurrent<T, TResult>(
   const worker = async () => {
     while (next < items.length) {
       const index = next++
-      results[index] = await fn(items[index] as T)
+      const item = items[index]
+      if (item === undefined) continue
+      results[index] = await fn(item)
     }
   }
   await Promise.all(

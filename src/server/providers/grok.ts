@@ -10,19 +10,17 @@ import {
   grokGenerationEndpointId,
   grokModelActivity,
 } from './model-meta.ts'
-import { tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
+  cachedDocs,
   markdownTableRows,
-  memoized,
   tokenCount,
 } from './model-facts.ts'
 import type { ModelFacts } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
-  ModelFactSources,
   OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
@@ -99,6 +97,7 @@ export function parseGrokContextWindows(markdown: string): Map<string, number> {
 
 async function grokModelFacts(
   headers: HeadersInit,
+  kv: KVNamespace | undefined,
 ): Promise<(rawId: string) => ModelFacts> {
   const extras = (url: string) =>
     fetchJson(url, { headers }) as Promise<{ models?: Array<GrokExtrasModel> }>
@@ -106,12 +105,12 @@ async function grokModelFacts(
     extras(GROK_LANGUAGE_MODELS_URL),
     extras(GROK_IMAGE_MODELS_URL),
     extras(GROK_VIDEO_MODELS_URL),
-    memoized(GROK_DOCS_MODELS_URL, async () => {
+    cachedDocs(kv, GROK_DOCS_MODELS_URL, async () => {
       const parsed = parseGrokContextWindows(
         await fetchText(GROK_DOCS_MODELS_URL),
       )
       assertParsed(parsed, 'xai models docs')
-      return parsed
+      return Object.fromEntries(parsed)
     }),
   ])
   const byId = new Map<string, GrokExtrasModel>()
@@ -125,7 +124,7 @@ async function grokModelFacts(
   return (rawId) => {
     const m = byId.get(rawId)
     if (!m) return NO_FACTS
-    const contextWindow = contexts.get(rawId) ?? null
+    const contextWindow = contexts[rawId] ?? null
     const modalities = m.input_modalities
       ? { input: m.input_modalities, output: m.output_modalities ?? [] }
       : null
@@ -136,24 +135,23 @@ async function grokModelFacts(
       // xAI publishes no request-feature flags on any endpoint or doc table.
       capabilities: null,
     }
-    const sources: ModelFactSources = tagDocsFacts(
-      { contextWindow, maxOutput: null, modalities: null, capabilities: null },
-      GROK_DOCS_MODELS_URL,
-    )
-    if (modalities) {
-      sources.modalities = {
-        derivation: 'listing',
-        path: 'input_modalities',
+    if (contextWindow != null) {
+      facts.factSources = {
+        contextWindow: {
+          derivation: 'docs-derived',
+          sourceUrl: GROK_DOCS_MODELS_URL,
+          path: 'contextWindow',
+        },
       }
-    }
-    if (sources.contextWindow || sources.modalities) {
-      facts.factSources = sources
     }
     return facts
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.XAI_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('grok', 'XAI_API_KEY') }
@@ -161,7 +159,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const headers = { Authorization: `Bearer ${key}` }
   const [body, facts] = await Promise.all([
     fetchJson(GROK_MODELS_URL, { headers }) as Promise<GrokModelList>,
-    grokModelFacts(headers),
+    grokModelFacts(headers, kv),
   ])
   return {
     models: (body.data ?? []).map((m) => ({

@@ -4,6 +4,7 @@
  * value keeps the winning rung. `generated` OpenAI-borrowed specs are
  * skipped — walking them would stamp OpenAI's tools onto DeepSeek etc.
  */
+import { undatedId } from './model-facts.ts'
 import type {
   Derivation,
   FactDerivation,
@@ -11,13 +12,6 @@ import type {
   ModelFactSources,
   ModelInfo,
 } from './types.ts'
-
-const SCHEMA_RUNGS: ReadonlySet<string> = new Set([
-  'upstream-spec',
-  'generated',
-  'probe-verified',
-  'docs-derived',
-])
 
 /** OpenRouter `supported_parameters` names plus native extras we already store. */
 const PROPERTY_TO_FLAG: Record<string, string> = {
@@ -91,20 +85,31 @@ function emptySources(sources: ModelFactSources): boolean {
   )
 }
 
+function listingSource(): FactSource {
+  return { derivation: 'listing' }
+}
+
 export function listingSources(info: ModelInfo): ModelFactSources {
-  if (info.factSources) return info.factSources
-  const src: FactSource = { derivation: 'listing' }
   const out: ModelFactSources = {}
-  if (info.contextWindow != null) out.contextWindow = src
-  if (info.maxOutput != null) out.maxOutput = src
-  if (info.modalities != null) out.modalities = src
-  if (info.pricing != null) out.pricing = src
+  if (info.contextWindow != null) out.contextWindow = listingSource()
+  if (info.maxOutput != null) out.maxOutput = listingSource()
+  if (info.modalities != null) out.modalities = listingSource()
+  if (info.pricing != null) out.pricing = listingSource()
   if (isStringArray(info.capabilities) && info.capabilities.length > 0) {
     out.capabilities = Object.fromEntries(
-      info.capabilities.map((flag) => [flag, src]),
+      info.capabilities.map((flag) => [flag, listingSource()]),
     )
   }
-  return out
+  if (!info.factSources) return out
+  const capabilities =
+    out.capabilities || info.factSources.capabilities
+      ? { ...out.capabilities, ...info.factSources.capabilities }
+      : undefined
+  return {
+    ...out,
+    ...info.factSources,
+    ...(capabilities ? { capabilities } : {}),
+  }
 }
 
 /** Attach `docs-derived` provenance to every stated fact on a docs page. */
@@ -182,7 +187,6 @@ export function walkRequestSchema(
     sourceUrl?: string | null
     sourceHash?: string | null
     fetchedAt?: number
-    activity?: ModelInfo['activity']
   },
 ): SchemaWalk | null {
   if (!isRecord(schema)) return null
@@ -234,12 +238,8 @@ export function walkRequestSchema(
     visitKeys(resolved.anyOf, depth + 1)
     visitKeys(resolved.oneOf, depth + 1)
     visitKeys(resolved.allOf, depth + 1)
-    visitKeys(resolved.$defs, depth + 1)
   }
   visitKeys(schema, 0)
-  if (input.size > 0 && (meta.activity === 'chat' || meta.activity == null)) {
-    input.add('text')
-  }
 
   const source = (path: string): FactSource => ({
     derivation: meta.derivation,
@@ -259,17 +259,7 @@ export function walkRequestSchema(
   }
   let modalities: SchemaWalk['modalities'] = null
   if (input.size > 0) {
-    const output =
-      meta.activity === 'image'
-        ? ['image']
-        : meta.activity === 'audio'
-          ? ['audio']
-          : meta.activity === 'video'
-            ? ['video']
-            : meta.activity === 'embeddings'
-              ? ['embeddings']
-              : ['text']
-    modalities = { input: [...input], output }
+    modalities = { input: [...input], output: [] }
     sources.modalities = source('modalities')
   }
   if (flagList.length === 0 && modalities === null) return null
@@ -295,11 +285,7 @@ export function mergeListingAndSchema(
   walk: SchemaWalk | null,
 ): MergedFacts {
   const listed = listingSources(listing)
-  const capabilitiesIsObject =
-    listing.capabilities !== null &&
-    listing.capabilities !== undefined &&
-    isRecord(listing.capabilities) &&
-    !Array.isArray(listing.capabilities)
+  const capabilitiesIsObject = isRecord(listing.capabilities)
 
   let capabilities: unknown = listing.capabilities ?? null
   const capSources: Record<string, FactSource> = {
@@ -307,11 +293,9 @@ export function mergeListingAndSchema(
   }
   if (!capabilitiesIsObject && walk && walk.flags.length > 0) {
     const have = new Set(isStringArray(capabilities) ? capabilities : [])
-    const added: Array<string> = []
     for (const flag of walk.flags) {
       if (have.has(flag)) continue
       have.add(flag)
-      added.push(flag)
       const src = walk.sources.capabilities?.[flag]
       if (src) capSources[flag] = src
     }
@@ -341,10 +325,8 @@ export function mergeListingAndSchema(
 export function schemaRung(
   derivation: Derivation | null,
 ): FactDerivation | null {
-  if (derivation === null) return 'upstream-spec'
-  if (derivation === 'generated') return null
-  if (SCHEMA_RUNGS.has(derivation)) return derivation
-  return null
+  if (derivation === null || derivation === 'generated') return null
+  return derivation
 }
 
 export interface FactDiscrepancy {
@@ -382,14 +364,29 @@ export function openRouterJoinIds(
   const author = OPENROUTER_AUTHOR[providerId]
   if (!author) return []
   const ids = [`${author}/${rawId}`]
-  const undated = rawId.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '')
+  const undated = undatedId(rawId)
   if (undated !== rawId) ids.push(`${author}/${undated}`)
+  const dotted = undated.replace(/(\d+)-(\d+)$/, '$1.$2')
+  if (dotted !== undated) ids.push(`${author}/${dotted}`)
   return ids
 }
 
 function sortedStrings(value: unknown): Array<string> | null {
   if (!isStringArray(value)) return null
   return [...value].sort()
+}
+
+function modalitiesOf(
+  value: unknown,
+): { input: Array<string>; output: Array<string> } | null {
+  if (!isRecord(value)) return null
+  const hasInput = isStringArray(value.input)
+  const hasOutput = isStringArray(value.output)
+  if (!hasInput && !hasOutput) return null
+  return {
+    input: sortedStrings(value.input) ?? [],
+    output: sortedStrings(value.output) ?? [],
+  }
 }
 
 function capDerivation(
@@ -446,6 +443,22 @@ export function factDiscrepancies(
       openrouter.maxOutput,
       ours.factSources?.maxOutput?.derivation ?? null,
     )
+  }
+  const oursMod = modalitiesOf(ours.modalities)
+  const theirMod = modalitiesOf(openrouter.modalities)
+  if (oursMod !== null || theirMod !== null) {
+    if (
+      oursMod === null ||
+      theirMod === null ||
+      JSON.stringify(oursMod) !== JSON.stringify(theirMod)
+    ) {
+      push(
+        'modalities',
+        ours.modalities,
+        openrouter.modalities,
+        ours.factSources?.modalities?.derivation ?? null,
+      )
+    }
   }
   const oursCaps = sortedStrings(ours.capabilities)
   const theirCaps = sortedStrings(openrouter.capabilities)

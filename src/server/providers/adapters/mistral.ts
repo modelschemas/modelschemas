@@ -3,11 +3,9 @@
  * Models listing requires MISTRAL_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
-import { openAiCompatModelFacts } from '../openai-compat.ts'
-import type { OpenAiCompatModelRow } from '../openai-compat.ts'
-import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
+import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import { fetchOpenApi } from '../types.ts'
 import type {
-  ListModelsResult,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -49,29 +47,6 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-interface MistralModelList {
-  data?: Array<OpenAiCompatModelRow>
-}
-
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  const key = env.MISTRAL_API_KEY
-  if (!key) {
-    return { models: [], ...skippedResult('mistral', 'MISTRAL_API_KEY') }
-  }
-  const body = (await fetchJson(MISTRAL_MODELS_URL, {
-    headers: { Authorization: `Bearer ${key}` },
-  })) as MistralModelList
-  return {
-    models: (body.data ?? [])
-      .filter((m) => typeof m.id === 'string' && m.id.length > 0)
-      .map((m) => ({
-        rawId: m.id,
-        releasedAt: m.created ?? null,
-        ...openAiCompatModelFacts(m),
-      })),
-  }
-}
-
 export const provider: ProviderConfig = {
   id: 'mistral',
   displayName: 'Mistral',
@@ -80,6 +55,12 @@ export const provider: ProviderConfig = {
   modelsEndpoint: MISTRAL_MODELS_URL,
   defaultDerivation: 'upstream-spec',
   fetchSpec,
-  listModels,
+  listModels: (env) =>
+    listOpenAiCompatibleModels({
+      providerId: 'mistral',
+      url: MISTRAL_MODELS_URL,
+      env,
+      envVar: 'MISTRAL_API_KEY',
+    }),
   classify,
 }

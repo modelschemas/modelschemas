@@ -371,4 +371,85 @@ describe('pollProviderModels', () => {
       endpointId: 'v1/messages',
     })
   })
+
+  it('does not walk generated specs onto catalog rows', async () => {
+    const id = 'poll-generated'
+    const deps = await freshDeps(id)
+    await deps.db.insert(endpoints).values({
+      id: `${id}/v1/messages`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/v1/messages',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/v1/messages:input`,
+      endpointId: `${id}/v1/messages`,
+      kind: 'input',
+      contentHash: 'a'.repeat(64),
+      schema: JSON.stringify({
+        properties: { tools: { type: 'array' } },
+      }),
+      derivation: 'upstream-spec',
+      createdAt: 1_781_150_000,
+    })
+    await pollProviderModels(deps, {
+      ...stubProvider(id, [
+        {
+          rawId: 'deepseek-chat',
+          activity: 'chat',
+          schemaEndpointId: 'v1/messages',
+        },
+      ]),
+      defaultDerivation: 'generated',
+    })
+    const row = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, 'deepseek-chat')))
+    expect(row[0]?.capabilities).toBeNull()
+  })
+
+  it('does not emit model.updated when only schema provenance metadata changes', async () => {
+    const id = 'poll-sources'
+    const deps = await freshDeps(id)
+    await deps.db.insert(endpoints).values({
+      id: `${id}/v1/messages`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/v1/messages',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/v1/messages:input`,
+      endpointId: `${id}/v1/messages`,
+      kind: 'input',
+      contentHash: 'a'.repeat(64),
+      schema: JSON.stringify({
+        properties: { tools: { type: 'array' } },
+      }),
+      derivation: 'upstream-spec',
+      sourceHash: 'a'.repeat(64),
+      createdAt: 1_781_150_000,
+    })
+    const listed = stubProvider(id, [
+      {
+        rawId: 'claude-sonnet-4-5',
+        activity: 'chat',
+        schemaEndpointId: 'v1/messages',
+      },
+    ])
+    expect(await pollProviderModels(deps, listed)).toMatchObject({
+      added: 1,
+      updated: 0,
+    })
+    await deps.db
+      .update(schemaVersions)
+      .set({ sourceHash: 'b'.repeat(64), createdAt: 1_781_150_100 })
+      .where(eq(schemaVersions.id, `${id}/v1/messages:input`))
+    expect(await pollProviderModels(deps, listed)).toMatchObject({
+      added: 0,
+      updated: 0,
+    })
+  })
 })

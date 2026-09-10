@@ -14,6 +14,7 @@ import {
 } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
+import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
   mergeListingAndSchema,
   schemaRung,
@@ -76,36 +77,64 @@ function comparable(info: ModelInfo): Record<string, unknown> {
     pricing: info.pricing ?? null,
     capabilities: info.capabilities ?? null,
     schemaEndpointId: info.schemaEndpointId ?? null,
-    factSources: info.factSources ?? null,
     deprecated: info.deprecated ?? false,
   }
 }
 
 async function loadInputWalks(
   db: SyncDeps['db'],
-  providerId: string,
+  provider: ProviderConfig,
+  listed: Array<ModelInfo>,
 ): Promise<Map<string, SchemaWalk>> {
-  const rows = await db
-    .select({
-      endpointId: schemaVersions.endpointId,
-      activity: endpoints.activity,
-      schema: schemaVersions.schema,
-      derivation: schemaVersions.derivation,
-      sourceUrl: schemaVersions.sourceUrl,
-      sourceHash: schemaVersions.sourceHash,
-      createdAt: schemaVersions.createdAt,
+  const walks = new Map<string, SchemaWalk>()
+  if (
+    resolveSpecGrain(provider) === 'model' ||
+    provider.defaultDerivation === 'generated'
+  ) {
+    return walks
+  }
+  const bound = new Set<string>()
+  for (const info of listed) {
+    const id = resolveSchemaEndpointId({
+      providerId: provider.id,
+      rawId: info.rawId,
+      activity: info.activity ?? null,
+      capabilities: info.capabilities,
+      schemaEndpointId: info.schemaEndpointId,
     })
-    .from(schemaVersions)
-    .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
-    .where(
-      and(
-        eq(endpoints.providerId, providerId),
-        eq(schemaVersions.kind, 'input'),
-        isNull(schemaVersions.supersededAt),
+    if (id) bound.add(id)
+  }
+  if (bound.size === 0) return walks
+  const dbIds = [...bound].map((id) => `${provider.id}/${id}`)
+  const chunks: Array<Array<string>> = []
+  for (let i = 0; i < dbIds.length; i += 90) {
+    chunks.push(dbIds.slice(i, i + 90))
+  }
+  const rows = (
+    await Promise.all(
+      chunks.map((chunk) =>
+        db
+          .select({
+            endpointId: schemaVersions.endpointId,
+            schema: schemaVersions.schema,
+            derivation: schemaVersions.derivation,
+            sourceUrl: schemaVersions.sourceUrl,
+            sourceHash: schemaVersions.sourceHash,
+            createdAt: schemaVersions.createdAt,
+          })
+          .from(schemaVersions)
+          .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+          .where(
+            and(
+              inArray(schemaVersions.endpointId, chunk),
+              eq(schemaVersions.kind, 'input'),
+              isNull(schemaVersions.supersededAt),
+            ),
+          ),
       ),
     )
-  const walks = new Map<string, SchemaWalk>()
-  const prefix = `${providerId}/`
+  ).flat()
+  const prefix = `${provider.id}/`
   for (const row of rows) {
     const publicId = row.endpointId.startsWith(prefix)
       ? row.endpointId.slice(prefix.length)
@@ -119,7 +148,6 @@ async function loadInputWalks(
       sourceUrl: row.sourceUrl,
       sourceHash: row.sourceHash,
       fetchedAt: row.createdAt,
-      activity: row.activity,
     })
     if (walk) walks.set(publicId, walk)
   }
@@ -167,14 +195,14 @@ export async function pollProviderModels(
   }
   await ensureProviderRow(db, provider)
 
-  const listed = await provider.listModels(secrets)
+  const listed = await provider.listModels(secrets, deps.kv)
   if (listed.skipped) {
     outcome.skipped = listed.skipped
     return outcome
   }
   outcome.modelsSeen = listed.models.length
 
-  const walks = await loadInputWalks(db, provider.id)
+  const walks = await loadInputWalks(db, provider, listed.models)
 
   const existingRows = await db
     .select()
@@ -241,7 +269,6 @@ export async function pollProviderModels(
       pricing: existing.pricing,
       capabilities: existing.capabilities,
       schemaEndpointId: existing.schemaEndpointId,
-      factSources: existing.factSources,
       deprecated: existing.deprecatedAt !== null,
     }
     const after = comparable({

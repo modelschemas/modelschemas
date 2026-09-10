@@ -10,8 +10,8 @@ import { tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
+  cachedDocs,
   mapConcurrent,
-  memoized,
   tokenCount,
   undatedId,
 } from './model-facts.ts'
@@ -115,14 +115,19 @@ export function pageSlugFor(rawId: string, slugs: Set<string>): string | null {
  */
 export async function openaiModelFacts(
   rawIds: Array<string>,
+  kv?: KVNamespace,
 ): Promise<(rawId: string) => ModelFacts> {
-  const slugs = await memoized(OPENAI_MODELS_INDEX_URL, async () => {
-    const parsed = parseModelIndex(await fetchText(OPENAI_MODELS_INDEX_URL))
-    if (parsed.size === 0) {
-      throw new Error('openai models index: parsed 0 page slugs')
-    }
-    return parsed
-  })
+  const slugs = new Set(
+    await cachedDocs(kv, OPENAI_MODELS_INDEX_URL, async () => {
+      const parsed = [
+        ...parseModelIndex(await fetchText(OPENAI_MODELS_INDEX_URL)),
+      ]
+      if (parsed.length === 0) {
+        throw new Error('openai models index: parsed 0 page slugs')
+      }
+      return parsed
+    }),
+  )
   const needed = [
     ...new Set(
       rawIds
@@ -130,21 +135,31 @@ export async function openaiModelFacts(
         .filter((slug): slug is string => slug !== null),
     ),
   ]
-  const pages = await mapConcurrent(needed, 8, (slug) =>
-    memoized(OPENAI_MODEL_PAGE(slug), async () =>
-      parseModelPage(await fetchText(OPENAI_MODEL_PAGE(slug))),
-    ),
-  )
-  const byId = new Map<string, ModelFacts>()
-  for (let i = 0; i < pages.length; i++) {
-    const page = pages[i]
-    const slug = needed[i]
-    if (!page || slug === undefined) continue
-    const facts: ModelFacts = {
-      ...page.facts,
-      factSources: tagDocsFacts(page.facts, OPENAI_MODEL_PAGE(slug)),
+  const pages = await mapConcurrent(needed, 8, async (slug) => {
+    try {
+      const page = await cachedDocs(kv, OPENAI_MODEL_PAGE(slug), async () => {
+        const parsed = parseModelPage(await fetchText(OPENAI_MODEL_PAGE(slug)))
+        if (!parsed) {
+          throw new Error(`openai model page ${slug}: no Model ID`)
+        }
+        return parsed
+      })
+      return { slug, page }
+    } catch {
+      return null
     }
-    for (const id of page.ids) byId.set(id, facts)
+  })
+  const byId = new Map<string, ModelFacts>()
+  for (const loaded of pages) {
+    if (!loaded) continue
+    const facts: ModelFacts = {
+      ...loaded.page.facts,
+      factSources: tagDocsFacts(
+        loaded.page.facts,
+        OPENAI_MODEL_PAGE(loaded.slug),
+      ),
+    }
+    for (const id of loaded.page.ids) byId.set(id, facts)
   }
   if (needed.length > 0) assertParsed(byId, 'openai model pages')
   return (rawId) => byId.get(rawId) ?? byId.get(undatedId(rawId)) ?? NO_FACTS

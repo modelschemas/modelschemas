@@ -3,7 +3,7 @@
  * catalog with filters, and single-model detail. Route handlers stay thin —
  * these functions are exercised directly by worker tests.
  */
-import { and, eq, isNull, like, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
@@ -110,7 +110,7 @@ function toApiModel(
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
     ...(opts.includeFactSources
-      ? { factSources: (row.factSources as ModelFactSources | null) ?? {} }
+      ? { factSources: (row.factSources as ModelFactSources | null) ?? null }
       : {}),
     _links: {
       ...modelLinks(row.providerId),
@@ -215,15 +215,18 @@ export async function getModelDetail(
   })
   if (!row) return null
   const body = toApiModel(row, { includeFactSources: true })
-  if (providerId === 'openrouter') return { ...body, discrepancies: [] }
   const joinIds = openRouterJoinIds(providerId, row.rawId)
   if (joinIds.length === 0) return { ...body, discrepancies: [] }
-  const openrouter = await db.query.models.findFirst({
-    where: and(
-      eq(models.providerId, 'openrouter'),
-      or(...joinIds.map((id) => eq(models.rawId, id))),
-    ),
-  })
+  const matches = await db
+    .select()
+    .from(models)
+    .where(
+      and(eq(models.providerId, 'openrouter'), inArray(models.rawId, joinIds)),
+    )
+  const byRaw = new Map(matches.map((match) => [match.rawId, match]))
+  const openrouter = joinIds
+    .map((id) => byRaw.get(id))
+    .find((match) => match !== undefined)
   const discrepancies = openrouter
     ? factDiscrepancies(
         {
