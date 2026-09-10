@@ -157,6 +157,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "provenance",
+            "in": "query",
+            "description": "Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            }
           }
         ],
         "responses": {
@@ -199,7 +210,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), and _links.schema when bound.",
+            "description": "Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.",
             "content": {
               "application/json": {
                 "schema": {

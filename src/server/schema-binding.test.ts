@@ -55,6 +55,34 @@ describe('resolveSchemaEndpointId', () => {
     ).toBe('images/generations')
   })
 
+  it('binds Gemini Imagen from leftover methods until schemaEndpointId is stored', () => {
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'gemini',
+        rawId: 'imagen-4.0-generate-001',
+        activity: 'image',
+        capabilities: ['predict'],
+      }),
+    ).toBe('v1beta/models/{modelsId}:predict')
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'gemini',
+        rawId: 'gemini-2.5-flash-image',
+        activity: 'image',
+        capabilities: ['generateContent'],
+      }),
+    ).toBe('v1beta/models/{modelsId}:generateContent')
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'gemini',
+        rawId: 'imagen-4.0-generate-001',
+        activity: 'image',
+        schemaEndpointId: 'v1beta/models/{modelsId}:predict',
+        capabilities: ['reasoning', 'temperature'],
+      }),
+    ).toBe('v1beta/models/{modelsId}:predict')
+  })
+
   it('uses the raw id for model-grained providers and null when unbound', () => {
     expect(
       resolveSchemaEndpointId({

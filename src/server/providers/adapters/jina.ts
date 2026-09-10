@@ -3,9 +3,9 @@
  * Models endpoint requires JINA_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
+import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import { fetchOpenApi } from '../types.ts'
 import type {
-  ListModelsResult,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -33,26 +33,6 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-interface JinaModelList {
-  data?: Array<{ id: string; created?: number }>
-}
-
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  const key = env.JINA_API_KEY
-  if (!key) {
-    return { models: [], ...skippedResult('jina', 'JINA_API_KEY') }
-  }
-  const body = (await fetchJson(JINA_MODELS_URL, {
-    headers: { Authorization: `Bearer ${key}` },
-  })) as JinaModelList
-  return {
-    models: (body.data ?? []).map((m) => ({
-      rawId: m.id,
-      releasedAt: m.created ?? null,
-    })),
-  }
-}
-
 export const provider: ProviderConfig = {
   id: 'jina',
   displayName: 'Jina AI',
@@ -61,6 +41,12 @@ export const provider: ProviderConfig = {
   modelsEndpoint: JINA_MODELS_URL,
   defaultDerivation: 'upstream-spec',
   fetchSpec,
-  listModels,
+  listModels: (env) =>
+    listOpenAiCompatibleModels({
+      providerId: 'jina',
+      url: JINA_MODELS_URL,
+      env,
+      envVar: 'JINA_API_KEY',
+    }),
   classify,
 }

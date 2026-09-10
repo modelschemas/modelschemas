@@ -157,6 +157,10 @@ export type ListModelsData = {
      * Free-text match against id and display name.
      */
     q?: string
+    /**
+     * Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.
+     */
+    provenance?: '1'
   }
   url: '/v1/models'
 }
@@ -199,7 +203,7 @@ export type GetModelError = GetModelErrors[keyof GetModelErrors]
 
 export type GetModelResponses = {
   /**
-   * Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), and _links.schema when bound.
+   * Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.
    */
   200: {
     [key: string]: unknown

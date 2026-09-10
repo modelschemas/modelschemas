@@ -1085,3 +1085,67 @@ Design settled with Tom (don't relitigate):
       `architecture.output_modalities` (video → synthesised `videos/{id}`;
       image-only has no classified route); BFL `v1/{rawId}`; BytePlus
       chat/image/video plus Seed Speech TTS vs ASR.
+- [x] **18.3 Fill contextWindow / maxOutput / modalities / request-feature
+      capabilities on grain=provider rows (issue #53; pricing is a separate
+      PR).** Native `/models` payloads publish none of these (OpenAI, xAI)
+      or only limits plus a capability tree (Anthropic Models API, since
+      2026-03) or limits + `thinking`/sampling defaults (Gemini). The rest
+      comes from each provider's own published sources — never a
+      third-party catalog (a model catalog that mirrors another caps its
+      accuracy at theirs): OpenAI per-model markdown pages
+      (`developers.openai.com/api/docs/models/{slug}.md`, fetched only for
+      the ~65 pages the listed ids resolve to, dated snapshots via their
+      alias), xAI's `/v1/{language,image-generation,video-generation}-models`
+      for modalities plus `docs.x.ai/docs/models.md` for context windows.
+      Adapters: `openAiCompatModelFacts` maps the extension fields
+      OpenAI-compatible hosts already put on their rows (`context_window` /
+      `context_length` / `max_context_length`, `max_completion_tokens`,
+      `input_modalities`, `supports_*` booleans, groq/jina
+      `supported_features` + `supported_sampling_parameters`, mistral
+      `capabilities`) — one mapper in `listOpenAiCompatibleModels` covers groq, fireworks,
+      moonshot, sambanova, hyperbolic, novita (`context_size`, hyphenated
+      `features`); mistral, jina and cohere (`features`) call it too.
+      Speech/media hosts (elevenlabs, deepgram, cartesia, stability,
+      replicate, bfl, fal, byteplus, reactor) keep their own capability
+      objects — token limits and request params don't apply; deepseek,
+      cerebras, dashscope, perplexity, together publish bare rows. Output uses OpenRouter's shapes: `file` for documents,
+      `supported_parameters` names as feature flags (`tools`,
+      `tool_choice`, `reasoning`, `reasoning_effort`, `temperature`,
+      `top_p`, `top_k`, `structured_outputs`, `response_format`).
+      Nothing is inferred: a value is stored only when a provider field or
+      table cell states it. So Grok has no capabilities (xAI publishes no
+      feature flags), Gemini has no modalities (not on the row), a lone
+      image/vision boolean does not produce a modalities object,
+      `tool_choice` needs its own flag, and Anthropic's tool use, sampling
+      params and Fable-tier mandatory thinking stay unset (prose only). Those
+      prose-only facts are the target of the AI docs-extraction follow-up,
+      which will attach the backing quote to each value. Gemini `capabilities` no longer holds `supportedGenerationMethods`; the
+      `:predict` vs `:generateContent` decision those methods drive is now
+      made at list time and stored as `models.schema_endpoint_id`
+      (migration 0005), which the read path prefers over the config
+      binding. The config fallback still reads leftover
+      `supportedGenerationMethods` from `capabilities` so un-repolled
+      Imagen rows keep `:predict` — first-party data kept, no id-prefix
+      guessing. Deploy needs
+      `db:migrate:remote` first (deploys do not run migrations). Docs parses are memoised
+      in-isolate for 6h and fail closed: zero parsed rows throws and fails
+      that provider's poll for the tick rather than nulling populated rows
+      (which would fan out a bogus `model.updated` per model and again on
+      recovery). Gotcha: the first poll after deploy legitimately emits one
+      `model.updated` per newly filled row.
+- [x] **18.4 Bound-schema catalog facts + per-field provenance (issue #53).**
+      After listing/docs fill, the poller walks the bound generation
+      _request_ schema (`schemaEndpointId` → current input
+      `schema_versions`) for OpenRouter `supported_parameters` names and
+      input modalities. Listing/docs win on a field they stated; the schema
+      fills remaining flags. `generated` specs are skipped (OpenAI-borrowed
+      documents must not stamp `tools` onto DeepSeek/DashScope). Host-native
+      capability objects (FAL/Reactor/…) are left alone. Each stored value
+      carries `models.fact_sources` (migration 0006): per-field and
+      per-flag `{ derivation, sourceUrl, endpointId, path }`.
+      `GET /v1/models/{p}/{id}` always returns `factSources` plus
+      `discrepancies` against the already-polled OpenRouter catalog (join
+      `author/rawId`; no extra fetch, no unlabeled OpenRouter copy).
+      `GET /v1/models?provenance=1` includes `factSources` on list rows.
+      OpenRouter fill-nulls, pricing, and `docs-extracted` remain later
+      slices.

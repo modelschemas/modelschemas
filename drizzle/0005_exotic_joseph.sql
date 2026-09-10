@@ -1,0 +1,1 @@
+ALTER TABLE `models` ADD `schema_endpoint_id` text;

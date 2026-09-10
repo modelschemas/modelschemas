@@ -170,7 +170,19 @@ describe('provider-scoped queries', () => {
     expect(byRaw?.id).toBe('cat-beta-chatter')
     expect(byRaw?._links.schemas.href).toBe('/v1/schemas/cat-beta')
     expect(byRaw?.schemaEndpointId).toBeNull()
+    expect(byRaw?.factSources).toBeNull()
+    expect(byRaw?.discrepancies).toEqual([])
     expect(await getModelDetail(db, 'cat-beta', 'missing')).toBeNull()
+  })
+
+  it('omits factSources on the list unless provenance is requested', async () => {
+    const listed = await listModelsCatalog(db, { provider: 'cat-alpha' })
+    expect(listed.models[0]).not.toHaveProperty('factSources')
+    const withProv = await listModelsCatalog(db, {
+      provider: 'cat-alpha',
+      provenance: true,
+    })
+    expect(withProv.models[0]?.factSources).toBeNull()
   })
 
   it('binds grain=provider models to a generation route and FAL to its raw id', async () => {

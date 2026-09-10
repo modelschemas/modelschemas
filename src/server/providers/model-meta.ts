@@ -134,14 +134,16 @@ export function openaiGenerationEndpointId(
   }
 }
 
-/** Gemini path-templated generation route from activity + methods. */
+/**
+ * Gemini path-templated generation route from activity + the Models API's
+ * `supportedGenerationMethods` (`predict` → Imagen). Decided at list time
+ * and stored as `schemaEndpointId`. The config fallback still reads leftover
+ * methods from `capabilities` for rows the poller has not rewritten yet.
+ */
 export function geminiGenerationEndpointId(
   activity: Activity,
-  capabilities: unknown,
+  methods: Array<string>,
 ): string | null {
-  const methods = Array.isArray(capabilities)
-    ? capabilities.filter((value): value is string => typeof value === 'string')
-    : []
   switch (activity) {
     case 'image':
       return methods.includes('predict')

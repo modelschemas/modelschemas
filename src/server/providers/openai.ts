@@ -11,6 +11,7 @@ import {
   openaiGenerationEndpointId,
   openaiModelActivity,
 } from './model-meta.ts'
+import { openaiModelFacts } from './openai-model-docs.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
@@ -69,7 +70,10 @@ interface OpenAiModelList {
   data?: Array<{ id: string; created?: number }>
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.OPENAI_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('openai', 'OPENAI_API_KEY') }
@@ -77,12 +81,18 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(OPENAI_MODELS_URL, {
     headers: { Authorization: `Bearer ${key}` },
   })) as OpenAiModelList
+  const listed = body.data ?? []
+  const facts = await openaiModelFacts(
+    listed.map((m) => m.id),
+    kv,
+  )
   return {
-    models: (body.data ?? []).map((m) => ({
+    models: listed.map((m) => ({
       rawId: m.id,
       displayName: displayNameFromRawId(m.id),
       activity: openaiModelActivity(m.id),
       releasedAt: m.created ?? null,
+      ...facts(m.id),
     })),
   }
 }

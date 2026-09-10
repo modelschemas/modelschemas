@@ -3,13 +3,27 @@
  * list currently served models, diff against D1, write
  * model.added/removed/updated changes, bump lastSeenAt.
  */
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 
-import { changes, models, providers } from '#/db/schema.ts'
+import {
+  changes,
+  endpoints,
+  models,
+  providers,
+  schemaVersions,
+} from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
+import { resolveSpecGrain } from '#/server/providers/connect.ts'
+import {
+  mergeListingAndSchema,
+  schemaRung,
+  walkRequestSchema,
+} from '#/server/providers/fact-sources.ts'
+import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
+import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
@@ -62,7 +76,106 @@ function comparable(info: ModelInfo): Record<string, unknown> {
     modalities: info.modalities ?? null,
     pricing: info.pricing ?? null,
     capabilities: info.capabilities ?? null,
+    schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
+  }
+}
+
+async function loadInputWalks(
+  db: SyncDeps['db'],
+  provider: ProviderConfig,
+  listed: Array<ModelInfo>,
+): Promise<Map<string, SchemaWalk>> {
+  const walks = new Map<string, SchemaWalk>()
+  if (
+    resolveSpecGrain(provider) === 'model' ||
+    provider.defaultDerivation === 'generated'
+  ) {
+    return walks
+  }
+  const bound = new Set<string>()
+  for (const info of listed) {
+    const id = resolveSchemaEndpointId({
+      providerId: provider.id,
+      rawId: info.rawId,
+      activity: info.activity ?? null,
+      capabilities: info.capabilities,
+      schemaEndpointId: info.schemaEndpointId,
+    })
+    if (id) bound.add(id)
+  }
+  if (bound.size === 0) return walks
+  const dbIds = [...bound].map((id) => `${provider.id}/${id}`)
+  const chunks: Array<Array<string>> = []
+  for (let i = 0; i < dbIds.length; i += 90) {
+    chunks.push(dbIds.slice(i, i + 90))
+  }
+  const rows = (
+    await Promise.all(
+      chunks.map((chunk) =>
+        db
+          .select({
+            endpointId: schemaVersions.endpointId,
+            schema: schemaVersions.schema,
+            derivation: schemaVersions.derivation,
+            sourceUrl: schemaVersions.sourceUrl,
+            sourceHash: schemaVersions.sourceHash,
+            createdAt: schemaVersions.createdAt,
+          })
+          .from(schemaVersions)
+          .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+          .where(
+            and(
+              inArray(schemaVersions.endpointId, chunk),
+              eq(schemaVersions.kind, 'input'),
+              isNull(schemaVersions.supersededAt),
+            ),
+          ),
+      ),
+    )
+  ).flat()
+  const prefix = `${provider.id}/`
+  for (const row of rows) {
+    const publicId = row.endpointId.startsWith(prefix)
+      ? row.endpointId.slice(prefix.length)
+      : row.endpointId
+    const rung = schemaRung(row.derivation)
+    if (rung === null) continue
+    const parsed: unknown = JSON.parse(row.schema)
+    const walk = walkRequestSchema(parsed, {
+      derivation: rung,
+      endpointId: publicId,
+      sourceUrl: row.sourceUrl,
+      sourceHash: row.sourceHash,
+      fetchedAt: row.createdAt,
+    })
+    if (walk) walks.set(publicId, walk)
+  }
+  return walks
+}
+
+function enrichListed(
+  provider: ProviderConfig,
+  info: ModelInfo,
+  walks: Map<string, SchemaWalk>,
+): ModelInfo {
+  const bound = resolveSchemaEndpointId({
+    providerId: provider.id,
+    rawId: info.rawId,
+    activity: info.activity ?? null,
+    capabilities: info.capabilities,
+    schemaEndpointId: info.schemaEndpointId,
+  })
+  const walk = bound ? (walks.get(bound) ?? null) : null
+  const merged = mergeListingAndSchema(info, walk)
+  return {
+    ...info,
+    contextWindow: merged.contextWindow,
+    maxOutput: merged.maxOutput,
+    modalities: merged.modalities,
+    pricing: merged.pricing,
+    capabilities: merged.capabilities,
+    factSources: merged.factSources ?? undefined,
   }
 }
 
@@ -82,12 +195,14 @@ export async function pollProviderModels(
   }
   await ensureProviderRow(db, provider)
 
-  const listed = await provider.listModels(secrets)
+  const listed = await provider.listModels(secrets, deps.kv)
   if (listed.skipped) {
     outcome.skipped = listed.skipped
     return outcome
   }
   outcome.modelsSeen = listed.models.length
+
+  const walks = await loadInputWalks(db, provider, listed.models)
 
   const existingRows = await db
     .select()
@@ -106,7 +221,8 @@ export async function pollProviderModels(
   // writes would exhaust the budget mid-poll.
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
-  for (const info of listed.models) {
+  for (const raw of listed.models) {
+    const info = enrichListed(provider, raw, walks)
     const id = modelDbId(provider.id, info.rawId)
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
@@ -124,6 +240,8 @@ export async function pollProviderModels(
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
         capabilities: info.capabilities ?? null,
+        factSources: info.factSources ?? null,
+        schemaEndpointId: info.schemaEndpointId ?? null,
         // Providers that report a release date get it as firstSeenAt, so
         // models predating our monitoring carry their historical date.
         firstSeenAt: usableReleasedAt(info, now) ?? now,
@@ -150,6 +268,7 @@ export async function pollProviderModels(
       modalities: existing.modalities,
       pricing: existing.pricing,
       capabilities: existing.capabilities,
+      schemaEndpointId: existing.schemaEndpointId,
       deprecated: existing.deprecatedAt !== null,
     }
     const after = comparable({
@@ -188,6 +307,8 @@ export async function pollProviderModels(
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
         capabilities: after.capabilities ?? null,
+        factSources: info.factSources ?? null,
+        schemaEndpointId: info.schemaEndpointId ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.
         deprecatedAt:

@@ -60,10 +60,45 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
+interface Supported {
+  supported?: boolean
+}
+
+interface AnthropicModel {
+  id: string
+  display_name?: string
+  created_at?: string
+  max_input_tokens?: number
+  max_tokens?: number
+  capabilities?: {
+    image_input?: Supported
+    pdf_input?: Supported
+    structured_outputs?: Supported
+    thinking?: Supported
+    effort?: Supported
+  }
+}
+
 interface AnthropicModelList {
-  data?: Array<{ id: string; display_name?: string; created_at?: string }>
+  data?: Array<AnthropicModel>
   has_more?: boolean
   last_id?: string
+}
+
+/**
+ * Request features the Models API capability tree states. The tree does
+ * not cover tool use, sampling params, or whether thinking can be turned
+ * off (Fable/Mythos) — those live in prose docs and stay unset here.
+ */
+export function anthropicCapabilities(m: AnthropicModel): Array<string> | null {
+  const caps = m.capabilities
+  const out: Array<string> = []
+  if (caps?.thinking?.supported) out.push('reasoning')
+  if (caps?.effort?.supported) out.push('reasoning_effort')
+  if (caps?.structured_outputs?.supported) {
+    out.push('structured_outputs', 'response_format')
+  }
+  return out.length > 0 ? out : null
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -82,11 +117,19 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       headers,
     })) as AnthropicModelList
     for (const m of body.data ?? []) {
+      const input = ['text']
+      if (m.capabilities?.image_input?.supported) input.push('image')
+      if (m.capabilities?.pdf_input?.supported) input.push('file')
       models.push({
         rawId: m.id,
         displayName: m.display_name ?? null,
         activity: 'chat',
         releasedAt: isoToEpochSeconds(m.created_at),
+        // Models API (since 2026-03) carries limits + a capability tree.
+        contextWindow: m.max_input_tokens ?? null,
+        maxOutput: m.max_tokens ?? null,
+        modalities: m.capabilities ? { input, output: ['text'] } : null,
+        capabilities: m.capabilities ? anthropicCapabilities(m) : null,
       })
     }
     afterId = body.has_more ? body.last_id : undefined

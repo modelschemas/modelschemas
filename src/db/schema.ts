@@ -383,6 +383,13 @@ export const models = sqliteTable(
     modalities: text('modalities', { mode: 'json' }),
     pricing: text('pricing', { mode: 'json' }),
     capabilities: text('capabilities', { mode: 'json' }),
+    // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
+    factSources: text('fact_sources', { mode: 'json' }),
+    // Generation route decided from listing data the read path cannot see
+    // (Gemini's supportedGenerationMethods → :predict vs :generateContent).
+    // Null → config binds at read time; Gemini still reads leftover
+    // methods from capabilities until the poller rewrites the row.
+    schemaEndpointId: text('schema_endpoint_id'),
     // Upstream release date when the provider reports one (backdated by the
     // poller, issue #1); otherwise when our poller first observed the model.
     firstSeenAt: integer('first_seen_at').notNull(),

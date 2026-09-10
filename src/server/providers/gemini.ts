@@ -260,15 +260,37 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
+interface GeminiModel {
+  name: string
+  displayName?: string
+  inputTokenLimit?: number
+  outputTokenLimit?: number
+  supportedGenerationMethods?: Array<string>
+  temperature?: number
+  topP?: number
+  topK?: number
+  thinking?: boolean
+}
+
 interface GeminiModelList {
-  models?: Array<{
-    name: string
-    displayName?: string
-    inputTokenLimit?: number
-    outputTokenLimit?: number
-    supportedGenerationMethods?: Array<string>
-  }>
+  models?: Array<GeminiModel>
   nextPageToken?: string
+}
+
+/**
+ * Request features the Models API row states: `thinking`, and a sampling
+ * default present ⇒ that param is accepted. Tool use and structured output
+ * are not on the row and stay unset. Modalities are not on the row either.
+ */
+export function geminiCapabilities(
+  m: Pick<GeminiModel, 'temperature' | 'topP' | 'topK' | 'thinking'>,
+): Array<string> | null {
+  const out: Array<string> = []
+  if (m.thinking) out.push('reasoning')
+  if (m.temperature !== undefined) out.push('temperature')
+  if (m.topP !== undefined) out.push('top_p')
+  if (m.topK !== undefined) out.push('top_k')
+  return out.length > 0 ? out : null
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -286,16 +308,19 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     const body = (await fetchJson(url.toString())) as GeminiModelList
     for (const m of body.models ?? []) {
       const rawId = m.name.replace(/^models\//, '')
+      const methods = m.supportedGenerationMethods ?? []
+      const activity = geminiModelActivity(rawId, methods)
       models.push({
         rawId,
         displayName: m.displayName ?? null,
-        activity: geminiModelActivity(
-          rawId,
-          m.supportedGenerationMethods ?? [],
-        ),
+        activity,
+        schemaEndpointId:
+          activity === null
+            ? null
+            : geminiGenerationEndpointId(activity, methods),
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
-        capabilities: m.supportedGenerationMethods,
+        capabilities: geminiCapabilities(m),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
         releasedAt:
@@ -324,6 +349,16 @@ export const geminiProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  // Un-repolled rows still have supportedGenerationMethods in capabilities.
+  // After poll, resolveSchemaEndpointId prefers schemaEndpointId, so the
+  // new request-feature flags never drive the route.
   generationEndpointId: ({ activity, capabilities }) =>
-    geminiGenerationEndpointId(activity, capabilities),
+    geminiGenerationEndpointId(
+      activity,
+      Array.isArray(capabilities)
+        ? capabilities.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : [],
+    ),
 }
