@@ -3,7 +3,13 @@ import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 
 import { getDb } from '../../db/index.ts'
-import { changes, models, providers } from '../../db/schema.ts'
+import {
+  changes,
+  endpoints,
+  models,
+  providers,
+  schemaVersions,
+} from '../../db/schema.ts'
 import type { ModelInfo, ProviderConfig } from '../providers/types.ts'
 import { modelDbId, pollProviderModels } from './poll-models.ts'
 import type { SyncDeps } from './sync.ts'
@@ -311,5 +317,58 @@ describe('pollProviderModels', () => {
     expect(modelDbId('openrouter', 'openai/gpt-4.1')).toBe(
       'openrouter-openai-gpt-4-1',
     )
+  })
+
+  it('fills request-feature flags from the bound input schema', async () => {
+    const id = 'poll-schema'
+    const deps = await freshDeps(id)
+    const db = deps.db
+    await db.insert(endpoints).values({
+      id: `${id}/v1/messages`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/v1/messages',
+    })
+    await db.insert(schemaVersions).values({
+      id: `${id}/v1/messages:input`,
+      endpointId: `${id}/v1/messages`,
+      kind: 'input',
+      contentHash: 'a'.repeat(64),
+      schema: JSON.stringify({
+        properties: {
+          tools: { type: 'array' },
+          temperature: { type: 'number' },
+        },
+      }),
+      derivation: 'upstream-spec',
+      sourceUrl: 'https://example.com/openapi.json',
+      createdAt: 1_781_150_000,
+    })
+    const outcome = await pollProviderModels(deps, {
+      ...stubProvider(id, [
+        {
+          rawId: 'claude-sonnet-4-5',
+          activity: 'chat',
+          contextWindow: 200_000,
+          schemaEndpointId: 'v1/messages',
+        },
+      ]),
+    })
+    expect(outcome.added).toBe(1)
+    const row = await db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, 'claude-sonnet-4-5')))
+    expect(row[0]?.capabilities).toEqual(['tools', 'temperature'])
+    const sources = row[0]?.factSources as {
+      contextWindow?: { derivation: string }
+      capabilities?: Record<string, { derivation: string; endpointId?: string }>
+    }
+    expect(sources.contextWindow?.derivation).toBe('listing')
+    expect(sources.capabilities?.tools).toMatchObject({
+      derivation: 'upstream-spec',
+      endpointId: 'v1/messages',
+    })
   })
 })

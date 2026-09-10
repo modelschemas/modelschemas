@@ -10,6 +10,7 @@ import {
   grokGenerationEndpointId,
   grokModelActivity,
 } from './model-meta.ts'
+import { tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
@@ -21,6 +22,7 @@ import type { ModelFacts } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
+  ModelFactSources,
   OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
@@ -123,15 +125,31 @@ async function grokModelFacts(
   return (rawId) => {
     const m = byId.get(rawId)
     if (!m) return NO_FACTS
-    return {
-      contextWindow: contexts.get(rawId) ?? null,
+    const contextWindow = contexts.get(rawId) ?? null
+    const modalities = m.input_modalities
+      ? { input: m.input_modalities, output: m.output_modalities ?? [] }
+      : null
+    const facts: ModelFacts = {
+      contextWindow,
       maxOutput: null,
-      modalities: m.input_modalities
-        ? { input: m.input_modalities, output: m.output_modalities ?? [] }
-        : null,
+      modalities,
       // xAI publishes no request-feature flags on any endpoint or doc table.
       capabilities: null,
     }
+    const sources: ModelFactSources = tagDocsFacts(
+      { contextWindow, maxOutput: null, modalities: null, capabilities: null },
+      GROK_DOCS_MODELS_URL,
+    )
+    if (modalities) {
+      sources.modalities = {
+        derivation: 'listing',
+        path: 'input_modalities',
+      }
+    }
+    if (sources.contextWindow || sources.modalities) {
+      facts.factSources = sources
+    }
+    return facts
   }
 }
 

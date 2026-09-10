@@ -151,6 +151,13 @@ export const openApiDocument = {
             description: 'Free-text match against id and display name.',
             schema: { type: 'string' },
           },
+          {
+            name: 'provenance',
+            in: 'query',
+            description:
+              'Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.',
+            schema: { type: 'string', enum: ['1'] },
+          },
         ],
         responses: {
           '200': {
@@ -177,7 +184,7 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), and _links.schema when bound.',
+              'Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.',
             content: { 'application/json': { schema: { type: 'object' } } },
           },
           '404': errorResponse,

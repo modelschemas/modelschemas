@@ -349,6 +349,16 @@ export const geminiProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
-  generationEndpointId: ({ activity }) =>
-    geminiGenerationEndpointId(activity, []),
+  // Un-repolled rows still have supportedGenerationMethods in capabilities.
+  // After poll, resolveSchemaEndpointId prefers schemaEndpointId, so the
+  // new request-feature flags never drive the route.
+  generationEndpointId: ({ activity, capabilities }) =>
+    geminiGenerationEndpointId(
+      activity,
+      Array.isArray(capabilities)
+        ? capabilities.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : [],
+    ),
 }

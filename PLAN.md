@@ -1123,10 +1123,29 @@ Design settled with Tom (don't relitigate):
       `:predict` vs `:generateContent` decision those methods drive is now
       made at list time and stored as `models.schema_endpoint_id`
       (migration 0005), which the read path prefers over the config
-      binding — first-party data kept, no id-prefix guessing. Deploy needs
+      binding. The config fallback still reads leftover
+      `supportedGenerationMethods` from `capabilities` so un-repolled
+      Imagen rows keep `:predict` — first-party data kept, no id-prefix
+      guessing. Deploy needs
       `db:migrate:remote` first (deploys do not run migrations). Docs parses are memoised
       in-isolate for 6h and fail closed: zero parsed rows throws and fails
       that provider's poll for the tick rather than nulling populated rows
       (which would fan out a bogus `model.updated` per model and again on
       recovery). Gotcha: the first poll after deploy legitimately emits one
       `model.updated` per newly filled row.
+- [x] **18.4 Bound-schema catalog facts + per-field provenance (issue #53).**
+      After listing/docs fill, the poller walks the bound generation
+      _request_ schema (`schemaEndpointId` → current input
+      `schema_versions`) for OpenRouter `supported_parameters` names and
+      input modalities. Listing/docs win on a field they stated; the schema
+      fills remaining flags. `generated` specs are skipped (OpenAI-borrowed
+      documents must not stamp `tools` onto DeepSeek/DashScope). Host-native
+      capability objects (FAL/Reactor/…) are left alone. Each stored value
+      carries `models.fact_sources` (migration 0006): per-field and
+      per-flag `{ derivation, sourceUrl, endpointId, path }`.
+      `GET /v1/models/{p}/{id}` always returns `factSources` plus
+      `discrepancies` against the already-polled OpenRouter catalog (join
+      `author/rawId`; no extra fetch, no unlabeled OpenRouter copy).
+      `GET /v1/models?provenance=1` includes `factSources` on list rows.
+      OpenRouter fill-nulls, pricing, and `docs-extracted` remain later
+      slices.

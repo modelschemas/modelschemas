@@ -6,6 +6,7 @@
  * slug list. Only pages the listed ids resolve to are fetched (~65 of the
  * ~130 listed ids share a page), bounded-concurrency, memoised six hours.
  */
+import { tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
@@ -135,9 +136,15 @@ export async function openaiModelFacts(
     ),
   )
   const byId = new Map<string, ModelFacts>()
-  for (const page of pages) {
-    if (!page) continue
-    for (const id of page.ids) byId.set(id, page.facts)
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i]
+    const slug = needed[i]
+    if (!page || slug === undefined) continue
+    const facts: ModelFacts = {
+      ...page.facts,
+      factSources: tagDocsFacts(page.facts, OPENAI_MODEL_PAGE(slug)),
+    }
+    for (const id of page.ids) byId.set(id, facts)
   }
   if (needed.length > 0) assertParsed(byId, 'openai model pages')
   return (rawId) => byId.get(rawId) ?? byId.get(undatedId(rawId)) ?? NO_FACTS

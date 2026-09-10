@@ -137,8 +137,8 @@ export function openaiGenerationEndpointId(
 /**
  * Gemini path-templated generation route from activity + the Models API's
  * `supportedGenerationMethods` (`predict` → Imagen). Decided at list time
- * and stored as `schemaEndpointId`; the config fallback binds with no
- * methods for rows the poller has not rewritten yet.
+ * and stored as `schemaEndpointId`. The config fallback still reads leftover
+ * methods from `capabilities` for rows the poller has not rewritten yet.
  */
 export function geminiGenerationEndpointId(
   activity: Activity,

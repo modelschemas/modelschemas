@@ -30,6 +30,7 @@ export const Route = createFileRoute('/v1/models/')({
           capability: url.searchParams.get('capability') ?? undefined,
           q: url.searchParams.get('q') ?? undefined,
           includeDeprecated: url.searchParams.get('deprecated') === 'true',
+          provenance: url.searchParams.get('provenance') === '1',
         })
         const now = Math.floor(Date.now() / 1000)
         return cachedJson(request, body, { fetchedAt: now, staleAt: now + 60 })

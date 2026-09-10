@@ -111,6 +111,43 @@ export interface ProviderSecrets {
   REACTOR_API_KEY?: string
 }
 
+/**
+ * How one catalog fact was arrived at (issue #53). Strongest first:
+ * listing → bound schema (upstream-spec / generated / probe-verified /
+ * docs-derived) → docs-extracted → openrouter.
+ */
+export type FactDerivation =
+  | 'listing'
+  | 'upstream-spec'
+  | 'generated'
+  | 'probe-verified'
+  | 'docs-derived'
+  | 'docs-extracted'
+  | 'openrouter'
+
+/** Provenance for one stored catalog field or capability flag. */
+export interface FactSource {
+  derivation: FactDerivation
+  sourceUrl?: string
+  sourceHash?: string
+  fetchedAt?: number
+  /** Bound generation route, when the winner is the schema. */
+  endpointId?: string
+  /** JSON pointer or field name in the source document. */
+  path?: string
+  /** Verbatim sentence; required for `docs-extracted`. */
+  quote?: string
+}
+
+/** Per-field (and per-flag) provenance for a catalog row. */
+export interface ModelFactSources {
+  contextWindow?: FactSource
+  maxOutput?: FactSource
+  modalities?: FactSource
+  pricing?: FactSource
+  capabilities?: Record<string, FactSource>
+}
+
 /** Normalised model entry (maps onto the `models` table shape). */
 export interface ModelInfo {
   rawId: string
@@ -121,6 +158,11 @@ export interface ModelInfo {
   modalities?: unknown
   pricing?: unknown
   capabilities?: unknown
+  /**
+   * Per-field provenance for the facts this listing already filled.
+   * The poller defaults untagged listing fields to `derivation: listing`.
+   */
+  factSources?: ModelFactSources
   /**
    * Generation route (public endpoint id) when it depends on listing data
    * the read path cannot see — Gemini's `supportedGenerationMethods`.

@@ -12,7 +12,11 @@ import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
 import { getProvider } from '#/server/providers/index.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
-import type { SpecGrain } from '#/server/providers/types.ts'
+import type { ModelFactSources, SpecGrain } from '#/server/providers/types.ts'
+import {
+  factDiscrepancies,
+  openRouterJoinIds,
+} from '#/server/providers/fact-sources.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
 
@@ -25,6 +29,8 @@ export interface ModelFilters {
   q?: string
   /** Deprecated models are excluded unless set. */
   includeDeprecated?: boolean
+  /** Include per-field `factSources` on list rows. */
+  provenance?: boolean
 }
 
 const OPENAPI_CONTENT_TYPE = 'application/openapi+json'
@@ -69,7 +75,10 @@ function encodeEndpointId(endpointId: string): string {
   return endpointId.split('/').map(encodeURIComponent).join('/')
 }
 
-function toApiModel(row: ModelRow) {
+function toApiModel(
+  row: ModelRow,
+  opts: { includeFactSources?: boolean } = {},
+) {
   const schemaEndpointId = resolveSchemaEndpointId({
     providerId: row.providerId,
     rawId: row.rawId,
@@ -100,6 +109,9 @@ function toApiModel(row: ModelRow) {
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
+    ...(opts.includeFactSources
+      ? { factSources: (row.factSources as ModelFactSources | null) ?? {} }
+      : {}),
     _links: {
       ...modelLinks(row.providerId),
       ...(schemaLink ? { schema: schemaLink } : {}),
@@ -155,9 +167,11 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
     .orderBy(models.id)
   return {
     count: rows.length,
-    models: rows.map(toApiModel),
+    models: rows.map((row) =>
+      toApiModel(row, { includeFactSources: filters.provenance === true }),
+    ),
     _links: {
-      self: halGet('/v1/models{?activity,provider,capability,q}', {
+      self: halGet('/v1/models{?activity,provider,capability,q,provenance}', {
         example: '/v1/models?activity=chat&q=claude',
       }),
       providers: halGet('/v1/providers'),
@@ -179,7 +193,7 @@ export async function listProviderModels(db: Db, providerId: string) {
   return {
     provider: provider.id,
     count: rows.length,
-    models: rows.map(toApiModel),
+    models: rows.map((row) => toApiModel(row)),
     _links: modelLinks(provider.id),
   }
 }
@@ -200,7 +214,35 @@ export async function getModelDetail(
     ),
   })
   if (!row) return null
-  return toApiModel(row)
+  const body = toApiModel(row, { includeFactSources: true })
+  if (providerId === 'openrouter') return { ...body, discrepancies: [] }
+  const joinIds = openRouterJoinIds(providerId, row.rawId)
+  if (joinIds.length === 0) return { ...body, discrepancies: [] }
+  const openrouter = await db.query.models.findFirst({
+    where: and(
+      eq(models.providerId, 'openrouter'),
+      or(...joinIds.map((id) => eq(models.rawId, id))),
+    ),
+  })
+  const discrepancies = openrouter
+    ? factDiscrepancies(
+        {
+          contextWindow: row.contextWindow,
+          maxOutput: row.maxOutput,
+          modalities: row.modalities,
+          capabilities: row.capabilities,
+          factSources: (row.factSources as ModelFactSources | null) ?? null,
+        },
+        {
+          rawId: openrouter.rawId,
+          contextWindow: openrouter.contextWindow,
+          maxOutput: openrouter.maxOutput,
+          modalities: openrouter.modalities,
+          capabilities: openrouter.capabilities,
+        },
+      )
+    : []
+  return { ...body, discrepancies }
 }
 
 /** Valid provider ids, for 404 remediation messages. */

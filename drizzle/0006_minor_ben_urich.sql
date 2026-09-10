@@ -1,0 +1,1 @@
+ALTER TABLE `models` ADD `fact_sources` text;
