@@ -157,6 +157,13 @@
         "prettier",
       ],
     },
+    "packages/rate-card": {
+      "name": "@modelschemas/rate-card",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.3.6",
+      },
+    },
     "packages/vite": {
       "name": "@modelschemas/vite",
       "version": "0.1.0",
@@ -474,6 +481,8 @@
     "@modelschemas/client": ["@modelschemas/client@workspace:packages/client"],
 
     "@modelschemas/codegen": ["@modelschemas/codegen@workspace:packages/codegen"],
+
+    "@modelschemas/rate-card": ["@modelschemas/rate-card@workspace:packages/rate-card"],
 
     "@modelschemas/vite": ["@modelschemas/vite@workspace:packages/vite"],
 

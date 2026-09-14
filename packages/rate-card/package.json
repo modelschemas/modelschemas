@@ -1,0 +1,36 @@
+{
+  "name": "@modelschemas/rate-card",
+  "version": "0.1.0",
+  "description": "Model pricing as data: a closed-vocabulary JSONLogic rate-card schema, a refuse-not-coerce evaluator, and listing compilers (OpenRouter).",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/fixtures"
+  ],
+  "license": "MIT",
+  "homepage": "https://modelschemas.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/modelschemas/modelschemas.git",
+    "directory": "packages/rate-card"
+  },
+  "bugs": "https://github.com/modelschemas/modelschemas/issues",
+  "keywords": [
+    "ai",
+    "pricing",
+    "rate-card",
+    "jsonlogic",
+    "openrouter"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}
