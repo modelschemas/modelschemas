@@ -158,11 +158,23 @@ export const openApiDocument = {
               'Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.',
             schema: { type: 'string', enum: ['1'] },
           },
+          {
+            name: 'pricing',
+            in: 'query',
+            description:
+              'Set to 1 to include the full rate card on each list row. Default is a compact {inputPerMillion, outputPerMillion} projection for simple token formulas; media cards omit the projection.',
+            schema: { type: 'string', enum: ['1'] },
+          },
         ],
         responses: {
           '200': {
-            description: 'Matching models.',
-            content: { 'application/json': { schema: { type: 'object' } } },
+            description:
+              'Matching models. pricing is a compact token projection, a full RateCard when ?pricing=1, or null. OpenRouter-shaped vendor blobs are not served.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ModelList' },
+              },
+            },
           },
         },
       },
@@ -184,8 +196,12 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.',
-            content: { 'application/json': { schema: { type: 'object' } } },
+              'Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), a RateCard or null for pricing, factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Model' },
+              },
+            },
           },
           '404': errorResponse,
         },
@@ -356,6 +372,33 @@ export const openApiDocument = {
         },
       },
     },
+    '/v1/estimate': {
+      post: {
+        operationId: 'estimateCost',
+        summary: 'Evaluate a stored rate card against request and usage',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/EstimateRequest' },
+            },
+          },
+        },
+        responses: {
+          '200': {
+            description: 'USD for this call and the card source.',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/EstimateResult' },
+              },
+            },
+          },
+          '400': errorResponse,
+          '404': errorResponse,
+          '422': errorResponse,
+        },
+      },
+    },
     '/v1/changes': {
       get: {
         operationId: 'listChanges',
@@ -500,6 +543,122 @@ export const openApiDocument = {
               },
             },
           },
+        },
+      },
+      CompactPricing: {
+        type: 'object',
+        required: ['inputPerMillion', 'outputPerMillion'],
+        properties: {
+          inputPerMillion: { type: 'number' },
+          outputPerMillion: { type: 'number' },
+        },
+      },
+      RateCardSource: {
+        type: 'object',
+        required: ['url', 'hash', 'extractedAt'],
+        properties: {
+          url: { type: 'string', format: 'uri' },
+          hash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+          extractedAt: { type: 'string', format: 'date-time' },
+          expiresAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      RateCardExample: {
+        type: 'object',
+        required: ['params', 'usd', 'quote'],
+        properties: {
+          params: { type: 'object' },
+          usd: { type: 'number' },
+          quote: { type: 'string' },
+        },
+      },
+      RateCardInput: {
+        type: 'object',
+        required: ['param', 'kind'],
+        properties: {
+          param: { type: 'string' },
+          bound: { type: 'string', enum: ['request', 'usage'] },
+          kind: {
+            type: 'string',
+            enum: ['number', 'enum', 'boolean', 'count', 'dimensions'],
+          },
+        },
+      },
+      RateCard: {
+        type: 'object',
+        required: ['inputs', 'tables', 'price', 'examples', 'source'],
+        properties: {
+          inputs: {
+            type: 'object',
+            additionalProperties: {
+              $ref: '#/components/schemas/RateCardInput',
+            },
+          },
+          tables: { type: 'object' },
+          price: {
+            description: 'JSONLogic expression over the closed op set.',
+          },
+          examples: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/RateCardExample' },
+          },
+          source: { $ref: '#/components/schemas/RateCardSource' },
+        },
+      },
+      Model: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          provider: { type: 'string' },
+          rawId: { type: 'string' },
+          activity: { type: ['string', 'null'], enum: [...activityEnum, null] },
+          displayName: { type: ['string', 'null'] },
+          schemaEndpointId: { type: ['string', 'null'] },
+          contextWindow: { type: ['integer', 'null'] },
+          maxOutput: { type: ['integer', 'null'] },
+          modalities: {},
+          pricing: {
+            description:
+              'Full RateCard on detail and on list rows with ?pricing=1. Compact {inputPerMillion, outputPerMillion} on list rows for simple token formulas. null when unknown or a media card on the compact list.',
+            oneOf: [
+              { $ref: '#/components/schemas/RateCard' },
+              { $ref: '#/components/schemas/CompactPricing' },
+              { type: 'null' },
+            ],
+          },
+          capabilities: {},
+          factSources: {},
+          firstSeenAt: { type: 'integer' },
+          lastSeenAt: { type: 'integer' },
+          deprecatedAt: { type: ['integer', 'null'] },
+        },
+      },
+      ModelList: {
+        type: 'object',
+        properties: {
+          count: { type: 'integer' },
+          models: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Model' },
+          },
+        },
+      },
+      EstimateRequest: {
+        type: 'object',
+        required: ['provider', 'model'],
+        properties: {
+          provider: { type: 'string' },
+          model: { type: 'string' },
+          request: { type: 'object' },
+          usage: { type: 'object' },
+        },
+      },
+      EstimateResult: {
+        type: 'object',
+        required: ['usd', 'cardSource'],
+        properties: {
+          usd: { type: 'number' },
+          cardSource: { $ref: '#/components/schemas/RateCardSource' },
         },
       },
     },

@@ -47,6 +47,7 @@ describe('agent-auth provider surface', () => {
       'listProviderSchemas',
       'getActivitySchemas',
       'validatePayload',
+      'estimateCost',
       'listChanges',
       'getStatus',
       'manage_subscriptions',

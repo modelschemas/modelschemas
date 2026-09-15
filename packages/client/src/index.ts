@@ -19,6 +19,7 @@ export {
   listChanges,
   listProviders,
   listProviderSchemas,
+  estimateCost,
   syncProvider,
   validatePayload,
 } from './generated/index'

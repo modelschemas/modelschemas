@@ -17,6 +17,7 @@ import {
   factDiscrepancies,
   openRouterJoinIds,
 } from '#/server/providers/fact-sources.ts'
+import { servePricing } from '#/server/rate-card.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
 
@@ -31,6 +32,8 @@ export interface ModelFilters {
   includeDeprecated?: boolean
   /** Include per-field `factSources` on list rows. */
   provenance?: boolean
+  /** Include the full rate card on list rows (default: compact projection). */
+  pricing?: boolean
 }
 
 const OPENAPI_CONTENT_TYPE = 'application/openapi+json'
@@ -77,7 +80,10 @@ function encodeEndpointId(endpointId: string): string {
 
 function toApiModel(
   row: ModelRow,
-  opts: { includeFactSources?: boolean } = {},
+  opts: {
+    includeFactSources?: boolean
+    pricing?: 'compact' | 'full'
+  } = {},
 ) {
   const schemaEndpointId = resolveSchemaEndpointId({
     providerId: row.providerId,
@@ -104,7 +110,7 @@ function toApiModel(
     contextWindow: row.contextWindow,
     maxOutput: row.maxOutput,
     modalities: row.modalities,
-    pricing: row.pricing,
+    pricing: servePricing(row.pricing, opts.pricing ?? 'compact'),
     capabilities: row.capabilities,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
@@ -168,12 +174,18 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
   return {
     count: rows.length,
     models: rows.map((row) =>
-      toApiModel(row, { includeFactSources: filters.provenance === true }),
+      toApiModel(row, {
+        includeFactSources: filters.provenance === true,
+        pricing: filters.pricing === true ? 'full' : 'compact',
+      }),
     ),
     _links: {
-      self: halGet('/v1/models{?activity,provider,capability,q,provenance}', {
-        example: '/v1/models?activity=chat&q=claude',
-      }),
+      self: halGet(
+        '/v1/models{?activity,provider,capability,q,provenance,pricing}',
+        {
+          example: '/v1/models?activity=chat&q=claude',
+        },
+      ),
       providers: halGet('/v1/providers'),
     },
   }
@@ -193,7 +205,7 @@ export async function listProviderModels(db: Db, providerId: string) {
   return {
     provider: provider.id,
     count: rows.length,
-    models: rows.map((row) => toApiModel(row)),
+    models: rows.map((row) => toApiModel(row, { pricing: 'compact' })),
     _links: modelLinks(provider.id),
   }
 }
@@ -214,7 +226,10 @@ export async function getModelDetail(
     ),
   })
   if (!row) return null
-  const body = toApiModel(row, { includeFactSources: true })
+  const body = toApiModel(row, {
+    includeFactSources: true,
+    pricing: 'full',
+  })
   const joinIds = openRouterJoinIds(providerId, row.rawId)
   if (joinIds.length === 0) return { ...body, discrepancies: [] }
   const matches = await db

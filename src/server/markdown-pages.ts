@@ -25,6 +25,7 @@ full provider specs daily.
 GET ${origin}/v1/models?activity=chat&q=claude     # what can I call right now
 GET ${origin}/v1/schemas/{provider}                # endpoint ids per activity
 POST ${origin}/v1/validate                         # check a payload before spending tokens
+POST ${origin}/v1/estimate                         # USD from the stored rate card
 \`\`\`
 
 No signup for reads (60 req/h per IP; 5,000/h with a key — see ${origin}/auth.md).
@@ -33,7 +34,7 @@ No signup for reads (60 req/h per IP; 5,000/h with a key — see ${origin}/auth.
 
 - ${origin}/llms.txt — full agent guide (also served at /docs with this header)
 - ${origin}/openapi.json — typed spec, operationIds on every operation
-- ${origin}/mcp — MCP server (streamable HTTP): list_models, get_model, get_schema, validate_payload, recent_changes
+- ${origin}/mcp — MCP server (streamable HTTP): list_models, get_model, get_schema, validate_payload, estimate_cost, recent_changes
 - ${origin}/skill — installable agent skill (SKILL.md)
 - ${origin}/.well-known/api-catalog — RFC 9727 linkset
 - ${origin}/.well-known/agent-configuration — agent-auth discovery

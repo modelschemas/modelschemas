@@ -28,8 +28,16 @@ function endpointPath(endpointId: string): string {
   return endpointId.split('/').map(encodeURIComponent).join('/')
 }
 
+interface PricingView {
+  compact: { inputPerMillion: number; outputPerMillion: number } | null
+  sourceUrl: string | null
+  inputs: Array<string>
+  examples: Array<{ usd: number; quote: string }>
+}
+
 interface ModelDetailData {
   model: SerializableModel
+  pricing: PricingView | null
   providerStatus: string
   /** Provider endpoints; for huge providers (FAL) filtered to this model. */
   endpoints: Array<EndpointLink>
@@ -48,6 +56,23 @@ const getModelDetail = createServerFn({ method: 'GET' })
     const db = getDb(env)
     const model = await getModel(db, data.provider, data.modelId)
     if (!model) return null
+    const { parseStoredRateCard, projectTokenPricing } =
+      await import('#/server/rate-card.ts')
+    const card = parseStoredRateCard(model.pricing)
+    const pricing: PricingView | null =
+      card === null
+        ? null
+        : {
+            compact: projectTokenPricing(card),
+            sourceUrl: card.source.url,
+            inputs: Object.values(card.inputs).map(
+              (input) => `${input.param} (${input.bound ?? 'request'})`,
+            ),
+            examples: card.examples.map((example) => ({
+              usd: example.usd,
+              quote: example.quote,
+            })),
+          }
     const [index, status] = await Promise.all([
       getProviderSchemaIndex(db, data.provider),
       getServiceStatus(db),
@@ -68,6 +93,7 @@ const getModelDetail = createServerFn({ method: 'GET' })
     return {
       // drizzle json columns are typed unknown; the values are plain JSON
       model: model as unknown as SerializableModel,
+      pricing,
       providerStatus:
         status.providers.find((p) => p.id === data.provider)?.status ??
         'unknown',
@@ -85,8 +111,14 @@ export const Route = createFileRoute('/models/$provider/$modelId')({
   component: ModelDetail,
 })
 
+function formatUsd(n: number): string {
+  if (Number.isInteger(n)) return `$${String(n)}`
+  const fixed = n >= 0.01 ? n.toFixed(4) : n.toFixed(6)
+  return `$${fixed.replace(/0+$/, '').replace(/\.$/, '')}`
+}
+
 function ModelDetail() {
-  const { model, providerStatus, endpoints, endpointsFiltered } =
+  const { model, pricing, providerStatus, endpoints, endpointsFiltered } =
     Route.useLoaderData()
   const [view, setView] = useState<ResourceView>('readable')
 
@@ -101,7 +133,6 @@ function ModelDetail() {
     ['contextWindow', model.contextWindow],
     ['maxOutput', model.maxOutput],
     ['modalities', model.modalities],
-    ['pricing', model.pricing],
     ['capabilities', model.capabilities],
   ]
   const published = richness.filter(([, v]) => v !== null && v !== undefined)
@@ -232,6 +263,51 @@ function ModelDetail() {
                       </span>
                     </td>
                   </tr>
+                  <tr>
+                    <td className="font-mono text-xs text-ink-faint">
+                      pricing
+                    </td>
+                    <td className="font-mono text-[12.5px]">
+                      {pricing === null ? (
+                        <span className="text-ink-faint">
+                          not published by this provider’s list endpoint
+                        </span>
+                      ) : (
+                        <div className="space-y-1">
+                          {pricing.compact ? (
+                            <div>
+                              {formatUsd(pricing.compact.inputPerMillion)} / 1M
+                              input ·{' '}
+                              {formatUsd(pricing.compact.outputPerMillion)} / 1M
+                              output
+                            </div>
+                          ) : (
+                            <div>rate card</div>
+                          )}
+                          {pricing.sourceUrl ? (
+                            <div>
+                              <a
+                                className="press-link"
+                                href={pricing.sourceUrl}
+                              >
+                                {pricing.sourceUrl}
+                              </a>
+                            </div>
+                          ) : null}
+                          {pricing.inputs.length > 0 ? (
+                            <div className="text-ink-faint">
+                              {pricing.inputs.join(' · ')}
+                            </div>
+                          ) : null}
+                          {pricing.examples.map((example) => (
+                            <div key={example.quote}>
+                              {formatUsd(example.usd)} — {example.quote}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
                   {published.map(([key, value]) => (
                     <tr key={key}>
                       <td className="font-mono text-xs text-ink-faint">
@@ -338,6 +414,12 @@ function ModelDetail() {
                 https://modelschemas.com/v1/validate -d{' '}
                 <span className="cj-str">
                   {`'{"provider":"${model.provider}","endpointId":"${firstEndpoint?.endpointId ?? '…'}","payload":{…}}'`}
+                </span>
+                {'\n'}
+                <span className="prompt">$</span> curl -X POST
+                https://modelschemas.com/v1/estimate -d{' '}
+                <span className="cj-str">
+                  {`'{"provider":"${model.provider}","model":"${model.rawId}","usage":{"input_tokens":1200,"output_tokens":400}}'`}
                 </span>
               </code>
             </CodePanel>

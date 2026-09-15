@@ -110,7 +110,8 @@ ones).
   secret is absent.
 - **API** (`src/routes/v1/`): catalog, schema reads (SWR via
   `src/server/cache.ts`, ETag/304 via `http-cache.ts`), `POST /v1/validate`
-  (@cfworker/json-schema), cursor-paginated `/v1/changes`, subscriptions.
+  (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),
+  cursor-paginated `/v1/changes`, subscriptions.
   Errors are always `{ error: { code, message } }` with remediation hints.
 - **MCP** (`src/server/mcp.ts`, route `/mcp`): stateless streamable-HTTP
   JSON-RPC wrapping the same service functions.
@@ -133,7 +134,7 @@ ones).
 - **Workspace packages**: `packages/client` (`@modelschemas/client`,
   generated + hand-written auth entry), `packages/codegen`,
   `packages/vite`, `packages/cli` (`modelschemas` bin:
-  login/whoami/models/schema/validate/changes/subscribe),
+  login/whoami/models/schema/validate/estimate/changes/subscribe),
   `packages/rate-card` (`@modelschemas/rate-card`: pricing schema +
   evaluator + OpenRouter listing compiler; no Workers deps).
 - **Path aliases**: `#/*` and `@/*` → `./src/*`; `.ts` import extensions
@@ -147,9 +148,9 @@ ones).
   `wrangler secret put`. README has the full production-setup + runbook.
 
 API map: `GET /v1` (index) · `/v1/status` · `/v1/providers[/{p}/models]` ·
-`/v1/models[?activity,provider,capability,q]` · `/v1/models/{p}/{id}` ·
+`/v1/models[?activity,provider,capability,q,pricing]` · `/v1/models/{p}/{id}` ·
 `/v1/schemas/{p}[/{activity}[/{endpointId}?kind,version]]` ·
-`POST /v1/validate` · `/v1/changes` · `POST /v1/agents/register-key` ·
+`POST /v1/validate` · `POST /v1/estimate` · `/v1/changes` · `POST /v1/agents/register-key` ·
 `/v1/agents/me` · `/v1/subscriptions` · `POST /v1/admin/sync/{p}` ·
 `/openapi.json` · `/llms.txt` · `/skill` · `/docs` · `/mcp` ·
 `/.well-known/agent-configuration`.

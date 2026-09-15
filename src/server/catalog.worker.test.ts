@@ -4,6 +4,8 @@ import { env } from 'cloudflare:test'
 import { getDb } from './../db/index.ts'
 import type { Db } from './../db/index.ts'
 import { models, providers } from '../db/schema.ts'
+import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
+import { NANO_BANANA_2 } from '../../packages/rate-card/src/fixtures/nano-banana-2.ts'
 import {
   getModelDetail,
   listModelsCatalog,
@@ -247,5 +249,80 @@ describe('provider-scoped queries', () => {
     const alpha = result.providers.find((p) => p.id === 'cat-alpha')
     expect(alpha?._links.models.href).toBe('/v1/providers/cat-alpha/models')
     expect(alpha?.counts.models).toBe(2)
+  })
+})
+
+describe('catalog rate cards', () => {
+  beforeAll(async () => {
+    await db.insert(providers).values({
+      id: 'cat-price',
+      displayName: 'Catalog Price',
+      specSourceUrl: 'https://example.com/p.json',
+    })
+    await db.insert(models).values([
+      {
+        id: 'cat-price-gpt-4o',
+        providerId: 'cat-price',
+        rawId: 'gpt-4o',
+        activity: 'chat',
+        displayName: 'GPT-4o',
+        pricing: GPT_4O,
+        factSources: { pricing: { derivation: 'listing' } },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'cat-price-nano',
+        providerId: 'cat-price',
+        rawId: 'nano-banana-2',
+        activity: 'image',
+        displayName: 'Nano Banana 2',
+        pricing: NANO_BANANA_2,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'cat-price-blob',
+        providerId: 'cat-price',
+        rawId: 'blob',
+        activity: 'chat',
+        pricing: { prompt: '0.0000025', completion: '0.00001' },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+    ])
+  })
+
+  it('projects simple token cards on the list and omits media tables', async () => {
+    const listed = await listModelsCatalog(db, { provider: 'cat-price' })
+    const byId = Object.fromEntries(listed.models.map((m) => [m.id, m]))
+    expect(byId['cat-price-gpt-4o']?.pricing).toEqual({
+      inputPerMillion: 2.5,
+      outputPerMillion: 10,
+    })
+    expect(byId['cat-price-nano']?.pricing).toBeNull()
+    expect(byId['cat-price-blob']?.pricing).toBeNull()
+    expect(listed._links.self.href).toContain('pricing')
+  })
+
+  it('includes the full card on list rows when pricing=1', async () => {
+    const listed = await listModelsCatalog(db, {
+      provider: 'cat-price',
+      pricing: true,
+    })
+    const gpt = listed.models.find((m) => m.id === 'cat-price-gpt-4o')
+    const nano = listed.models.find((m) => m.id === 'cat-price-nano')
+    expect(gpt?.pricing).toEqual(GPT_4O)
+    expect(nano?.pricing).toEqual(NANO_BANANA_2)
+  })
+
+  it('always includes the full card (or null) on detail', async () => {
+    const gpt = await getModelDetail(db, 'cat-price', 'gpt-4o')
+    const nano = await getModelDetail(db, 'cat-price', 'nano-banana-2')
+    const blob = await getModelDetail(db, 'cat-price', 'blob')
+    expect(gpt?.pricing).toEqual(GPT_4O)
+    expect(gpt?.factSources).toEqual({ pricing: { derivation: 'listing' } })
+    expect(nano?.pricing).toEqual(NANO_BANANA_2)
+    expect(blob?.pricing).toBeNull()
   })
 })

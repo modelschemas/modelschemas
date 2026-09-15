@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import {
   createModelschemasClient,
+  estimateCost,
   getModel,
   getSchema,
   listChanges,
@@ -43,6 +44,7 @@ Commands:
   models get <provider> <modelId>
   schema get <provider> <endpointId> [--kind input|output]
   validate <provider/endpointId> <file> [--kind input|output]
+  estimate <provider> <model> [body.json]            {request?,usage?} or usage object
   changes [--since <epoch>] [--provider p] [--type t]
   subscribe <url> [--events e1,e2] [--provider p]
   pull <selection...> [--out dir] [--no-types] [--optional exact|undefined]
@@ -220,6 +222,63 @@ async function cmdSchema(ctx: Ctx): Promise<void> {
     client: makeClient(ctx),
     path: { provider, activity: activity as never, endpointId },
     query: { kind: (ctx.values.kind ?? 'input') as never },
+  })
+  if (result.error !== undefined) fail(JSON.stringify(result.error))
+  output(ctx, result.data)
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** `{ request?, usage? }` wrapper, or a bare usage object (SKILL.md). */
+export function estimateBodyFromFile(parsed: unknown): {
+  request?: Record<string, unknown>
+  usage?: Record<string, unknown>
+} | null {
+  if (!isRecord(parsed)) return null
+  if ('request' in parsed || 'usage' in parsed) {
+    if (parsed.request !== undefined && !isRecord(parsed.request)) return null
+    if (parsed.usage !== undefined && !isRecord(parsed.usage)) return null
+    return {
+      request: parsed.request,
+      usage: parsed.usage,
+    }
+  }
+  return { usage: parsed }
+}
+
+async function cmdEstimate(ctx: Ctx): Promise<void> {
+  const [provider, model, file] = ctx.positionals
+  if (!provider || !model) {
+    fail('usage: estimate <provider> <model> [body.json]')
+  }
+  let extra: {
+    request?: Record<string, unknown>
+    usage?: Record<string, unknown>
+  } = {}
+  if (file) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(readFileSync(file, 'utf8'))
+    } catch (error) {
+      fail(`could not read body file: ${String(error)}`)
+    }
+    const body = estimateBodyFromFile(parsed)
+    if (!body) {
+      fail(
+        'body file must be a JSON object { request?, usage? } or a usage object',
+      )
+    }
+    extra = body
+  }
+  const result = await estimateCost({
+    client: makeClient(ctx),
+    body: {
+      provider,
+      model,
+      request: extra.request,
+      usage: extra.usage,
+    },
   })
   if (result.error !== undefined) fail(JSON.stringify(result.error))
   output(ctx, result.data)
@@ -446,6 +505,8 @@ async function main(): Promise<void> {
       return cmdSchema(ctx)
     case 'validate':
       return cmdValidate(ctx)
+    case 'estimate':
+      return cmdEstimate(ctx)
     case 'changes':
       return cmdChanges(ctx)
     case 'subscribe':

@@ -29,6 +29,7 @@ describe('agent skill (SKILL.md)', () => {
       '/.well-known/agent-configuration',
       'modelschemas login',
       '/v1/validate',
+      '/v1/estimate',
       '/v1/changes',
       '/mcp',
     ]) {

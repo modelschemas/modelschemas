@@ -46,7 +46,10 @@ availability and schema questions.
    \`{valid, errors:[{path,message,keyword}]}\` — or
    \`modelschemas validate anthropic/v1/messages payload.json\` (exit 2 when
    invalid).
-5. **Stay current.** Poll \`GET /v1/changes?since=<epoch>\` (cursor-paginated)
+5. **Estimate USD.** \`POST /v1/estimate {"provider","model","request"?,"usage"?}\`
+   → \`{usd, cardSource}\`. Missing levers → 422; no card → 404
+   \`unknown_pricing\`. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.
+6. **Stay current.** Poll \`GET /v1/changes?since=<epoch>\` (cursor-paginated)
    or subscribe: \`POST /v1/subscriptions\` (authed) delivers HMAC-signed
    webhooks for model/schema changes.
 
@@ -59,6 +62,7 @@ modelschemas models list --activity chat --q claude
 modelschemas models get openrouter anthropic/claude-sonnet-4.5
 modelschemas schema get anthropic v1/messages --kind input
 modelschemas validate anthropic/v1/messages payload.json
+modelschemas estimate openai gpt-4o usage.json
 modelschemas changes --since 1781150000
 modelschemas subscribe https://my.app/hook --events model.added
 \`\`\`
@@ -69,7 +73,7 @@ Every command prints JSON (pretty in a TTY, compact when piped).
 
 The service is also an MCP server: streamable HTTP at \`{base}/mcp\` with
 tools \`list_models\`, \`get_model\`, \`get_schema\`, \`validate_payload\`,
-\`recent_changes\`. OpenAPI assembly is HTTP-only
+\`estimate_cost\`, \`recent_changes\`. OpenAPI assembly is HTTP-only
 (\`GET /v1/openapi/{provider}\`); MCP has no equivalent tool.
 
 ## Service reference (llms.txt, verbatim)

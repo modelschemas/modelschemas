@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
 
+import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { llmsTxt } from './llms-txt.ts'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
@@ -52,6 +53,7 @@ beforeAll(async () => {
     rawId: 'modelzilla',
     activity: 'chat',
     displayName: 'Modelzilla',
+    pricing: GPT_4O,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
   })
@@ -73,7 +75,7 @@ beforeAll(async () => {
 })
 
 describe('MCP endpoint', () => {
-  it('initializes and lists the six tools', async () => {
+  it('initializes and lists the tools', async () => {
     const init = await handleMcpRequest(db, rpc('initialize'))
     const initBody = (await init.json()) as {
       result: {
@@ -92,6 +94,7 @@ describe('MCP endpoint', () => {
       result: { tools: Array<{ name: string }> }
     }
     expect(listBody.result.tools.map((t) => t.name).sort()).toEqual([
+      'estimate_cost',
       'get_model',
       'get_schema',
       'list_models',
@@ -145,11 +148,26 @@ describe('MCP endpoint', () => {
 
     const changes = await callTool('recent_changes', { provider: 'mcp-prov' })
     expect(changes.isError).toBe(false)
+
+    const estimate = await callTool('estimate_cost', {
+      provider: 'mcp-prov',
+      model: 'modelzilla',
+      usage: { input_tokens: 1200, output_tokens: 400 },
+    })
+    expect(estimate.isError).toBe(false)
+    expect((estimate.data as { usd: number }).usd).toBe(0.007)
   })
 
   it('handles errors per protocol', async () => {
     const unknownTool = await callTool('frobnicate', {})
     expect(unknownTool.isError).toBe(true)
+
+    const missingPrice = await callTool('estimate_cost', {
+      provider: 'mcp-prov',
+      model: 'nope',
+    })
+    expect(missingPrice.isError).toBe(true)
+    expect((missingPrice.data as { error: string }).error).toBe('unknown_model')
 
     const missingSchema = await callTool('get_schema', {
       provider: 'mcp-prov',

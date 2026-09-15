@@ -3,6 +3,9 @@
 import type { Client, Options as Options2, TDataShape } from './client'
 import { client } from './client.gen'
 import type {
+  EstimateCostData,
+  EstimateCostErrors,
+  EstimateCostResponses,
   GetActivitySchemasData,
   GetActivitySchemasErrors,
   GetActivitySchemasResponses,
@@ -207,6 +210,25 @@ export const validatePayload = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: '/v1/validate',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  })
+
+/**
+ * Evaluate a stored rate card against request and usage
+ */
+export const estimateCost = <ThrowOnError extends boolean = false>(
+  options: Options<EstimateCostData, ThrowOnError>,
+) =>
+  (options.client ?? client).post<
+    EstimateCostResponses,
+    EstimateCostErrors,
+    ThrowOnError
+  >({
+    url: '/v1/estimate',
     ...options,
     headers: {
       'Content-Type': 'application/json',

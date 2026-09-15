@@ -14,9 +14,12 @@ export const serviceIndex = {
     self: halGet('/v1'),
     status: halGet('/v1/status'),
     providers: halGet('/v1/providers'),
-    models: halGet('/v1/models{?activity,provider,capability,q}', {
-      example: '/v1/models?activity=chat&q=claude',
-    }),
+    models: halGet(
+      '/v1/models{?activity,provider,capability,q,provenance,pricing}',
+      {
+        example: '/v1/models?activity=chat&q=claude',
+      },
+    ),
     model: halGet('/v1/models/{provider}/{modelId}', {
       example: '/v1/models/anthropic/claude-sonnet-4-5',
     }),
@@ -44,6 +47,13 @@ export const serviceIndex = {
         endpointId: 'v1/messages',
         kind: 'input',
         payload: { model: 'claude-sonnet-4-5', max_tokens: 1024 },
+      },
+    }),
+    estimate: halPost('/v1/estimate', {
+      example: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        usage: { input_tokens: 1200, output_tokens: 400 },
       },
     }),
     changes: halGet('/v1/changes{?since,provider,type,cursor,limit,wait}', {
