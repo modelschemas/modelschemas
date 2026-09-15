@@ -13,13 +13,14 @@ stale-while-revalidate) and cron-driven auto-refresh. Design ported from
 TanStack AI PR #622 (`@tanstack/ai-schemas`), minus codegen — schemas are
 extracted/bundled at runtime and served over HTTP/MCP.
 
-**`PLAN.md` is the build log** — every task, settled architecture decision,
-and gotcha note. All phases are complete and the service is live at
-https://modelschemas.openstory.workers.dev. `0.1.0` is on npm
-(`@modelschemas/*` plus unscoped `modelschemas`). Further versions:
-OIDC `npm stage publish` via `.github/workflows/publish.yml` — README
-"Releasing on npm". Don't relitigate PLAN.md's
-"Architecture decisions" section.
+The service is live at https://modelschemas.openstory.workers.dev. `0.1.0`
+is on npm (`@modelschemas/*` plus unscoped `modelschemas`). Further
+versions: OIDC `npm stage publish` via `.github/workflows/publish.yml` —
+README "Releasing on npm".
+
+**`PLAN.md` is a historical build log**, not the backlog. Open it for a
+gotcha or decision from phases 0–18. New work is GitHub issues. This file
+is the live map.
 
 ## Commands
 
