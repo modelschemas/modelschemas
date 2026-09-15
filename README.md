@@ -306,7 +306,7 @@ is token-auth only and is not used for releases.
 
 ## Architecture
 
-See `CLAUDE.md` for the operational map and `PLAN.md` for the full build
-history (every task, decision, and gotcha). Borrows the provider-registry,
+See `CLAUDE.md` for the operational map. `PLAN.md` is the completed build
+log (not the backlog). Borrows the provider-registry,
 activity-grouping, and `$defs`-bundling design from TanStack AI PR #622,
 re-implemented as a runtime service (no codegen) on Workers.

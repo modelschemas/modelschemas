@@ -1,5 +1,8 @@
 # modelschemas — Live AI Model Schema Service
 
+> Historical build log (phases 0–18 complete). New work is GitHub issues.
+> Live map: `CLAUDE.md`.
+
 A Cloudflare Workers service that gives agents live, validated access to AI model schemas
 (request/response JSON Schemas per provider endpoint, plus model metadata), with
 react-query-style server-side caching: persistent, stale-while-revalidate, auto-refreshed
@@ -23,9 +26,9 @@ over HTTP. Zod codegen stays in the npm package world; this service is the live 
 
 ---
 
-## Loop protocol
+## Loop protocol (completed)
 
-This plan is executed by an autonomous loop. Each iteration:
+This plan was executed by an autonomous loop. Each iteration:
 
 1. Read this file. Find the first unchecked `- [ ]` task, top to bottom.
 2. Implement exactly that task. Stay inside its scope; if you discover necessary
@@ -64,7 +67,7 @@ Rules:
 
 ---
 
-## Architecture decisions (settled — do not relitigate in the loop)
+## Architecture decisions (settled during the build)
 
 - **D1 is the source of truth**, not KV. We need relational queries (models by
   provider/activity/capability), versioned schema history, diffs, auth tables, and
