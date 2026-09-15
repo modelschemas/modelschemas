@@ -42,7 +42,8 @@ const tokenCard = compileOpenRouterPricing(model.pricing, {
 Token counts on compiled OpenRouter cards are disjoint: `input_tokens`
 excludes `cache_read_tokens` / `cache_write_tokens`, `output_tokens`
 excludes `reasoning_tokens`. `min_prompt_tokens` overrides become rate
-tiers; time-window overrides are not applied (the card quotes the base rate).
+tiers (strictly greater than the threshold); time-window overrides are not
+applied (the card quotes the base rate).
 
 Docs: [modelschemas.com/docs](https://modelschemas.com/docs) · Source:
 [github.com/modelschemas/modelschemas](https://github.com/modelschemas/modelschemas)

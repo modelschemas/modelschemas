@@ -8,7 +8,8 @@
  * `completion` levers are required; `requests` defaults to 1, the rest to 0.
  *
  * `overrides` entries with `min_prompt_tokens` compile to rate tiers keyed on
- * total prompt tokens (input + cache read + cache writes).
+ * total prompt tokens (input + cache read + cache writes). A tier applies
+ * when the total is strictly greater than the threshold (OpenRouter's rule).
  */
 import type { Expr, RateCard, Table } from './rate-card.schema.ts'
 
@@ -94,14 +95,14 @@ export function compileOpenRouterPricing(
       var: lever(k),
     })),
   }
-  // Highest matching threshold wins; below every threshold is the base rate.
+  // Highest matching threshold wins; at-or-below every threshold is base.
   const tierKey: Expr =
     tiers.length === 0
       ? 'base'
       : {
           if: [
             ...tiers.flatMap(([min]): Expr[] => [
-              { '>=': [promptTotal, min] },
+              { '>': [promptTotal, min] },
               String(min),
             ]),
             'base',

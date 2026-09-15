@@ -273,10 +273,12 @@ export function bindInputs(card: RateCard, params: Vars): Vars {
 
 /**
  * USD for this call. Request-bound levers read `request`; usage-bound
- * levers read `usage` (omit it before the call, pass measured or guessed
- * counts after). A usage key on the request body, or a request field in
- * usage, is not read. Throws `RateCardError` rather than returning a
- * number it cannot stand behind.
+ * levers read `usage`. A usage key on the request body, or a request
+ * field in usage, is not read. Omit `usage` only when every usage-bound
+ * input has a default (or the card has none); token cards that require
+ * `input_tokens` / `output_tokens` throw `bad-input` without them.
+ * Pass measured or guessed counts after the call. Throws `RateCardError`
+ * rather than returning a number it cannot stand behind.
  */
 export function price(
   card: RateCard,

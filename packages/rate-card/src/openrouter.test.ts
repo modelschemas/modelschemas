@@ -95,10 +95,25 @@ describe('compileOpenRouterPricing', () => {
     const at = (input_tokens: number, cache_read_tokens = 0) =>
       price(card, {}, { input_tokens, output_tokens: 0, cache_read_tokens })
     expect(at(10_000)).toBeCloseTo(0.001, 9)
+    // OpenRouter: tier applies when prompt tokens are strictly greater than
+    // min_prompt_tokens. Exactly 32_000 stays on the base rate.
+    expect(at(32_000)).toBeCloseTo(0.0032, 9)
+    expect(at(32_001)).toBeCloseTo(32_001 * 0.00000015, 9)
     expect(at(100_000)).toBeCloseTo(0.015, 9)
     expect(at(300_000)).toBeCloseTo(0.06, 9)
     // Cached tokens count toward the threshold; the tier keeps the base cache rate.
     expect(at(20_000, 20_000)).toBeCloseTo(0.003 + 0.0002, 9)
+  })
+
+  it('ignores listing.discount and prices the stated prompt/completion strings', () => {
+    const card = compile({
+      prompt: '0.0000025',
+      completion: '0.00001',
+      discount: 0.5,
+    })
+    expect(price(card, {}, { input_tokens: 1_000_000, output_tokens: 0 })).toBe(
+      2.5,
+    )
   })
 
   it.each<[string, unknown]>([

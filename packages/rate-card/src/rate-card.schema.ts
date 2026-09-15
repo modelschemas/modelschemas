@@ -73,7 +73,10 @@ const tableSchema: z.ZodType<Table> = z.lazy(() =>
 )
 
 const inputBase = {
-  /** The key this lever reads from the evaluation vars. */
+  /**
+   * Request-body or usage-object field this lever reads (`image_urls`).
+   * JSONLogic `{ var }` uses the input's object key, which may differ.
+   */
   param: z.string().min(1),
   /**
    * Where `price` reads `param` from: a real request-body field
@@ -124,7 +127,10 @@ const inputSchema = z.discriminatedUnion('kind', [
 ])
 
 const rateCardExampleSchema = z.object({
-  /** Evaluation vars: request params plus any usage-bound quantities. */
+  /**
+   * Flat bag of request-body fields plus usage quantities, keyed by each
+   * input's `param`. `verifyExamples` feeds it as both `request` and `usage`.
+   */
   params: z.record(z.string(), z.unknown()),
   usd: z.number().positive(),
   /** The sentence in the source text this example comes from. */
