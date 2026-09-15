@@ -17,10 +17,12 @@ import { stableStringify } from '#/server/kv.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
   mergeListingAndSchema,
+  requestSchemaPropertyNames,
   schemaRung,
   walkRequestSchema,
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
+import { reconcilePricingSource, toStoredRateCard } from '#/server/rate-card.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
@@ -81,17 +83,23 @@ function comparable(info: ModelInfo): Record<string, unknown> {
   }
 }
 
+type InputWalks = {
+  walks: Map<string, SchemaWalk>
+  properties: Map<string, Set<string>>
+}
+
 async function loadInputWalks(
   db: SyncDeps['db'],
   provider: ProviderConfig,
   listed: Array<ModelInfo>,
-): Promise<Map<string, SchemaWalk>> {
+): Promise<InputWalks> {
   const walks = new Map<string, SchemaWalk>()
+  const properties = new Map<string, Set<string>>()
   if (
     resolveSpecGrain(provider) === 'model' ||
     provider.defaultDerivation === 'generated'
   ) {
-    return walks
+    return { walks, properties }
   }
   const bound = new Set<string>()
   for (const info of listed) {
@@ -104,7 +112,7 @@ async function loadInputWalks(
     })
     if (id) bound.add(id)
   }
-  if (bound.size === 0) return walks
+  if (bound.size === 0) return { walks, properties }
   const dbIds = [...bound].map((id) => `${provider.id}/${id}`)
   const chunks: Array<Array<string>> = []
   for (let i = 0; i < dbIds.length; i += 90) {
@@ -142,6 +150,7 @@ async function loadInputWalks(
     const rung = schemaRung(row.derivation)
     if (rung === null) continue
     const parsed: unknown = JSON.parse(row.schema)
+    properties.set(publicId, requestSchemaPropertyNames(parsed))
     const walk = walkRequestSchema(parsed, {
       derivation: rung,
       endpointId: publicId,
@@ -151,7 +160,15 @@ async function loadInputWalks(
     })
     if (walk) walks.set(publicId, walk)
   }
-  return walks
+  return { walks, properties }
+}
+
+function listingSourceUrl(provider: ProviderConfig): string {
+  return (
+    provider.modelsEndpoint ??
+    provider.specSourceUrl ??
+    `https://modelschemas.com/v1/providers/${provider.id}`
+  )
 }
 
 function enrichListed(
@@ -202,7 +219,11 @@ export async function pollProviderModels(
   }
   outcome.modelsSeen = listed.models.length
 
-  const walks = await loadInputWalks(db, provider, listed.models)
+  const { walks, properties } = await loadInputWalks(
+    db,
+    provider,
+    listed.models,
+  )
 
   const existingRows = await db
     .select()
@@ -222,8 +243,27 @@ export async function pollProviderModels(
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
   for (const raw of listed.models) {
-    const info = enrichListed(provider, raw, walks)
-    const id = modelDbId(provider.id, info.rawId)
+    const enriched = enrichListed(provider, raw, walks)
+    const id = modelDbId(provider.id, enriched.rawId)
+    const bound = resolveSchemaEndpointId({
+      providerId: provider.id,
+      rawId: enriched.rawId,
+      activity: enriched.activity ?? null,
+      capabilities: enriched.capabilities,
+      schemaEndpointId: enriched.schemaEndpointId,
+    })
+    const card = await toStoredRateCard(enriched.pricing, {
+      existing: existingById.get(id)?.pricing,
+      requestProperties: bound ? properties.get(bound) : undefined,
+      sourceUrl: listingSourceUrl(provider),
+      now,
+    })
+    const info: ModelInfo = {
+      ...enriched,
+      pricing: card,
+      factSources:
+        reconcilePricingSource(enriched.factSources, card) ?? undefined,
+    }
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
     const existing = existingById.get(id)

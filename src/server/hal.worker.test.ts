@@ -20,8 +20,11 @@ import {
 } from './schemas-api.ts'
 import { getServiceStatus } from './status.ts'
 import { assembleProviderOpenApi } from './provider-openapi.ts'
+import { estimateCost } from './estimate.ts'
+import type { EstimateRequestBody } from './estimate.ts'
 import { validatePayload } from './validate.ts'
 import type { ValidateRequestBody } from './validate.ts'
+import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 
 let db: Db
 
@@ -67,16 +70,37 @@ beforeAll(async () => {
     schema: SCHEMA,
     createdAt: NOW,
   })
+  await db.insert(providers).values({
+    id: 'openai',
+    displayName: 'OpenAI',
+    specSourceUrl: 'https://example.com/openai.json',
+  })
+  await db.insert(models).values({
+    id: 'openai-gpt-4o',
+    providerId: 'openai',
+    rawId: 'gpt-4o',
+    activity: 'chat',
+    pricing: GPT_4O,
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+  })
 })
 
 /** Resolves a link the way the HTTP router would; throws on unknown paths
  * so a new link without a dispatcher entry fails the walk. */
 async function resolve(target: string | Record<string, unknown>) {
   if (typeof target !== 'string') {
-    // POST example bodies — only /v1/validate today.
-    const outcome = await validatePayload(
+    if ('endpointId' in target) {
+      const outcome = await validatePayload(
+        db,
+        target as unknown as ValidateRequestBody,
+      )
+      expect(outcome.ok).toBe(true)
+      return
+    }
+    const outcome = await estimateCost(
       db,
-      target as unknown as ValidateRequestBody,
+      target as unknown as EstimateRequestBody,
     )
     expect(outcome.ok).toBe(true)
     return

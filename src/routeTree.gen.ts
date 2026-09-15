@@ -27,6 +27,7 @@ import { Route as SchemasIndexRouteImport } from './routes/schemas/index'
 import { Route as ModelsIndexRouteImport } from './routes/models/index'
 import { Route as V1ValidateRouteImport } from './routes/v1/validate'
 import { Route as V1StatusRouteImport } from './routes/v1/status'
+import { Route as V1EstimateRouteImport } from './routes/v1/estimate'
 import { Route as V1ChangesRouteImport } from './routes/v1/changes'
 import { Route as DotwellKnownOauthProtectedResourceRouteImport } from './routes/[.]well-known/oauth-protected-resource'
 import { Route as DotwellKnownOauthAuthorizationServerRouteImport } from './routes/[.]well-known/oauth-authorization-server'
@@ -37,6 +38,7 @@ import { Route as V1SchemasIndexRouteImport } from './routes/v1/schemas/index'
 import { Route as V1ProvidersIndexRouteImport } from './routes/v1/providers/index'
 import { Route as V1ModelsIndexRouteImport } from './routes/v1/models/index'
 import { Route as V1SubscriptionsIdRouteImport } from './routes/v1/subscriptions/$id'
+import { Route as V1OpenapiProviderRouteImport } from './routes/v1/openapi/$provider'
 import { Route as V1AgentsRegisterKeyRouteImport } from './routes/v1/agents/register-key'
 import { Route as V1AgentsMeRouteImport } from './routes/v1/agents/me'
 import { Route as ModelsProviderModelIdRouteImport } from './routes/models/$provider.$modelId'
@@ -44,7 +46,6 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DotwellKnownMcpServerCardDotjsonRouteImport } from './routes/[.]well-known/mcp/server-card[.]json'
 import { Route as DotwellKnownAgentSkillsIndexDotjsonRouteImport } from './routes/[.]well-known/agent-skills/index[.]json'
 import { Route as V1SchemasProviderIndexRouteImport } from './routes/v1/schemas/$provider/index'
-import { Route as V1OpenapiProviderRouteImport } from './routes/v1/openapi/$provider'
 import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
 import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/$provider.$modelId'
 import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
@@ -142,6 +143,11 @@ const V1StatusRoute = V1StatusRouteImport.update({
   path: '/v1/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1EstimateRoute = V1EstimateRouteImport.update({
+  id: '/v1/estimate',
+  path: '/v1/estimate',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const V1ChangesRoute = V1ChangesRouteImport.update({
   id: '/v1/changes',
   path: '/v1/changes',
@@ -195,6 +201,11 @@ const V1SubscriptionsIdRoute = V1SubscriptionsIdRouteImport.update({
   path: '/v1/subscriptions/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1OpenapiProviderRoute = V1OpenapiProviderRouteImport.update({
+  id: '/v1/openapi/$provider',
+  path: '/v1/openapi/$provider',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const V1AgentsRegisterKeyRoute = V1AgentsRegisterKeyRouteImport.update({
   id: '/v1/agents/register-key',
   path: '/v1/agents/register-key',
@@ -230,11 +241,6 @@ const DotwellKnownAgentSkillsIndexDotjsonRoute =
 const V1SchemasProviderIndexRoute = V1SchemasProviderIndexRouteImport.update({
   id: '/v1/schemas/$provider/',
   path: '/v1/schemas/$provider/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const V1OpenapiProviderRoute = V1OpenapiProviderRouteImport.update({
-  id: '/v1/openapi/$provider',
-  path: '/v1/openapi/$provider',
   getParentRoute: () => rootRouteImport,
 } as any)
 const V1ProvidersProviderModelsRoute =
@@ -291,6 +297,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-authorization-server': typeof DotwellKnownOauthAuthorizationServerRoute
   '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRoute
   '/v1/changes': typeof V1ChangesRoute
+  '/v1/estimate': typeof V1EstimateRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/models/': typeof ModelsIndexRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByFullPath {
   '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
+  '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
@@ -310,7 +318,6 @@ export interface FileRoutesByFullPath {
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
-  '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
   '/v1/schemas/$provider/': typeof V1SchemasProviderIndexRoute
   '/v1/schemas/$provider/$activity/$': typeof V1SchemasProviderActivitySplatRoute
@@ -335,6 +342,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-authorization-server': typeof DotwellKnownOauthAuthorizationServerRoute
   '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRoute
   '/v1/changes': typeof V1ChangesRoute
+  '/v1/estimate': typeof V1EstimateRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/models': typeof ModelsIndexRoute
@@ -346,6 +354,7 @@ export interface FileRoutesByTo {
   '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
+  '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models': typeof V1ModelsIndexRoute
   '/v1/providers': typeof V1ProvidersIndexRoute
@@ -354,7 +363,6 @@ export interface FileRoutesByTo {
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
-  '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
   '/v1/schemas/$provider': typeof V1SchemasProviderIndexRoute
   '/v1/schemas/$provider/$activity/$': typeof V1SchemasProviderActivitySplatRoute
@@ -380,6 +388,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-authorization-server': typeof DotwellKnownOauthAuthorizationServerRoute
   '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRoute
   '/v1/changes': typeof V1ChangesRoute
+  '/v1/estimate': typeof V1EstimateRoute
   '/v1/status': typeof V1StatusRoute
   '/v1/validate': typeof V1ValidateRoute
   '/models/': typeof ModelsIndexRoute
@@ -391,6 +400,7 @@ export interface FileRoutesById {
   '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
+  '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
   '/v1/subscriptions/$id': typeof V1SubscriptionsIdRoute
   '/v1/models/': typeof V1ModelsIndexRoute
   '/v1/providers/': typeof V1ProvidersIndexRoute
@@ -399,7 +409,6 @@ export interface FileRoutesById {
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
   '/v1/models/$provider/$modelId': typeof V1ModelsProviderModelIdRoute
-  '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
   '/v1/providers/$provider/models': typeof V1ProvidersProviderModelsRoute
   '/v1/schemas/$provider/': typeof V1SchemasProviderIndexRoute
   '/v1/schemas/$provider/$activity/$': typeof V1SchemasProviderActivitySplatRoute
@@ -426,6 +435,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-authorization-server'
     | '/.well-known/oauth-protected-resource'
     | '/v1/changes'
+    | '/v1/estimate'
     | '/v1/status'
     | '/v1/validate'
     | '/models/'
@@ -437,6 +447,7 @@ export interface FileRouteTypes {
     | '/models/$provider/$modelId'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
+    | '/v1/openapi/$provider'
     | '/v1/subscriptions/$id'
     | '/v1/models/'
     | '/v1/providers/'
@@ -445,7 +456,6 @@ export interface FileRouteTypes {
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
-    | '/v1/openapi/$provider'
     | '/v1/providers/$provider/models'
     | '/v1/schemas/$provider/'
     | '/v1/schemas/$provider/$activity/$'
@@ -470,6 +480,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-authorization-server'
     | '/.well-known/oauth-protected-resource'
     | '/v1/changes'
+    | '/v1/estimate'
     | '/v1/status'
     | '/v1/validate'
     | '/models'
@@ -481,6 +492,7 @@ export interface FileRouteTypes {
     | '/models/$provider/$modelId'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
+    | '/v1/openapi/$provider'
     | '/v1/subscriptions/$id'
     | '/v1/models'
     | '/v1/providers'
@@ -489,7 +501,6 @@ export interface FileRouteTypes {
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
-    | '/v1/openapi/$provider'
     | '/v1/providers/$provider/models'
     | '/v1/schemas/$provider'
     | '/v1/schemas/$provider/$activity/$'
@@ -514,6 +525,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-authorization-server'
     | '/.well-known/oauth-protected-resource'
     | '/v1/changes'
+    | '/v1/estimate'
     | '/v1/status'
     | '/v1/validate'
     | '/models/'
@@ -525,6 +537,7 @@ export interface FileRouteTypes {
     | '/models/$provider/$modelId'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
+    | '/v1/openapi/$provider'
     | '/v1/subscriptions/$id'
     | '/v1/models/'
     | '/v1/providers/'
@@ -533,7 +546,6 @@ export interface FileRouteTypes {
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/sync/$provider'
     | '/v1/models/$provider/$modelId'
-    | '/v1/openapi/$provider'
     | '/v1/providers/$provider/models'
     | '/v1/schemas/$provider/'
     | '/v1/schemas/$provider/$activity/$'
@@ -559,6 +571,7 @@ export interface RootRouteChildren {
   DotwellKnownOauthAuthorizationServerRoute: typeof DotwellKnownOauthAuthorizationServerRoute
   DotwellKnownOauthProtectedResourceRoute: typeof DotwellKnownOauthProtectedResourceRoute
   V1ChangesRoute: typeof V1ChangesRoute
+  V1EstimateRoute: typeof V1EstimateRoute
   V1StatusRoute: typeof V1StatusRoute
   V1ValidateRoute: typeof V1ValidateRoute
   ModelsIndexRoute: typeof ModelsIndexRoute
@@ -570,6 +583,7 @@ export interface RootRouteChildren {
   ModelsProviderModelIdRoute: typeof ModelsProviderModelIdRoute
   V1AgentsMeRoute: typeof V1AgentsMeRoute
   V1AgentsRegisterKeyRoute: typeof V1AgentsRegisterKeyRoute
+  V1OpenapiProviderRoute: typeof V1OpenapiProviderRoute
   V1SubscriptionsIdRoute: typeof V1SubscriptionsIdRoute
   V1ModelsIndexRoute: typeof V1ModelsIndexRoute
   V1ProvidersIndexRoute: typeof V1ProvidersIndexRoute
@@ -578,7 +592,6 @@ export interface RootRouteChildren {
   SchemasProviderActivitySplatRoute: typeof SchemasProviderActivitySplatRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
   V1ModelsProviderModelIdRoute: typeof V1ModelsProviderModelIdRoute
-  V1OpenapiProviderRoute: typeof V1OpenapiProviderRoute
   V1ProvidersProviderModelsRoute: typeof V1ProvidersProviderModelsRoute
   V1SchemasProviderIndexRoute: typeof V1SchemasProviderIndexRoute
   V1SchemasProviderActivitySplatRoute: typeof V1SchemasProviderActivitySplatRoute
@@ -713,6 +726,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1StatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/estimate': {
+      id: '/v1/estimate'
+      path: '/v1/estimate'
+      fullPath: '/v1/estimate'
+      preLoaderRoute: typeof V1EstimateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/v1/changes': {
       id: '/v1/changes'
       path: '/v1/changes'
@@ -783,6 +803,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1SubscriptionsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/openapi/$provider': {
+      id: '/v1/openapi/$provider'
+      path: '/v1/openapi/$provider'
+      fullPath: '/v1/openapi/$provider'
+      preLoaderRoute: typeof V1OpenapiProviderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/v1/agents/register-key': {
       id: '/v1/agents/register-key'
       path: '/v1/agents/register-key'
@@ -830,13 +857,6 @@ declare module '@tanstack/react-router' {
       path: '/v1/schemas/$provider'
       fullPath: '/v1/schemas/$provider/'
       preLoaderRoute: typeof V1SchemasProviderIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/v1/openapi/$provider': {
-      id: '/v1/openapi/$provider'
-      path: '/v1/openapi/$provider'
-      fullPath: '/v1/openapi/$provider'
-      preLoaderRoute: typeof V1OpenapiProviderRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/v1/providers/$provider/models': {
@@ -905,6 +925,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotwellKnownOauthProtectedResourceRoute:
     DotwellKnownOauthProtectedResourceRoute,
   V1ChangesRoute: V1ChangesRoute,
+  V1EstimateRoute: V1EstimateRoute,
   V1StatusRoute: V1StatusRoute,
   V1ValidateRoute: V1ValidateRoute,
   ModelsIndexRoute: ModelsIndexRoute,
@@ -917,6 +938,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelsProviderModelIdRoute: ModelsProviderModelIdRoute,
   V1AgentsMeRoute: V1AgentsMeRoute,
   V1AgentsRegisterKeyRoute: V1AgentsRegisterKeyRoute,
+  V1OpenapiProviderRoute: V1OpenapiProviderRoute,
   V1SubscriptionsIdRoute: V1SubscriptionsIdRoute,
   V1ModelsIndexRoute: V1ModelsIndexRoute,
   V1ProvidersIndexRoute: V1ProvidersIndexRoute,
@@ -925,7 +947,6 @@ const rootRouteChildren: RootRouteChildren = {
   SchemasProviderActivitySplatRoute: SchemasProviderActivitySplatRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,
   V1ModelsProviderModelIdRoute: V1ModelsProviderModelIdRoute,
-  V1OpenapiProviderRoute: V1OpenapiProviderRoute,
   V1ProvidersProviderModelsRoute: V1ProvidersProviderModelsRoute,
   V1SchemasProviderIndexRoute: V1SchemasProviderIndexRoute,
   V1SchemasProviderActivitySplatRoute: V1SchemasProviderActivitySplatRoute,

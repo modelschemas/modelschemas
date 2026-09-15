@@ -44,6 +44,96 @@ export type ValidateResult = {
   }>
 }
 
+export type CompactPricing = {
+  inputPerMillion: number
+  outputPerMillion: number
+}
+
+export type RateCardSource = {
+  url: string
+  hash: string
+  extractedAt: string
+  expiresAt?: string
+}
+
+export type RateCardExample = {
+  params: {
+    [key: string]: unknown
+  }
+  usd: number
+  quote: string
+}
+
+export type RateCardInput = {
+  param: string
+  bound?: 'request' | 'usage'
+  kind: 'number' | 'enum' | 'boolean' | 'count' | 'dimensions'
+}
+
+export type RateCard = {
+  inputs: {
+    [key: string]: RateCardInput
+  }
+  tables: {
+    [key: string]: unknown
+  }
+  /**
+   * JSONLogic expression over the closed op set.
+   */
+  price: unknown
+  examples: Array<RateCardExample>
+  source: RateCardSource
+}
+
+export type Model = {
+  id?: string
+  provider?: string
+  rawId?: string
+  activity?:
+    | 'chat'
+    | 'image'
+    | 'video'
+    | 'audio'
+    | 'embeddings'
+    | 'moderation'
+    | null
+  displayName?: string | null
+  schemaEndpointId?: string | null
+  contextWindow?: number | null
+  maxOutput?: number | null
+  modalities?: unknown
+  /**
+   * Full RateCard on detail and on list rows with ?pricing=1. Compact {inputPerMillion, outputPerMillion} on list rows for simple token formulas. null when unknown or a media card on the compact list.
+   */
+  pricing?: RateCard | CompactPricing | null
+  capabilities?: unknown
+  factSources?: unknown
+  firstSeenAt?: number
+  lastSeenAt?: number
+  deprecatedAt?: number | null
+}
+
+export type ModelList = {
+  count?: number
+  models?: Array<Model>
+}
+
+export type EstimateRequest = {
+  provider: string
+  model: string
+  request?: {
+    [key: string]: unknown
+  }
+  usage?: {
+    [key: string]: unknown
+  }
+}
+
+export type EstimateResult = {
+  usd: number
+  cardSource: RateCardSource
+}
+
 export type GetServiceIndexData = {
   body?: never
   path?: never
@@ -161,17 +251,19 @@ export type ListModelsData = {
      * Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.
      */
     provenance?: '1'
+    /**
+     * Set to 1 to include the full rate card on each list row. Default is a compact {inputPerMillion, outputPerMillion} projection for simple token formulas; media cards omit the projection.
+     */
+    pricing?: '1'
   }
   url: '/v1/models'
 }
 
 export type ListModelsResponses = {
   /**
-   * Matching models.
+   * Matching models. pricing is a compact token projection, a full RateCard when ?pricing=1, or null. OpenRouter-shaped vendor blobs are not served.
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: ModelList
 }
 
 export type ListModelsResponse = ListModelsResponses[keyof ListModelsResponses]
@@ -203,11 +295,9 @@ export type GetModelError = GetModelErrors[keyof GetModelErrors]
 
 export type GetModelResponses = {
   /**
-   * Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.
+   * Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), a RateCard or null for pricing, factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: Model
 }
 
 export type GetModelResponse = GetModelResponses[keyof GetModelResponses]
@@ -447,6 +537,40 @@ export type ValidatePayloadResponses = {
 
 export type ValidatePayloadResponse =
   ValidatePayloadResponses[keyof ValidatePayloadResponses]
+
+export type EstimateCostData = {
+  body: EstimateRequest
+  path?: never
+  query?: never
+  url: '/v1/estimate'
+}
+
+export type EstimateCostErrors = {
+  /**
+   * Error
+   */
+  400: Error
+  /**
+   * Error
+   */
+  404: Error
+  /**
+   * Error
+   */
+  422: Error
+}
+
+export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors]
+
+export type EstimateCostResponses = {
+  /**
+   * USD for this call and the card source.
+   */
+  200: EstimateResult
+}
+
+export type EstimateCostResponse =
+  EstimateCostResponses[keyof EstimateCostResponses]
 
 export type ListChangesData = {
   body?: never

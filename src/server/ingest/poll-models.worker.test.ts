@@ -452,4 +452,104 @@ describe('pollProviderModels', () => {
       updated: 0,
     })
   })
+
+  it('stores OpenRouter listings as rate cards and Together zeros as null', async () => {
+    const id = 'poll-pricing'
+    const deps = await freshDeps(id)
+    const listing = { prompt: '0.0000025', completion: '0.00001' }
+    const first = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { rawId: 'gpt-4o', activity: 'chat', pricing: listing },
+        {
+          rawId: 'free-model',
+          activity: 'chat',
+          pricing: { prompt: '0', completion: '0' },
+        },
+      ]),
+    )
+    expect(first).toMatchObject({ added: 2, updated: 0 })
+    const gpt = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'gpt-4o')),
+    })
+    const free = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'free-model')),
+    })
+    const card = gpt?.pricing as { inputs?: { input_tokens?: unknown } } | null
+    expect(card?.inputs?.input_tokens).toMatchObject({
+      param: 'input_tokens',
+      bound: 'usage',
+    })
+    expect(free?.pricing).toBeNull()
+    expect(
+      (gpt?.factSources as { pricing?: { derivation: string } } | null)?.pricing
+        ?.derivation,
+    ).toBe('listing')
+    expect(
+      (free?.factSources as { pricing?: unknown } | null)?.pricing,
+    ).toBeUndefined()
+
+    const second = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { rawId: 'gpt-4o', activity: 'chat', pricing: listing },
+        {
+          rawId: 'free-model',
+          activity: 'chat',
+          pricing: { prompt: '0', completion: '0' },
+        },
+      ]),
+    )
+    expect(second).toMatchObject({ added: 0, updated: 0 })
+  })
+
+  it('refuses a request-bound param that is not on the bound input schema', async () => {
+    const id = 'poll-invented'
+    const deps = await freshDeps(id)
+    await deps.db.insert(endpoints).values({
+      id: `${id}/v1/messages`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/v1/messages',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/v1/messages:input`,
+      endpointId: `${id}/v1/messages`,
+      kind: 'input',
+      contentHash: 'a'.repeat(64),
+      schema: JSON.stringify({
+        properties: { model: { type: 'string' }, messages: { type: 'array' } },
+      }),
+      derivation: 'upstream-spec',
+      createdAt: 1_781_150_000,
+    })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'claude-fable-5',
+          activity: 'chat',
+          schemaEndpointId: 'v1/messages',
+          pricing: {
+            inputs: {
+              quality: { param: 'quality', kind: 'enum', values: ['high'] },
+            },
+            tables: {},
+            price: { lookup: { table: 'rate', keys: ['quality'] } },
+            examples: [],
+            source: {
+              url: 'https://example.com/llms.txt',
+              hash: 'a'.repeat(64),
+              extractedAt: '2026-09-15T00:00:00Z',
+            },
+          },
+        },
+      ]),
+    )
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'claude-fable-5')),
+    })
+    expect(row?.pricing).toBeNull()
+  })
 })

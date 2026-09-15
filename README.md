@@ -10,11 +10,12 @@ full OpenAPI spec syncs daily.
 
 Surfaces:
 
-- **HTTP API** under `/v1` — catalog, schemas, validation, changes feed
-  (see `GET /v1` or [openapi.json](./openapi.json))
+- **HTTP API** under `/v1` — catalog, schemas, validation, cost estimate,
+  changes feed (see `GET /v1` or [openapi.json](./openapi.json))
 - **Agent guide** at `/llms.txt`, **agent skill** at `/skill`, **docs** at `/docs`
 - **MCP server** at `/mcp` (streamable HTTP; tools: `list_models`,
-  `get_model`, `get_schema`, `validate_payload`, `recent_changes`)
+  `get_model`, `get_schema`, `validate_payload`, `estimate_cost`,
+  `recent_changes`)
 - **Agent auth** — agent-auth protocol discovery at
   `/.well-known/agent-configuration`, plus an API-key fallback
   (`POST /v1/agents/register-key`)
@@ -216,6 +217,12 @@ Settings:
 migrate-then-deploy).
 
 ## Releasing on npm
+
+**Breaking (0.1.x):** `models.pricing` is a RateCard or `null`, not an
+OpenRouter `{ prompt, completion, … }` blob. List rows compact simple token
+formulas to `{ inputPerMillion, outputPerMillion }`; `GET /v1/models?pricing=1`
+and model detail return the full card. Together all-zero placeholders are
+`null`. `POST /v1/estimate` evaluates a stored card.
 
 Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap):
 

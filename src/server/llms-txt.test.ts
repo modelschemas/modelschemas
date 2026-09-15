@@ -21,6 +21,7 @@ describe('llms.txt content', () => {
       '/v1/schemas/',
       '/v1/openapi/',
       '/v1/validate',
+      '/v1/estimate',
       '/v1/changes',
       '/openapi.json',
       '/.well-known/agent-configuration',

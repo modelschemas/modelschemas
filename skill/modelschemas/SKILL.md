@@ -38,7 +38,10 @@ availability and schema questions.
    `{valid, errors:[{path,message,keyword}]}` — or
    `modelschemas validate anthropic/v1/messages payload.json` (exit 2 when
    invalid).
-5. **Stay current.** Poll `GET /v1/changes?since=<epoch>` (cursor-paginated)
+5. **Estimate USD.** `POST /v1/estimate {"provider","model","request"?,"usage"?}`
+   → `{usd, cardSource}`. Missing levers → 422; no card → 404
+   `unknown_pricing`. CLI: `modelschemas estimate openai gpt-4o usage.json`.
+6. **Stay current.** Poll `GET /v1/changes?since=<epoch>` (cursor-paginated)
    or subscribe: `POST /v1/subscriptions` (authed) delivers HMAC-signed
    webhooks for model/schema changes.
 
@@ -51,6 +54,7 @@ modelschemas models list --activity chat --q claude
 modelschemas models get openrouter anthropic/claude-sonnet-4.5
 modelschemas schema get anthropic v1/messages --kind input
 modelschemas validate anthropic/v1/messages payload.json
+modelschemas estimate openai gpt-4o usage.json
 modelschemas changes --since 1781150000
 modelschemas subscribe https://my.app/hook --events model.added
 ```
@@ -61,7 +65,7 @@ Every command prints JSON (pretty in a TTY, compact when piped).
 
 The service is also an MCP server: streamable HTTP at `{base}/mcp` with
 tools `list_models`, `get_model`, `get_schema`, `validate_payload`,
-`recent_changes`. OpenAPI assembly is HTTP-only
+`estimate_cost`, `recent_changes`. OpenAPI assembly is HTTP-only
 (`GET /v1/openapi/{provider}`); MCP has no equivalent tool.
 
 ## Service reference (llms.txt, verbatim)
@@ -81,12 +85,17 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
   (chat, image, video, audio, embeddings, moderation). Grain=provider
   catalogs (Grok, OpenAI, …) set `activity` on each row and
   `schemaEndpointId` pointing at the shared generation route
-  (`v1/images/generations`, `images/generations`, …).
+  (`v1/images/generations`, `images/generations`, …). `pricing` is a
+  RateCard (or null). List rows compact simple token formulas to
+  `{inputPerMillion, outputPerMillion}`; `?pricing=1` returns the full
+  card. OpenRouter-shaped vendor blobs are not served.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as `{endpointId}`: it aliases onto that
   route and pins the request `model` field to the one id.
 - Validate a payload server-side before spending tokens on a provider call.
+- Estimate USD for a call from the stored rate card
+  (`POST /v1/estimate`).
 - Poll /v1/changes (or subscribe via webhooks) to hear about new models and
   API revisions.
 
@@ -105,7 +114,10 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
    paths). FAL requires ?model=. Over 40 endpoints, or a filter that
    matches none: 400 spec_requires_selector. HTTP only (no MCP tool).
 7. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
-8. GET /v1/changes?since=<unix epoch> — what changed.
+8. POST /v1/estimate {"provider","model","request"?,"usage"?} — USD for a
+   call from the stored rate card. Missing levers → 422; no card → 404
+   unknown_pricing.
+9. GET /v1/changes?since=<unix epoch> — what changed.
 
 ## TypeScript types
 

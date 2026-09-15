@@ -9,6 +9,7 @@
         "@better-auth/api-key": "^1.6.16",
         "@cfworker/json-schema": "^4.1.1",
         "@cloudflare/vite-plugin": "^1.26.0",
+        "@modelschemas/rate-card": "workspace:*",
         "@tailwindcss/vite": "^4.1.18",
         "@tanstack/ai": "latest",
         "@tanstack/ai-anthropic": "latest",

@@ -9,6 +9,7 @@ import { activities, changeTypes } from '#/db/schema.ts'
 import type { Activity, ChangeType } from '#/db/schema.ts'
 import { listChanges } from '#/server/changes-api.ts'
 import { getModelDetail, listModelsCatalog } from '#/server/catalog.ts'
+import { estimateCost } from '#/server/estimate.ts'
 import { llmsTxt } from '#/server/llms-txt.ts'
 import {
   getEndpointSchema,
@@ -114,6 +115,21 @@ export const TOOLS: Array<ToolDefinition> = [
     },
   },
   {
+    name: 'estimate_cost',
+    description:
+      'Evaluate the stored rate card for a model. Pass request-bound levers in request and usage-bound levers (input_tokens, output_tokens, …) in usage. Returns { usd, cardSource }.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string' },
+        model: { type: 'string' },
+        request: { type: 'object' },
+        usage: { type: 'object' },
+      },
+      required: ['provider', 'model'],
+    },
+  },
+  {
     name: 'recent_changes',
     description:
       'Changelog feed of model/schema/endpoint changes (cursor-paginated, newest first).',
@@ -132,6 +148,9 @@ export const TOOLS: Array<ToolDefinition> = [
     },
   },
 ]
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
 
 function rpcResult(id: JsonRpcRequest['id'], result: unknown) {
   return { jsonrpc: '2.0' as const, id: id ?? null, result }
@@ -223,6 +242,18 @@ async function callTool(
         endpointId: String(args.endpointId ?? ''),
         kind: args.kind === 'output' ? 'output' : undefined,
         payload: args.payload,
+      })
+      if (!outcome.ok) {
+        return toolText({ error: outcome.code, message: outcome.message }, true)
+      }
+      return toolText(outcome.result)
+    }
+    case 'estimate_cost': {
+      const outcome = await estimateCost(db, {
+        provider: String(args.provider ?? ''),
+        model: String(args.model ?? ''),
+        request: isRecord(args.request) ? args.request : undefined,
+        usage: isRecord(args.usage) ? args.usage : undefined,
       })
       if (!outcome.ok) {
         return toolText({ error: outcome.code, message: outcome.message }, true)

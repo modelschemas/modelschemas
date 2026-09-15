@@ -21,6 +21,7 @@ export function narrativeRoot(origin: string): Record<string, unknown> {
       `GET ${origin}/v1/models?activity=chat&q=claude — what can I call right now`,
       `GET ${origin}/v1/schemas/anthropic/chat/v1%2Fmessages?kind=input — exact request shape`,
       `POST ${origin}/v1/validate — check a payload before spending tokens`,
+      `POST ${origin}/v1/estimate — USD from the stored rate card`,
       `GET ${origin}/v1/changes?limit=20 — what changed since I last looked`,
     ],
     mcp: { endpoint: `${origin}/mcp`, transport: 'streamable-http' },

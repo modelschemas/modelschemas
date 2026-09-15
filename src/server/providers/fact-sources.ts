@@ -74,7 +74,7 @@ function isStringArray(value: unknown): value is Array<string> {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
-function emptySources(sources: ModelFactSources): boolean {
+export function emptySources(sources: ModelFactSources): boolean {
   return (
     sources.contextWindow === undefined &&
     sources.maxOutput === undefined &&
@@ -167,6 +167,12 @@ function propertiesOf(
     }
   }
   return out
+}
+
+/** Top-level request-body property names, including allOf/anyOf/oneOf. */
+export function requestSchemaPropertyNames(schema: unknown): Set<string> {
+  if (!isRecord(schema)) return new Set()
+  return new Set(Object.keys(propertiesOf(schema, schema)))
 }
 
 export interface SchemaWalk {
