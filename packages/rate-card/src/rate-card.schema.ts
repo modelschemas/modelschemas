@@ -76,7 +76,7 @@ const inputBase = {
   /** The key this lever reads from the evaluation vars. */
   param: z.string().min(1),
   /**
-   * Where `priceRequest` reads `param` from: a real request-body field
+   * Where `price` reads `param` from: a real request-body field
    * (`duration`, `image_size`; the default) or a usage quantity the caller
    * supplies because it is not on the request (`input_tokens`).
    */

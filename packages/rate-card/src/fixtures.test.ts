@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { FIXTURE_CARDS as ALL_CARDS } from './fixtures/index.ts'
-import { evaluate, verifyExamples } from './evaluate.ts'
+import { price, verifyExamples } from './evaluate.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
 import type { RateCard } from './rate-card.schema.ts'
 
 const MINIMAL_REQUEST: Record<string, Record<string, unknown>> = {
-  // Token cards price usage, not a request body.
-  'openai/gpt-4o': { input_tokens: 1, output_tokens: 1 },
   'xai/grok-imagine-video/v1.5/reference-to-video': {
     reference_image_urls: ['a'],
   },
   // Edit defaults `image_size` to `auto` (sized from the input), which no
   // table prices; the app always sends a size.
   'openai/gpt-image-2.5/flare/edit': { image_size: 'square_hd' },
+}
+
+const MINIMAL_USAGE: Record<string, Record<string, unknown>> = {
+  // Token cards price usage, not a request body.
+  'openai/gpt-4o': { input_tokens: 1, output_tokens: 1 },
 }
 
 // Pages of different shapes (per-second tiers, per-image multipliers, token
@@ -41,7 +44,11 @@ describe.each(Object.entries(ALL_CARDS))('rate card %s', (endpointId, card) => {
     // Every input has a default or is a count; a required list param
     // (Grok r2v needs 1–7 reference images) is supplied so the priced
     // request is one fal would actually run.
-    const usd = evaluate(card, MINIMAL_REQUEST[endpointId] ?? {})
+    const usd = price(
+      card,
+      MINIMAL_REQUEST[endpointId] ?? {},
+      MINIMAL_USAGE[endpointId] ?? {},
+    )
     expect(usd).toBeGreaterThan(0)
   })
 })
@@ -54,30 +61,30 @@ const cardFor = (endpointId: string): RateCard => {
 
 describe('GPT Image 2.5 prices the sizes the app sends at their band row', () => {
   const card = cardFor('openai/gpt-image-2.5/flare/text-to-image')
-  const price = (image_size: unknown, quality = 'high') =>
-    evaluate(card, { image_size, quality })
+  const at = (image_size: unknown, quality = 'high') =>
+    price(card, { image_size, quality })
 
   it('fal presets land in the row of their orientation', () => {
-    expect(price('landscape_16_9')).toBe(0.03612)
-    expect(price('portrait_16_9')).toBe(0.04116)
-    expect(price('square_hd')).toBe(0.05268)
-    expect(price('square')).toBe(0.05268)
+    expect(at('landscape_16_9')).toBe(0.03612)
+    expect(at('portrait_16_9')).toBe(0.04116)
+    expect(at('square_hd')).toBe(0.05268)
+    expect(at('square')).toBe(0.05268)
   })
 
   it('tier pixels land in the row of their area band', () => {
-    expect(price({ width: 1280, height: 720 })).toBe(0.03612)
-    expect(price({ width: 720, height: 1280 })).toBe(0.04116)
-    expect(price({ width: 1072, height: 1072 })).toBe(0.05268)
-    expect(price({ width: 1080, height: 1920 })).toBe(0.0396)
-    expect(price({ width: 2160, height: 2160 })).toBe(0.05529)
-    expect(price({ width: 3840, height: 2160 }, 'max')).toBe(0.40026)
+    expect(at({ width: 1280, height: 720 })).toBe(0.03612)
+    expect(at({ width: 720, height: 1280 })).toBe(0.04116)
+    expect(at({ width: 1072, height: 1072 })).toBe(0.05268)
+    expect(at({ width: 1080, height: 1920 })).toBe(0.0396)
+    expect(at({ width: 2160, height: 2160 })).toBe(0.05529)
+    expect(at({ width: 3840, height: 2160 }, 'max')).toBe(0.40026)
   })
 
   it('the edit endpoint carries the same table', () => {
     const edit = cardFor('openai/gpt-image-2.5/flare/edit')
-    expect(
-      evaluate(edit, { image_size: 'landscape_16_9', num_images: 2 }),
-    ).toBe(0.07224)
+    expect(price(edit, { image_size: 'landscape_16_9', num_images: 2 })).toBe(
+      0.07224,
+    )
   })
 })
 
@@ -90,7 +97,7 @@ describe('Ark Seedance prices every ratio at the resolution area', () => {
     (id) => {
       const card = cardFor(id)
       const at = (aspect_ratio: string) =>
-        evaluate(card, {
+        price(card, {
           resolution: '720p',
           duration: 5,
           aspect_ratio,
@@ -103,10 +110,7 @@ describe('Ark Seedance prices every ratio at the resolution area', () => {
   it('Seedance 2.0 prices the 4K tier the Ark route offers', () => {
     const card = cardFor('dreamina-seedance-2-0-260128')
     // 3840 × 2160 × 5 s × 24 / 1024 tokens at $4.0/1M
-    expect(evaluate(card, { resolution: '4k', duration: 5 })).toBeCloseTo(
-      3.888,
-      3,
-    )
+    expect(price(card, { resolution: '4k', duration: 5 })).toBeCloseTo(3.888, 3)
   })
 })
 
@@ -114,14 +118,14 @@ describe('cards refuse what their source does not price', () => {
   it('GPT Image 2.5: quality auto', () => {
     const card = cardFor('openai/gpt-image-2.5/flare/text-to-image')
     expect(() =>
-      evaluate(card, { image_size: 'square_hd', quality: 'auto' }),
+      price(card, { image_size: 'square_hd', quality: 'auto' }),
     ).toThrow(/size_quality/)
   })
 
   it('Seedance 2.5: a with-video shape outside the transcribed minimum-token rows', () => {
     const card = cardFor('dreamina-seedance-2-5-260628')
     expect(() =>
-      evaluate(card, { duration: 10, input_video_duration: 3 }),
+      price(card, { duration: 10, input_video_duration: 3 }),
     ).toThrow(/min_tokens/)
   })
 })

@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  RateCardError,
-  bindInputs,
-  evaluate,
-  verifyExamples,
-} from './evaluate.ts'
+import { RateCardError, bindInputs, price, verifyExamples } from './evaluate.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
 
@@ -15,20 +10,20 @@ const source = {
 }
 
 /** A card whose price is `expr`, over number inputs `x` (default 4) and `y` (default 2). */
-const cardFor = (price: Expr, extra: Partial<RateCard> = {}): RateCard => ({
+const cardFor = (expr: Expr, extra: Partial<RateCard> = {}): RateCard => ({
   inputs: {
     x: { param: 'x', kind: 'number', default: 4 },
     y: { param: 'y', kind: 'number', default: 2 },
   },
   tables: { t: { a: { p: 1.5 }, b: { p: 3 } } },
-  price,
+  price: expr,
   examples: [],
   source,
   ...extra,
 })
 
-const usd = (price: Expr, params: Record<string, unknown> = {}) =>
-  evaluate(cardFor(price), params)
+const usd = (expr: Expr, params: Record<string, unknown> = {}) =>
+  price(cardFor(expr), params)
 
 describe('ops', () => {
   it.each<[string, Expr, number]>([
@@ -76,8 +71,8 @@ describe('ops', () => {
       { lookup: { table: 't', keys: ['zzz'], default: 9 } },
       9,
     ],
-  ])('%s', (_name, price, expected) => {
-    expect(usd(price)).toBe(expected)
+  ])('%s', (_name, expr, expected) => {
+    expect(usd(expr)).toBe(expected)
   })
 })
 
@@ -139,7 +134,7 @@ describe('binding', () => {
       ...card,
       price: { '*': [{ var: 'size.width' }, 0.001] },
     }
-    expect(evaluate(c, {})).toBe(1.024)
+    expect(price(c, {})).toBe(1.024)
   })
 
   it.each<[string, Record<string, unknown>]>([
@@ -149,7 +144,7 @@ describe('binding', () => {
     ['non-list count', { image_urls: 'a' }],
     ['unknown size preset', { image_size: 'portrait_4_3' }],
   ])('refuses %s', (_name, params) => {
-    expect(() => evaluate(card, params)).toThrow(RateCardError)
+    expect(() => price(card, params)).toThrow(RateCardError)
   })
 })
 
@@ -186,8 +181,8 @@ describe('refusals', () => {
     ['negative price', { '-': [1, { var: 'x' }] }, 'bad-result'],
     ['non-finite price', { '/': [{ var: 'x' }, 0] }, 'bad-result'],
     ['non-numeric price', { '<': [1, 2] }, 'bad-result'],
-  ])('%s', (_name, price, code) => {
-    expect(() => usd(price)).toThrow(expect.objectContaining({ code }))
+  ])('%s', (_name, expr, code) => {
+    expect(() => usd(expr)).toThrow(expect.objectContaining({ code }))
   })
 
   it('schema rejects an op outside the vocabulary', () => {
@@ -195,10 +190,10 @@ describe('refusals', () => {
   })
 
   it('schema rejects a lookup node carrying a sibling op (would be stripped silently)', () => {
-    const price = JSON.parse(
+    const expr = JSON.parse(
       '{"lookup":{"table":"t","keys":["a","p"]},"+":[1,2]}',
     ) as Expr
-    expect(rateCardSchema.safeParse(cardFor(price)).success).toBe(false)
+    expect(rateCardSchema.safeParse(cardFor(expr)).success).toBe(false)
   })
 
   it.each<[string, Partial<RateCard>]>([
@@ -232,9 +227,9 @@ describe('refusals', () => {
 })
 
 describe('verifyExamples', () => {
-  const price: Expr = { '*': [{ var: 'x' }, 0.1] }
-  it('passes within 1% and fails outside it, reporting the evaluated price', () => {
-    const card = cardFor(price, {
+  const expr: Expr = { '*': [{ var: 'x' }, 0.1] }
+  it('passes within 1% and fails outside it, reporting the priced USD', () => {
+    const card = cardFor(expr, {
       examples: [
         { params: { x: 10 }, usd: 1.0, quote: 'ten' },
         { params: { x: 10 }, usd: 1.009, quote: 'ten-ish' },
@@ -252,7 +247,7 @@ describe('verifyExamples', () => {
   })
 
   it('reports a refusal as a failed example instead of throwing', () => {
-    const card = cardFor(price, {
+    const card = cardFor(expr, {
       examples: [{ params: { x: 'many' }, usd: 1, quote: 'bad input' }],
     })
     expect(verifyExamples(card)[0]).toMatchObject({

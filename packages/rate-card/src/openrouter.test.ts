@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { priceRequest, verifyExamples } from './evaluate.ts'
+import { price, verifyExamples } from './evaluate.ts'
 import { GPT_4O } from './fixtures/gpt-4o.ts'
 import { NANO_BANANA_2 } from './fixtures/nano-banana-2.ts'
 import { compileOpenRouterPricing } from './openrouter.ts'
@@ -15,28 +15,26 @@ const compile = (listing: unknown): RateCard => {
   return card
 }
 
-describe('priceRequest', () => {
+describe('price', () => {
   it('reads usage-bound levers from usage, not the request body', () => {
     expect(
-      priceRequest(GPT_4O, {
-        request: { input_tokens: 999_999_999, model: 'gpt-4o' },
-        usage: { input_tokens: 1_000_000, output_tokens: 0 },
-      }),
+      price(
+        GPT_4O,
+        { input_tokens: 999_999_999, model: 'gpt-4o' },
+        { input_tokens: 1_000_000, output_tokens: 0 },
+      ),
     ).toBe(2.5)
   })
 
   it('refuses a token card without usage', () => {
-    expect(() =>
-      priceRequest(GPT_4O, { request: { input_tokens: 1, output_tokens: 1 } }),
-    ).toThrow(expect.objectContaining({ code: 'bad-input' }))
+    expect(() => price(GPT_4O, { input_tokens: 1, output_tokens: 1 })).toThrow(
+      expect.objectContaining({ code: 'bad-input' }),
+    )
   })
 
   it('reads request-bound levers from the request body', () => {
     expect(
-      priceRequest(NANO_BANANA_2, {
-        request: { resolution: '4K' },
-        usage: { resolution: '0.5K' },
-      }),
+      price(NANO_BANANA_2, { resolution: '4K' }, { resolution: '0.5K' }),
     ).toBe(0.16)
   })
 })
@@ -70,11 +68,9 @@ describe('compileOpenRouterPricing', () => {
       'web_searches',
     ])
     const usage = { input_tokens: 1000, output_tokens: 1000 }
-    expect(priceRequest(card, { usage })).toBeCloseTo(0.014, 9)
+    expect(price(card, {}, usage)).toBeCloseTo(0.014, 9)
     expect(
-      priceRequest(card, {
-        usage: { ...usage, web_searches: 2, reasoning_tokens: 1000 },
-      }),
+      price(card, {}, { ...usage, web_searches: 2, reasoning_tokens: 1000 }),
     ).toBeCloseTo(0.014 + 0.028 + 0.012, 9)
   })
 
@@ -97,9 +93,7 @@ describe('compileOpenRouterPricing', () => {
       ],
     })
     const at = (input_tokens: number, cache_read_tokens = 0) =>
-      priceRequest(card, {
-        usage: { input_tokens, output_tokens: 0, cache_read_tokens },
-      })
+      price(card, {}, { input_tokens, output_tokens: 0, cache_read_tokens })
     expect(at(10_000)).toBeCloseTo(0.001, 9)
     expect(at(100_000)).toBeCloseTo(0.015, 9)
     expect(at(300_000)).toBeCloseTo(0.06, 9)

@@ -6,12 +6,6 @@ export type {
   RateCardExample,
   Table,
 } from './rate-card.schema.ts'
-export {
-  RateCardError,
-  bindInputs,
-  evaluate,
-  priceRequest,
-  verifyExamples,
-} from './evaluate.ts'
+export { RateCardError, bindInputs, price, verifyExamples } from './evaluate.ts'
 export type { ExampleResult, RateCardErrorCode } from './evaluate.ts'
 export { compileOpenRouterPricing } from './openrouter.ts'

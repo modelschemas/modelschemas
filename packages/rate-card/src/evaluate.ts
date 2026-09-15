@@ -272,11 +272,22 @@ export function bindInputs(card: RateCard, params: Vars): Vars {
 }
 
 /**
- * USD for one evaluation. `vars` holds every input's `param`, request- and
- * usage-bound alike. Throws `RateCardError` rather than returning a number
- * it cannot stand behind.
+ * USD for this call. Request-bound levers read `request`; usage-bound
+ * levers read `usage` (omit it before the call, pass measured or guessed
+ * counts after). A usage key on the request body, or a request field in
+ * usage, is not read. Throws `RateCardError` rather than returning a
+ * number it cannot stand behind.
  */
-export function evaluate(card: RateCard, vars: Vars): number {
+export function price(
+  card: RateCard,
+  request: Vars = {},
+  usage: Vars = {},
+): number {
+  const vars: Vars = {}
+  for (const input of Object.values(card.inputs)) {
+    const from = input.bound === 'usage' ? usage : request
+    if (input.param in from) vars[input.param] = from[input.param]
+  }
   const usd = evalExpr(card.price, bindInputs(card, vars), card.tables)
   if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
     throw new RateCardError(
@@ -285,23 +296,6 @@ export function evaluate(card: RateCard, vars: Vars): number {
     )
   }
   return usd
-}
-
-/**
- * Price a request: request-bound inputs read the request body, usage-bound
- * inputs read the caller's usage (token counts). A usage key on the request
- * body, or a request field in usage, is not read.
- */
-export function priceRequest(
-  card: RateCard,
-  { request = {}, usage = {} }: { request?: Vars; usage?: Vars },
-): number {
-  const vars: Vars = {}
-  for (const input of Object.values(card.inputs)) {
-    const from = input.bound === 'usage' ? usage : request
-    if (input.param in from) vars[input.param] = from[input.param]
-  }
-  return evaluate(card, vars)
 }
 
 /** Relative tolerance when reproducing a source's worked example. */
@@ -318,7 +312,9 @@ export type ExampleResult = {
 export function verifyExamples(card: RateCard): ExampleResult[] {
   return card.examples.map((example) => {
     try {
-      const usd = evaluate(card, example.params)
+      // Examples are a flat bag; each lever is read from request or usage
+      // by bound, so the same dict in both slots is correct.
+      const usd = price(card, example.params, example.params)
       const ok = Math.abs(usd - example.usd) <= example.usd * EXAMPLE_TOLERANCE
       return ok
         ? { example, ok, usd }

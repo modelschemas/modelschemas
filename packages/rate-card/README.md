@@ -16,7 +16,7 @@ bun add @modelschemas/rate-card
 ```ts
 import {
   compileOpenRouterPricing,
-  priceRequest,
+  price,
   rateCardSchema,
   verifyExamples,
 } from '@modelschemas/rate-card'
@@ -25,10 +25,11 @@ const card = rateCardSchema.parse(json)
 if (verifyExamples(card).some((r) => !r.ok)) throw new Error('bad card')
 
 // request-bound levers read the body; usage-bound levers read usage
-const usd = priceRequest(card, {
-  request: { duration: 5, resolution: '720p' },
-  usage: { input_tokens: 1200, output_tokens: 300 },
-})
+const usd = price(
+  card,
+  { duration: 5, resolution: '720p' },
+  { input_tokens: 1200, output_tokens: 300 },
+)
 
 // OpenRouter `pricing` → usage-bound token card (null when it prices nothing)
 const tokenCard = compileOpenRouterPricing(model.pricing, {
