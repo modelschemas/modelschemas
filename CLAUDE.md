@@ -134,7 +134,7 @@ ones).
 - **Workspace packages**: `packages/client` (`@modelschemas/client`,
   generated + hand-written auth entry), `packages/codegen`,
   `packages/vite`, `packages/cli` (`modelschemas` bin:
-  login/whoami/models/schema/validate/changes/subscribe),
+  login/whoami/models/schema/validate/estimate/changes/subscribe),
   `packages/rate-card` (`@modelschemas/rate-card`: pricing schema +
   evaluator + OpenRouter listing compiler; no Workers deps).
 - **Path aliases**: `#/*` and `@/*` → `./src/*`; `.ts` import extensions

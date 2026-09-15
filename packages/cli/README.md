@@ -19,6 +19,7 @@ models list|get                                model catalog
 schema get <provider> <endpointId>             one self-contained JSON Schema
 validate <provider/endpointId> <file>          validate a payload (exit 2 = invalid)
 estimate <provider> <model> [body.json]        evaluate the stored rate card
+                                               ({request?,usage?} or usage object)
 changes [--since <epoch>]                      changelog feed
 subscribe <url>                                webhook subscription
 pull <selection...>                            generate schema/type modules

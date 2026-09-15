@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest'
 
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { NANO_BANANA_2 } from '../../packages/rate-card/src/fixtures/nano-banana-2.ts'
+import { compileOpenRouterPricing } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
+
 import { contentHash } from '#/server/kv.ts'
 import {
   parseStoredRateCard,
   projectTokenPricing,
   servePricing,
+  storeListedPricing,
   toStoredRateCard,
 } from '#/server/rate-card.ts'
-import type { RateCard } from '@modelschemas/rate-card'
 
 const SOURCE_URL = 'https://openrouter.ai/api/v1/models'
 const NOW = 1_781_150_000
@@ -145,6 +148,52 @@ describe('toStoredRateCard', () => {
       await toStoredRateCard(card, { sourceUrl: SOURCE_URL, now: NOW }),
     ).toEqual(card)
   })
+
+  it('recompiles when the listing rates change', async () => {
+    const first = await toStoredRateCard(GPT_4O_LISTING, {
+      sourceUrl: SOURCE_URL,
+      now: NOW,
+    })
+    const raised = { prompt: '0.000005', completion: '0.00002' }
+    const later = await toStoredRateCard(raised, {
+      existing: first,
+      sourceUrl: SOURCE_URL,
+      now: NOW + 900,
+    })
+    expect(later?.source.hash).toBe(await contentHash(raised))
+    expect(later?.source.hash).not.toBe(first?.source.hash)
+    expect(later?.source.extractedAt).toBe(
+      new Date((NOW + 900) * 1000).toISOString(),
+    )
+  })
+
+  it('refuses a schema-valid card whose examples do not verify', async () => {
+    const first = GPT_4O.examples[0]
+    if (!first) throw new Error('fixture missing examples')
+    const bad: RateCard = {
+      ...GPT_4O,
+      examples: [{ ...first, usd: 999 }],
+    }
+    expect(
+      await storeListedPricing(bad, { sourceUrl: SOURCE_URL, now: NOW }),
+    ).toEqual({ card: null, refused: 'examples' })
+  })
+
+  it('names invented_param vs uncompilable on refuse', async () => {
+    expect(
+      await storeListedPricing(mediaCard('quality'), {
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+        requestProperties: new Set(['model']),
+      }),
+    ).toEqual({ card: null, refused: 'invented_param' })
+    expect(
+      await storeListedPricing(
+        { prompt: '0', completion: '0' },
+        { sourceUrl: SOURCE_URL, now: NOW },
+      ),
+    ).toEqual({ card: null, refused: 'uncompilable' })
+  })
 })
 
 describe('projectTokenPricing', () => {
@@ -157,6 +206,21 @@ describe('projectTokenPricing', () => {
 
   it('omits the projection for media cards', () => {
     expect(projectTokenPricing(NANO_BANANA_2)).toBeNull()
+  })
+
+  it('omits the projection when a per-request fee breaks linearity', () => {
+    const card = compileOpenRouterPricing(
+      {
+        prompt: '0.0000025',
+        completion: '0.00001',
+        request: '0.01',
+      },
+      GPT_4O.source,
+    )
+    expect(card).not.toBeNull()
+    if (!card) return
+    expect(projectTokenPricing(card)).toBeNull()
+    expect(servePricing(card, 'full')).toEqual(card)
   })
 })
 

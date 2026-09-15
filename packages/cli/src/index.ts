@@ -44,7 +44,7 @@ Commands:
   models get <provider> <modelId>
   schema get <provider> <endpointId> [--kind input|output]
   validate <provider/endpointId> <file> [--kind input|output]
-  estimate <provider> <model> [body.json]
+  estimate <provider> <model> [body.json]            {request?,usage?} or usage object
   changes [--since <epoch>] [--provider p] [--type t]
   subscribe <url> [--events e1,e2] [--provider p]
   pull <selection...> [--out dir] [--no-types] [--optional exact|undefined]
@@ -227,6 +227,26 @@ async function cmdSchema(ctx: Ctx): Promise<void> {
   output(ctx, result.data)
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** `{ request?, usage? }` wrapper, or a bare usage object (SKILL.md). */
+export function estimateBodyFromFile(parsed: unknown): {
+  request?: Record<string, unknown>
+  usage?: Record<string, unknown>
+} | null {
+  if (!isRecord(parsed)) return null
+  if ('request' in parsed || 'usage' in parsed) {
+    if (parsed.request !== undefined && !isRecord(parsed.request)) return null
+    if (parsed.usage !== undefined && !isRecord(parsed.usage)) return null
+    return {
+      request: parsed.request,
+      usage: parsed.usage,
+    }
+  }
+  return { usage: parsed }
+}
+
 async function cmdEstimate(ctx: Ctx): Promise<void> {
   const [provider, model, file] = ctx.positionals
   if (!provider || !model) {
@@ -237,19 +257,19 @@ async function cmdEstimate(ctx: Ctx): Promise<void> {
     usage?: Record<string, unknown>
   } = {}
   if (file) {
+    let parsed: unknown
     try {
-      const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
-      if (
-        parsed === null ||
-        typeof parsed !== 'object' ||
-        Array.isArray(parsed)
-      ) {
-        fail('body file must be a JSON object { request?, usage? }')
-      }
-      extra = parsed
+      parsed = JSON.parse(readFileSync(file, 'utf8'))
     } catch (error) {
       fail(`could not read body file: ${String(error)}`)
     }
+    const body = estimateBodyFromFile(parsed)
+    if (!body) {
+      fail(
+        'body file must be a JSON object { request?, usage? } or a usage object',
+      )
+    }
+    extra = body
   }
   const result = await estimateCost({
     client: makeClient(ctx),

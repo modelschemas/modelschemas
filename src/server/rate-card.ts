@@ -17,8 +17,9 @@ import { emptySources } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
 
 /**
- * Usage quantities the card may name even when they are not properties of
- * the bound request schema (`input_tokens` is the type specimen).
+ * Request-bound param names allowed even when they are not properties of
+ * the bound input schema (`input_tokens` is the type specimen). Usage-bound
+ * params skip this check.
  */
 const CARD_LEVEL_LEVERS = new Set([
   'input_tokens',
@@ -86,28 +87,39 @@ export interface StoreRateCardOptions {
   now: number
 }
 
+export type RateCardRefuse = 'invented_param' | 'examples' | 'uncompilable'
+
+export type StoredPricing = {
+  card: RateCard | null
+  refused?: RateCardRefuse
+}
+
 /**
  * Value to write to `models.pricing`. Null means unknown — never a vendor
- * blob, never Together all-zero placeholders.
+ * blob, never an all-zero OpenRouter-shaped listing.
  */
-export async function toStoredRateCard(
+export async function storeListedPricing(
   pricing: unknown,
   options: StoreRateCardOptions,
-): Promise<RateCard | null> {
-  if (pricing == null) return null
+): Promise<StoredPricing> {
+  if (pricing == null) return { card: null }
 
   const parsed = parseStoredRateCard(pricing)
   if (parsed) {
-    if (!cardRequestParamsOk(parsed, options.requestProperties)) return null
-    if (!examplesOk(parsed)) return null
-    return parsed
+    if (!cardRequestParamsOk(parsed, options.requestProperties)) {
+      return { card: null, refused: 'invented_param' }
+    }
+    if (!examplesOk(parsed)) return { card: null, refused: 'examples' }
+    return { card: parsed }
   }
 
   const existing = parseStoredRateCard(options.existing)
   const listingHash = await contentHash(pricing)
   if (existing && existing.source.hash === listingHash) {
-    if (!cardRequestParamsOk(existing, options.requestProperties)) return null
-    return existing
+    if (!cardRequestParamsOk(existing, options.requestProperties)) {
+      return { card: null, refused: 'invented_param' }
+    }
+    return { card: existing }
   }
 
   const compiled = compileOpenRouterPricing(pricing, {
@@ -115,12 +127,24 @@ export async function toStoredRateCard(
     hash: listingHash,
     extractedAt: new Date(options.now * 1000).toISOString(),
   })
-  if (!compiled) return null
-  if (!cardRequestParamsOk(compiled, options.requestProperties)) return null
-  return compiled
+  if (!compiled) return { card: null, refused: 'uncompilable' }
+  if (!cardRequestParamsOk(compiled, options.requestProperties)) {
+    return { card: null, refused: 'invented_param' }
+  }
+  return { card: compiled }
 }
 
-/** Drop `factSources.pricing` when the stored card is null. */
+export async function toStoredRateCard(
+  pricing: unknown,
+  options: StoreRateCardOptions,
+): Promise<RateCard | null> {
+  return (await storeListedPricing(pricing, options)).card
+}
+
+/**
+ * Drop `factSources.pricing` when the stored card is null. If a card is
+ * stored and pricing provenance is missing, stamp `{ derivation: listing }`.
+ */
 export function reconcilePricingSource(
   sources: ModelFactSources | null | undefined,
   card: RateCard | null,
@@ -164,9 +188,10 @@ function linear(unit: number, million: number): boolean {
 }
 
 /**
- * `{ inputPerMillion, outputPerMillion }` when the card is a linear
- * usage-bound token formula; null for media cards and tiered/request-fee
- * formulas (list rows omit the dump).
+ * `{ inputPerMillion, outputPerMillion }` when every input is a usage-bound
+ * number, `input_tokens` and `output_tokens` exist, and those two rates are
+ * linear over [1, 1e6] with other levers at defaults. Null otherwise (media,
+ * non-linear tiers, request fees that break linearity).
  */
 export function projectTokenPricing(card: RateCard): CompactPricing | null {
   if (!isSimpleTokenCard(card)) return null

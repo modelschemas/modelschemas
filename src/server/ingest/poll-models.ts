@@ -1,7 +1,8 @@
 /**
  * Model poller (PLAN.md task 2.4) — the fast 15-minute tier: per provider,
  * list currently served models, diff against D1, write
- * model.added/removed/updated changes, bump lastSeenAt.
+ * model.added/removed/updated changes, bump lastSeenAt. Listings compile to
+ * RateCards (or null) before insert/update.
  */
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 
@@ -22,7 +23,12 @@ import {
   walkRequestSchema,
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
-import { reconcilePricingSource, toStoredRateCard } from '#/server/rate-card.ts'
+import {
+  parseStoredRateCard,
+  reconcilePricingSource,
+  storeListedPricing,
+} from '#/server/rate-card.ts'
+import type { RateCardRefuse } from '#/server/rate-card.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
@@ -95,10 +101,17 @@ async function loadInputWalks(
 ): Promise<InputWalks> {
   const walks = new Map<string, SchemaWalk>()
   const properties = new Map<string, Set<string>>()
-  if (
+  const skipFactWalk =
     resolveSpecGrain(provider) === 'model' ||
     provider.defaultDerivation === 'generated'
-  ) {
+  // Grain=model / generated listings skip the capability walk (thousands of
+  // FAL endpoints; OpenAI-borrowed specs must not stamp flags). Still load
+  // request property names when a listing already carries a RateCard so
+  // invented request-bound params refuse the write.
+  const needsRequestCheck = listed.some(
+    (info) => parseStoredRateCard(info.pricing) !== null,
+  )
+  if (skipFactWalk && !needsRequestCheck) {
     return { walks, properties }
   }
   const bound = new Set<string>()
@@ -147,10 +160,11 @@ async function loadInputWalks(
     const publicId = row.endpointId.startsWith(prefix)
       ? row.endpointId.slice(prefix.length)
       : row.endpointId
-    const rung = schemaRung(row.derivation)
-    if (rung === null) continue
     const parsed: unknown = JSON.parse(row.schema)
     properties.set(publicId, requestSchemaPropertyNames(parsed))
+    if (skipFactWalk) continue
+    const rung = schemaRung(row.derivation)
+    if (rung === null) continue
     const walk = walkRequestSchema(parsed, {
       derivation: rung,
       endpointId: publicId,
@@ -161,6 +175,27 @@ async function loadInputWalks(
     if (walk) walks.set(publicId, walk)
   }
   return { walks, properties }
+}
+
+function logRefusedCard(
+  providerId: string,
+  rawId: string,
+  refused: RateCardRefuse,
+  hadStoredCard: boolean,
+): void {
+  // Uncompilable zeros/blobs are the common listing case; only log when we
+  // drop a card that was already stored, or when a RateCard fails the write
+  // gate (invented param / examples).
+  if (refused === 'uncompilable' && !hadStoredCard) return
+  console.error(
+    JSON.stringify({
+      job: 'models-poll',
+      providerId,
+      rawId,
+      error: 'rate_card_refused',
+      reason: refused,
+    }),
+  )
 }
 
 function listingSourceUrl(provider: ProviderConfig): string {
@@ -252,12 +287,24 @@ export async function pollProviderModels(
       capabilities: enriched.capabilities,
       schemaEndpointId: enriched.schemaEndpointId,
     })
-    const card = await toStoredRateCard(enriched.pricing, {
-      existing: existingById.get(id)?.pricing,
-      requestProperties: bound ? properties.get(bound) : undefined,
+    const existingPricing = existingById.get(id)?.pricing
+    const stored = await storeListedPricing(enriched.pricing, {
+      existing: existingPricing,
+      requestProperties: bound
+        ? (properties.get(bound) ?? new Set())
+        : undefined,
       sourceUrl: listingSourceUrl(provider),
       now,
     })
+    if (stored.refused) {
+      logRefusedCard(
+        provider.id,
+        enriched.rawId,
+        stored.refused,
+        parseStoredRateCard(existingPricing) !== null,
+      )
+    }
+    const card = stored.card
     const info: ModelInfo = {
       ...enriched,
       pricing: card,

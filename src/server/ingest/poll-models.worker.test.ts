@@ -503,6 +503,88 @@ describe('pollProviderModels', () => {
     expect(second).toMatchObject({ added: 0, updated: 0 })
   })
 
+  it('emits model.updated when OpenRouter listing rates change', async () => {
+    const id = 'poll-price-change'
+    const deps = await freshDeps(id)
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'gpt-4o',
+          activity: 'chat',
+          pricing: { prompt: '0.0000025', completion: '0.00001' },
+        },
+      ]),
+    )
+    const first = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'gpt-4o')),
+    })
+    const firstHash = (first?.pricing as { source?: { hash: string } } | null)
+      ?.source?.hash
+    const raised = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'gpt-4o',
+          activity: 'chat',
+          pricing: { prompt: '0.000005', completion: '0.00002' },
+        },
+      ]),
+    )
+    expect(raised).toMatchObject({ added: 0, updated: 1 })
+    const later = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'gpt-4o')),
+    })
+    const laterHash = (later?.pricing as { source?: { hash: string } } | null)
+      ?.source?.hash
+    expect(firstHash).toBeTruthy()
+    expect(laterHash).toBeTruthy()
+    expect(laterHash).not.toBe(firstHash)
+  })
+
+  it('drops a stored card when the listing becomes all-zero', async () => {
+    const id = 'poll-price-drop'
+    const deps = await freshDeps(id)
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'gpt-4o',
+          activity: 'chat',
+          pricing: { prompt: '0.0000025', completion: '0.00001' },
+        },
+      ]),
+    )
+    const errors: Array<string> = []
+    const original = console.error
+    console.error = (message?: unknown) => {
+      errors.push(String(message))
+    }
+    try {
+      const dropped = await pollProviderModels(
+        deps,
+        stubProvider(id, [
+          {
+            rawId: 'gpt-4o',
+            activity: 'chat',
+            pricing: { prompt: '0', completion: '0' },
+          },
+        ]),
+      )
+      expect(dropped).toMatchObject({ added: 0, updated: 1 })
+    } finally {
+      console.error = original
+    }
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'gpt-4o')),
+    })
+    expect(row?.pricing).toBeNull()
+    expect(
+      (row?.factSources as { pricing?: unknown } | null)?.pricing,
+    ).toBeUndefined()
+    expect(errors.some((line) => line.includes('uncompilable'))).toBe(true)
+  })
+
   it('refuses a request-bound param that is not on the bound input schema', async () => {
     const id = 'poll-invented'
     const deps = await freshDeps(id)
@@ -549,6 +631,55 @@ describe('pollProviderModels', () => {
     )
     const row = await deps.db.query.models.findFirst({
       where: eq(models.id, modelDbId(id, 'claude-fable-5')),
+    })
+    expect(row?.pricing).toBeNull()
+  })
+
+  it('refuses invented request params on grain=model when a RateCard is listed', async () => {
+    const id = 'poll-fal-invented'
+    const deps = await freshDeps(id)
+    await deps.db.insert(endpoints).values({
+      id: `${id}/fal-ai/nano`,
+      providerId: id,
+      activity: 'image',
+      method: 'POST',
+      path: '/fal-ai/nano',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/fal-ai/nano:input`,
+      endpointId: `${id}/fal-ai/nano`,
+      kind: 'input',
+      contentHash: 'a'.repeat(64),
+      schema: JSON.stringify({
+        properties: { prompt: { type: 'string' } },
+      }),
+      derivation: 'upstream-spec',
+      createdAt: 1_781_150_000,
+    })
+    const provider = stubProvider(id, [
+      {
+        rawId: 'fal-ai/nano',
+        activity: 'image',
+        schemaEndpointId: 'fal-ai/nano',
+        pricing: {
+          inputs: {
+            quality: { param: 'quality', kind: 'enum', values: ['high'] },
+          },
+          tables: {},
+          price: { lookup: { table: 'rate', keys: ['quality'] } },
+          examples: [],
+          source: {
+            url: 'https://example.com/llms.txt',
+            hash: 'a'.repeat(64),
+            extractedAt: '2026-09-15T00:00:00Z',
+          },
+        },
+      },
+    ])
+    provider.specGrain = 'model'
+    await pollProviderModels(deps, provider)
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'fal-ai/nano')),
     })
     expect(row?.pricing).toBeNull()
   })

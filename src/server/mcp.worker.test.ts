@@ -162,6 +162,13 @@ describe('MCP endpoint', () => {
     const unknownTool = await callTool('frobnicate', {})
     expect(unknownTool.isError).toBe(true)
 
+    const missingPrice = await callTool('estimate_cost', {
+      provider: 'mcp-prov',
+      model: 'nope',
+    })
+    expect(missingPrice.isError).toBe(true)
+    expect((missingPrice.data as { error: string }).error).toBe('unknown_model')
+
     const missingSchema = await callTool('get_schema', {
       provider: 'mcp-prov',
       activity: 'image',
