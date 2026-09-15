@@ -19,6 +19,7 @@ import {
 const EXPECTED_NAMES = [
   '@modelschemas/client',
   '@modelschemas/codegen',
+  '@modelschemas/rate-card',
   '@modelschemas/vite',
   'modelschemas',
 ] as const
@@ -33,7 +34,7 @@ function sharedVersion(): string {
 }
 
 describe('listPublicPackages', () => {
-  it('returns the four public workspace packages at one shared version', () => {
+  it('returns the five public workspace packages at one shared version', () => {
     const pkgs = listPublicPackages()
     expect(pkgs.map((pkg) => pkg.name).sort()).toEqual([...EXPECTED_NAMES])
     expect(new Set(pkgs.map((pkg) => pkg.version)).size).toBe(1)

@@ -217,14 +217,15 @@ migrate-then-deploy).
 
 ## Releasing on npm
 
-Four public packages (`0.1.0` is on the registry):
+Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap):
 
-| Package                        | Directory          |
-| ------------------------------ | ------------------ |
-| `@modelschemas/client`         | `packages/client`  |
-| `@modelschemas/codegen`        | `packages/codegen` |
-| `@modelschemas/vite`           | `packages/vite`    |
-| `modelschemas` (CLI, unscoped) | `packages/cli`     |
+| Package                        | Directory            |
+| ------------------------------ | -------------------- |
+| `@modelschemas/client`         | `packages/client`    |
+| `@modelschemas/codegen`        | `packages/codegen`   |
+| `@modelschemas/rate-card`      | `packages/rate-card` |
+| `@modelschemas/vite`           | `packages/vite`      |
+| `modelschemas` (CLI, unscoped) | `packages/cli`       |
 
 CI **never** holds an npm token. `.github/workflows/publish.yml` packs
 with Bun (rewrites `workspace:*`), then `npm stage publish` over GitHub
@@ -254,7 +255,7 @@ reviewer; deployment branches limited to `main` and tags `v*`.
 
 ### Ongoing releases
 
-1. Bump the four `package.json` versions together. Commit.
+1. Bump the five `package.json` versions together. Commit.
 2. Tag `vX.Y.Z` matching those versions (or create a GitHub Release
    whose tag is that name) and push the tag.
 3. Actions runs CI, packs, then (after the `npm` environment approval)

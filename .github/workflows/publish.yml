@@ -114,4 +114,4 @@ jobs:
           echo "Staged ${#tarballs[@]} package(s). Approve with 2FA at"
           echo "https://www.npmjs.com/ (Staged Packages), in order:"
           echo "  @modelschemas/client, @modelschemas/codegen,"
-          echo "  @modelschemas/vite, modelschemas"
+          echo "  @modelschemas/rate-card, @modelschemas/vite, modelschemas"
