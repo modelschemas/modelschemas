@@ -11,7 +11,9 @@
  * total prompt tokens (input + cache read + cache writes). A tier applies
  * when the total is strictly greater than the threshold (OpenRouter's rule).
  */
-import type { Expr, RateCard, Table } from './rate-card.schema.ts'
+import { compileTokenCard } from './token-card.ts'
+import type { TokenRateTier } from './token-card.ts'
+import type { RateCard } from './rate-card.schema.ts'
 
 /** OpenRouter pricing key → the usage lever it prices. */
 const LEVERS: Record<string, string> = {
@@ -29,14 +31,6 @@ const LEVERS: Record<string, string> = {
   web_search: 'web_searches',
   request: 'requests',
 }
-
-const REQUIRED = new Set(['prompt', 'completion'])
-const PROMPT_KEYS = [
-  'prompt',
-  'input_cache_read',
-  'input_cache_write',
-  'input_cache_write_1h',
-]
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -61,6 +55,13 @@ function rates(entry: Record<string, unknown>): Record<string, number> | null {
   return out
 }
 
+/** Listing keys → lever names, unmapped keys kept verbatim. */
+function byLever(entry: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(entry).map(([key, rate]) => [LEVERS[key] ?? key, rate]),
+  )
+}
+
 export function compileOpenRouterPricing(
   listing: unknown,
   source: RateCard['source'],
@@ -68,13 +69,11 @@ export function compileOpenRouterPricing(
   if (!isRecord(listing)) return null
   const base = rates(listing)
   if (!base || !('prompt' in base) || !('completion' in base)) return null
-  // All-zero (free / Together-style placeholder) listings price nothing.
-  if (Object.values(base).every((n) => n === 0)) return null
 
   // ponytail: time-window overrides (`utc_days`/`utc_start`/`utc_end`) need a
   // clock the card does not have; they are skipped, so the card quotes the
   // base (peak) rate. Add a usage-bound `utc_*` lever if off-peak quotes matter.
-  const tiers: Array<[number, Record<string, number>]> = []
+  const tiers: Array<TokenRateTier> = []
   for (const override of Array.isArray(listing.overrides)
     ? listing.overrides
     : []) {
@@ -82,68 +81,12 @@ export function compileOpenRouterPricing(
       continue
     const tier = rates(override)
     if (!tier) return null
-    tiers.push([override.min_prompt_tokens, { ...base, ...tier }])
+    tiers.push({
+      minPromptTokens: override.min_prompt_tokens,
+      rates: byLever({ ...base, ...tier }),
+    })
   }
-  tiers.sort((a, b) => b[0] - a[0])
 
-  const keys = [
-    ...new Set([base, ...tiers.map(([, t]) => t)].flatMap(Object.keys)),
-  ]
-  const lever = (key: string) => LEVERS[key] ?? key
-  const promptTotal: Expr = {
-    '+': PROMPT_KEYS.filter((k) => keys.includes(k)).map((k) => ({
-      var: lever(k),
-    })),
-  }
-  // Highest matching threshold wins; at-or-below every threshold is base.
-  const tierKey: Expr =
-    tiers.length === 0
-      ? 'base'
-      : {
-          if: [
-            ...tiers.flatMap(([min]): Expr[] => [
-              { '>': [promptTotal, min] },
-              String(min),
-            ]),
-            'base',
-          ],
-        }
-
-  const table: Table = { base }
-  for (const [min, tier] of tiers) table[String(min)] = tier
-
-  return {
-    inputs: Object.fromEntries(
-      keys.map((key) => [
-        lever(key),
-        {
-          param: lever(key),
-          bound: 'usage',
-          kind: 'number',
-          ...(!REQUIRED.has(key) && { default: key === 'request' ? 1 : 0 }),
-        },
-      ]),
-    ),
-    tables: { rate: table },
-    price: {
-      '+': keys.map(
-        (key): Expr => ({
-          // A zero count skips the lookup, so a lever a tier leaves unpriced
-          // refuses only when it is actually used.
-          if: [
-            { '>': [{ var: lever(key) }, 0] },
-            {
-              '*': [
-                { var: lever(key) },
-                { lookup: { table: 'rate', keys: [tierKey, key] } },
-              ],
-            },
-            0,
-          ],
-        }),
-      ),
-    },
-    examples: [],
-    source,
-  }
+  // All-zero (free / placeholder) listings price nothing.
+  return compileTokenCard(byLever(base), tiers, source)
 }
