@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { anthropicCapabilities } from './anthropic.ts'
 import { parseAnthropicPricing } from './anthropic-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
-import { parseGrokContextWindows } from './grok.ts'
+import { grokRateCard, parseGrokContextWindows } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
+import { price } from '@modelschemas/rate-card'
 import { openAiCompatModelFacts } from './openai-compat.ts'
 import {
   pageSlugFor,
@@ -356,5 +357,43 @@ describe('anthropic pricing page', () => {
     expect(parseAnthropicPricing('# Pricing\n\n## Something else\n').size).toBe(
       0,
     )
+  })
+})
+
+describe('grok model prices', () => {
+  const model = {
+    id: 'grok-4.20-0309-reasoning',
+    prompt_text_token_price: 12_500,
+    cached_prompt_text_token_price: 2_000,
+    completion_text_token_price: 25_000,
+    prompt_text_token_price_long_context: 25_000,
+    cached_prompt_text_token_price_long_context: 4_000,
+    completion_text_token_price_long_context: 50_000,
+    long_context_threshold: 200_000,
+  }
+
+  it('reads xAI’s 1e-10 USD units as per-token rates', async () => {
+    const card = await grokRateCard(model)
+    if (!card) throw new Error('did not compile')
+    expect(
+      price(card, {}, { input_tokens: 1e5, output_tokens: 0 }),
+    ).toBeCloseTo(0.125, 9)
+    expect(
+      price(card, {}, { input_tokens: 0, output_tokens: 1e5 }),
+    ).toBeCloseTo(0.25, 9)
+  })
+
+  it('bills the long-context rate at the threshold, not above it', async () => {
+    const card = await grokRateCard(model)
+    if (!card) throw new Error('did not compile')
+    const perMillion = (tokens: number) =>
+      (price(card, {}, { input_tokens: tokens, output_tokens: 0 }) / tokens) *
+      1e6
+    expect(perMillion(199_999)).toBeCloseTo(1.25, 6)
+    expect(perMillion(200_000)).toBeCloseTo(2.5, 6)
+  })
+
+  it('has no card for a model xAI does not price', async () => {
+    expect(await grokRateCard({ id: 'grok-imagine-video' })).toBeNull()
   })
 })

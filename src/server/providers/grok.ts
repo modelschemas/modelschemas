@@ -3,6 +3,9 @@
  * (public). Provider id `grok` matches the @tanstack/ai-grok adapter even
  * though xAI titles the spec "xAI's REST API".
  */
+import { compileTokenCard } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
+
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
 import {
@@ -81,6 +84,58 @@ interface GrokExtrasModel {
   aliases?: Array<string>
   input_modalities?: Array<string>
   output_modalities?: Array<string>
+  long_context_threshold?: number
+  [price: string]: unknown
+}
+
+/**
+ * xAI quotes every price as an integer in units of 1e-10 USD per token
+ * (`prompt_text_token_price: 12500` is $1.25 / 1M tokens, the rate its
+ * docs table publishes). `*_long_context` fields re-quote the whole
+ * request once the prompt reaches `long_context_threshold`.
+ */
+const XAI_PRICE_UNIT = 1e-10
+
+const GROK_PRICE_LEVERS: Record<string, string> = {
+  prompt_text_token_price: 'input_tokens',
+  cached_prompt_text_token_price: 'cache_read_tokens',
+  prompt_image_token_price: 'image_tokens',
+  completion_text_token_price: 'output_tokens',
+  search_price: 'web_searches',
+}
+
+function grokRates(m: GrokExtrasModel, suffix = ''): Record<string, number> {
+  const rates: Record<string, number> = {}
+  for (const [field, lever] of Object.entries(GROK_PRICE_LEVERS)) {
+    const value = m[`${field}${suffix}`]
+    if (typeof value === 'number') rates[lever] = value * XAI_PRICE_UNIT
+  }
+  return rates
+}
+
+/** Per-model token card from the first-party model metadata. */
+export async function grokRateCard(
+  m: GrokExtrasModel,
+): Promise<RateCard | null> {
+  const base = grokRates(m)
+  if (Object.keys(base).length === 0) return null
+  const long = grokRates(m, '_long_context')
+  const threshold = m.long_context_threshold
+  const tiers =
+    typeof threshold === 'number' && Object.keys(long).length > 0
+      ? // xAI bills the long-context rate at or above the threshold; the
+        // card's tiers are strictly-greater, and token counts are integers.
+        [{ minPromptTokens: threshold - 1, rates: { ...base, ...long } }]
+      : []
+  return compileTokenCard(base, tiers, {
+    url: GROK_LANGUAGE_MODELS_URL,
+    // Hashing only the priced fields keeps the stored card (and its
+    // `extractedAt`) stable across unrelated metadata edits.
+    hash: await sha256Text(
+      JSON.stringify({ base, long, threshold: threshold ?? null }),
+    ),
+    extractedAt: new Date().toISOString(),
+  })
 }
 
 /** Context windows keyed by model id from the docs pricing table. */
@@ -121,6 +176,11 @@ async function grokModelFacts(
   ]) {
     for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
   }
+  const cards = new Map<string, RateCard | null>()
+  for (const m of language.models ?? []) {
+    const card = await grokRateCard(m)
+    for (const id of [m.id, ...(m.aliases ?? [])]) cards.set(id, card)
+  }
   return (rawId) => {
     const m = byId.get(rawId)
     if (!m) return NO_FACTS
@@ -134,6 +194,9 @@ async function grokModelFacts(
       modalities,
       // xAI publishes no request-feature flags on any endpoint or doc table.
       capabilities: null,
+      // ponytail: image/video models price per image (`image_price`, plus a
+      // quality/resolution table) — request-bound levers, not this card.
+      pricing: cards.get(rawId) ?? null,
     }
     if (contextWindow != null) {
       facts.factSources = {
