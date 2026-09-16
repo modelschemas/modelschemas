@@ -323,11 +323,11 @@ describe('openai pricing tables', () => {
   it('refuses a section priced in a unit it has no lever for', () => {
     expect(
       parseModelPricing(
-        pricing(`### Video generation
+        pricing(`### Pricing
 
 | Metric | Price | Unit |
 | --- | ---: | --- |
-| Landscape: 1280x720 | $0.1 | second |
+| Cost | $0.10 | GB-hour |
 `),
       ),
     ).toBeNull()
@@ -378,6 +378,91 @@ describe('openai pricing tables', () => {
 - GPT-5.6 Sol costs $4 per million input tokens and $20 per million output tokens, a 20% reduction in input pricing. GPT-5.6 Sol’s promotional pricing is available at least through November 21, 2026.
 `)
     expect(parseModelPricing(page)?.expiresAt).toBe('2026-11-22T00:00:00.000Z')
+  })
+
+  it('prices a per-minute model by the duration the caller measures', () => {
+    expect(
+      parseModelPricing(
+        pricing(`### Transcription audio duration
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Price | $0.0045 | minute |
+`),
+      ),
+    ).toEqual({
+      rates: {},
+      tiers: [],
+      unit: {
+        quantity: { param: 'audio_seconds', bound: 'usage' },
+        rates: 0.0045 / 60,
+      },
+    })
+  })
+
+  it('prices speech by character and video by size and second', () => {
+    expect(
+      parseModelPricing(
+        pricing(`### Pricing
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Use case | Speech generation | 1M tokens |
+| Cost | $15 | 1M characters |
+`),
+      )?.unit,
+    ).toEqual({
+      quantity: { param: 'characters', bound: 'usage' },
+      rates: 15 / 1e6,
+    })
+    // A video row names both orientations of one size in its metric cell,
+    // and the cell's newline splits the row across two lines.
+    expect(
+      parseModelPricing(
+        pricing(`### Video generation
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Portrait: 720x1280
+Landscape: 1280x720 | $0.3 | second |
+| Portrait: 1080x1920
+Landscape: 1920x1080 | $0.7 | second |
+`),
+      )?.unit,
+    ).toEqual({
+      quantity: { param: 'seconds', bound: 'request' },
+      keys: [
+        {
+          param: 'size',
+          values: ['720x1280', '1280x720', '1080x1920', '1920x1080'],
+        },
+      ],
+      rates: {
+        '720x1280': 0.3,
+        '1280x720': 0.3,
+        '1080x1920': 0.7,
+        '1920x1080': 0.7,
+      },
+    })
+  })
+
+  it('refuses a page that mixes a token table with a per-unit one', () => {
+    expect(
+      parseModelPricing(
+        pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $5 | 1M tokens |
+
+### Live session duration
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Per minute | $0.05 | minute |
+`),
+      ),
+    ).toBeNull()
   })
 
   it('refuses an unrecognised bullet that quotes a surcharge', () => {

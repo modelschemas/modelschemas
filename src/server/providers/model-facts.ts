@@ -75,12 +75,26 @@ export function tokenCount(text: string | undefined): number | null {
  */
 export function markdownTableRows(text: string): Array<Array<string>> {
   const rows: Array<Array<string>> = []
+  // A cell may hold a newline ("Portrait: 720x1280\nLandscape: 1280x720"),
+  // splitting one row over two lines; join until the row closes, and give
+  // up on a line that carries no cell of its own.
+  let pending = ''
   for (const line of text.split('\n')) {
-    if (!line.startsWith('|')) continue
-    const cells = line
-      .slice(1, line.endsWith('|') ? -1 : undefined)
+    if (pending === '') {
+      if (!line.startsWith('|')) continue
+      pending = line
+    } else if (line.includes('|')) {
+      pending = `${pending} ${line}`
+    } else {
+      pending = ''
+      continue
+    }
+    if (!pending.endsWith('|')) continue
+    const cells = pending
+      .slice(1, -1)
       .split('|')
       .map((cell) => cell.trim())
+    pending = ''
     if (cells.every((cell) => /^:?-+:?$/.test(cell))) continue
     rows.push(cells)
   }

@@ -6,8 +6,8 @@
  * slug list. Only pages the listed ids resolve to are fetched (~65 of the
  * ~130 listed ids share a page), bounded-concurrency, memoised six hours.
  */
-import { compileTokenCard } from '@modelschemas/rate-card'
-import type { TokenRateTier } from '@modelschemas/rate-card'
+import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
+import type { TokenRateTier, UnitCardSpec } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import {
@@ -73,6 +73,18 @@ const PRICING_LEVERS: Record<string, Record<string, string>> = {
 }
 
 /**
+ * Sections priced per unit rather than per token. `Pricing` is the legacy
+ * tts/whisper table, whose `Cost` row carries the unit.
+ */
+const UNIT_SECTIONS = new Set([
+  'Realtime audio duration',
+  'Transcription audio duration',
+  'Live session duration',
+  'Video generation',
+  'Pricing',
+])
+
+/**
  * Sections that restate a token price per unit rather than adding a cost.
  * OpenAI's image models bill by tokens ("Prices per 1M tokens" on the
  * pricing page); the per-image table is the equivalent cost of one image at
@@ -118,6 +130,63 @@ export interface DocsPricing {
   tiers: Array<TokenRateTier>
   /** Promo end the page names, as an ISO instant. */
   expiresAt?: string
+  /** Set instead of `rates` when the model is billed per unit. */
+  unit?: UnitCardSpec
+}
+
+/** Unit a price is quoted in → the lever it bills, and units per quote. */
+const UNITS: Record<string, { param: string; per: number }> = {
+  minute: { param: 'audio_seconds', per: 60 },
+  second: { param: 'seconds', per: 1 },
+  '1M characters': { param: 'characters', per: 1e6 },
+}
+
+/**
+ * A per-unit section: one rate, or one per output size. The metric cell of
+ * a video row names the sizes the rate covers ("Portrait: 720x1280
+ * Landscape: 1280x720"), which are `size` values on the request.
+ */
+function parseUnitSection(block: string): UnitCardSpec | null {
+  const rates: Record<string, number> = {}
+  let flat: number | null = null
+  let unit: { param: string; per: number } | undefined
+  for (const [metric = '', price, cell] of markdownTableRows(block)) {
+    if (metric === 'Metric') continue
+    const rate = usd(price)
+    const found = cell === undefined ? undefined : UNITS[cell]
+    // "Use case | Speech generation | 1M tokens" labels the table, and a
+    // row this parser cannot price at all refuses the model.
+    if (rate === null) {
+      if (metric === 'Use case' || metric === 'Quality') continue
+      return null
+    }
+    if (!found) return null
+    if (unit && unit.param !== found.param) return null
+    unit = found
+    const sizes = [...metric.matchAll(/(\d{3,4}x\d{3,4})/g)].map(
+      ([size]) => size,
+    )
+    if (sizes.length === 0) {
+      if (flat !== null) return null
+      flat = rate / found.per
+      continue
+    }
+    for (const size of sizes) rates[size] = rate / found.per
+  }
+  if (!unit) return null
+  const sized = Object.keys(rates).length > 0
+  if (sized && flat !== null) return null
+  if (!sized && flat === null) return null
+  // Duration and characters are measured after the call; a video's length
+  // and size are fields of the request that asked for it.
+  const bound = unit.param === 'seconds' ? 'request' : 'usage'
+  return {
+    quantity: { param: unit.param, bound },
+    ...(sized && {
+      keys: [{ param: 'size', values: Object.keys(rates) }],
+    }),
+    rates: sized ? rates : (flat ?? 0),
+  }
 }
 
 /**
@@ -127,9 +196,17 @@ export interface DocsPricing {
 export function parseModelPricing(markdown: string): DocsPricing | null {
   const pricing = markdownSection(markdown, 'Pricing')
   const rates: Record<string, number> = {}
-  for (const block of pricing.split('\n### ').slice(1)) {
+  const blocks = pricing.split('\n### ').slice(1)
+  for (const block of blocks) {
     const heading = block.split('\n')[0]?.trim() ?? ''
     if (DERIVED_SECTIONS.has(heading)) continue
+    if (UNIT_SECTIONS.has(heading)) {
+      // A model is billed one way: a page mixing token tables with a
+      // per-unit one is a shape this parser does not know.
+      if (blocks.length !== 1) return null
+      const unit = parseUnitSection(block)
+      return unit ? { rates: {}, tiers: [], unit } : null
+    }
     const levers = PRICING_LEVERS[heading]
     if (!levers) return null
     for (const [metric = '', price, unit] of markdownTableRows(block)) {
@@ -325,20 +402,26 @@ export async function openaiModelFacts(
     const url = OPENAI_MODEL_PAGE(loaded.slug)
     const withPricing: ModelFacts = {
       ...loaded.page.facts,
-      pricing: loaded.page.pricing
-        ? compileTokenCard(
-            loaded.page.pricing.rates,
-            loaded.page.pricing.tiers,
-            {
-              url,
-              hash: loaded.page.hash,
-              extractedAt: loaded.page.extractedAt,
-              ...(loaded.page.pricing.expiresAt && {
-                expiresAt: loaded.page.pricing.expiresAt,
-              }),
-            },
-          )
-        : null,
+      pricing: loaded.page.pricing?.unit
+        ? compileUnitCard(loaded.page.pricing.unit, {
+            url,
+            hash: loaded.page.hash,
+            extractedAt: loaded.page.extractedAt,
+          })
+        : loaded.page.pricing
+          ? compileTokenCard(
+              loaded.page.pricing.rates,
+              loaded.page.pricing.tiers,
+              {
+                url,
+                hash: loaded.page.hash,
+                extractedAt: loaded.page.extractedAt,
+                ...(loaded.page.pricing.expiresAt && {
+                  expiresAt: loaded.page.pricing.expiresAt,
+                }),
+              },
+            )
+          : null,
     }
     const facts: ModelFacts = {
       ...withPricing,
