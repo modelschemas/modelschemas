@@ -107,7 +107,11 @@ ones).
   request/response schemas and inlines `$ref` closures under `$defs` →
   `sync.ts` content-hash-diffs into `schema_versions` + `changes`, warms KV;
   `poll-models.ts` diffs model lists. Keyed providers skip cleanly when the
-  secret is absent.
+  secret is absent. `models.pricing` is a RateCard or null: listings compile
+  at write (`src/server/rate-card.ts`), and OpenAI/Anthropic/Gemini prices
+  are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
+  — every parser fail-closed, a page that parses nothing throws rather than
+  nulling stored cards.
 - **API** (`src/routes/v1/`): catalog, schema reads (SWR via
   `src/server/cache.ts`, ETag/304 via `http-cache.ts`), `POST /v1/validate`
   (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),

@@ -224,6 +224,13 @@ formulas to `{ inputPerMillion, outputPerMillion }`; `GET /v1/models?pricing=1`
 and model detail return the full card. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
 
+Cards come from each host's own source — the OpenRouter, Together and xAI
+listings (`listing`), and the OpenAI, Anthropic and Gemini pricing pages
+(`docs-derived`); `factSources.pricing` says which. A model whose bill is
+not only tokens (per-image, per-minute, per-song) has no card rather than a
+partial one, and a card is re-read when its source text changes or the
+`expiresAt` a dated price change stamped has passed.
+
 Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap):
 
 | Package                        | Directory            |
