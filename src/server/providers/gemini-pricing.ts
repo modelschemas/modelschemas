@@ -28,31 +28,71 @@ import type { ModelInfo } from './types.ts'
 export const GEMINI_PRICING_URL =
   'https://ai.google.dev/gemini-api/docs/pricing'
 
-/** Row label → the levers its text and audio prices fill. */
-const ROW_LEVERS: Array<[RegExp, { text: string; audio: string }]> = [
-  // A parenthetical names the modalities the row covers ("Input price
-  // (text, image, video)"); a leading one names one modality and is a
-  // different row ("Audio input price"), which this must not match.
+/**
+ * A row's lever per modality. `default` takes any price the row quotes for
+ * text (Gemini sums text, image and video into one prompt-token count, so
+ * one rate covering them all is the default lever); a modality named on its
+ * own is priced differently and gets its own lever.
+ */
+interface RowLevers {
+  default: string
+  audio?: string
+  image?: string
+  video?: string
+}
+
+/** Row label → its levers. */
+const ROW_LEVERS: Array<[RegExp, RowLevers]> = [
+  // A trailing parenthetical names the modalities the row covers ("Input
+  // price (text, image, video)"); a leading modality is a different row
+  // ("Audio input price"), which this must not match.
   [
     /^input price( \([^)]*\))?$/,
-    { text: 'input_tokens', audio: 'audio_tokens' },
+    {
+      default: 'input_tokens',
+      audio: 'audio_tokens',
+      image: 'image_tokens',
+      video: 'video_tokens',
+    },
   ],
+  [/^text input price$/, { default: 'input_tokens' }],
+  [/^image input price$/, { default: 'image_tokens' }],
+  [/^audio input price$/, { default: 'audio_tokens' }],
+  [/^video input price$/, { default: 'video_tokens' }],
   [
     /^output price( \([^)]*\))?$/,
-    { text: 'output_tokens', audio: 'audio_output_tokens' },
+    {
+      default: 'output_tokens',
+      audio: 'audio_output_tokens',
+      image: 'image_output_tokens',
+      video: 'video_output_tokens',
+    },
   ],
   [
     /^context caching price$/,
-    { text: 'cache_read_tokens', audio: 'audio_cache_tokens' },
+    {
+      default: 'cache_read_tokens',
+      audio: 'audio_cache_tokens',
+      image: 'image_cache_tokens',
+    },
   ],
 ]
+
+/** Modality words a qualifier may name, singular or plural. */
+const MODALITIES: Record<string, keyof RowLevers> = {
+  text: 'default',
+  texts: 'default',
+  thinking: 'default',
+  image: 'image',
+  images: 'image',
+  video: 'video',
+  videos: 'video',
+  audio: 'audio',
+}
 
 /** Rows that are not a per-token cost of one request. */
 const IGNORED_ROWS =
   /^(grounding with |used to improve|context caching \(storage\)|tuning price|live api)/
-
-/** Modality qualifiers that price the text (default) lever. */
-const TEXT_MODALITIES = /^(text|image|video)([ /]+(text|image|video))*$/
 
 const ENTITIES: Record<string, string> = {
   amp: '&',
@@ -95,13 +135,27 @@ type Fragment = {
  */
 function fragment(
   raw: string,
-  levers: { text: string; audio: string },
+  levers: RowLevers,
   now: number,
+  first: boolean,
 ): Array<Fragment> | null {
   const cell = plain(raw)
+    // "$6.50 ($0.00016 per second)" / "$3.00 or $0.005/min (audio)": the
+    // column is per 1M tokens, so a second amount in another unit restates
+    // the token rate rather than adding to it.
+    .replace(/\s*\(\s*\$[^)]*\)/g, '')
+    .replace(/\s+or \$[\d.,]+\s*\/\s*\w+/gi, '')
+    .trim()
   if (cell === '' || /^(not available|free of charge)$/i.test(cell)) return []
   // Cache storage is quoted per token-hour, not per request.
   if (/per hour|storage price/i.test(cell)) return []
+  // A price in a unit other than the column's tokens: after the first
+  // fragment it restates the token rate ("Equivalent to $0.134 per 1K/2K
+  // image", "and $0.24 per 4K image"); as the first, it *is* the price and
+  // this card has no lever for it.
+  if (/equivalent|\bper \d|\bper [a-z]+\b/i.test(cell)) {
+    return first ? null : []
+  }
   const match = cell.match(/^\$([\d,]+(?:\.\d+)?)\s*(.*)$/)
   if (!match?.[1]) return null
   const rate = Number(match[1].replace(/,/g, '')) / 1e6
@@ -130,8 +184,8 @@ function fragment(
   }
   qualifier = qualifier.replace(/^\((.*)\)$/, '$1').trim()
 
-  if (qualifier === '' || qualifier === 'text and thinking') {
-    return [{ levers: [levers.text], rate, tier: null, expiresAt }]
+  if (qualifier === '') {
+    return [{ levers: [levers.default], rate, tier: null, expiresAt }]
   }
   const threshold = qualifier.match(
     /^prompts?\s*(<=|>)\s*([\d,.]+\s*[km]?)\s*(tokens?)?$/,
@@ -141,28 +195,37 @@ function fragment(
     if (tokens === null) return null
     return [
       {
-        levers: [levers.text],
+        levers: [levers.default],
         rate,
         tier: threshold[1] === '>' ? tokens : null,
         expiresAt,
       },
     ]
   }
-  const parts = qualifier.split(/[,/]/).map((part) => part.trim())
-  const audio = parts.includes('audio')
-  const rest = parts.filter((part) => part !== 'audio')
-  if (audio && rest.length === 0) {
-    return [{ levers: [levers.audio], rate, tier: null, expiresAt }]
+  // "(text / image / video)", "(audio)", "(text and thinking)": every word
+  // must be a modality this row prices, or the model is refused.
+  const named = new Set<keyof RowLevers>()
+  for (const word of qualifier.replace(/[().]/g, ' ').split(/[,/+\s]+/)) {
+    const part = word.trim()
+    if (part === '' || part === 'and') continue
+    const modality = MODALITIES[part]
+    if (!modality) return null
+    named.add(modality)
   }
-  if (!TEXT_MODALITIES.test(rest.join(' / '))) return null
-  return [
-    {
-      levers: audio ? [levers.text, levers.audio] : [levers.text],
-      rate,
-      tier: null,
-      expiresAt,
-    },
-  ]
+  if (named.size === 0) return null
+  // A rate quoted for text covers the prompt-token count as a whole.
+  const targets = named.has('default')
+    ? ['default' as const, ...[...named].filter((m) => m === 'audio')]
+    : [...named]
+  const filled: Array<string> = []
+  for (const modality of targets) {
+    const lever = levers[modality]
+    // A modality this row does not price separately (an image rate on the
+    // caching row, say) would have to be guessed.
+    if (!lever) return null
+    filled.push(lever)
+  }
+  return [{ levers: filled, rate, tier: null, expiresAt }]
 }
 
 interface ParsedRates {
@@ -188,8 +251,9 @@ function parseTable(segment: string, now: number): ParsedRates | null {
       continue
     }
     const paid = cells[cells.length - 1] ?? ''
-    for (const part of paid.split(/<br\s*\/?>/)) {
-      const parsed = fragment(part, levers, now)
+    const parts = paid.split(/<br\s*\/?>/)
+    for (const [index, part = ''] of parts.entries()) {
+      const parsed = fragment(part, levers, now, index === 0)
       if (!parsed) return null
       for (const { levers: filled, rate, tier, expiresAt } of parsed) {
         const target = tier === null ? out.base : (out.tiers[tier] ??= {})
@@ -218,9 +282,15 @@ export function parseGeminiPricing(
   const out = new Map<string, GeminiRates>()
   for (const chunk of html.split('<div class="models-section">').slice(1)) {
     const id = chunk.match(/<code[^>]*>([a-z0-9][a-z0-9.-]+)<\/code>/)?.[1]
-    const end = chunk.indexOf('</table>')
-    if (!id || end < 0 || out.has(id)) continue
-    const segment = chunk.slice(0, end)
+    // The first table of the chunk is the model's own. Its `</table>` can
+    // fall outside the chunk (the last section on the page ends mid-table),
+    // so `</tbody>` closes it too — but one of them must be there, or a
+    // Batch/Flex table further down would be read as Standard rates.
+    const end = ['</tbody>', '</table>']
+      .map((tag) => chunk.indexOf(tag))
+      .filter((at) => at >= 0)
+    if (!id || end.length === 0 || out.has(id)) continue
+    const segment = chunk.slice(0, Math.min(...end))
     // Standard rates only: Batch and Flex are separate `<section>` tabs.
     const heading = [...segment.matchAll(/<h3[^>]*data-text="([^"]*)"/g)].at(-1)
     if (heading && heading[1] !== 'Standard') continue

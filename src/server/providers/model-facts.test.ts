@@ -561,14 +561,50 @@ describe('gemini pricing page', () => {
     })
   })
 
+  it('gives a separately priced modality its own lever', () => {
+    // Gemini sums text, image and video into one prompt-token count, so a
+    // rate covering them all is the input lever; audio is priced apart.
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-3-pro-image',
+        `<tr><td>Input price</td><td>Not available</td><td>$2.00 (text/image),<br>equivalent to $0.0011 per image</td></tr>
+         <tr><td>Output price</td><td>Not available</td><td>$12.00 (text and thinking)<br>$120.00 (images)<br>Equivalent to $0.134 per 1K/2K image<br>and $0.24 per 4K image</td></tr>`,
+      ),
+      NOW,
+    )
+    // The per-image lines restate the token rate; they are not extra cost.
+    expect(rows.get('gemini-3-pro-image')?.base).toEqual({
+      input_tokens: 2e-6,
+      output_tokens: 12e-6,
+      image_output_tokens: 120e-6,
+    })
+  })
+
+  it('reads a per-modality row and an audio-only rate', () => {
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-embedding-2',
+        `<tr><td>Text input price</td><td>Not available</td><td>$0.20</td></tr>
+         <tr><td>Image input price</td><td>Not available</td><td>$0.45 ($0.00012 per image)</td></tr>
+         <tr><td>Audio input price</td><td>Not available</td><td>$6.50 ($0.00016 per second)</td></tr>`,
+      ),
+      NOW,
+    )
+    expect(rows.get('gemini-embedding-2')?.base).toEqual({
+      input_tokens: 0.2 / 1e6,
+      image_tokens: 0.45 / 1e6,
+      audio_tokens: 6.5 / 1e6,
+    })
+  })
+
   it('refuses a model whose bill is not only tokens', () => {
-    // A per-image output, a per-minute alternative, and a priced row this
-    // card has no lever for each refuse the whole model.
-    const perImage = `<tr><td>Output price</td><td>Not available</td><td>$12.00 (text and thinking)<br>$120.00 (images)</td></tr>`
-    const perMinute = `<tr><td>Input price</td><td>Not available</td><td>$2.00 or $0.003/min (audio)</td></tr>`
-    const otherRow = `<tr><td>Input price</td><td>Not available</td><td>$1.00</td></tr>
-       <tr><td>Image input price</td><td>Not available</td><td>$0.45</td></tr>`
-    for (const rows of [perImage, perMinute, otherRow]) {
+    // A row priced per image (not a restatement of a token rate), a
+    // modality the row has no lever for, and a priced row with no lever.
+    const perImage = `<tr><td>Input price</td><td>Not available</td><td>$0.30 (text / image)</td></tr>
+       <tr><td>Output price</td><td>Not available</td><td>$0.039 per image</td></tr>`
+    const perSong = `<tr><td>Lyria 3.5 (Full Song)</td><td>Not available</td><td>$0.08 per song</td></tr>`
+    const unknownModality = `<tr><td>Input price</td><td>Not available</td><td>$1.00 (hologram)</td></tr>`
+    for (const rows of [perImage, perSong, unknownModality]) {
       expect(parseGeminiPricing(section('m', rows), NOW).size).toBe(0)
     }
   })
