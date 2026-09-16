@@ -226,10 +226,15 @@ and model detail return the full card. Together all-zero placeholders are
 
 Cards come from each host's own source — the OpenRouter, Together and xAI
 listings (`listing`), and the OpenAI, Anthropic and Gemini pricing pages
-(`docs-derived`); `factSources.pricing` says which. A model whose bill is
-not only tokens (per-image, per-minute, per-song) has no card rather than a
-partial one, and a card is re-read when its source text changes or the
-`expiresAt` a dated price change stamped has passed.
+(`docs-derived`); `factSources.pricing` says which. Token models carry
+their cache, media-token and long-prompt rates; models billed by the
+second, the minute, the character, the image or the request carry a
+`quantity × rate[size]` card instead. What a source does not state, a card
+does not guess: an unrecognised surcharge, a rate keyed on something the
+request cannot express, or an alias the pricing page never names leaves the
+model with no card rather than a partial one. A card is re-read when its
+source text changes, or once the `expiresAt` of a dated price change has
+passed.
 
 Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap):
 
