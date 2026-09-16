@@ -4,7 +4,13 @@ import { anthropicCapabilities } from './anthropic.ts'
 import { parseAnthropicPricing } from './anthropic-pricing.ts'
 import { parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
-import { grokRateCard, parseGrokContextWindows } from './grok.ts'
+import {
+  grokImageCard,
+  grokRateCard,
+  grokVideoCard,
+  parseGrokContextWindows,
+  parseGrokVideoPrices,
+} from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
 import { openAiCompatModelFacts } from './openai-compat.ts'
@@ -567,6 +573,43 @@ describe('grok model prices', () => {
 
   it('has no card for a model xAI does not price', async () => {
     expect(await grokRateCard({ id: 'grok-imagine-video' })).toBeNull()
+  })
+
+  it('prices images per image, and refuses a quality-dependent table', async () => {
+    const card = await grokImageCard({
+      id: 'grok-imagine-image',
+      image_price: 200_000_000,
+    })
+    if (!card) throw new Error('did not compile')
+    expect(price(card, {}, {})).toBeCloseTo(0.02, 9)
+    expect(price(card, { n: 4 }, {})).toBeCloseTo(0.08, 9)
+    // `quality` is not a field of /v1/images/generations.
+    expect(
+      await grokImageCard({
+        id: 'grok-imagine-image-2.0',
+        image_price: 600_000_000,
+        pricing: [{ quality: 'low', resolution: '1k', price_per_image: 4e8 }],
+      }),
+    ).toBeNull()
+  })
+
+  it('prices video per second off the docs table', async () => {
+    const rates = parseGrokVideoPrices(`### Imagine Pricing
+
+| Model | Cost |
+| --- | --- |
+| grok-imagine-image | $0.02 / image |
+| grok-imagine-video | $0.050 / sec |
+| grok-imagine-video-1.5 | $0.080 / sec |
+`)
+    expect([...rates]).toEqual([
+      ['grok-imagine-video', 0.05],
+      ['grok-imagine-video-1.5', 0.08],
+    ])
+    const card = await grokVideoCard(rates.get('grok-imagine-video'))
+    if (!card) throw new Error('did not compile')
+    expect(price(card, { duration: 6 }, {})).toBeCloseTo(0.3, 9)
+    expect(await grokVideoCard(undefined)).toBeNull()
   })
 })
 

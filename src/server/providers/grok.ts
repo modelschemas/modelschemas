@@ -3,7 +3,7 @@
  * (public). Provider id `grok` matches the @tanstack/ai-grok adapter even
  * though xAI titles the spec "xAI's REST API".
  */
-import { compileTokenCard } from '@modelschemas/rate-card'
+import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
@@ -113,6 +113,61 @@ function grokRates(m: GrokExtrasModel, suffix = ''): Record<string, number> {
   return rates
 }
 
+/**
+ * Per-image card from the model metadata. A model whose `pricing` table
+ * varies the price by `quality` has no card: `quality` is not a field of
+ * `/v1/images/generations`, so the rate could only be guessed at.
+ */
+export async function grokImageCard(
+  m: GrokExtrasModel,
+): Promise<RateCard | null> {
+  if (Array.isArray(m.pricing)) return null
+  const flat = m.image_price
+  if (typeof flat !== 'number') return null
+  return compileUnitCard(
+    {
+      // `n` defaults to 1 on the request, as it does here.
+      quantity: { param: 'n', bound: 'request', default: 1 },
+      rates: flat * XAI_PRICE_UNIT,
+    },
+    {
+      url: GROK_IMAGE_MODELS_URL,
+      hash: await sha256Text(JSON.stringify({ image_price: flat })),
+      extractedAt: new Date().toISOString(),
+    },
+  )
+}
+
+/**
+ * Per-second video rates from the docs "Imagine Pricing" table
+ * (`| grok-imagine-video | $0.050 / sec |`). The model metadata carries no
+ * price for video models.
+ */
+export function parseGrokVideoPrices(markdown: string): Map<string, number> {
+  const out = new Map<string, number>()
+  for (const [model = '', cost = ''] of markdownTableRows(markdown)) {
+    const rate = cost.match(/^\$([\d.]+)\s*\/\s*sec(ond)?$/)?.[1]
+    if (!/^grok-/.test(model) || rate === undefined) continue
+    if (!out.has(model)) out.set(model, Number(rate))
+  }
+  return out
+}
+
+/** Per-second card for a video model the docs table prices. */
+export async function grokVideoCard(
+  perSecond: number | undefined,
+): Promise<RateCard | null> {
+  if (perSecond === undefined) return null
+  return compileUnitCard(
+    { quantity: { param: 'duration', bound: 'request' }, rates: perSecond },
+    {
+      url: GROK_DOCS_MODELS_URL,
+      hash: await sha256Text(JSON.stringify({ perSecond })),
+      extractedAt: new Date().toISOString(),
+    },
+  )
+}
+
 /** Per-model token card from the first-party model metadata. */
 export async function grokRateCard(
   m: GrokExtrasModel,
@@ -156,16 +211,18 @@ async function grokModelFacts(
 ): Promise<(rawId: string) => ModelFacts> {
   const extras = (url: string) =>
     fetchJson(url, { headers }) as Promise<{ models?: Array<GrokExtrasModel> }>
-  const [language, image, video, contexts] = await Promise.all([
+  const [language, image, video, docs] = await Promise.all([
     extras(GROK_LANGUAGE_MODELS_URL),
     extras(GROK_IMAGE_MODELS_URL),
     extras(GROK_VIDEO_MODELS_URL),
     cachedDocs(kv, GROK_DOCS_MODELS_URL, async () => {
-      const parsed = parseGrokContextWindows(
-        await fetchText(GROK_DOCS_MODELS_URL),
-      )
+      const markdown = await fetchText(GROK_DOCS_MODELS_URL)
+      const parsed = parseGrokContextWindows(markdown)
       assertParsed(parsed, 'xai models docs')
-      return Object.fromEntries(parsed)
+      return {
+        contexts: Object.fromEntries(parsed),
+        videoPerSecond: Object.fromEntries(parseGrokVideoPrices(markdown)),
+      }
     }),
   ])
   const byId = new Map<string, GrokExtrasModel>()
@@ -181,10 +238,18 @@ async function grokModelFacts(
     const card = await grokRateCard(m)
     for (const id of [m.id, ...(m.aliases ?? [])]) cards.set(id, card)
   }
+  for (const m of image.models ?? []) {
+    const card = await grokImageCard(m)
+    for (const id of [m.id, ...(m.aliases ?? [])]) cards.set(id, card)
+  }
+  for (const m of video.models ?? []) {
+    const card = await grokVideoCard(docs.videoPerSecond[m.id])
+    for (const id of [m.id, ...(m.aliases ?? [])]) cards.set(id, card)
+  }
   return (rawId) => {
     const m = byId.get(rawId)
     if (!m) return NO_FACTS
-    const contextWindow = contexts[rawId] ?? null
+    const contextWindow = docs.contexts[rawId] ?? null
     const modalities = m.input_modalities
       ? { input: m.input_modalities, output: m.output_modalities ?? [] }
       : null
@@ -194,8 +259,6 @@ async function grokModelFacts(
       modalities,
       // xAI publishes no request-feature flags on any endpoint or doc table.
       capabilities: null,
-      // ponytail: image/video models price per image (`image_price`, plus a
-      // quality/resolution table) — request-bound levers, not this card.
       pricing: cards.get(rawId) ?? null,
     }
     if (contextWindow != null) {
