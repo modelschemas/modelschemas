@@ -110,7 +110,13 @@ export async function storeListedPricing(
       return { card: null, refused: 'invented_param' }
     }
     if (!examplesOk(parsed)) return { card: null, refused: 'examples' }
-    return { card: parsed }
+    // Same source text ⇒ same card. Keep the stored one so a fresh
+    // `extractedAt` alone is not a price change on every poll. A parser
+    // fix therefore lands with the next upstream edit, not before.
+    const prior = parseStoredRateCard(options.existing)
+    return {
+      card: prior && prior.source.hash === parsed.source.hash ? prior : parsed,
+    }
   }
 
   const existing = parseStoredRateCard(options.existing)

@@ -179,6 +179,24 @@ describe('toStoredRateCard', () => {
     ).toEqual({ card: null, refused: 'examples' })
   })
 
+  it('keeps the stored card when a re-parse reports the same source hash', async () => {
+    const stored: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-01-01T00:00:00.000Z' },
+    }
+    const reparsed: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-06-01T00:00:00.000Z' },
+    }
+    expect(
+      await storeListedPricing(reparsed, {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: stored })
+  })
+
   it('names invented_param vs uncompilable on refuse', async () => {
     expect(
       await storeListedPricing(mediaCard('quality'), {
