@@ -34,6 +34,32 @@ export function undatedId(rawId: string): string {
   return rawId.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '')
 }
 
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+]
+
+/** `December 31, 2026` → that day's UTC midnight, case-insensitive. */
+export function parseDay(text: string): number | null {
+  const match = text
+    .trim()
+    .toLowerCase()
+    .match(/^([a-z]+) (\d{1,2}), (\d{4})$/)
+  const month = match?.[1] ? MONTHS.indexOf(match[1]) : -1
+  if (!match || month < 0) return null
+  return Date.UTC(Number(match[3]), month, Number(match[2]))
+}
+
 /** `1,048,576` / `500k` / `1M` → number. */
 export function tokenCount(text: string | undefined): number | null {
   const match = text?.match(/([\d,]*\.?\d+)\s*([kKmM])?/)
@@ -76,6 +102,13 @@ export function markdownSection(text: string, heading: string): string {
 const DOCS_TTL_SECONDS = 6 * 60 * 60
 
 /**
+ * Bumped whenever a parsed-docs shape changes. A deploy that changed the
+ * shape would otherwise read the old one back out of KV for six hours and
+ * see missing fields as missing facts.
+ */
+const DOCS_CACHE_VERSION = 'v2'
+
+/**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
  * stored, so the next poll retries. `kv` is omitted in unit tests that
  * never hit the network.
@@ -85,7 +118,7 @@ export async function cachedDocs<T>(
   url: string,
   load: () => Promise<T>,
 ): Promise<T> {
-  const key = `docs:${url}`
+  const key = `docs:${DOCS_CACHE_VERSION}:${url}`
   if (kv) {
     const hit = await getJson<T>(kv, key)
     if (hit !== null) return hit

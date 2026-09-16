@@ -16,7 +16,12 @@ import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
-import { assertParsed, cachedDocs, tokenCount } from './model-facts.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  parseDay,
+  tokenCount,
+} from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
@@ -71,29 +76,6 @@ function plain(html: string): string {
       .replace(/\s+/g, ' ')
       .trim()
   )
-}
-
-const MONTHS = [
-  'january',
-  'february',
-  'march',
-  'april',
-  'may',
-  'june',
-  'july',
-  'august',
-  'september',
-  'october',
-  'november',
-  'december',
-]
-
-/** `december 31, 2026` → that day's UTC midnight. */
-function parseDay(text: string): number | null {
-  const match = text.match(/^([a-z]+) (\d{1,2}), (\d{4})$/)
-  const month = match?.[1] ? MONTHS.indexOf(match[1]) : -1
-  if (!match || month < 0) return null
-  return Date.UTC(Number(match[3]), month, Number(match[2]))
 }
 
 const DAY_MS = 86_400_000

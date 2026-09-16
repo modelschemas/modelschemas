@@ -12,7 +12,7 @@ import {
   pageSlugFor,
   parseModelIndex,
   parseModelPage,
-  parsePricingRates,
+  parseModelPricing,
 } from './openai-model-docs.ts'
 
 describe('model-facts helpers', () => {
@@ -252,7 +252,7 @@ describe('openai pricing tables', () => {
 
   it('reads every token lever off the per-million tables', () => {
     expect(
-      parsePricingRates(
+      parseModelPricing(
         pricing(`### Text tokens
 
 | Metric | Price | Unit |
@@ -270,17 +270,20 @@ describe('openai pricing tables', () => {
 `),
       ),
     ).toEqual({
-      input_tokens: 1.25e-6,
-      cache_read_tokens: 0.125e-6,
-      output_tokens: 10e-6,
-      audio_tokens: 32e-6,
-      audio_output_tokens: 64e-6,
+      rates: {
+        input_tokens: 1.25e-6,
+        cache_read_tokens: 0.125e-6,
+        output_tokens: 10e-6,
+        audio_tokens: 32e-6,
+        audio_output_tokens: 64e-6,
+      },
+      tiers: [],
     })
   })
 
   it('reads an embeddings page', () => {
     expect(
-      parsePricingRates(
+      parseModelPricing(
         pricing(`### Embeddings
 
 | Metric | Price | Unit |
@@ -288,28 +291,111 @@ describe('openai pricing tables', () => {
 | Cost | $0.02 | 1M tokens |
 `),
       ),
-    ).toEqual({ input_tokens: 0.02e-6 })
+    ).toEqual({ rates: { input_tokens: 0.02e-6 }, tiers: [] })
   })
 
-  it('refuses a model whose bill is not only tokens', () => {
-    const perImage = `### Text tokens
+  it('treats the per-image table as a restatement of the token price', () => {
+    // OpenAI bills image models per token; the per-image table is the
+    // equivalent cost of one image at a size and quality.
+    expect(
+      parseModelPricing(
+        pricing(`### Image tokens
 
 | Metric | Price | Unit |
 | --- | ---: | --- |
-| Input | $5 | 1M tokens |
+| Input | $10 | 1M tokens |
+| Output | $40 | 1M tokens |
 
 ### Image generation
 
 | Metric | Price | Unit |
 | --- | ---: | --- |
+| Quality | Low | image |
 | 1024x1024 | $0.011 | image |
-`
-    expect(parsePricingRates(pricing(perImage))).toBeNull()
+`),
+      ),
+    ).toEqual({
+      rates: { image_tokens: 10e-6, image_output_tokens: 40e-6 },
+      tiers: [],
+    })
+  })
+
+  it('refuses a section priced in a unit it has no lever for', () => {
+    expect(
+      parseModelPricing(
+        pricing(`### Video generation
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Landscape: 1280x720 | $0.1 | second |
+`),
+      ),
+    ).toBeNull()
+  })
+
+  it('reads the long-prompt re-quote and cache-write multiplier', () => {
+    const page = pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $10 | 1M tokens |
+| Cached input | $1 | 1M tokens |
+| Output | $50 | 1M tokens |
+
+- Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request.
+- Cache writes are billed at 1.25x the uncached input token rate.
+- Batch and Flex are priced at 50% of Standard rates.
+`)
+    expect(parseModelPricing(page)).toEqual({
+      rates: {
+        input_tokens: 10e-6,
+        cache_read_tokens: 1e-6,
+        cache_write_tokens: 12.5e-6,
+        output_tokens: 50e-6,
+      },
+      tiers: [
+        {
+          minPromptTokens: 272_000,
+          rates: {
+            input_tokens: 20e-6,
+            cache_read_tokens: 2e-6,
+            cache_write_tokens: 25e-6,
+            output_tokens: (50 / 1e6) * 1.5,
+          },
+        },
+      ],
+    })
+  })
+
+  it('stamps a promo end so the card is re-read after it', () => {
+    const page = pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $4 | 1M tokens |
+| Output | $20 | 1M tokens |
+
+- GPT-5.6 Sol costs $4 per million input tokens and $20 per million output tokens, a 20% reduction in input pricing. GPT-5.6 Sol’s promotional pricing is available at least through November 21, 2026.
+`)
+    expect(parseModelPricing(page)?.expiresAt).toBe('2026-11-22T00:00:00.000Z')
+  })
+
+  it('refuses an unrecognised bullet that quotes a surcharge', () => {
+    const page = pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $10 | 1M tokens |
+| Output | $50 | 1M tokens |
+
+- Requests using the widget tool are charged a 3x multiplier.
+`)
+    expect(parseModelPricing(page)).toBeNull()
   })
 
   it('refuses an unpriced row and a page with no pricing', () => {
     expect(
-      parsePricingRates(
+      parseModelPricing(
         pricing(`### Text tokens
 
 | Metric | Price | Unit |
@@ -318,7 +404,7 @@ describe('openai pricing tables', () => {
 `),
       ),
     ).toBeNull()
-    expect(parsePricingRates('# Model\n\nModel ID: `m`\n')).toBeNull()
+    expect(parseModelPricing('# Model\n\nModel ID: `m`\n')).toBeNull()
   })
 })
 

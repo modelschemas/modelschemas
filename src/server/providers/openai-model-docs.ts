@@ -7,6 +7,7 @@
  * ~130 listed ids share a page), bounded-concurrency, memoised six hours.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
+import type { TokenRateTier } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import {
@@ -16,6 +17,7 @@ import {
   mapConcurrent,
   markdownSection,
   markdownTableRows,
+  parseDay,
   tokenCount,
   undatedId,
 } from './model-facts.ts'
@@ -40,8 +42,8 @@ export interface OpenAiModelPage {
   /** Every id the page speaks for: `Model ID`, default snapshot, snapshots. */
   ids: Array<string>
   facts: ModelFacts
-  /** Per-token USD rates by lever, or null when the page prices otherwise. */
-  rates: Record<string, number> | null
+  /** Token rates and tiers, or null when the page prices otherwise. */
+  pricing: DocsPricing | null
 }
 
 /**
@@ -54,6 +56,7 @@ const PRICING_LEVERS: Record<string, Record<string, string>> = {
   'Text tokens': {
     Input: 'input_tokens',
     'Cached input': 'cache_read_tokens',
+    'Cache writes': 'cache_write_tokens',
     Output: 'output_tokens',
   },
   'Audio tokens': {
@@ -69,21 +72,65 @@ const PRICING_LEVERS: Record<string, Record<string, string>> = {
   Embeddings: { Cost: 'input_tokens' },
 }
 
+/**
+ * Sections that restate a token price per unit rather than adding a cost.
+ * OpenAI's image models bill by tokens ("Prices per 1M tokens" on the
+ * pricing page); the per-image table is the equivalent cost of one image at
+ * a quality and size, already covered by the Image tokens rows.
+ */
+const DERIVED_SECTIONS = new Set(['Image generation'])
+
+const DAY_MS = 86_400_000
+
 /** `$1.25` → 1.25; null for anything that is not a plain dollar amount. */
 function usd(cell: string | undefined): number | null {
   const amount = cell?.match(/^\$([\d,]+(?:\.\d+)?)$/)?.[1]
   return amount === undefined ? null : Number(amount.replace(/,/g, ''))
 }
 
-/** Per-token rates from a model page's `## Pricing` tables. */
-export function parsePricingRates(
-  markdown: string,
-): Record<string, number> | null {
+/**
+ * Prose under the tables that changes the price. A bullet naming a
+ * non-default service tier, an opt-in endpoint or nothing billable is
+ * prose; anything else that quotes a multiplier or an amount refuses the
+ * model, so a new kind of surcharge cannot slip past as prose.
+ */
+const PROSE_BULLETS =
+  /\bbatch\b|\bflex\b|fast mode|priority|regional processing|data residency|calculator|does not offer|not billed|rather than text tokens|token rates match/i
+
+/** Levers a "…x input and cache rates" multiplier re-quotes. */
+const INPUT_LEVERS = [
+  'input_tokens',
+  'cache_read_tokens',
+  'cache_write_tokens',
+  'image_tokens',
+  'image_cache_tokens',
+  'audio_tokens',
+  'audio_cache_tokens',
+]
+const OUTPUT_LEVERS = [
+  'output_tokens',
+  'image_output_tokens',
+  'audio_output_tokens',
+]
+
+export interface DocsPricing {
+  rates: Record<string, number>
+  tiers: Array<TokenRateTier>
+  /** Promo end the page names, as an ISO instant. */
+  expiresAt?: string
+}
+
+/**
+ * Per-token rates, long-prompt tiers and promo end from a model page's
+ * `## Pricing` section.
+ */
+export function parseModelPricing(markdown: string): DocsPricing | null {
+  const pricing = markdownSection(markdown, 'Pricing')
   const rates: Record<string, number> = {}
-  for (const block of markdownSection(markdown, 'Pricing')
-    .split('\n### ')
-    .slice(1)) {
-    const levers = PRICING_LEVERS[block.split('\n')[0]?.trim() ?? '']
+  for (const block of pricing.split('\n### ').slice(1)) {
+    const heading = block.split('\n')[0]?.trim() ?? ''
+    if (DERIVED_SECTIONS.has(heading)) continue
+    const levers = PRICING_LEVERS[heading]
     if (!levers) return null
     for (const [metric = '', price, unit] of markdownTableRows(block)) {
       if (metric === 'Metric') continue
@@ -93,7 +140,70 @@ export function parsePricingRates(
       rates[lever] = rate / 1e6
     }
   }
-  return Object.keys(rates).length > 0 ? rates : null
+  if (Object.keys(rates).length === 0) return null
+
+  const bullets = [...pricing.matchAll(/^- (.+)$/gm)].map(
+    ([, bullet = '']) => bullet,
+  )
+  const out: DocsPricing = { rates, tiers: [] }
+
+  // Rate-adding bullets first: a tier re-quotes whatever levers exist.
+  for (const bullet of bullets) {
+    // "Cache writes are billed at 1.25x the uncached input token rate."
+    const cacheWrite = bullet.match(
+      /cache writes are billed at ([\d.]+)x the uncached input token rate/i,
+    )
+    const input = rates.input_tokens
+    if (
+      cacheWrite?.[1] &&
+      input !== undefined &&
+      !('cache_write_tokens' in rates)
+    ) {
+      rates.cache_write_tokens = input * Number(cacheWrite[1])
+    }
+    // "…promotional pricing is available at least through November 21, 2026."
+    const promo = bullet.match(
+      /promotional pricing[^.]*through ([a-z]+ \d{1,2}, \d{4})/i,
+    )
+    if (promo?.[1]) {
+      const day = parseDay(promo[1])
+      if (day === null) return null
+      out.expiresAt = new Date(day + DAY_MS).toISOString()
+    }
+  }
+
+  for (const bullet of bullets) {
+    if (/cache writes are billed at|promotional pricing/i.test(bullet)) continue
+    // "Prompts with >272K input tokens are priced at 2x input and 1.5x
+    // output for the full request" — a whole-request re-quote of every
+    // rate, which is exactly a tier.
+    const long = bullet.match(
+      /prompts with (?:more than |>)([\d,.]+\s*[km]?) input tokens are priced at ([\d.]+)x input(?: and cache rates)? and ([\d.]+)x output/i,
+    )
+    if (long) {
+      const threshold = tokenCount(long[1])
+      if (threshold === null) return null
+      const tier: Record<string, number> = {}
+      for (const [lever, rate] of Object.entries(rates)) {
+        const factor = INPUT_LEVERS.includes(lever)
+          ? Number(long[2])
+          : OUTPUT_LEVERS.includes(lever)
+            ? Number(long[3])
+            : null
+        // A lever the sentence does not cover would be quoted at the base
+        // rate inside the tier, which is a guess.
+        if (factor === null) return null
+        tier[lever] = rate * factor
+      }
+      out.tiers.push({ minPromptTokens: threshold, rates: tier })
+      continue
+    }
+    if (PROSE_BULLETS.test(bullet)) continue
+    // An unrecognised bullet that quotes money, a multiplier or a
+    // percentage may be a surcharge this card would drop.
+    if (/\$|\b\d+(\.\d+)?x\b|%/.test(bullet)) return null
+  }
+  return out
 }
 
 function listValues(block: string, label: string): Array<string> {
@@ -143,7 +253,7 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
 
   return {
     ids: [...ids],
-    rates: parsePricingRates(markdown),
+    pricing: parseModelPricing(markdown),
     facts: {
       contextWindow,
       maxOutput,
@@ -215,12 +325,19 @@ export async function openaiModelFacts(
     const url = OPENAI_MODEL_PAGE(loaded.slug)
     const withPricing: ModelFacts = {
       ...loaded.page.facts,
-      pricing: loaded.page.rates
-        ? compileTokenCard(loaded.page.rates, [], {
-            url,
-            hash: loaded.page.hash,
-            extractedAt: loaded.page.extractedAt,
-          })
+      pricing: loaded.page.pricing
+        ? compileTokenCard(
+            loaded.page.pricing.rates,
+            loaded.page.pricing.tiers,
+            {
+              url,
+              hash: loaded.page.hash,
+              extractedAt: loaded.page.extractedAt,
+              ...(loaded.page.pricing.expiresAt && {
+                expiresAt: loaded.page.pricing.expiresAt,
+              }),
+            },
+          )
         : null,
     }
     const facts: ModelFacts = {
