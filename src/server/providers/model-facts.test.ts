@@ -725,6 +725,59 @@ describe('gemini pricing page', () => {
     })
   })
 
+  it('cards a per-second section, one row per model id', () => {
+    const page = `<div class="models-section">
+  <div class="heading-group"><h2 id="veo-3.1">Veo 3.1</h2>
+  <em><a href="/a"><code translate="no" dir="ltr">veo-3.1-generate-preview</code></a>,
+  <a href="/b"><code translate="no" dir="ltr">veo-3.1-fast-generate-preview</code></a>,
+  <a href="/c"><code translate="no" dir="ltr">veo-3.1-lite-generate-preview</code></a></em></div>
+  </div>
+  <table class="pricing-table"><thead><tr><th></th><th scope="col">Free Tier</th>
+  <th scope="col">Paid Tier, per second in USD</th></tr></thead><tbody>
+  <tr><td>Veo 3.1 Standard video with audio price (default)</td><td>Not available</td><td>$0.40 (720p and 1080p)<br>$0.60 (4k)</td></tr>
+  <tr><td>Veo 3.1 Fast video with audio price (default)</td><td>Not available</td><td>$0.10 (720p)<br>$0.30 (4k)</td></tr>
+  <tr><td>Veo 3.1 Lite video with audio price (default)</td><td>Not available</td><td>$0.05 (720p)<br>(4k output not supported)</td></tr>
+  <tr><td>Used to improve our products</td><td>Yes</td><td>No</td></tr>
+  </tbody></table>`
+    const rows = parseGeminiPricing(page, Date.UTC(2026, 8, 16))
+    expect(rows.get('veo-3.1-generate-preview')?.unit).toEqual({
+      // Duration and size sit under the request's untyped `parameters`.
+      quantity: { param: 'video_seconds', bound: 'usage' },
+      keys: [
+        {
+          param: 'resolution',
+          bound: 'usage',
+          values: ['720p', '1080p', '4k'],
+        },
+      ],
+      rates: { '720p': 0.4, '1080p': 0.4, '4k': 0.6 },
+    })
+    expect(rows.get('veo-3.1-fast-generate-preview')?.unit?.rates).toEqual({
+      '720p': 0.1,
+      '4k': 0.3,
+    })
+    // A size the model cannot output is not a rate.
+    expect(rows.get('veo-3.1-lite-generate-preview')?.unit?.rates).toEqual({
+      '720p': 0.05,
+    })
+  })
+
+  it('cards a per-request section flat', () => {
+    const page = `<div class="models-section">
+  <div class="heading-group"><h2 id="lyria">Lyria</h2>
+  <em><a href="/a"><code translate="no" dir="ltr">lyria-3-clip-preview</code></a>,
+  <a href="/b"><code translate="no" dir="ltr">lyria-3-pro-preview</code></a></em></div>
+  </div>
+  <table class="pricing-table"><thead><tr><th></th><th scope="col">Free Tier</th>
+  <th scope="col">Paid Tier, per request in USD</th></tr></thead><tbody>
+  <tr><td>Lyria 3 Clip Preview (30s)</td><td>Not available</td><td>$0.04 per song</td></tr>
+  <tr><td>Lyria 3 Pro Preview (Full Song)</td><td>Not available</td><td>$0.08 per song</td></tr>
+  </tbody></table>`
+    const rows = parseGeminiPricing(page, Date.UTC(2026, 8, 16))
+    expect(rows.get('lyria-3-clip-preview')?.unit).toEqual({ rates: 0.04 })
+    expect(rows.get('lyria-3-pro-preview')?.unit).toEqual({ rates: 0.08 })
+  })
+
   it('refuses a model whose bill is not only tokens', () => {
     // A row priced per image (not a restatement of a token rate), a
     // modality the row has no lever for, and a priced row with no lever.
