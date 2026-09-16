@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
+import { parseAnthropicPricing } from './anthropic-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
 import { parseGrokContextWindows } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
@@ -316,5 +317,44 @@ describe('openai pricing tables', () => {
       ),
     ).toBeNull()
     expect(parsePricingRates('# Model\n\nModel ID: `m`\n')).toBeNull()
+  })
+})
+
+describe('anthropic pricing page', () => {
+  const page = `# Pricing
+
+## Model pricing
+
+| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |
+| --- | --- | --- | --- | --- | --- |
+| Claude Fable 5.1 | $10 / MTok | $12.50 / MTok | $20 / MTok | $0.25 / MTok1 | $50 / MTok |
+| Claude Opus 4 ([retired](https://example.com/deprecations)) | $15 / MTok | $18.75 / MTok | $30 / MTok | $1.50 / MTok | $75 / MTok |
+
+## Batch pricing
+
+| Model | Batch input | Batch output |
+| --- | --- | --- |
+| Claude Fable 5.1 | $5 / MTok | $25 / MTok |
+`
+
+  it('keys rows by display name and reads every lever column', () => {
+    const rows = parseAnthropicPricing(page)
+    expect(rows.get('claude fable 5.1')).toEqual({
+      input_tokens: 10e-6,
+      cache_write_tokens: 12.5e-6,
+      cache_write_1h_tokens: 20e-6,
+      cache_read_tokens: 0.25e-6,
+      output_tokens: 50e-6,
+    })
+    // The name cell's retirement link is not part of the key.
+    expect(rows.get('claude opus 4')?.input_tokens).toBe(15e-6)
+    // Batch rates live in another section and are not levers.
+    expect(rows.size).toBe(2)
+  })
+
+  it('parses nothing when the section is gone', () => {
+    expect(parseAnthropicPricing('# Pricing\n\n## Something else\n').size).toBe(
+      0,
+    )
   })
 })

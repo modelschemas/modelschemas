@@ -61,6 +61,18 @@ export function markdownTableRows(text: string): Array<Array<string>> {
   return rows
 }
 
+/**
+ * One `## <heading>` section of a markdown document, up to the next `## `.
+ * Empty when the heading is absent.
+ */
+export function markdownSection(text: string, heading: string): string {
+  const start = text.indexOf(`\n## ${heading}`)
+  if (start < 0) return ''
+  const rest = text.slice(start + 1)
+  const end = rest.indexOf('\n## ')
+  return end < 0 ? rest : rest.slice(0, end)
+}
+
 const DOCS_TTL_SECONDS = 6 * 60 * 60
 
 /**

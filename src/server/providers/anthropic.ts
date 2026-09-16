@@ -8,6 +8,7 @@
 import { parse } from 'yaml'
 
 import type { Activity } from '#/db/schema.ts'
+import { anthropicModelPricing } from './anthropic-pricing.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import {
   fetchJson,
@@ -101,12 +102,16 @@ export function anthropicCapabilities(m: AnthropicModel): Array<string> | null {
   return out.length > 0 ? out : null
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.ANTHROPIC_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('anthropic', 'ANTHROPIC_API_KEY') }
   }
   const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION }
+  const pricing = await anthropicModelPricing(kv)
   const models: ListModelsResult['models'] = []
   let afterId: string | undefined
   do {
@@ -130,6 +135,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         maxOutput: m.max_tokens ?? null,
         modalities: m.capabilities ? { input, output: ['text'] } : null,
         capabilities: m.capabilities ? anthropicCapabilities(m) : null,
+        ...pricing(m.display_name),
       })
     }
     afterId = body.has_more ? body.last_id : undefined

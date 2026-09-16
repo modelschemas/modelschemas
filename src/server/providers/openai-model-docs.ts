@@ -14,6 +14,7 @@ import {
   assertParsed,
   cachedDocs,
   mapConcurrent,
+  markdownSection,
   markdownTableRows,
   tokenCount,
   undatedId,
@@ -79,7 +80,9 @@ export function parsePricingRates(
   markdown: string,
 ): Record<string, number> | null {
   const rates: Record<string, number> = {}
-  for (const block of section(markdown, 'Pricing').split('\n### ').slice(1)) {
+  for (const block of markdownSection(markdown, 'Pricing')
+    .split('\n### ')
+    .slice(1)) {
     const levers = PRICING_LEVERS[block.split('\n')[0]?.trim() ?? '']
     if (!levers) return null
     for (const [metric = '', price, unit] of markdownTableRows(block)) {
@@ -93,14 +96,6 @@ export function parsePricingRates(
   return Object.keys(rates).length > 0 ? rates : null
 }
 
-function section(markdown: string, heading: string): string {
-  const start = markdown.indexOf(`\n## ${heading}`)
-  if (start < 0) return ''
-  const rest = markdown.slice(start + 1)
-  const end = rest.indexOf('\n## ')
-  return end < 0 ? rest : rest.slice(0, end)
-}
-
 function listValues(block: string, label: string): Array<string> {
   const match = block.match(new RegExp(`^- ${label}: (.+)$`, 'm'))
   return match?.[1]
@@ -112,11 +107,13 @@ function listValues(block: string, label: string): Array<string> {
 export function parseModelPage(markdown: string): OpenAiModelPage | null {
   const modelId = markdown.match(/^Model ID: `([^`]+)`/m)?.[1]
   if (!modelId) return null
-  const details = section(markdown, 'Model details')
+  const details = markdownSection(markdown, 'Model details')
   const ids = new Set<string>([modelId])
   const snapshot = details.match(/^- Default snapshot: `([^`]+)`/m)?.[1]
   if (snapshot) ids.add(snapshot)
-  for (const m of section(markdown, 'Snapshots').matchAll(/^- `([^`]+)`/gm)) {
+  for (const m of markdownSection(markdown, 'Snapshots').matchAll(
+    /^- `([^`]+)`/gm,
+  )) {
     if (m[1]) ids.add(m[1])
   }
 
@@ -130,9 +127,9 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
   )
 
   const features = new Set(
-    [...section(markdown, 'Supported features').matchAll(/^- (\S+)/gm)].map(
-      (m) => m[1] ?? '',
-    ),
+    [
+      ...markdownSection(markdown, 'Supported features').matchAll(/^- (\S+)/gm),
+    ].map((m) => m[1] ?? ''),
   )
   const reasoning = /^- Reasoning token support/m.test(details)
   const capabilities: Array<string> = []
