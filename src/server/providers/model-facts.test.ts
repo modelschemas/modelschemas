@@ -9,6 +9,7 @@ import {
   pageSlugFor,
   parseModelIndex,
   parseModelPage,
+  parsePricingRates,
 } from './openai-model-docs.ts'
 
 describe('model-facts helpers', () => {
@@ -239,5 +240,81 @@ describe('openai-compatible model rows (novita / cohere vocab)', () => {
         'response_format',
       ],
     })
+  })
+})
+
+describe('openai pricing tables', () => {
+  const pricing = (body: string) =>
+    `# Model\n\nModel ID: \`m\`\n\n## Pricing\n\n${body}\n## Endpoints\n`
+
+  it('reads every token lever off the per-million tables', () => {
+    expect(
+      parsePricingRates(
+        pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $1.25 | 1M tokens |
+| Cached input | $0.125 | 1M tokens |
+| Output | $10 | 1M tokens |
+
+### Audio tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $32 | 1M tokens |
+| Output | $64 | 1M tokens |
+`),
+      ),
+    ).toEqual({
+      input_tokens: 1.25e-6,
+      cache_read_tokens: 0.125e-6,
+      output_tokens: 10e-6,
+      audio_tokens: 32e-6,
+      audio_output_tokens: 64e-6,
+    })
+  })
+
+  it('reads an embeddings page', () => {
+    expect(
+      parsePricingRates(
+        pricing(`### Embeddings
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Cost | $0.02 | 1M tokens |
+`),
+      ),
+    ).toEqual({ input_tokens: 0.02e-6 })
+  })
+
+  it('refuses a model whose bill is not only tokens', () => {
+    const perImage = `### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $5 | 1M tokens |
+
+### Image generation
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| 1024x1024 | $0.011 | image |
+`
+    expect(parsePricingRates(pricing(perImage))).toBeNull()
+  })
+
+  it('refuses an unpriced row and a page with no pricing', () => {
+    expect(
+      parsePricingRates(
+        pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | Free | 1M tokens |
+`),
+      ),
+    ).toBeNull()
+    expect(parsePricingRates('# Model\n\nModel ID: `m`\n')).toBeNull()
   })
 })

@@ -6,17 +6,20 @@
  * slug list. Only pages the listed ids resolve to are fetched (~65 of the
  * ~130 listed ids share a page), bounded-concurrency, memoised six hours.
  */
+import { compileTokenCard } from '@modelschemas/rate-card'
+
 import { tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
   cachedDocs,
   mapConcurrent,
+  markdownTableRows,
   tokenCount,
   undatedId,
 } from './model-facts.ts'
 import type { ModelFacts } from './model-facts.ts'
-import { fetchText } from './types.ts'
+import { fetchText, sha256Text } from './types.ts'
 
 export const OPENAI_MODELS_INDEX_URL =
   'https://developers.openai.com/api/docs/models.md'
@@ -36,6 +39,58 @@ export interface OpenAiModelPage {
   /** Every id the page speaks for: `Model ID`, default snapshot, snapshots. */
   ids: Array<string>
   facts: ModelFacts
+  /** Per-token USD rates by lever, or null when the page prices otherwise. */
+  rates: Record<string, number> | null
+}
+
+/**
+ * Pricing subsection → the lever each `Metric` row prices. Every other
+ * subsection (image/video generation, audio duration, a per-call tool fee)
+ * refuses the whole model: a card quoting only its token rows would
+ * understate the bill. Unknown means null, never a partial card.
+ */
+const PRICING_LEVERS: Record<string, Record<string, string>> = {
+  'Text tokens': {
+    Input: 'input_tokens',
+    'Cached input': 'cache_read_tokens',
+    Output: 'output_tokens',
+  },
+  'Audio tokens': {
+    Input: 'audio_tokens',
+    'Cached input': 'audio_cache_tokens',
+    Output: 'audio_output_tokens',
+  },
+  'Image tokens': {
+    Input: 'image_tokens',
+    'Cached input': 'image_cache_tokens',
+    Output: 'image_output_tokens',
+  },
+  Embeddings: { Cost: 'input_tokens' },
+}
+
+/** `$1.25` → 1.25; null for anything that is not a plain dollar amount. */
+function usd(cell: string | undefined): number | null {
+  const amount = cell?.match(/^\$([\d,]+(?:\.\d+)?)$/)?.[1]
+  return amount === undefined ? null : Number(amount.replace(/,/g, ''))
+}
+
+/** Per-token rates from a model page's `## Pricing` tables. */
+export function parsePricingRates(
+  markdown: string,
+): Record<string, number> | null {
+  const rates: Record<string, number> = {}
+  for (const block of section(markdown, 'Pricing').split('\n### ').slice(1)) {
+    const levers = PRICING_LEVERS[block.split('\n')[0]?.trim() ?? '']
+    if (!levers) return null
+    for (const [metric = '', price, unit] of markdownTableRows(block)) {
+      if (metric === 'Metric') continue
+      const lever = levers[metric]
+      const rate = usd(price)
+      if (!lever || rate === null || unit !== '1M tokens') return null
+      rates[lever] = rate / 1e6
+    }
+  }
+  return Object.keys(rates).length > 0 ? rates : null
 }
 
 function section(markdown: string, heading: string): string {
@@ -91,6 +146,7 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
 
   return {
     ids: [...ids],
+    rates: parsePricingRates(markdown),
     facts: {
       contextWindow,
       maxOutput,
@@ -138,11 +194,18 @@ export async function openaiModelFacts(
   const pages = await mapConcurrent(needed, 8, async (slug) => {
     try {
       const page = await cachedDocs(kv, OPENAI_MODEL_PAGE(slug), async () => {
-        const parsed = parseModelPage(await fetchText(OPENAI_MODEL_PAGE(slug)))
+        const markdown = await fetchText(OPENAI_MODEL_PAGE(slug))
+        const parsed = parseModelPage(markdown)
         if (!parsed) {
           throw new Error(`openai model page ${slug}: no Model ID`)
         }
-        return parsed
+        // The card's provenance hashes the page as served, so an unchanged
+        // page keeps the stored card (and its `extractedAt`) on re-parse.
+        return {
+          ...parsed,
+          hash: await sha256Text(markdown),
+          extractedAt: new Date().toISOString(),
+        }
       })
       return { slug, page }
     } catch {
@@ -152,12 +215,20 @@ export async function openaiModelFacts(
   const byId = new Map<string, ModelFacts>()
   for (const loaded of pages) {
     if (!loaded) continue
-    const facts: ModelFacts = {
+    const url = OPENAI_MODEL_PAGE(loaded.slug)
+    const withPricing: ModelFacts = {
       ...loaded.page.facts,
-      factSources: tagDocsFacts(
-        loaded.page.facts,
-        OPENAI_MODEL_PAGE(loaded.slug),
-      ),
+      pricing: loaded.page.rates
+        ? compileTokenCard(loaded.page.rates, [], {
+            url,
+            hash: loaded.page.hash,
+            extractedAt: loaded.page.extractedAt,
+          })
+        : null,
+    }
+    const facts: ModelFacts = {
+      ...withPricing,
+      factSources: tagDocsFacts(withPricing, url, loaded.page.hash),
     }
     for (const id of loaded.page.ids) byId.set(id, facts)
   }

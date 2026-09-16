@@ -10,7 +10,12 @@ import type { ModelInfo } from './types.ts'
 
 export type ModelFacts = Pick<
   ModelInfo,
-  'contextWindow' | 'maxOutput' | 'modalities' | 'capabilities' | 'factSources'
+  | 'contextWindow'
+  | 'maxOutput'
+  | 'modalities'
+  | 'capabilities'
+  | 'pricing'
+  | 'factSources'
 >
 
 export const NO_FACTS: ModelFacts = {
@@ -18,6 +23,7 @@ export const NO_FACTS: ModelFacts = {
   maxOutput: null,
   modalities: null,
   capabilities: null,
+  pricing: null,
 }
 
 /**
