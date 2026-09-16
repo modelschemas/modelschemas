@@ -197,6 +197,28 @@ describe('toStoredRateCard', () => {
     ).toEqual({ card: stored })
   })
 
+  it('re-reads a card whose source named a price change that has passed', async () => {
+    const stored: RateCard = {
+      ...GPT_4O,
+      source: {
+        ...GPT_4O.source,
+        extractedAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-06-01T00:00:00.000Z',
+      },
+    }
+    const reparsed: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-06-02T00:00:00.000Z' },
+    }
+    expect(
+      await storeListedPricing(reparsed, {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: reparsed })
+  })
+
   it('names invented_param vs uncompilable on refuse', async () => {
     expect(
       await storeListedPricing(mediaCard('quality'), {

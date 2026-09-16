@@ -98,6 +98,21 @@ export type StoredPricing = {
  * Value to write to `models.pricing`. Null means unknown — never a vendor
  * blob, never an all-zero OpenRouter-shaped listing.
  */
+/**
+ * A stored card stands in for a fresh one while its source text is
+ * unchanged — except past `expiresAt`, the instant the source said the
+ * price changes, where the re-read wins.
+ */
+function reusable(
+  prior: RateCard | null,
+  hash: string,
+  now: number,
+): prior is RateCard {
+  if (!prior || prior.source.hash !== hash) return false
+  const expiresAt = prior.source.expiresAt
+  return expiresAt === undefined || Date.parse(expiresAt) > now * 1000
+}
+
 export async function storeListedPricing(
   pricing: unknown,
   options: StoreRateCardOptions,
@@ -115,13 +130,13 @@ export async function storeListedPricing(
     // fix therefore lands with the next upstream edit, not before.
     const prior = parseStoredRateCard(options.existing)
     return {
-      card: prior && prior.source.hash === parsed.source.hash ? prior : parsed,
+      card: reusable(prior, parsed.source.hash, options.now) ? prior : parsed,
     }
   }
 
   const existing = parseStoredRateCard(options.existing)
   const listingHash = await contentHash(pricing)
-  if (existing && existing.source.hash === listingHash) {
+  if (reusable(existing, listingHash, options.now)) {
     if (!cardRequestParamsOk(existing, options.requestProperties)) {
       return { card: null, refused: 'invented_param' }
     }

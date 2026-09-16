@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
 import { parseAnthropicPricing } from './anthropic-pricing.ts'
+import { parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
 import { grokRateCard, parseGrokContextWindows } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
@@ -395,5 +396,94 @@ describe('grok model prices', () => {
 
   it('has no card for a model xAI does not price', async () => {
     expect(await grokRateCard({ id: 'grok-imagine-video' })).toBeNull()
+  })
+})
+
+describe('gemini pricing page', () => {
+  const section = (id: string, rows: string) => `<div class="models-section">
+  <div class="heading-group"><h2 id="${id}">Name</h2>
+  <em><a href="/gemini-api/docs/models/${id}"><code translate="no" dir="ltr">${id}</code></a></em></div>
+  </div>
+  <div><devsite-selector><section><h3 id="standard" data-text="Standard">Standard</h3><table class="pricing-table">
+  <thead><tr><th></th><th scope="col">Free Tier</th><th scope="col">Paid Tier, per 1M tokens in USD</th></tr></thead>
+  <tbody>${rows}</tbody></table></section>
+  <section><h3 id="batch" data-text="Batch">Batch</h3><table class="pricing-table"><tbody>
+  <tr><td>Input price</td><td>Not available</td><td>$0.15</td></tr>
+  </tbody></table></section></devsite-selector></div>`
+
+  const NOW = Date.UTC(2026, 8, 16)
+
+  it('reads text and audio rates off the Standard table', () => {
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-2.5-flash',
+        `<tr><td>Input price</td><td>Free of charge</td><td>$0.30 (text / image / video)<br>$1.00 (audio)</td></tr>
+         <tr><td>Output price (including thinking tokens)</td><td>Free of charge</td><td>$2.50</td></tr>
+         <tr><td>Context caching price</td><td>Not available</td><td>$0.03 (text / image / video)<br>$0.1 (audio)<br>$1.00 / 1,000,000 tokens per hour (storage price)</td></tr>
+         <tr><td>Grounding with Google Search</td><td>Free</td><td>1,500 RPD (free), then $35 / 1,000 grounded prompts</td></tr>`,
+      ),
+      NOW,
+    )
+    expect(rows.get('gemini-2.5-flash')?.base).toEqual({
+      input_tokens: 0.3e-6,
+      audio_tokens: 1e-6,
+      output_tokens: 2.5e-6,
+      cache_read_tokens: 0.03e-6,
+      audio_cache_tokens: 0.1 / 1e6,
+    })
+    // Batch is a separate tab, and cache storage is a per-hour rate.
+    expect(rows.get('gemini-2.5-flash')?.tiers).toEqual([])
+  })
+
+  it('compiles the long-prompt re-quote as a tier', () => {
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-2.5-pro',
+        `<tr><td>Input price</td><td>Free of charge</td><td>$1.25, prompts <= 200k tokens<br>$2.50, prompts > 200k tokens</td></tr>
+         <tr><td>Output price (including thinking tokens)</td><td>Free of charge</td><td>$10.00, prompts <= 200k<br>$15.00, prompts > 200k</td></tr>`,
+      ),
+      NOW,
+    )
+    expect(rows.get('gemini-2.5-pro')?.base).toEqual({
+      input_tokens: 1.25e-6,
+      output_tokens: 10e-6,
+    })
+    expect(rows.get('gemini-2.5-pro')?.tiers).toEqual([
+      {
+        minPromptTokens: 200_000,
+        rates: { input_tokens: 2.5e-6, output_tokens: 15e-6 },
+      },
+    ])
+  })
+
+  it('takes the dated price in effect and stamps its expiry', () => {
+    const page = section(
+      'gemini-3.8-flash',
+      `<tr><td>Input price</td><td>Not available</td><td>$0.75 through December 31, 2026.<br>$1.50 starting January 1, 2027.</td></tr>
+       <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$3.75 through December 31, 2026.<br>$7.50 starting January 1, 2027.</td></tr>`,
+    )
+    expect(parseGeminiPricing(page, NOW).get('gemini-3.8-flash')).toEqual({
+      base: { input_tokens: 0.75e-6, output_tokens: 3.75e-6 },
+      tiers: [],
+      expiresAt: '2027-01-01T00:00:00.000Z',
+    })
+    expect(
+      parseGeminiPricing(page, Date.UTC(2027, 5, 1)).get('gemini-3.8-flash'),
+    ).toEqual({
+      base: { input_tokens: 1.5e-6, output_tokens: 7.5e-6 },
+      tiers: [],
+    })
+  })
+
+  it('refuses a model whose bill is not only tokens', () => {
+    // A per-image output, a per-minute alternative, and a priced row this
+    // card has no lever for each refuse the whole model.
+    const perImage = `<tr><td>Output price</td><td>Not available</td><td>$12.00 (text and thinking)<br>$120.00 (images)</td></tr>`
+    const perMinute = `<tr><td>Input price</td><td>Not available</td><td>$2.00 or $0.003/min (audio)</td></tr>`
+    const otherRow = `<tr><td>Input price</td><td>Not available</td><td>$1.00</td></tr>
+       <tr><td>Image input price</td><td>Not available</td><td>$0.45</td></tr>`
+    for (const rows of [perImage, perMinute, otherRow]) {
+      expect(parseGeminiPricing(section('m', rows), NOW).size).toBe(0)
+    }
   })
 })
