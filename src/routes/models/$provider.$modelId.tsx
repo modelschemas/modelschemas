@@ -29,7 +29,12 @@ function endpointPath(endpointId: string): string {
 }
 
 interface PricingView {
-  compact: { inputPerMillion: number; outputPerMillion: number } | null
+  compact: {
+    per: string
+    inputPerMillion?: number
+    outputPerMillion?: number
+    tiered?: true
+  }
   sourceUrl: string | null
   inputs: Array<string>
   examples: Array<{ usd: number; quote: string }>
@@ -274,15 +279,19 @@ function ModelDetail() {
                         </span>
                       ) : (
                         <div className="space-y-1">
-                          {pricing.compact ? (
+                          {pricing.compact.inputPerMillion !== undefined ? (
                             <div>
                               {formatUsd(pricing.compact.inputPerMillion)} / 1M
-                              input ·{' '}
-                              {formatUsd(pricing.compact.outputPerMillion)} / 1M
-                              output
+                              input
+                              {pricing.compact.outputPerMillion !== undefined
+                                ? ` · ${formatUsd(pricing.compact.outputPerMillion)} / 1M output`
+                                : ''}
+                              {pricing.compact.tiered
+                                ? ' · base rate; long prompts re-quote'
+                                : ''}
                             </div>
                           ) : (
-                            <div>rate card</div>
+                            <div>rate card, per {pricing.compact.per}</div>
                           )}
                           {pricing.sourceUrl ? (
                             <div>

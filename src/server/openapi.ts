@@ -162,7 +162,7 @@ export const openApiDocument = {
             name: 'pricing',
             in: 'query',
             description:
-              'Set to 1 to include the full rate card on each list row. Default is a compact {inputPerMillion, outputPerMillion} projection for simple token formulas; media cards omit the projection.',
+              'Set to 1 to include the full rate card on each list row. Default is a compact summary: per-million base rates for token cards, otherwise the unit the card bills by.',
             schema: { type: 'string', enum: ['1'] },
           },
         ],
@@ -508,6 +508,10 @@ export const openApiDocument = {
                   type: 'object',
                   properties: {
                     models: { type: 'integer' },
+                    priced: {
+                      type: 'integer',
+                      description: 'Models with a stored rate card.',
+                    },
                     endpoints: { type: 'integer' },
                     schemas: { type: 'integer' },
                   },
@@ -547,10 +551,17 @@ export const openApiDocument = {
       },
       CompactPricing: {
         type: 'object',
-        required: ['inputPerMillion', 'outputPerMillion'],
+        description:
+          'List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.',
+        required: ['per'],
         properties: {
+          per: {
+            type: 'string',
+            enum: ['token', 'second', 'character', 'image', 'request', 'unit'],
+          },
           inputPerMillion: { type: 'number' },
           outputPerMillion: { type: 'number' },
+          tiered: { type: 'boolean', enum: [true] },
         },
       },
       RateCardSource: {
@@ -619,7 +630,7 @@ export const openApiDocument = {
           modalities: {},
           pricing: {
             description:
-              'Full RateCard on detail and on list rows with ?pricing=1. Compact {inputPerMillion, outputPerMillion} on list rows for simple token formulas. null when unknown or a media card on the compact list.',
+              'Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.',
             oneOf: [
               { $ref: '#/components/schemas/RateCard' },
               { $ref: '#/components/schemas/CompactPricing' },

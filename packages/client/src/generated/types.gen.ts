@@ -22,6 +22,10 @@ export type ServiceStatus = {
     lastSyncedAt?: number | null
     counts?: {
       models?: number
+      /**
+       * Models with a stored rate card.
+       */
+      priced?: number
       endpoints?: number
       schemas?: number
     }
@@ -44,9 +48,14 @@ export type ValidateResult = {
   }>
 }
 
+/**
+ * List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.
+ */
 export type CompactPricing = {
-  inputPerMillion: number
-  outputPerMillion: number
+  per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
+  inputPerMillion?: number
+  outputPerMillion?: number
+  tiered?: true
 }
 
 export type RateCardSource = {
@@ -103,7 +112,7 @@ export type Model = {
   maxOutput?: number | null
   modalities?: unknown
   /**
-   * Full RateCard on detail and on list rows with ?pricing=1. Compact {inputPerMillion, outputPerMillion} on list rows for simple token formulas. null when unknown or a media card on the compact list.
+   * Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.
    */
   pricing?: RateCard | CompactPricing | null
   capabilities?: unknown
@@ -252,7 +261,7 @@ export type ListModelsData = {
      */
     provenance?: '1'
     /**
-     * Set to 1 to include the full rate card on each list row. Default is a compact {inputPerMillion, outputPerMillion} projection for simple token formulas; media cards omit the projection.
+     * Set to 1 to include the full rate card on each list row. Default is a compact summary: per-million base rates for token cards, otherwise the unit the card bills by.
      */
     pricing?: '1'
   }

@@ -219,9 +219,13 @@ migrate-then-deploy).
 ## Releasing on npm
 
 **Breaking (0.1.x):** `models.pricing` is a RateCard or `null`, not an
-OpenRouter `{ prompt, completion, … }` blob. List rows compact simple token
-formulas to `{ inputPerMillion, outputPerMillion }`; `GET /v1/models?pricing=1`
-and model detail return the full card. Together all-zero placeholders are
+OpenRouter `{ prompt, completion, … }` blob. List rows carry a summary of
+the stored card — `{ per: 'token', inputPerMillion, outputPerMillion }` at
+the base rate (`tiered: true` when long prompts re-quote), or
+`{ per: 'second' | 'character' | 'image' | 'request' }` for a card billed
+by unit — so `null` on a list row always means no card. `GET
+/v1/models?pricing=1` and model detail return the full card, and
+`GET /v1/status` counts `priced` models per provider. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
 
 Cards come from each host's own source — the OpenRouter, Together and xAI
