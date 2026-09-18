@@ -219,10 +219,26 @@ migrate-then-deploy).
 ## Releasing on npm
 
 **Breaking (0.1.x):** `models.pricing` is a RateCard or `null`, not an
-OpenRouter `{ prompt, completion, … }` blob. List rows compact simple token
-formulas to `{ inputPerMillion, outputPerMillion }`; `GET /v1/models?pricing=1`
-and model detail return the full card. Together all-zero placeholders are
+OpenRouter `{ prompt, completion, … }` blob. List rows carry a summary of
+the stored card — `{ per: 'token', inputPerMillion, outputPerMillion }` at
+the base rate (`tiered: true` when long prompts re-quote), or
+`{ per: 'second' | 'character' | 'image' | 'request' }` for a card billed
+by unit — so `null` on a list row always means no card. `GET
+/v1/models?pricing=1` and model detail return the full card, and
+`GET /v1/status` counts `priced` models per provider. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
+
+Cards come from each host's own source — the OpenRouter, Together and xAI
+listings (`listing`), and the OpenAI, Anthropic and Gemini pricing pages
+(`docs-derived`); `factSources.pricing` says which. Token models carry
+their cache, media-token and long-prompt rates; models billed by the
+second, the minute, the character, the image or the request carry a
+`quantity × rate[size]` card instead. What a source does not state, a card
+does not guess: an unrecognised surcharge, a rate keyed on something the
+request cannot express, or an alias the pricing page never names leaves the
+model with no card rather than a partial one. A card is re-read when its
+source text changes, or once the `expiresAt` of a dated price change has
+passed.
 
 Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap):
 

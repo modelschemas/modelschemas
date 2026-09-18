@@ -10,7 +10,12 @@ import type { ModelInfo } from './types.ts'
 
 export type ModelFacts = Pick<
   ModelInfo,
-  'contextWindow' | 'maxOutput' | 'modalities' | 'capabilities' | 'factSources'
+  | 'contextWindow'
+  | 'maxOutput'
+  | 'modalities'
+  | 'capabilities'
+  | 'pricing'
+  | 'factSources'
 >
 
 export const NO_FACTS: ModelFacts = {
@@ -18,6 +23,7 @@ export const NO_FACTS: ModelFacts = {
   maxOutput: null,
   modalities: null,
   capabilities: null,
+  pricing: null,
 }
 
 /**
@@ -26,6 +32,32 @@ export const NO_FACTS: ModelFacts = {
  */
 export function undatedId(rawId: string): string {
   return rawId.replace(/-\d{4}-\d{2}-\d{2}$|-\d{8}$/, '')
+}
+
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+]
+
+/** `December 31, 2026` → that day's UTC midnight, case-insensitive. */
+export function parseDay(text: string): number | null {
+  const match = text
+    .trim()
+    .toLowerCase()
+    .match(/^([a-z]+) (\d{1,2}), (\d{4})$/)
+  const month = match?.[1] ? MONTHS.indexOf(match[1]) : -1
+  if (!match || month < 0) return null
+  return Date.UTC(Number(match[3]), month, Number(match[2]))
 }
 
 /** `1,048,576` / `500k` / `1M` → number. */
@@ -43,19 +75,52 @@ export function tokenCount(text: string | undefined): number | null {
  */
 export function markdownTableRows(text: string): Array<Array<string>> {
   const rows: Array<Array<string>> = []
+  // A cell may hold a newline ("Portrait: 720x1280\nLandscape: 1280x720"),
+  // splitting one row over two lines; join until the row closes, and give
+  // up on a line that carries no cell of its own.
+  let pending = ''
   for (const line of text.split('\n')) {
-    if (!line.startsWith('|')) continue
-    const cells = line
-      .slice(1, line.endsWith('|') ? -1 : undefined)
+    if (pending === '') {
+      if (!line.startsWith('|')) continue
+      pending = line
+    } else if (line.includes('|')) {
+      pending = `${pending} ${line}`
+    } else {
+      pending = ''
+      continue
+    }
+    if (!pending.endsWith('|')) continue
+    const cells = pending
+      .slice(1, -1)
       .split('|')
       .map((cell) => cell.trim())
+    pending = ''
     if (cells.every((cell) => /^:?-+:?$/.test(cell))) continue
     rows.push(cells)
   }
   return rows
 }
 
+/**
+ * One `## <heading>` section of a markdown document, up to the next `## `.
+ * Empty when the heading is absent.
+ */
+export function markdownSection(text: string, heading: string): string {
+  const start = text.indexOf(`\n## ${heading}`)
+  if (start < 0) return ''
+  const rest = text.slice(start + 1)
+  const end = rest.indexOf('\n## ')
+  return end < 0 ? rest : rest.slice(0, end)
+}
+
 const DOCS_TTL_SECONDS = 6 * 60 * 60
+
+/**
+ * Bumped whenever a parsed-docs shape changes. A deploy that changed the
+ * shape would otherwise read the old one back out of KV for six hours and
+ * see missing fields as missing facts.
+ */
+const DOCS_CACHE_VERSION = 'v2'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
@@ -67,7 +132,7 @@ export async function cachedDocs<T>(
   url: string,
   load: () => Promise<T>,
 ): Promise<T> {
-  const key = `docs:${url}`
+  const key = `docs:${DOCS_CACHE_VERSION}:${url}`
   if (kv) {
     const hit = await getJson<T>(kv, key)
     if (hit !== null) return hit

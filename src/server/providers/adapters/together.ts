@@ -4,8 +4,11 @@
  * Platform/admin (files, fine-tunes, endpoints, batches, rerank) classify
  * null. listModels requires TOGETHER_API_KEY; Together returns a bare array.
  */
+import { compileTokenCard } from '@modelschemas/rate-card'
+
 import type { Activity } from '#/db/schema.ts'
-import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
+import { fetchJson, fetchOpenApi, sha256Text, skippedResult } from '../types.ts'
+import type { RateCard } from '@modelschemas/rate-card'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -76,6 +79,31 @@ function asModels(body: unknown): Array<Record<string, unknown>> {
   return []
 }
 
+/**
+ * Together prices per million tokens on the listing (`{ input: 0.88,
+ * output: 0.88, hourly: 0, base: 0, finetune: 0 }`), and serves an all-zero
+ * object for models it does not quote — those are unknown, not free, so
+ * they compile to null rather than a $0 card. `hourly`/`base`/`finetune`
+ * are dedicated-endpoint and training rates, not per-request levers.
+ */
+export async function togetherRateCard(
+  pricing: unknown,
+): Promise<RateCard | null> {
+  if (!isRecord(pricing)) return null
+  const perToken = (key: string): number | null =>
+    typeof pricing[key] === 'number' ? pricing[key] / 1e6 : null
+  const rates: Record<string, number> = {}
+  const input = perToken('input')
+  const output = perToken('output')
+  if (input !== null) rates.input_tokens = input
+  if (output !== null) rates.output_tokens = output
+  return compileTokenCard(rates, [], {
+    url: TOGETHER_MODELS_URL,
+    hash: await sha256Text(JSON.stringify(pricing)),
+    extractedAt: new Date().toISOString(),
+  })
+}
+
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const key = env.TOGETHER_API_KEY
   if (!key) {
@@ -99,7 +127,8 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         typeof item.context_length === 'number' ? item.context_length : null,
       releasedAt: typeof item.created === 'number' ? item.created : null,
     }
-    if (item.pricing !== undefined) model.pricing = item.pricing
+    const card = await togetherRateCard(item.pricing)
+    if (card) model.pricing = card
     models.push(model)
   }
   return { models }

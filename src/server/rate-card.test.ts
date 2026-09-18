@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { NANO_BANANA_2 } from '../../packages/rate-card/src/fixtures/nano-banana-2.ts'
-import { compileOpenRouterPricing } from '@modelschemas/rate-card'
+import {
+  compileOpenRouterPricing,
+  compileTokenCard,
+  compileUnitCard,
+} from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { contentHash } from '#/server/kv.ts'
@@ -179,6 +183,46 @@ describe('toStoredRateCard', () => {
     ).toEqual({ card: null, refused: 'examples' })
   })
 
+  it('keeps the stored card when a re-parse reports the same source hash', async () => {
+    const stored: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-01-01T00:00:00.000Z' },
+    }
+    const reparsed: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-06-01T00:00:00.000Z' },
+    }
+    expect(
+      await storeListedPricing(reparsed, {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: stored })
+  })
+
+  it('re-reads a card whose source named a price change that has passed', async () => {
+    const stored: RateCard = {
+      ...GPT_4O,
+      source: {
+        ...GPT_4O.source,
+        extractedAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-06-01T00:00:00.000Z',
+      },
+    }
+    const reparsed: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-06-02T00:00:00.000Z' },
+    }
+    expect(
+      await storeListedPricing(reparsed, {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: reparsed })
+  })
+
   it('names invented_param vs uncompilable on refuse', async () => {
     expect(
       await storeListedPricing(mediaCard('quality'), {
@@ -199,16 +243,55 @@ describe('toStoredRateCard', () => {
 describe('projectTokenPricing', () => {
   it('projects a simple token formula to per-million rates', () => {
     expect(projectTokenPricing(GPT_4O)).toEqual({
+      per: 'token',
       inputPerMillion: 2.5,
       outputPerMillion: 10,
     })
   })
 
-  it('omits the projection for media cards', () => {
-    expect(projectTokenPricing(NANO_BANANA_2)).toBeNull()
+  it('names the unit a media card bills by', () => {
+    expect(projectTokenPricing(NANO_BANANA_2)).toEqual({ per: 'image' })
+    const perSecond = compileUnitCard(
+      { quantity: { param: 'audio_seconds', bound: 'usage' }, rates: 1e-4 },
+      GPT_4O.source,
+    )
+    if (!perSecond) throw new Error('did not compile')
+    expect(projectTokenPricing(perSecond)).toEqual({ per: 'second' })
+    const flat = compileUnitCard({ rates: 0.08 }, GPT_4O.source)
+    if (!flat) throw new Error('did not compile')
+    expect(projectTokenPricing(flat)).toEqual({ per: 'request' })
   })
 
-  it('omits the projection when a per-request fee breaks linearity', () => {
+  it('shows the base rate of a tiered card and says so', () => {
+    const card = compileTokenCard(
+      { input_tokens: 10e-6, output_tokens: 50e-6 },
+      [
+        {
+          minPromptTokens: 272_000,
+          rates: { input_tokens: 20e-6, output_tokens: 75e-6 },
+        },
+      ],
+      GPT_4O.source,
+    )
+    if (!card) throw new Error('did not compile')
+    expect(projectTokenPricing(card)).toEqual({
+      per: 'token',
+      inputPerMillion: 10,
+      outputPerMillion: 50,
+      tiered: true,
+    })
+  })
+
+  it('projects an embeddings card without an output rate', () => {
+    const card = compileTokenCard({ input_tokens: 0.02e-6 }, [], GPT_4O.source)
+    if (!card) throw new Error('did not compile')
+    expect(projectTokenPricing(card)).toEqual({
+      per: 'token',
+      inputPerMillion: 0.02,
+    })
+  })
+
+  it('drops the rates when a per-request fee breaks linearity', () => {
     const card = compileOpenRouterPricing(
       {
         prompt: '0.0000025',
@@ -219,7 +302,7 @@ describe('projectTokenPricing', () => {
     )
     expect(card).not.toBeNull()
     if (!card) return
-    expect(projectTokenPricing(card)).toBeNull()
+    expect(projectTokenPricing(card)).toEqual({ per: 'token' })
     expect(servePricing(card, 'full')).toEqual(card)
   })
 })
@@ -227,11 +310,12 @@ describe('projectTokenPricing', () => {
 describe('servePricing', () => {
   it('serves a compact projection on list and the full card on detail', () => {
     expect(servePricing(GPT_4O, 'compact')).toEqual({
+      per: 'token',
       inputPerMillion: 2.5,
       outputPerMillion: 10,
     })
     expect(servePricing(GPT_4O, 'full')).toEqual(GPT_4O)
-    expect(servePricing(NANO_BANANA_2, 'compact')).toBeNull()
+    expect(servePricing(NANO_BANANA_2, 'compact')).toEqual({ per: 'image' })
     expect(servePricing(NANO_BANANA_2, 'full')).toEqual(NANO_BANANA_2)
   })
 

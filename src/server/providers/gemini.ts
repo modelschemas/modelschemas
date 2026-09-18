@@ -5,6 +5,7 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
+import { geminiModelPricing } from './gemini-pricing.ts'
 import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
@@ -293,11 +294,15 @@ export function geminiCapabilities(
   return out.length > 0 ? out : null
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.GEMINI_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('gemini', 'GEMINI_API_KEY') }
   }
+  const pricing = await geminiModelPricing(kv)
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -326,6 +331,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         releasedAt:
           curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
           geminiIdSuffixDate(rawId),
+        ...pricing(rawId),
       })
     }
     pageToken = body.nextPageToken

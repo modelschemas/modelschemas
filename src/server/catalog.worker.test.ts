@@ -293,14 +293,15 @@ describe('catalog rate cards', () => {
     ])
   })
 
-  it('projects simple token cards on the list and omits media tables', async () => {
+  it('summarises every stored card on the list; null means no card', async () => {
     const listed = await listModelsCatalog(db, { provider: 'cat-price' })
     const byId = Object.fromEntries(listed.models.map((m) => [m.id, m]))
     expect(byId['cat-price-gpt-4o']?.pricing).toEqual({
+      per: 'token',
       inputPerMillion: 2.5,
       outputPerMillion: 10,
     })
-    expect(byId['cat-price-nano']?.pricing).toBeNull()
+    expect(byId['cat-price-nano']?.pricing).toEqual({ per: 'image' })
     expect(byId['cat-price-blob']?.pricing).toBeNull()
     expect(listed._links.self.href).toContain('pricing')
   })

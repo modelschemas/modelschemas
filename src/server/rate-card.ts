@@ -37,9 +37,18 @@ const CARD_LEVEL_LEVERS = new Set([
   'requests',
 ])
 
+/**
+ * What a list row says about a stored card. `null` on the row means no
+ * card; this means there is one. Token cards carry their per-million rates
+ * when those are linear (`tiered` marks a long-prompt re-quote above some
+ * threshold — the rates shown are the base); everything else names the
+ * unit it bills by and points at the full card.
+ */
 export type CompactPricing = {
-  inputPerMillion: number
-  outputPerMillion: number
+  per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
+  inputPerMillion?: number
+  outputPerMillion?: number
+  tiered?: true
 }
 
 export function parseStoredRateCard(value: unknown): RateCard | null {
@@ -98,6 +107,21 @@ export type StoredPricing = {
  * Value to write to `models.pricing`. Null means unknown — never a vendor
  * blob, never an all-zero OpenRouter-shaped listing.
  */
+/**
+ * A stored card stands in for a fresh one while its source text is
+ * unchanged — except past `expiresAt`, the instant the source said the
+ * price changes, where the re-read wins.
+ */
+function reusable(
+  prior: RateCard | null,
+  hash: string,
+  now: number,
+): prior is RateCard {
+  if (!prior || prior.source.hash !== hash) return false
+  const expiresAt = prior.source.expiresAt
+  return expiresAt === undefined || Date.parse(expiresAt) > now * 1000
+}
+
 export async function storeListedPricing(
   pricing: unknown,
   options: StoreRateCardOptions,
@@ -110,12 +134,18 @@ export async function storeListedPricing(
       return { card: null, refused: 'invented_param' }
     }
     if (!examplesOk(parsed)) return { card: null, refused: 'examples' }
-    return { card: parsed }
+    // Same source text ⇒ same card. Keep the stored one so a fresh
+    // `extractedAt` alone is not a price change on every poll. A parser
+    // fix therefore lands with the next upstream edit, not before.
+    const prior = parseStoredRateCard(options.existing)
+    return {
+      card: reusable(prior, parsed.source.hash, options.now) ? prior : parsed,
+    }
   }
 
   const existing = parseStoredRateCard(options.existing)
   const listingHash = await contentHash(pricing)
-  if (existing && existing.source.hash === listingHash) {
+  if (reusable(existing, listingHash, options.now)) {
     if (!cardRequestParamsOk(existing, options.requestProperties)) {
       return { card: null, refused: 'invented_param' }
     }
@@ -155,15 +185,13 @@ export function reconcilePricingSource(
   return emptySources(next) ? null : next
 }
 
-function isSimpleTokenCard(card: RateCard): boolean {
+function isTokenCard(card: RateCard): boolean {
   let hasInput = false
-  let hasOutput = false
   for (const input of Object.values(card.inputs)) {
     if (input.bound !== 'usage' || input.kind !== 'number') return false
     if (input.param === 'input_tokens') hasInput = true
-    else if (input.param === 'output_tokens') hasOutput = true
   }
-  return hasInput && hasOutput
+  return hasInput
 }
 
 function tryPrice(
@@ -180,30 +208,74 @@ function tryPrice(
 
 const LINEAR_REL_TOL = 1e-6
 
-function linear(unit: number, million: number): boolean {
+function linear(unitRate: number, count: number, total: number): boolean {
   return (
-    Math.abs(unit * 1_000_000 - million) <=
-    Math.max(1e-9, Math.abs(million) * LINEAR_REL_TOL)
+    Math.abs(unitRate * count - total) <=
+    Math.max(1e-9, Math.abs(total) * LINEAR_REL_TOL)
   )
 }
 
 /**
- * `{ inputPerMillion, outputPerMillion }` when every input is a usage-bound
- * number, `input_tokens` and `output_tokens` exist, and those two rates are
- * linear over [1, 1e6] with other levers at defaults. Null otherwise (media,
- * non-linear tiers, request fees that break linearity).
+ * Per-million rate of one lever, probed below any prompt-size tier
+ * (1 and 1,000 tokens), plus whether a million tokens still price
+ * linearly. Null when a per-request fee or the like breaks linearity.
  */
-export function projectTokenPricing(card: RateCard): CompactPricing | null {
-  if (!isSimpleTokenCard(card)) return null
-  const in1 = tryPrice(card, { input_tokens: 1, output_tokens: 0 })
-  const inM = tryPrice(card, { input_tokens: 1_000_000, output_tokens: 0 })
-  const out1 = tryPrice(card, { input_tokens: 0, output_tokens: 1 })
-  const outM = tryPrice(card, { input_tokens: 0, output_tokens: 1_000_000 })
-  if (in1 === null || inM === null || out1 === null || outM === null) {
-    return null
+function perMillion(
+  card: RateCard,
+  lever: string,
+  zeros: Record<string, number>,
+): { rate: number; tiered: boolean } | null {
+  const at1 = tryPrice(card, { ...zeros, [lever]: 1 })
+  const at1k = tryPrice(card, { ...zeros, [lever]: 1_000 })
+  const at1m = tryPrice(card, { ...zeros, [lever]: 1_000_000 })
+  if (at1 === null || at1k === null || at1m === null) return null
+  if (!linear(at1, 1_000, at1k)) return null
+  return { rate: at1 * 1_000_000, tiered: !linear(at1, 1_000_000, at1m) }
+}
+
+/** The unit a non-token card's quantity lever counts. */
+const UNIT_OF_LEVER: Record<string, CompactPricing['per']> = {
+  seconds: 'second',
+  audio_seconds: 'second',
+  video_seconds: 'second',
+  duration: 'second',
+  characters: 'character',
+  n: 'image',
+  num_images: 'image',
+  images: 'image',
+}
+
+/**
+ * List-row summary of a card. A token card gets `inputPerMillion` (and
+ * `outputPerMillion` when it prices output) at the base rate, `tiered`
+ * when a long prompt re-quotes the request; a token card whose price is
+ * not linear in either (a per-request fee) gets `per: 'token'` alone.
+ * Other cards name what they bill by, or `unit` when that is not obvious.
+ */
+export function projectTokenPricing(card: RateCard): CompactPricing {
+  if (!isTokenCard(card)) {
+    const quantity = Object.values(card.inputs).find(
+      (input) => input.kind === 'number',
+    )
+    return {
+      per: quantity ? (UNIT_OF_LEVER[quantity.param] ?? 'unit') : 'request',
+    }
   }
-  if (!linear(in1, inM) || !linear(out1, outM)) return null
-  return { inputPerMillion: inM, outputPerMillion: outM }
+  const hasOutput = Object.values(card.inputs).some(
+    (input) => input.param === 'output_tokens',
+  )
+  const zeros: Record<string, number> = hasOutput
+    ? { input_tokens: 0, output_tokens: 0 }
+    : {}
+  const input = perMillion(card, 'input_tokens', zeros)
+  const output = hasOutput ? perMillion(card, 'output_tokens', zeros) : null
+  if (input === null || (hasOutput && output === null)) return { per: 'token' }
+  return {
+    per: 'token',
+    inputPerMillion: input.rate,
+    ...(output && { outputPerMillion: output.rate }),
+    ...((input.tiered || output?.tiered) && { tiered: true as const }),
+  }
 }
 
 export function servePricing(

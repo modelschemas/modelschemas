@@ -86,9 +86,11 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
   catalogs (Grok, OpenAI, …) set `activity` on each row and
   `schemaEndpointId` pointing at the shared generation route
   (`v1/images/generations`, `images/generations`, …). `pricing` is a
-  RateCard (or null). List rows compact simple token formulas to
-  `{inputPerMillion, outputPerMillion}`; `?pricing=1` returns the full
-  card. OpenRouter-shaped vendor blobs are not served.
+  RateCard (or null when no price is stored). List rows carry a summary:
+  `{per: 'token', inputPerMillion, outputPerMillion, tiered?}` at the
+  base rate, or `{per: 'second' | 'character' | 'image' | …}` for a card
+  billed by unit; `?pricing=1` returns the full card. `/v1/status`
+  counts `priced` models per provider.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as `{endpointId}`: it aliases onto that

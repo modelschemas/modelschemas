@@ -116,16 +116,19 @@ export function listingSources(info: ModelInfo): ModelFactSources {
 export function tagDocsFacts(
   facts: Pick<
     ModelInfo,
-    'contextWindow' | 'maxOutput' | 'modalities' | 'capabilities'
+    'contextWindow' | 'maxOutput' | 'modalities' | 'capabilities' | 'pricing'
   >,
   sourceUrl: string,
+  sourceHash?: string,
 ): ModelFactSources {
   const src = (path: string): FactSource => ({
     derivation: 'docs-derived',
     sourceUrl,
+    ...(sourceHash ? { sourceHash } : {}),
     path,
   })
   const out: ModelFactSources = {}
+  if (facts.pricing != null) out.pricing = src('Pricing')
   if (facts.contextWindow != null) out.contextWindow = src('contextWindow')
   if (facts.maxOutput != null) out.maxOutput = src('maxOutput')
   if (facts.modalities != null) out.modalities = src('modalities')

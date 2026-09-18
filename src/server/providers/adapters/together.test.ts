@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import { price } from '@modelschemas/rate-card'
+
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 
-import { provider } from './together.ts'
+import { provider, togetherRateCard } from './together.ts'
 
 const SPEC_YAML = `openapi: 3.1.0
 info:
@@ -199,6 +201,30 @@ describe('together listModels', () => {
     } finally {
       globalThis.fetch = original
     }
+  })
+})
+
+describe('togetherRateCard', () => {
+  it('compiles per-million listing rates into a token card', async () => {
+    const card = await togetherRateCard({
+      hourly: 0,
+      input: 0.88,
+      output: 0.88,
+      base: 0,
+      finetune: 0,
+    })
+    if (!card) throw new Error('did not compile')
+    expect(
+      price(card, {}, { input_tokens: 1e6, output_tokens: 0 }),
+    ).toBeCloseTo(0.88, 9)
+    expect(card.source.url).toBe('https://api.together.xyz/v1/models')
+  })
+
+  it('serves no card for an all-zero or absent listing', async () => {
+    expect(
+      await togetherRateCard({ hourly: 0, input: 0, output: 0, base: 0 }),
+    ).toBeNull()
+    expect(await togetherRateCard(undefined)).toBeNull()
   })
 })
 
