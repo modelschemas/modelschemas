@@ -1,15 +1,15 @@
 /**
- * Groq — official OpenAPI spec published by Groq's Stainless-generated
- * SDKs. groq-python `.stats.yml` declares the current `openapi_spec_url`
- * (a hash-stamped YAML in GCS that updates whenever Groq ships a new API
- * revision). The hinted console URL is docs, not a spec.
+ * Groq — official OpenAPI spec bundled in Groq's Stainless-generated Python
+ * SDK: `scripts/mock` embeds it as base64+gzip `EMBEDDED_SPEC` (refreshed on
+ * every SDK codegen). `.stats.yml` stopped carrying `openapi_spec_url` on
+ * 2026-08-11. The hinted console URL is docs, not a spec.
  */
 import type { Activity } from '#/db/schema.ts'
 import {
   classifyOpenAiCompat,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
-import { fetchOpenApi, fetchText } from '../types.ts'
+import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -17,18 +17,9 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-const GROQ_STATS_URL =
-  'https://raw.githubusercontent.com/groq/groq-python/main/.stats.yml'
+const GROQ_MOCK_URL =
+  'https://raw.githubusercontent.com/groq/groq-python/main/scripts/mock'
 const GROQ_MODELS_URL = 'https://api.groq.com/openai/v1/models'
-
-async function resolveGroqSpecUrl(): Promise<string> {
-  const text = await fetchText(GROQ_STATS_URL)
-  const match = text.match(/^openapi_spec_url:\s*(.+)$/m)
-  if (!match?.[1]) {
-    throw new Error("groq .stats.yml: couldn't find openapi_spec_url")
-  }
-  return match[1].trim()
-}
 
 /**
  * Stainless paths are `/openai/v1/...` (server is `https://api.groq.com`).
@@ -43,14 +34,20 @@ function classify(path: string): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const specUrl = await resolveGroqSpecUrl()
-  const { spec, hash } = await fetchOpenApi(specUrl)
-  return {
-    specs: [spec],
-    sources: [{ url: specUrl, hash }],
-    outputStrategy: 'post-200',
-    specRevision: specUrl,
+  const script = await fetchText(GROQ_MOCK_URL)
+  const blob = script.match(/EMBEDDED_SPEC="([A-Za-z0-9+/=\s]+)"/)?.[1]
+  if (!blob) {
+    throw new Error(`groq: no EMBEDDED_SPEC in ${GROQ_MOCK_URL}`)
   }
+  let bytes: Uint8Array<ArrayBuffer>
+  try {
+    bytes = Uint8Array.from(atob(blob.replace(/\s/g, '')), (c) =>
+      c.charCodeAt(0),
+    )
+  } catch {
+    throw new Error(`groq: EMBEDDED_SPEC in ${GROQ_MOCK_URL} is not base64`)
+  }
+  return parseGzippedOpenApi(bytes, 'groq', GROQ_MOCK_URL)
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -66,7 +63,7 @@ export const provider: ProviderConfig = {
   id: 'groq',
   displayName: 'Groq',
   authEnvVar: 'GROQ_API_KEY',
-  specSourceUrl: GROQ_STATS_URL,
+  specSourceUrl: GROQ_MOCK_URL,
   modelsEndpoint: GROQ_MODELS_URL,
   defaultDerivation: 'upstream-spec',
   fetchSpec,
