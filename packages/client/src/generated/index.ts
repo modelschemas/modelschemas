@@ -2,6 +2,7 @@
 
 export {
   estimateCost,
+  extractFalPricing,
   getActivitySchemas,
   getModel,
   getProviderOpenApi,
@@ -29,6 +30,11 @@ export type {
   EstimateCostResponses,
   EstimateRequest,
   EstimateResult,
+  ExtractFalPricingData,
+  ExtractFalPricingError,
+  ExtractFalPricingErrors,
+  ExtractFalPricingResponse,
+  ExtractFalPricingResponses,
   GetActivitySchemasData,
   GetActivitySchemasError,
   GetActivitySchemasErrors,

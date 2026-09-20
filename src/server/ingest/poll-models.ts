@@ -29,7 +29,11 @@ import {
   storeListedPricing,
 } from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
-import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
+import type {
+  ModelFactSources,
+  ModelInfo,
+  ProviderConfig,
+} from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
@@ -198,6 +202,22 @@ function logRefusedCard(
   )
 }
 
+function pricingDerivation(sources: unknown): string | null {
+  if (typeof sources !== 'object' || sources === null) return null
+  const pricing = (sources as ModelFactSources).pricing
+  return pricing?.derivation ?? null
+}
+
+function restoreDocsExtractedPricing(
+  next: ModelFactSources | null,
+  previous: unknown,
+): ModelFactSources | null {
+  if (pricingDerivation(previous) !== 'docs-extracted') return next
+  const prior = previous as ModelFactSources
+  if (!prior.pricing) return next
+  return { ...(next ?? {}), pricing: prior.pricing }
+}
+
 function listingSourceUrl(provider: ProviderConfig): string {
   return (
     provider.modelsEndpoint ??
@@ -287,16 +307,22 @@ export async function pollProviderModels(
       capabilities: enriched.capabilities,
       schemaEndpointId: enriched.schemaEndpointId,
     })
-    const existingPricing = existingById.get(id)?.pricing
-    const stored = await storeListedPricing(enriched.pricing, {
-      existing: existingPricing,
-      requestProperties: bound
-        ? (properties.get(bound) ?? new Set())
-        : undefined,
-      sourceUrl: listingSourceUrl(provider),
-      now,
-    })
-    if (stored.refused) {
+    const existing = existingById.get(id)
+    const existingPricing = existing?.pricing
+    const keepExtracted =
+      raw.pricing == null &&
+      pricingDerivation(existing?.factSources) === 'docs-extracted'
+    const stored = keepExtracted
+      ? { card: parseStoredRateCard(existingPricing) }
+      : await storeListedPricing(enriched.pricing, {
+          existing: existingPricing,
+          requestProperties: bound
+            ? (properties.get(bound) ?? new Set())
+            : undefined,
+          sourceUrl: listingSourceUrl(provider),
+          now,
+        })
+    if (!keepExtracted && stored.refused) {
       logRefusedCard(
         provider.id,
         enriched.rawId,
@@ -305,15 +331,20 @@ export async function pollProviderModels(
       )
     }
     const card = stored.card
+    let factSources = reconcilePricingSource(enriched.factSources, card)
+    if (keepExtracted) {
+      factSources = restoreDocsExtractedPricing(
+        factSources,
+        existing?.factSources,
+      )
+    }
     const info: ModelInfo = {
       ...enriched,
       pricing: card,
-      factSources:
-        reconcilePricingSource(enriched.factSources, card) ?? undefined,
+      factSources: factSources ?? undefined,
     }
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
-    const existing = existingById.get(id)
 
     if (!existing) {
       await db.insert(models).values({

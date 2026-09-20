@@ -17,12 +17,16 @@
     // Fast tier: models poll. Slow tier: spec sync, sharded across four
     // firings so each shard gets its own invocation budgets — keep in
     // lockstep with SPEC_SYNC_SHARD_CRONS in src/server/ingest/sync.ts.
+    // FAL llms.txt rate-card extract is its own nightly invocation
+    // (FAL_PRICING_EXTRACT_CRON) so it does not spend the 15-min poll or
+    // FAL spec-sync shard's subrequest/CPU budget.
     "crons": [
       "*/15 * * * *",
       "0 5 * * *",
       "10 5 * * *",
       "20 5 * * *",
       "30 5 * * *",
+      "0 6 * * *",
     ],
   },
   "limits": {

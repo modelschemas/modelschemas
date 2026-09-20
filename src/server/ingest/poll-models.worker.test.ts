@@ -683,4 +683,79 @@ describe('pollProviderModels', () => {
     })
     expect(row?.pricing).toBeNull()
   })
+
+  it('keeps a docs-extracted card when the listing is silent', async () => {
+    const id = 'poll-keep-extract'
+    const deps = await freshDeps(id)
+    const card = {
+      inputs: {
+        num_images: { param: 'num_images', kind: 'number', default: 1 },
+      },
+      tables: {},
+      price: { '*': [{ var: 'num_images' }, 0.08] },
+      examples: [
+        {
+          params: {},
+          usd: 0.08,
+          quote: 'Your request will cost $0.08 per image',
+        },
+      ],
+      source: {
+        url: 'https://fal.ai/models/fal-ai/nano/llms.txt',
+        hash: 'a'.repeat(64),
+        extractedAt: '2026-09-15T00:00:00.000Z',
+      },
+    }
+    const listed = stubProvider(id, [
+      { rawId: 'fal-ai/nano', activity: 'image' },
+    ])
+    listed.specGrain = 'model'
+    await pollProviderModels(deps, listed)
+    await deps.db
+      .update(models)
+      .set({
+        pricing: card,
+        factSources: {
+          pricing: {
+            derivation: 'docs-extracted',
+            sourceUrl: card.source.url,
+            sourceHash: card.source.hash,
+          },
+        },
+      })
+      .where(eq(models.id, modelDbId(id, 'fal-ai/nano')))
+    expect(await pollProviderModels(deps, listed)).toMatchObject({
+      added: 0,
+      updated: 0,
+    })
+    const kept = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'fal-ai/nano')),
+    })
+    expect(kept?.pricing).toMatchObject({
+      inputs: { num_images: { param: 'num_images' } },
+    })
+    expect(
+      (kept?.factSources as { pricing?: { derivation: string } }).pricing
+        ?.derivation,
+    ).toBe('docs-extracted')
+
+    const replaced = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'fal-ai/nano',
+          activity: 'image',
+          pricing: { prompt: '0.0000025', completion: '0.00001' },
+        },
+      ]),
+    )
+    expect(replaced).toMatchObject({ added: 0, updated: 1 })
+    const after = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'fal-ai/nano')),
+    })
+    expect(
+      (after?.factSources as { pricing?: { derivation: string } }).pricing
+        ?.derivation,
+    ).toBe('listing')
+  })
 })

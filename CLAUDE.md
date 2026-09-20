@@ -76,10 +76,12 @@ shares `classifyAndBundle` with the sync engine). Admin sync:
 
 TanStack Start (React 19, SSR) on Cloudflare Workers via the Cloudflare vite
 plugin + `wrangler.jsonc`. Tailwind v4. Worker entry is `src/worker.ts`:
-rate-limits `/v1/*`, delegates fetch to the Start handler, and runs the two
+rate-limits `/v1/*`, delegates fetch to the Start handler, and runs the
 crons (15-min models poll + webhook drain; daily spec sync sharded across
 four 05:00–05:30 UTC firings — FAL alone in shard 0, the rest round-robin —
-so each shard gets its own invocation budgets; see `SPEC_SYNC_SHARD_CRONS`).
+so each shard gets its own invocation budgets; see `SPEC_SYNC_SHARD_CRONS`;
+FAL `llms.txt` rate-card extract at 06:00 UTC —
+`FAL_PRICING_EXTRACT_CRON`).
 
 Request path: route files in `src/routes/` (server handlers via
 `server.handlers`) → service functions in `src/server/` → drizzle/D1 +
@@ -155,6 +157,6 @@ API map: `GET /v1` (index) · `/v1/status` · `/v1/providers[/{p}/models]` ·
 `/v1/models[?activity,provider,capability,q,pricing]` · `/v1/models/{p}/{id}` ·
 `/v1/schemas/{p}[/{activity}[/{endpointId}?kind,version]]` ·
 `POST /v1/validate` · `POST /v1/estimate` · `/v1/changes` · `POST /v1/agents/register-key` ·
-`/v1/agents/me` · `/v1/subscriptions` · `POST /v1/admin/sync/{p}` ·
+`/v1/agents/me` · `/v1/subscriptions` · `POST /v1/admin/sync/{p}` · `POST /v1/admin/extract/fal` ·
 `/openapi.json` · `/llms.txt` · `/skill` · `/docs` · `/mcp` ·
 `/.well-known/agent-configuration`.
