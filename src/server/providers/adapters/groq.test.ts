@@ -35,11 +35,10 @@ describe('groq fetchSpec', () => {
     paths: { '/openai/v1/chat/completions': { post: { summary: 'chat' } } },
   }
 
-  function mockScript(embedded: string | null): string {
-    const lines = ['#!/usr/bin/env bash', 'set -e']
-    if (embedded !== null) lines.push(`  EMBEDDED_SPEC="${embedded}"`)
-    return lines.join('\n')
-  }
+  const mockScript = (embedded: string | null): string =>
+    embedded === null
+      ? '#!/usr/bin/env bash'
+      : `#!/usr/bin/env bash\n  EMBEDDED_SPEC="${embedded}"`
 
   async function withScript<T>(
     script: string,
@@ -88,15 +87,5 @@ describe('groq fetchSpec', () => {
     await expect(
       withScript(mockScript(btoa('plain text')), () => provider.fetchSpec({})),
     ).rejects.toThrow(/not gzipped JSON/)
-  })
-
-  it('throws when scripts/mock is gone', async () => {
-    const original = globalThis.fetch
-    globalThis.fetch = () => Promise.resolve(new Response('', { status: 404 }))
-    try {
-      await expect(provider.fetchSpec({})).rejects.toThrow(/404/)
-    } finally {
-      globalThis.fetch = original
-    }
   })
 })

@@ -6,12 +6,7 @@
 import type { Activity } from '#/db/schema.ts'
 import { anthropicModelPricing } from './anthropic-pricing.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
-import {
-  fetchBytes,
-  fetchJson,
-  parseGzippedOpenApi,
-  skippedResult,
-} from './types.ts'
+import { fetchJson, parseGzippedOpenApi, skippedResult } from './types.ts'
 import { headerApiKeyConnect } from './connect.ts'
 import type {
   ListModelsResult,
@@ -41,8 +36,14 @@ function classify(path: string): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const response = await fetch(ANTHROPIC_SPEC_URL)
+  if (!response.ok) {
+    throw new Error(
+      `fetch failed: ${ANTHROPIC_SPEC_URL} → ${String(response.status)} ${response.statusText}`,
+    )
+  }
   return parseGzippedOpenApi(
-    await fetchBytes(ANTHROPIC_SPEC_URL),
+    new Uint8Array(await response.arrayBuffer()),
     'anthropic',
     ANTHROPIC_SPEC_URL,
   )

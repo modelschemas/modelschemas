@@ -392,18 +392,6 @@ export async function fetchText(
   return response.text()
 }
 
-export async function fetchBytes(
-  url: string,
-): Promise<Uint8Array<ArrayBuffer>> {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(
-      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
-    )
-  }
-  return new Uint8Array(await response.arrayBuffer())
-}
-
 /**
  * Read `openapi_spec_url` out of a Stainless SDK `.stats.yml`. The file is
  * plain key-value YAML; we only need one field, so skip a full parse.

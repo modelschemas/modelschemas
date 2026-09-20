@@ -39,14 +39,9 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   if (!blob) {
     throw new Error(`groq: no EMBEDDED_SPEC in ${GROQ_MOCK_URL}`)
   }
-  let bytes: Uint8Array<ArrayBuffer>
-  try {
-    bytes = Uint8Array.from(atob(blob.replace(/\s/g, '')), (c) =>
-      c.charCodeAt(0),
-    )
-  } catch {
-    throw new Error(`groq: EMBEDDED_SPEC in ${GROQ_MOCK_URL} is not base64`)
-  }
+  const bytes = Uint8Array.from(atob(blob.replace(/\s/g, '')), (c) =>
+    c.charCodeAt(0),
+  )
   return parseGzippedOpenApi(bytes, 'groq', GROQ_MOCK_URL)
 }
 
