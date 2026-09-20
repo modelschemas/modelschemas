@@ -503,6 +503,58 @@ describe('extractFalPricing', () => {
     expect(second.cursor).toBe('fal-ai/a')
   })
 
+  it('does not leapfrog a retryable hole when a later extract succeeds', async () => {
+    const providerId = 'extract-fetchhole'
+    await seedProvider(providerId)
+    for (const rawId of ['fal-ai/a', 'fal-ai/b', 'fal-ai/c']) {
+      await seedCandidate({
+        providerId,
+        rawId,
+        properties: { num_images: { type: 'integer' } },
+      })
+    }
+    const seen: Array<string> = []
+    const first = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: (url: string) => {
+        seen.push(url)
+        if (url.includes('/fal-ai/b/')) return Promise.resolve({ status: 503 })
+        return Promise.resolve(NANO_LLMS)
+      },
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> =>
+        perImageCard(args.sourceUrl),
+    })
+    expect(first.cursor).toBe('fal-ai/a')
+    expect(first.written).toBe(2)
+    expect(first.fetchFailed).toBe(1)
+    seen.length = 0
+    const second = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchCap: 1,
+      fetchText: (url: string) => {
+        seen.push(url)
+        return Promise.resolve(NANO_LLMS)
+      },
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> =>
+        perImageCard(args.sourceUrl),
+    })
+    expect(
+      seen.map((url) =>
+        url.replace(/.*\/models\//, '').replace(/\/llms.txt$/, ''),
+      ),
+    ).toEqual(['fal-ai/b'])
+    expect(second.cursor).toBe('fal-ai/b')
+    expect(second.written).toBe(1)
+  })
+
   it('aborts after consecutive retryable fetches without saving a cursor', async () => {
     const providerId = 'extract-fetchabort'
     await seedProvider(providerId)

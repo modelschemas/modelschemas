@@ -539,6 +539,7 @@ export async function extractFalPricing(
     const start = index
     let lastProcessed: string | null = null
     let consecutiveFetchFails = 0
+    let cursorFrozen = false
     const fetchLlms = deps.fetchText ?? fetchLlmsTxt
 
     const advance = (): boolean => {
@@ -560,12 +561,13 @@ export async function extractFalPricing(
         outcome.fetchFailed++
         if (isRetryableLlmsStatus(fetched.status)) {
           consecutiveFetchFails++
+          cursorFrozen = true
           if (consecutiveFetchFails >= FAL_PRICING_FETCH_FAIL_ABORT) break
           if (advance()) break
           continue
         }
         consecutiveFetchFails = 0
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
@@ -603,14 +605,14 @@ export async function extractFalPricing(
             outcome.written++
           }
         }
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
 
       if (hashSkip) {
         outcome.hashSkipped++
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
@@ -637,7 +639,7 @@ export async function extractFalPricing(
           sourceHash: sectionHash,
           now,
         })
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
@@ -645,7 +647,7 @@ export async function extractFalPricing(
       if (extracted === null) {
         outcome.refused++
         logRefusal(providerId, candidate.rawId, 'uncompilable')
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
@@ -660,7 +662,7 @@ export async function extractFalPricing(
           sourceHash: sectionHash,
           now,
         })
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
@@ -689,7 +691,7 @@ export async function extractFalPricing(
           candidate.rawId,
           stored.refused ?? 'uncompilable',
         )
-        lastProcessed = candidate.rawId
+        if (!cursorFrozen) lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
@@ -707,13 +709,15 @@ export async function extractFalPricing(
       ) {
         outcome.written++
       }
-      lastProcessed = candidate.rawId
+      if (!cursorFrozen) lastProcessed = candidate.rawId
       if (advance()) break
     } while (outcome.fetched < fetchCap)
 
     if (lastProcessed !== null) {
       await saveCursor(deps.db, providerId, lastProcessed, now)
       outcome.cursor = lastProcessed
+    } else {
+      outcome.cursor = cursor
     }
     return outcome
   } catch (error) {
