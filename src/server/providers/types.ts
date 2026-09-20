@@ -113,10 +113,10 @@ export interface ProviderSecrets {
 
 /**
  * How one catalog fact was arrived at (issue #53). Strongest first:
- * listing → bound schema (`Derivation` rungs). `generated` schemas are
- * not walked onto catalog rows.
+ * listing → docs-extracted → bound schema (`Derivation` rungs).
+ * `generated` schemas are not walked onto catalog rows.
  */
-export type FactDerivation = Derivation | 'listing'
+export type FactDerivation = Derivation | 'listing' | 'docs-extracted'
 
 /** Provenance for one stored catalog field or capability flag. */
 export interface FactSource {

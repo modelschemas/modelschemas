@@ -6,6 +6,9 @@ import type {
   EstimateCostData,
   EstimateCostErrors,
   EstimateCostResponses,
+  ExtractFalPricingData,
+  ExtractFalPricingErrors,
+  ExtractFalPricingResponses,
   GetActivitySchemasData,
   GetActivitySchemasErrors,
   GetActivitySchemasResponses,
@@ -262,5 +265,21 @@ export const syncProvider = <ThrowOnError extends boolean = false>(
   >({
     security: [{ name: 'X-Admin-Key', type: 'apiKey' }],
     url: '/v1/admin/sync/{provider}',
+    ...options,
+  })
+
+/**
+ * Manually trigger the FAL llms.txt rate-card extract (admin only). Spec sync stays on POST /v1/admin/sync/fal.
+ */
+export const extractFalPricing = <ThrowOnError extends boolean = false>(
+  options?: Options<ExtractFalPricingData, ThrowOnError>,
+) =>
+  (options?.client ?? client).post<
+    ExtractFalPricingResponses,
+    ExtractFalPricingErrors,
+    ThrowOnError
+  >({
+    security: [{ name: 'X-Admin-Key', type: 'apiKey' }],
+    url: '/v1/admin/extract/fal',
     ...options,
   })

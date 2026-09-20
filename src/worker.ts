@@ -16,6 +16,10 @@ import { narrativeRoot, wantsJsonRoot } from '#/server/narrative.ts'
 import { enforceRateLimit } from '#/server/rate-limit.ts'
 import { pollAllProviders } from '#/server/ingest/poll-models.ts'
 import {
+  FAL_PRICING_EXTRACT_CRON,
+  extractFalPricing,
+} from '#/server/ingest/extract-fal-pricing.ts'
+import {
   SPEC_SYNC_SHARD_CRONS,
   specSyncShard,
   syncAllProviders,
@@ -119,8 +123,10 @@ export default {
   ): void {
     // The models poll runs the full registry in one invocation; the spec
     // sync is sharded across several cron firings so each shard gets its
-    // own subrequest/CPU/memory budgets (see SPEC_SYNC_SHARD_CRONS). Work
-    // inside each invocation stays sequential with per-provider isolation.
+    // own subrequest/CPU/memory budgets (see SPEC_SYNC_SHARD_CRONS). FAL
+    // rate-card extract is a later nightly cron with its own budget
+    // (FAL_PRICING_EXTRACT_CRON). Work inside each invocation stays
+    // sequential with per-provider isolation.
     if (controller.cron === MODELS_POLL_CRON) {
       ctx.waitUntil(
         pollAllProviders(syncDeps(env))
@@ -153,6 +159,14 @@ export default {
             )
           },
         ),
+      )
+      return
+    }
+    if (controller.cron === FAL_PRICING_EXTRACT_CRON) {
+      ctx.waitUntil(
+        extractFalPricing(syncDeps(env)).then((outcome) => {
+          console.log(JSON.stringify({ job: 'fal-pricing-extract', outcome }))
+        }),
       )
       return
     }

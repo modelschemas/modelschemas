@@ -55,6 +55,7 @@ describe('agent-auth provider surface', () => {
       expect(names).toContain(expected)
     }
     expect(names).not.toContain('syncProvider')
+    expect(names).not.toContain('extractFalPricing')
 
     // Read/validate capabilities are approval-free for autonomous agents.
     const getSchema = listed.capabilities.find((c) => c.name === 'getSchema')

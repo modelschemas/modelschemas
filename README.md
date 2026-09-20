@@ -131,7 +131,8 @@ Secrets live in `.env.local` (see CLAUDE.md). Pull them from Doppler:
 bun run secrets:pull     # Doppler `dev` → .env.local (strips DOPPLER_*)
 ```
 
-`ADMIN_KEY` gates `POST /v1/admin/sync/{provider}`. Useful scripts:
+`ADMIN_KEY` gates `POST /v1/admin/sync/{provider}` and
+`POST /v1/admin/extract/fal`. Useful scripts:
 `bun scripts/agent-roundtrip.ts` (agent-auth end-to-end),
 `bun scripts/client-smoke.ts` (typed client), `bun run check:client`
 (client/spec drift), `bun scripts/emit-skill.ts` (regenerate SKILL.md),
@@ -191,10 +192,13 @@ upstream spec, no service needed).
    ```
 
 Cron triggers start automatically on deploy: `*/15 * * * *` (models poll +
-webhook drain) and four spec-sync shards (`0/10/20/30 5 * * *`) — each shard
+webhook drain), four spec-sync shards (`0/10/20/30 5 * * *`) — each shard
 is its own invocation with its own subrequest/CPU budgets, FAL alone in
 shard 0, the rest of the registry round-robined across the other three
-(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`).
+(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`) — and `0 6 * * *`
+for the FAL per-endpoint `llms.txt` rate-card extract
+(`FAL_PRICING_EXTRACT_CRON`). Force a run with
+`POST /v1/admin/extract/fal`; `POST /v1/admin/sync/fal` stays spec-only.
 
 ### Continuous deploys (Workers Builds)
 

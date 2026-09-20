@@ -660,3 +660,36 @@ export type SyncProviderResponses = {
 
 export type SyncProviderResponse =
   SyncProviderResponses[keyof SyncProviderResponses]
+
+export type ExtractFalPricingData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v1/admin/extract/fal'
+}
+
+export type ExtractFalPricingErrors = {
+  /**
+   * Error
+   */
+  401: Error
+  /**
+   * Error
+   */
+  502: Error
+}
+
+export type ExtractFalPricingError =
+  ExtractFalPricingErrors[keyof ExtractFalPricingErrors]
+
+export type ExtractFalPricingResponses = {
+  /**
+   * Extract outcome.
+   */
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type ExtractFalPricingResponse =
+  ExtractFalPricingResponses[keyof ExtractFalPricingResponses]

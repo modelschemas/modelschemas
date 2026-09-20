@@ -456,6 +456,22 @@ export const openApiDocument = {
         },
       },
     },
+    '/v1/admin/extract/fal': {
+      post: {
+        operationId: 'extractFalPricing',
+        summary:
+          'Manually trigger the FAL llms.txt rate-card extract (admin only). Spec sync stays on POST /v1/admin/sync/fal.',
+        security: [{ adminKey: [] }],
+        responses: {
+          '200': {
+            description: 'Extract outcome.',
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+          '401': errorResponse,
+          '502': errorResponse,
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
