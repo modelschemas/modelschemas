@@ -24,6 +24,9 @@ export const Route = createFileRoute('/v1/admin/extract/fal')({
         if (outcome.error) {
           return jsonError(502, 'extract_failed', outcome.error)
         }
+        if (outcome.skipped) {
+          return jsonError(503, 'extract_skipped', outcome.skipped)
+        }
         return Response.json({ outcome })
       },
     },

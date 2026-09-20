@@ -17,6 +17,7 @@ import { falLlmsTxtUrl } from '../providers/fal.ts'
 import { modelDbId } from './poll-models.ts'
 import {
   extractFalPricing,
+  FAL_PRICING_FETCH_FAIL_ABORT,
   falPricingExtractCursorKey,
   pricingSection,
   pricingSectionHash,
@@ -430,5 +431,255 @@ describe('extractFalPricing', () => {
     const second = await extractFalPricing(deps)
     expect(second.extracted).toBe(1)
     expect(extracts).toBe(1)
+  })
+
+  it('skips the run when XAI_API_KEY is missing and does not move the cursor', async () => {
+    const providerId = 'extract-nokey'
+    await seedProvider(providerId)
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/nano-banana-2',
+      properties: { num_images: { type: 'integer' } },
+    })
+    const fetched: Array<string> = []
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: (url: string) => {
+        fetched.push(url)
+        return Promise.resolve(NANO_LLMS)
+      },
+    })
+    expect(outcome.skipped).toContain('XAI_API_KEY')
+    expect(outcome.fetched).toBe(0)
+    expect(fetched).toEqual([])
+    expect(outcome.cursor).toBeNull()
+    expect(
+      await getDb(env).query.cacheMeta.findFirst({
+        where: eq(cacheMeta.key, falPricingExtractCursorKey(providerId)),
+      }),
+    ).toBeUndefined()
+  })
+
+  it('does not advance the cursor on retryable llms.txt failures', async () => {
+    const providerId = 'extract-fetchfail'
+    await seedProvider(providerId)
+    for (const rawId of ['fal-ai/a', 'fal-ai/b', 'fal-ai/c']) {
+      await seedCandidate({
+        providerId,
+        rawId,
+        properties: { num_images: { type: 'integer' } },
+      })
+    }
+    const seen: Array<string> = []
+    const deps = {
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: (url: string) => {
+        seen.push(url)
+        if (url.includes('/fal-ai/a/')) return Promise.resolve(NANO_LLMS)
+        return Promise.resolve({ status: 503 })
+      },
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> =>
+        perImageCard(args.sourceUrl),
+    }
+    const first = await extractFalPricing(deps)
+    expect(first.cursor).toBe('fal-ai/a')
+    expect(first.fetchFailed).toBe(2)
+    expect(first.written).toBe(1)
+    seen.length = 0
+    const second = await extractFalPricing(deps)
+    expect(
+      seen.map((url) =>
+        url.replace(/.*\/models\//, '').replace(/\/llms.txt$/, ''),
+      )[0],
+    ).toBe('fal-ai/b')
+    expect(second.cursor).toBe('fal-ai/a')
+  })
+
+  it('aborts after consecutive retryable fetches without saving a cursor', async () => {
+    const providerId = 'extract-fetchabort'
+    await seedProvider(providerId)
+    const rawIds = Array.from(
+      { length: FAL_PRICING_FETCH_FAIL_ABORT + 2 },
+      (_, i) => `fal-ai/${String(i).padStart(2, '0')}`,
+    )
+    for (const rawId of rawIds) {
+      await seedCandidate({
+        providerId,
+        rawId,
+        properties: { num_images: { type: 'integer' } },
+      })
+    }
+    const seen: Array<string> = []
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: (url: string) => {
+        seen.push(url)
+        return Promise.resolve({ status: 503 })
+      },
+      extractCard: async () => {
+        throw new Error('extract should not run')
+      },
+    })
+    expect(outcome.fetched).toBe(FAL_PRICING_FETCH_FAIL_ABORT)
+    expect(outcome.fetchFailed).toBe(FAL_PRICING_FETCH_FAIL_ABORT)
+    expect(outcome.cursor).toBeNull()
+    expect(seen).toHaveLength(FAL_PRICING_FETCH_FAIL_ABORT)
+    expect(
+      await getDb(env).query.cacheMeta.findFirst({
+        where: eq(cacheMeta.key, falPricingExtractCursorKey(providerId)),
+      }),
+    ).toBeUndefined()
+  })
+
+  it('keeps a previous card and stamps the hash when examples are empty', async () => {
+    const providerId = 'extract-empty-ex'
+    await seedProvider(providerId)
+    const rawId = 'fal-ai/kept'
+    const previous = perImageCard(falLlmsTxtUrl(rawId))
+    const id = await seedCandidate({
+      providerId,
+      rawId,
+      properties: { num_images: { type: 'integer' } },
+      pricing: previous,
+      factSources: {
+        pricing: {
+          derivation: 'docs-extracted',
+          sourceUrl: falLlmsTxtUrl(rawId),
+          sourceHash: previous.source.hash,
+          fetchedAt: NOW,
+        },
+      },
+    })
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => ({
+        ...perImageCard(args.sourceUrl),
+        examples: [],
+      }),
+    })
+    expect(outcome.unverified).toBe(1)
+    expect(outcome.written).toBe(0)
+    const row = await getDb(env).query.models.findFirst({
+      where: eq(models.id, id),
+    })
+    expect(row?.pricing).toMatchObject({
+      inputs: { num_images: { param: 'num_images' } },
+    })
+    const sectionHash = await pricingSectionHash(pricingSection(NANO_LLMS))
+    expect(
+      (row?.factSources as { pricing?: { sourceHash: string } }).pricing
+        ?.sourceHash,
+    ).toBe(sectionHash)
+  })
+
+  it('keeps a previous card and does not stamp the hash when verifyExamples fails', async () => {
+    const providerId = 'extract-verifyfail'
+    await seedProvider(providerId)
+    const rawId = 'fal-ai/kept'
+    const previousHash = 'a'.repeat(64)
+    const previous = perImageCard(falLlmsTxtUrl(rawId))
+    const id = await seedCandidate({
+      providerId,
+      rawId,
+      properties: { num_images: { type: 'integer' } },
+      pricing: previous,
+      factSources: {
+        pricing: {
+          derivation: 'docs-extracted',
+          sourceUrl: falLlmsTxtUrl(rawId),
+          sourceHash: previousHash,
+          fetchedAt: NOW,
+        },
+      },
+    })
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => ({
+        ...perImageCard(args.sourceUrl),
+        examples: [
+          {
+            params: {},
+            usd: 999,
+            quote: 'Your request will cost $0.08 per image',
+          },
+        ],
+      }),
+    })
+    expect(outcome.refused).toBe(1)
+    expect(outcome.written).toBe(0)
+    const row = await getDb(env).query.models.findFirst({
+      where: eq(models.id, id),
+    })
+    expect((row?.pricing as RateCard | null)?.examples[0]?.usd).toBe(0.08)
+    expect(
+      (row?.factSources as { pricing?: { sourceHash: string } }).pricing
+        ?.sourceHash,
+    ).toBe(previousHash)
+  })
+
+  it('writes null over a previous card when Pricing is a stub', async () => {
+    const providerId = 'extract-stub-overwrite'
+    await seedProvider(providerId)
+    const rawId = 'fal-ai/stub'
+    const id = await seedCandidate({
+      providerId,
+      rawId,
+      properties: { prompt: { type: 'string' } },
+      pricing: perImageCard(falLlmsTxtUrl(rawId)),
+      factSources: {
+        pricing: {
+          derivation: 'docs-extracted',
+          sourceUrl: falLlmsTxtUrl(rawId),
+          sourceHash: 'a'.repeat(64),
+          fetchedAt: NOW,
+        },
+      },
+    })
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(STUB_LLMS),
+      extractCard: async () => {
+        throw new Error('extract should not run on a stub')
+      },
+    })
+    expect(outcome.refused).toBe(1)
+    expect(outcome.written).toBe(1)
+    const row = await getDb(env).query.models.findFirst({
+      where: eq(models.id, id),
+    })
+    expect(row?.pricing).toBeNull()
+    const sources = row?.factSources as {
+      pricing?: { derivation: string; sourceHash: string }
+    }
+    expect(sources.pricing?.derivation).toBe('docs-extracted')
+    expect(sources.pricing?.sourceHash).toBe(
+      await pricingSectionHash(pricingSection(STUB_LLMS)),
+    )
   })
 })

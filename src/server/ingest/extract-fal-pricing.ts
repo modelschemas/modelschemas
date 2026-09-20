@@ -27,6 +27,8 @@ export const FAL_PRICING_EXTRACT_CRON = '0 6 * * *'
 
 export const FAL_PRICING_FETCH_CAP = 200
 export const FAL_PRICING_EXTRACT_CAP = 20
+/** Consecutive 408/429/5xx/network failures before the run stops walking. */
+export const FAL_PRICING_FETCH_FAIL_ABORT = 8
 
 export const FAL_PRICING_EXTRACT_CURSOR_KEY = 'fal-pricing-extract-cursor'
 
@@ -61,6 +63,7 @@ export interface FalPricingExtractOutcome {
   hashSkipped: number
   refused: number
   unverified: number
+  fetchFailed: number
   cursor: string | null
   skipped?: string
   error?: string
@@ -76,8 +79,11 @@ export interface ExtractCardArgs {
   now: number
 }
 
+/** string body, `null` = 404, `{ status }` for HTTP/network (`0` = network). */
+export type FalLlmsFetchResult = string | null | { status: number }
+
 export interface FalPricingExtractDeps extends SyncDeps {
-  fetchText?: (url: string) => Promise<string | null>
+  fetchText?: (url: string) => Promise<FalLlmsFetchResult>
   extractCard?: (args: ExtractCardArgs) => Promise<ExtractedCard>
   fetchCap?: number
   extractCap?: number
@@ -143,14 +149,42 @@ function storedPricingHash(
   return sources?.pricing?.sourceHash ?? card?.source.hash ?? null
 }
 
-async function fetchTextOrNull(url: string): Promise<string | null> {
+export function isRetryableLlmsStatus(status: number): boolean {
+  return status === 0 || status === 408 || status === 429 || status >= 500
+}
+
+function llmsFetchOutcome(
+  result: FalLlmsFetchResult,
+): { text: string } | { status: number } {
+  if (typeof result === 'string') return { text: result }
+  if (result === null) return { status: 404 }
+  return { status: result.status }
+}
+
+async function fetchLlmsTxt(url: string): Promise<FalLlmsFetchResult> {
   try {
     const response = await fetch(url)
-    if (!response.ok) return null
+    if (!response.ok) return { status: response.status }
     return await response.text()
   } catch {
-    return null
+    return { status: 0 }
   }
+}
+
+function logFetchFailure(
+  providerId: string,
+  rawId: string,
+  status: number,
+): void {
+  console.error(
+    JSON.stringify({
+      job: 'fal-pricing-extract',
+      providerId,
+      rawId,
+      error: 'llms_txt_fetch_failed',
+      status,
+    }),
+  )
 }
 
 function chatContent(data: unknown): string | null {
@@ -472,6 +506,7 @@ export async function extractFalPricing(
     hashSkipped: 0,
     refused: 0,
     unverified: 0,
+    fetchFailed: 0,
     cursor: null,
   }
 
@@ -481,6 +516,11 @@ export async function extractFalPricing(
     (apiKey
       ? (args: ExtractCardArgs) => extractRateCardWithGrok({ ...args, apiKey })
       : null)
+
+  if (extract === null) {
+    outcome.skipped = 'XAI_API_KEY not set — skipped'
+    return outcome
+  }
 
   try {
     const all = await loadCandidates(deps.db, providerId)
@@ -498,7 +538,8 @@ export async function extractFalPricing(
     let index = resumeIndex(rawIds, cursor)
     const start = index
     let lastProcessed: string | null = null
-    const fetchLlms = deps.fetchText ?? fetchTextOrNull
+    let consecutiveFetchFails = 0
+    const fetchLlms = deps.fetchText ?? fetchLlmsTxt
 
     const advance = (): boolean => {
       index = (index + 1) % candidates.length
@@ -511,15 +552,26 @@ export async function extractFalPricing(
       if (outcome.fetched >= fetchCap) break
 
       const sourceUrl = falLlmsTxtUrl(candidate.rawId)
-      const text = await fetchLlms(sourceUrl)
+      const fetched = llmsFetchOutcome(await fetchLlms(sourceUrl))
       outcome.fetched++
 
-      if (text === null) {
+      if ('status' in fetched) {
+        logFetchFailure(providerId, candidate.rawId, fetched.status)
+        outcome.fetchFailed++
+        if (isRetryableLlmsStatus(fetched.status)) {
+          consecutiveFetchFails++
+          if (consecutiveFetchFails >= FAL_PRICING_FETCH_FAIL_ABORT) break
+          if (advance()) break
+          continue
+        }
+        consecutiveFetchFails = 0
         lastProcessed = candidate.rawId
         if (advance()) break
         continue
       }
 
+      consecutiveFetchFails = 0
+      const text = fetched.text
       const section = pricingSection(text)
       const sectionHash = await pricingSectionHash(section)
       const existingCard = parseStoredRateCard(candidate.pricing)
@@ -563,11 +615,6 @@ export async function extractFalPricing(
         continue
       }
 
-      if (extract === null) {
-        lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
       if (outcome.extracted >= extractCap) break
 
       const requestProperties = properties.get(candidate.boundId) ?? new Set()

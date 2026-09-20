@@ -7,6 +7,8 @@ import {
   FAL_PRICING_EXTRACT_CAP,
   FAL_PRICING_EXTRACT_MODEL,
   FAL_PRICING_FETCH_CAP,
+  FAL_PRICING_FETCH_FAIL_ABORT,
+  isRetryableLlmsStatus,
   extractRateCardWithGrok,
   isStubPricingSection,
   pricingSection,
@@ -142,6 +144,7 @@ describe('FAL_PRICING_EXTRACT_CRON', () => {
     expect(FAL_PRICING_EXTRACT_CRON).toBe('0 6 * * *')
     expect(FAL_PRICING_FETCH_CAP).toBe(200)
     expect(FAL_PRICING_EXTRACT_CAP).toBe(20)
+    expect(FAL_PRICING_FETCH_FAIL_ABORT).toBe(8)
     expect(FAL_PRICING_EXTRACT_MODEL).toBe('grok-4-fast')
     expect(
       (SPEC_SYNC_SHARD_CRONS as ReadonlyArray<string>).includes(
@@ -158,6 +161,18 @@ describe('FAL_PRICING_EXTRACT_CRON', () => {
     for (const cron of SPEC_SYNC_SHARD_CRONS) {
       expect(raw).toContain(`"${cron}"`)
     }
+  })
+})
+
+describe('isRetryableLlmsStatus', () => {
+  it('retries network, 408, 429, and 5xx; 404 is done', () => {
+    expect(isRetryableLlmsStatus(0)).toBe(true)
+    expect(isRetryableLlmsStatus(408)).toBe(true)
+    expect(isRetryableLlmsStatus(429)).toBe(true)
+    expect(isRetryableLlmsStatus(500)).toBe(true)
+    expect(isRetryableLlmsStatus(503)).toBe(true)
+    expect(isRetryableLlmsStatus(404)).toBe(false)
+    expect(isRetryableLlmsStatus(400)).toBe(false)
   })
 })
 
@@ -224,6 +239,64 @@ describe('extractRateCardWithGrok', () => {
     )
     try {
       await expect(extractRateCardWithGrok(args)).resolves.toBe('unverified')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('returns unverified when the card has no examples', async () => {
+    const { source: _source, ...body } = NANO_BANANA_2
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ ...body, examples: [] }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    try {
+      await expect(extractRateCardWithGrok(args)).resolves.toBe('unverified')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('returns null when verifyExamples fails', async () => {
+    const { source: _source, examples, ...body } = NANO_BANANA_2
+    const first = examples[0]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    ...body,
+                    examples: first
+                      ? [{ ...first, usd: 999 }]
+                      : [{ params: {}, usd: 999, quote: 'nope' }],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    try {
+      await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
     } finally {
       vi.unstubAllGlobals()
     }
