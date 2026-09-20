@@ -1,33 +1,22 @@
 /**
- * Anthropic — official OpenAPI spec published by Anthropic's
- * Stainless-generated SDKs. The `.stats.yml` in anthropic-sdk-typescript
- * declares the current `openapi_spec_url` (a hash-stamped YAML in GCS that
- * updates whenever Anthropic ships a new API revision) — that URL doubles
- * as our specRevision.
+ * Anthropic — official OpenAPI spec bundled in Anthropic's Stainless-generated
+ * TypeScript SDK (`scripts/mock-spec.json.gz`, refreshed on every SDK
+ * codegen). `.stats.yml` stopped carrying `openapi_spec_url` on 2026-09-03.
  */
-import { parse } from 'yaml'
-
 import type { Activity } from '#/db/schema.ts'
 import { anthropicModelPricing } from './anthropic-pricing.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
-import {
-  fetchJson,
-  fetchText,
-  resolveStainlessSpecUrl,
-  sha256Text,
-  skippedResult,
-} from './types.ts'
+import { fetchJson, parseGzippedOpenApi, skippedResult } from './types.ts'
 import { headerApiKeyConnect } from './connect.ts'
 import type {
   ListModelsResult,
-  OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from './types.ts'
 
-const ANTHROPIC_STATS_URL =
-  'https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/.stats.yml'
+export const ANTHROPIC_SPEC_URL =
+  'https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/scripts/mock-spec.json.gz'
 const ANTHROPIC_MODELS_URL = 'https://api.anthropic.com/v1/models'
 const ANTHROPIC_VERSION = '2023-06-01'
 
@@ -47,18 +36,17 @@ function classify(path: string): Activity | null {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const specUrl = await resolveStainlessSpecUrl(
-    'anthropic',
-    ANTHROPIC_STATS_URL,
-  )
-  const yamlText = await fetchText(specUrl)
-  const spec = parse(yamlText) as OpenApiDocument
-  return {
-    specs: [spec],
-    sources: [{ url: specUrl, hash: await sha256Text(yamlText) }],
-    outputStrategy: 'post-200',
-    specRevision: specUrl,
+  const response = await fetch(ANTHROPIC_SPEC_URL)
+  if (!response.ok) {
+    throw new Error(
+      `fetch failed: ${ANTHROPIC_SPEC_URL} → ${String(response.status)} ${response.statusText}`,
+    )
   }
+  return parseGzippedOpenApi(
+    new Uint8Array(await response.arrayBuffer()),
+    'anthropic',
+    ANTHROPIC_SPEC_URL,
+  )
 }
 
 interface Supported {

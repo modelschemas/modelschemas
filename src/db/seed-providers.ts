@@ -39,9 +39,8 @@ export function seedFromAdapter(provider: ProviderConfig): ProviderSeed {
  *
  * - OpenAI's seeded URL is openai-node's Castiron `openapi.transformed.yml`,
  *   which leads the public openai-openapi export.
- * - Anthropic's spec URL is not fetched directly: the seeded URL is the
- *   Stainless `.stats.yml` for the TypeScript SDK, whose `openapi_spec_url`
- *   field points at the current spec revision (resolved at sync time).
+ * - Anthropic's spec is the gzipped OpenAPI JSON bundled in the Stainless
+ *   TypeScript SDK (`scripts/mock-spec.json.gz`), gunzipped at sync time.
  * - Gemini publishes a Google Discovery document, converted to OpenAPI during
  *   sync.
  * - FAL lists per-model OpenAPI specs from its models API via the
@@ -66,9 +65,9 @@ export const providerSeeds: Array<ProviderSeed> = [
   {
     id: 'anthropic',
     displayName: 'Anthropic',
-    // Stainless .stats.yml; resolve `openapi_spec_url` at sync time.
+    // Stainless-bundled spec; gunzipped at sync time.
     specSourceUrl:
-      'https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/.stats.yml',
+      'https://raw.githubusercontent.com/anthropics/anthropic-sdk-typescript/main/scripts/mock-spec.json.gz',
     modelsEndpoint: 'https://api.anthropic.com/v1/models',
     authEnvVar: 'ANTHROPIC_API_KEY',
   },

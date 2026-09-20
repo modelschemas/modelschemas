@@ -176,7 +176,8 @@ export interface SpecSource {
   /**
    * SHA-256 hex of the document as fetched — raw bytes when the upstream
    * serves a file (reproducible with `curl <url> | shasum -a 256`),
-   * stable-stringified JSON for documents embedded in API responses (FAL).
+   * stable-stringified JSON for documents embedded in API responses (FAL),
+   * decompressed JSON for Stainless-bundled gzip specs (Anthropic, Groq).
    */
   hash: string
 }
@@ -210,7 +211,7 @@ export interface SpecFetchResult {
    *   the POST returns a queue ack)
    */
   outputStrategy: 'post-200' | 'sibling-get'
-  /** Upstream revision identifier when one exists (e.g. Anthropic's hash-stamped spec URL). */
+  /** Upstream revision identifier when one exists (e.g. the SHA-256 of a Stainless-bundled spec). */
   specRevision?: string
   /**
    * Non-fatal problems encountered while fetching/derivating the documents —
@@ -407,15 +408,40 @@ export function stainlessSpecUrlFromStats(
 }
 
 /**
- * Resolve the current spec URL from a Stainless SDK repo's `.stats.yml`
- * (a hash-stamped YAML in GCS that updates whenever the provider ships a
- * new API revision). The resolved URL doubles as the specRevision.
+ * Parse a gzipped OpenAPI JSON document bundled in a Stainless SDK repo
+ * (the mock-server spec — the real spec, now that `.stats.yml` no longer
+ * carries `openapi_spec_url`). Throws on non-gzip bytes, bad JSON, or a
+ * document without `openapi` + `paths`, so the provider stays degraded
+ * rather than serving a stale fallback. The decompressed JSON's hash is
+ * the specRevision.
  */
-export async function resolveStainlessSpecUrl(
+export async function parseGzippedOpenApi(
+  bytes: Uint8Array<ArrayBuffer>,
   providerId: string,
-  statsUrl: string,
-): Promise<string> {
-  return stainlessSpecUrlFromStats(await fetchText(statsUrl), providerId)
+  url: string,
+): Promise<SpecFetchResult> {
+  let text: string
+  let spec: OpenApiDocument | null
+  try {
+    text = await new Response(
+      new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),
+    ).text()
+    spec = JSON.parse(text) as OpenApiDocument | null
+  } catch (err) {
+    throw new Error(
+      `${providerId}: bundled spec at ${url} is not gzipped JSON (${String(err)})`,
+    )
+  }
+  if (typeof spec?.openapi !== 'string' || !spec.paths) {
+    throw new Error(`${providerId}: bundled spec at ${url} is not OpenAPI`)
+  }
+  const hash = await sha256Text(text)
+  return {
+    specs: [spec],
+    sources: [{ url, hash }],
+    outputStrategy: 'post-200',
+    specRevision: hash,
+  }
 }
 
 /** Standard skip result for providers whose secret is absent. */

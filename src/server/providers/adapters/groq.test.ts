@@ -29,40 +29,63 @@ describe('groq listModels', () => {
 })
 
 describe('groq fetchSpec', () => {
-  it('resolves the Stainless spec URL from groq-python .stats.yml', async () => {
+  const spec = {
+    openapi: '3.0.1',
+    info: { title: 'GroqCloud API' },
+    paths: { '/openai/v1/chat/completions': { post: { summary: 'chat' } } },
+  }
+
+  const mockScript = (embedded: string | null): string =>
+    embedded === null
+      ? '#!/usr/bin/env bash'
+      : `#!/usr/bin/env bash\n  EMBEDDED_SPEC="${embedded}"`
+
+  async function withScript<T>(
+    script: string,
+    run: () => Promise<T>,
+  ): Promise<T> {
     const original = globalThis.fetch
-    const specYaml = [
-      'openapi: 3.0.1',
-      'info:',
-      '  title: GroqCloud API',
-      'paths:',
-      '  /openai/v1/chat/completions:',
-      '    post:',
-      '      summary: chat',
-      '',
-    ].join('\n')
-    const specUrl =
-      'https://storage.googleapis.com/stainless-sdk-openapi-specs/groqcloud/fixture.yml'
-    globalThis.fetch = ((url: string) => {
-      const href = String(url)
-      if (href === provider.specSourceUrl) {
-        return Promise.resolve(new Response(`openapi_spec_url: ${specUrl}\n`))
-      }
-      if (href === specUrl) {
-        return Promise.resolve(new Response(specYaml))
-      }
-      return Promise.resolve(new Response('not found', { status: 404 }))
-    }) as typeof fetch
+    globalThis.fetch = ((url: string) =>
+      Promise.resolve(
+        String(url) === provider.specSourceUrl
+          ? new Response(script)
+          : new Response('not found', { status: 404 }),
+      )) as typeof fetch
     try {
-      const fetched = await provider.fetchSpec({})
-      expect(fetched.outputStrategy).toBe('post-200')
-      expect(fetched.specRevision).toBe(specUrl)
-      expect(fetched.specs).toHaveLength(1)
-      expect(fetched.specs[0]?.info?.title).toBe('GroqCloud API')
-      expect(fetched.sources[0]?.url).toBe(specUrl)
-      expect(fetched.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
+      return await run()
     } finally {
       globalThis.fetch = original
     }
+  }
+
+  async function gzipBase64(text: string): Promise<string> {
+    const bytes = new Uint8Array(
+      await new Response(
+        new Blob([text]).stream().pipeThrough(new CompressionStream('gzip')),
+      ).arrayBuffer(),
+    )
+    return btoa(String.fromCharCode(...bytes))
+  }
+
+  it('decodes the base64+gzip EMBEDDED_SPEC from scripts/mock', async () => {
+    const script = mockScript(await gzipBase64(JSON.stringify(spec)))
+    const fetched = await withScript(script, () => provider.fetchSpec({}))
+    expect(fetched.outputStrategy).toBe('post-200')
+    expect(fetched.specs[0]?.info?.title).toBe('GroqCloud API')
+    expect(fetched.sources[0]?.url).toBe(provider.specSourceUrl)
+    expect(fetched.specRevision).toMatch(/^[0-9a-f]{64}$/)
+    expect(fetched.specRevision).toBe(fetched.sources[0]?.hash)
+  })
+
+  it('throws when EMBEDDED_SPEC is missing', async () => {
+    await expect(
+      withScript(mockScript(null), () => provider.fetchSpec({})),
+    ).rejects.toThrow(/groq: no EMBEDDED_SPEC/)
+  })
+
+  it('throws when EMBEDDED_SPEC is not gzip', async () => {
+    await expect(
+      withScript(mockScript(btoa('plain text')), () => provider.fetchSpec({})),
+    ).rejects.toThrow(/not gzipped JSON/)
   })
 })
