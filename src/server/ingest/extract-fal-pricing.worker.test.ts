@@ -17,6 +17,7 @@ import { falLlmsTxtUrl } from '../providers/fal.ts'
 import { modelDbId } from './poll-models.ts'
 import {
   extractFalPricing,
+  FAL_PRICING_FETCH_CONCURRENCY,
   FAL_PRICING_FETCH_FAIL_ABORT,
   falPricingExtractCursorKey,
   pricingSection,
@@ -26,14 +27,30 @@ import type { ExtractCardArgs, ExtractedCard } from './extract-fal-pricing.ts'
 
 const NOW = 1_781_150_000
 
+/** Real nano-banana-2 text: extras beyond the base rate, so the unit-rate
+ * parser refuses it and the extract model is asked. */
 const NANO_LLMS = `# Nano Banana 2
 
 ## Pricing
 
-Your request will cost **$0.08** per image. For **$1.00**, you can run this model **12** times.
+Your request will cost **$0.08** per image. For **$1.00**, you can run this model **12** times. If web search is used, an additional $0.015 will be charged.
 
 ## API Information
 `
+
+/** The shape the unit-rate parser compiles without any model call. */
+const UNIT_LLMS = `# Unit
+
+## Pricing
+
+- **Price**: $0.04 per megapixels
+
+## API Information
+`
+
+function llmsWithRate(rate: string): string {
+  return NANO_LLMS.replace('**$0.08**', `**$${rate}**`)
+}
 
 const STUB_LLMS = `# Stub
 
@@ -168,10 +185,13 @@ describe('extractFalPricing', () => {
     expect(first).toMatchObject({
       candidates: 2,
       fetched: 2,
-      extracted: 2,
+      // Both rows share the Pricing section, so one call serves both.
+      extracted: 1,
+      deduped: 0,
       written: 2,
       hashSkipped: 0,
     })
+    expect(extractedRawIds).toHaveLength(1)
     const nano = await db.query.models.findFirst({
       where: eq(models.id, modelDbId(providerId, 'fal-ai/nano-banana-2')),
     })
@@ -318,13 +338,17 @@ describe('extractFalPricing', () => {
       },
     })
     let extracts = 0
+    const files = new Map<string, string>([
+      [falLlmsTxtUrl('fal-ai/invented'), llmsWithRate('0.09')],
+      [falLlmsTxtUrl('fal-ai/expired'), NANO_LLMS],
+    ])
     await extractFalPricing({
       db: getDb(env),
       kv: env.SCHEMA_CACHE,
       secrets: {},
       now: () => NOW,
       providerId,
-      fetchText: () => Promise.resolve(NANO_LLMS),
+      fetchText: (url: string) => Promise.resolve(files.get(url) ?? null),
       extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => {
         extracts++
         if (args.sourceUrl.includes('invented')) {
@@ -401,7 +425,12 @@ describe('extractFalPricing', () => {
   it('stops extracting at the extract cap and retries the leftover next run', async () => {
     const providerId = 'extract-cap'
     await seedProvider(providerId)
-    for (const rawId of ['fal-ai/a', 'fal-ai/b', 'fal-ai/c']) {
+    const rates = new Map([
+      ['fal-ai/a', '0.08'],
+      ['fal-ai/b', '0.09'],
+      ['fal-ai/c', '0.10'],
+    ])
+    for (const rawId of rates.keys()) {
       await seedCandidate({
         providerId,
         rawId,
@@ -417,7 +446,10 @@ describe('extractFalPricing', () => {
       providerId,
       fetchCap: 200,
       extractCap: 1,
-      fetchText: () => Promise.resolve(NANO_LLMS),
+      fetchText: (url: string) => {
+        const rawId = url.replace(/.*\/models\//, '').replace(/\/llms.txt$/, '')
+        return Promise.resolve(llmsWithRate(rates.get(rawId) ?? '0.08'))
+      },
       extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => {
         extracts++
         return perImageCard(args.sourceUrl)
@@ -433,35 +465,40 @@ describe('extractFalPricing', () => {
     expect(extracts).toBe(1)
   })
 
-  it('skips the run when XAI_API_KEY is missing and does not move the cursor', async () => {
+  it('still compiles unit rates without XAI_API_KEY and skips only leftovers', async () => {
     const providerId = 'extract-nokey'
     await seedProvider(providerId)
-    await seedCandidate({
+    const unitId = await seedCandidate({
       providerId,
-      rawId: 'fal-ai/nano-banana-2',
+      rawId: 'fal-ai/aunit',
       properties: { num_images: { type: 'integer' } },
     })
-    const fetched: Array<string> = []
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/bleftover',
+      properties: { num_images: { type: 'integer' } },
+    })
+    const files = new Map<string, string>([
+      [falLlmsTxtUrl('fal-ai/aunit'), UNIT_LLMS],
+      [falLlmsTxtUrl('fal-ai/bleftover'), NANO_LLMS],
+    ])
     const outcome = await extractFalPricing({
       db: getDb(env),
       kv: env.SCHEMA_CACHE,
       secrets: {},
       now: () => NOW,
       providerId,
-      fetchText: (url: string) => {
-        fetched.push(url)
-        return Promise.resolve(NANO_LLMS)
-      },
+      fetchText: (url: string) => Promise.resolve(files.get(url) ?? null),
     })
     expect(outcome.skipped).toContain('XAI_API_KEY')
-    expect(outcome.fetched).toBe(0)
-    expect(fetched).toEqual([])
-    expect(outcome.cursor).toBeNull()
-    expect(
-      await getDb(env).query.cacheMeta.findFirst({
-        where: eq(cacheMeta.key, falPricingExtractCursorKey(providerId)),
-      }),
-    ).toBeUndefined()
+    expect(outcome).toMatchObject({ compiled: 1, written: 1, extracted: 0 })
+    const unit = await getDb(env).query.models.findFirst({
+      where: eq(models.id, unitId),
+    })
+    expect((unit?.pricing as RateCard | null)?.examples[0]).toMatchObject({
+      params: { megapixels: 1 },
+      usd: 0.04,
+    })
   })
 
   it('does not advance the cursor on retryable llms.txt failures', async () => {
@@ -587,7 +624,10 @@ describe('extractFalPricing', () => {
     expect(outcome.fetched).toBe(FAL_PRICING_FETCH_FAIL_ABORT)
     expect(outcome.fetchFailed).toBe(FAL_PRICING_FETCH_FAIL_ABORT)
     expect(outcome.cursor).toBeNull()
-    expect(seen).toHaveLength(FAL_PRICING_FETCH_FAIL_ABORT)
+    // Fetches run a window ahead, so a few more may be in flight than the
+    // abort consumes — never more than the window.
+    expect(seen.length).toBeGreaterThanOrEqual(FAL_PRICING_FETCH_FAIL_ABORT)
+    expect(seen.length).toBeLessThanOrEqual(FAL_PRICING_FETCH_CONCURRENCY)
     expect(
       await getDb(env).query.cacheMeta.findFirst({
         where: eq(cacheMeta.key, falPricingExtractCursorKey(providerId)),
@@ -733,5 +773,129 @@ describe('extractFalPricing', () => {
     expect(sources.pricing?.sourceHash).toBe(
       await pricingSectionHash(pricingSection(STUB_LLMS)),
     )
+  })
+  it('compiles unit-rate sections without calling the model', async () => {
+    const providerId = 'extract-unit'
+    await seedProvider(providerId)
+    const id = await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/unit',
+      properties: { num_images: { type: 'integer' } },
+    })
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(UNIT_LLMS),
+      extractCard: () => {
+        throw new Error('the parser should have handled this section')
+      },
+    })
+    expect(outcome).toMatchObject({
+      compiled: 1,
+      extracted: 0,
+      written: 1,
+      refused: 0,
+    })
+    const row = await getDb(env).query.models.findFirst({
+      where: eq(models.id, id),
+    })
+    const card = row?.pricing as RateCard | null
+    expect(card?.examples[0]).toMatchObject({
+      params: { megapixels: 1 },
+      usd: 0.04,
+    })
+    expect(card?.source.hash).toBe(
+      await pricingSectionHash(pricingSection(UNIT_LLMS)),
+    )
+    expect(card?.source.url).toBe(falLlmsTxtUrl('fal-ai/unit'))
+  })
+
+  it('copies one extract onto every row sharing a Pricing hash', async () => {
+    const providerId = 'extract-dedup'
+    await seedProvider(providerId)
+    const rawIds = [
+      'fal-ai/happy-horse/a',
+      'fal-ai/happy-horse/b',
+      'fal-ai/happy-horse/c',
+    ]
+    for (const rawId of rawIds) {
+      await seedCandidate({
+        providerId,
+        rawId,
+        properties: { num_images: { type: 'integer' } },
+      })
+    }
+    let extracts = 0
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => {
+        extracts++
+        return perImageCard(args.sourceUrl)
+      },
+    })
+    expect(extracts).toBe(1)
+    expect(outcome).toMatchObject({ extracted: 1, written: 3 })
+    const hash = await pricingSectionHash(pricingSection(NANO_LLMS))
+    for (const rawId of rawIds) {
+      const row = await getDb(env).query.models.findFirst({
+        where: eq(models.id, modelDbId(providerId, rawId)),
+      })
+      const card = row?.pricing as RateCard | null
+      expect(card?.price).toEqual({ '*': [{ var: 'num_images' }, 0.08] })
+      expect(card?.source.hash).toBe(hash)
+      expect(card?.source.url).toBe(falLlmsTxtUrl(rawId))
+    }
+  })
+
+  it('reuses a card another row already stores for the same hash', async () => {
+    const providerId = 'extract-dedup-stored'
+    await seedProvider(providerId)
+    const hash = await pricingSectionHash(pricingSection(NANO_LLMS))
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/apriced',
+      properties: { num_images: { type: 'integer' } },
+      pricing: {
+        ...perImageCard(falLlmsTxtUrl('fal-ai/apriced')),
+        source: { ...dummySource(falLlmsTxtUrl('fal-ai/apriced')), hash },
+      },
+    })
+    const freshId = await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/bfresh',
+      properties: { num_images: { type: 'integer' } },
+    })
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: () => {
+        throw new Error('a stored card for this hash should have been reused')
+      },
+    })
+    expect(outcome).toMatchObject({
+      extracted: 0,
+      deduped: 1,
+      hashSkipped: 1,
+      written: 1,
+    })
+    const fresh = await getDb(env).query.models.findFirst({
+      where: eq(models.id, freshId),
+    })
+    expect((fresh?.pricing as RateCard | null)?.source).toMatchObject({
+      hash,
+      url: falLlmsTxtUrl('fal-ai/bfresh'),
+    })
   })
 })
