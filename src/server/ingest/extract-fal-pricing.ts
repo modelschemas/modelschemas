@@ -13,6 +13,7 @@ import type { RateCard } from '@modelschemas/rate-card'
 import { cacheMeta, changes, models, schemaVersions } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { falLlmsTxtUrl } from '#/server/providers/fal.ts'
+import { compileFalUnitCard, usdAmounts } from './fal-unit-rate.ts'
 import { markdownSection } from '#/server/providers/model-facts.ts'
 import { requestSchemaPropertyNames } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
@@ -22,11 +23,28 @@ import { parseStoredRateCard, storeListedPricing } from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
 import type { SyncDeps } from './sync.ts'
 
-/** Own invocation, after the 05:00–05:30 spec-sync shards. */
-export const FAL_PRICING_EXTRACT_CRON = '0 6 * * *'
+/**
+ * Own invocations, after the 05:00–05:30 spec-sync shards. Six hourly
+ * firings so the whole FAL roster fits in one calendar day within the
+ * per-invocation subrequest budget. Keep in lockstep with `wrangler.jsonc`
+ * `triggers.crons` (unit-tested).
+ */
+export const FAL_PRICING_EXTRACT_CRONS = [
+  '0 6 * * *',
+  '0 7 * * *',
+  '0 8 * * *',
+  '0 9 * * *',
+  '0 10 * * *',
+  '0 11 * * *',
+] as const
 
-export const FAL_PRICING_FETCH_CAP = 200
-export const FAL_PRICING_EXTRACT_CAP = 20
+/** ~250 llms.txt fetches + leftovers stays well under the 1000 limit. */
+export const FAL_PRICING_FETCH_CAP = 250
+export const FAL_PRICING_EXTRACT_CAP = 40
+/** llms.txt fetches in flight at once. */
+export const FAL_PRICING_FETCH_CONCURRENCY = 20
+/** Extract calls in flight at once. */
+export const FAL_PRICING_EXTRACT_CONCURRENCY = 5
 /** Consecutive 408/429/5xx/network failures before the run stops walking. */
 export const FAL_PRICING_FETCH_FAIL_ABORT = 8
 
@@ -40,8 +58,6 @@ export function falPricingExtractCursorKey(providerId = 'fal'): string {
 export const FAL_PRICING_EXTRACT_MODEL = 'grok-4-fast'
 
 const XAI_CHAT_URL = 'https://api.x.ai/v1/chat/completions'
-
-const POSITIVE_USD = /\$\s*(?:[1-9]\d*(?:\.\d+)?|0\.\d*[1-9]\d*)/
 
 const extractedBodySchema = rateCardSchema.omit({ source: true }).extend({
   expiresAt: z.iso.datetime().optional(),
@@ -58,6 +74,10 @@ export interface FalPricingExtractOutcome {
   providerId: string
   candidates: number
   fetched: number
+  /** Cards built by the unit-rate parser, no model call. */
+  compiled: number
+  /** Rows filled by copying a card already known for that section hash. */
+  deduped: number
   extracted: number
   written: number
   hashSkipped: number
@@ -98,9 +118,13 @@ export function pricingSection(llmsTxt: string): string {
   return markdownSection(llmsTxt, 'Pricing').trim()
 }
 
-/** No positive dollar amount — empty, boilerplate, or zeros. */
+/**
+ * No positive dollar amount — empty, boilerplate, or zeros. Bold and
+ * suffix-`$` spellings (`$**0.04**`, `**0.17** $`) are real prices, not
+ * stubs (issue #70).
+ */
 export function isStubPricingSection(section: string): boolean {
-  return section.length === 0 || !POSITIVE_USD.test(section)
+  return usdAmounts(section).length === 0
 }
 
 export async function pricingSectionHash(section: string): Promise<string> {
@@ -208,10 +232,10 @@ function parseJsonObject(text: string): unknown {
 const EXTRACT_SYSTEM = `You write a modelschemas RateCard from a FAL model's llms.txt Pricing section.
 Return JSON only. The card is JSONLogic over var, missing, +, -, *, /, max, min, if, ==, !=, <, <=, >, >=, and, or, ceil, floor, and lookup into named tables.
 Rules:
-- Every request-bound input.param MUST be one of the allowed request properties (or a dotted child of one). Usage-bound levers (input_tokens, output_tokens, …) are allowed when the text prices them.
-- examples must be the page's own worked numbers, each with a quote copied from the text. verifyExamples must reproduce usd within 1%. Never invent examples.
-- If the text has no worked examples, return {"unverified": true} — never a guessed card.
-- If the text is zeros, empty, or "see pricing page" boilerplate, return {"unverified": true}.
+- Every request-bound input.param MUST be one of the allowed request properties (or a dotted child of one). Usage-bound levers (input_tokens, output_tokens, seconds, megapixels, ...) are allowed when the text prices them; make a quantity the request cannot state usage-bound rather than inventing a request field.
+- A quoted unit rate IS enough. "$0.045 per second of video" is a worked number: emit one example of one unit (params {"seconds": 1}, usd 0.045) whose quote is copied verbatim from the text. "per 1000 characters" means one example of 1000 units at the quoted price.
+- Prefer the page's own worked total when it states one ("a 5 second video costs $0.70"). Every example's quote must be text copied from the section, and verifyExamples must reproduce usd within 1%.
+- If the text names no price at all, is zeros, or is "see pricing page" boilerplate, return {"unverified": true} — never a guessed card.
 - Optional top-level expiresAt (ISO datetime) when the text names a promo end.
 Do not include a source object.`
 
@@ -490,6 +514,32 @@ async function stampPricingHash(args: {
     .where(eq(models.id, args.candidate.id))
 }
 
+/** Run `fn` over `items` with at most `limit` in flight, preserving order. */
+async function mapLimit<T, TResult>(
+  items: ReadonlyArray<T>,
+  limit: number,
+  fn: (item: T) => Promise<TResult>,
+): Promise<Array<TResult>> {
+  const out = new Array<TResult>(items.length)
+  let next = 0
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      for (let i = next++; i < items.length; i = next++) {
+        out[i] = await fn(items[i] as T)
+      }
+    },
+  )
+  await Promise.all(workers)
+  return out
+}
+
+interface LeftoverGroup {
+  section: string
+  sourceUrl: string
+  rows: Array<Candidate>
+}
+
 export async function extractFalPricing(
   deps: FalPricingExtractDeps,
 ): Promise<FalPricingExtractOutcome> {
@@ -501,6 +551,8 @@ export async function extractFalPricing(
     providerId,
     candidates: 0,
     fetched: 0,
+    compiled: 0,
+    deduped: 0,
     extracted: 0,
     written: 0,
     hashSkipped: 0,
@@ -517,11 +569,6 @@ export async function extractFalPricing(
       ? (args: ExtractCardArgs) => extractRateCardWithGrok({ ...args, apiKey })
       : null)
 
-  if (extract === null) {
-    outcome.skipped = 'XAI_API_KEY not set — skipped'
-    return outcome
-  }
-
   try {
     const all = await loadCandidates(deps.db, providerId)
     const properties = await loadRequestProperties(
@@ -533,154 +580,42 @@ export async function extractFalPricing(
     outcome.candidates = candidates.length
     if (candidates.length === 0) return outcome
 
-    const rawIds = candidates.map((row) => row.rawId)
-    const cursor = await loadCursor(deps.db, providerId)
-    let index = resumeIndex(rawIds, cursor)
-    const start = index
-    let lastProcessed: string | null = null
-    let consecutiveFetchFails = 0
-    let cursorFrozen = false
-    const fetchLlms = deps.fetchText ?? fetchLlmsTxt
-
-    const advance = (): boolean => {
-      index = (index + 1) % candidates.length
-      return index === start
+    // Cards already stored against a Pricing-section hash — reused across
+    // rows in this run and across nights, so the model is never asked
+    // twice for the same text.
+    const byHash = new Map<string, RateCard>()
+    for (const row of candidates) {
+      const card = parseStoredRateCard(row.pricing)
+      // A promo card past its expiresAt must be re-read, not copied on.
+      if (!card) continue
+      const expiresAt = card.source.expiresAt
+      if (expiresAt !== undefined && Date.parse(expiresAt) <= now * 1000) {
+        continue
+      }
+      byHash.set(card.source.hash, card)
     }
 
-    do {
-      const candidate = candidates[index]
-      if (!candidate) break
-      if (outcome.fetched >= fetchCap) break
+    const requestPropertiesOf = (candidate: Candidate): ReadonlySet<string> =>
+      properties.get(candidate.boundId) ?? new Set<string>()
 
-      const sourceUrl = falLlmsTxtUrl(candidate.rawId)
-      const fetched = llmsFetchOutcome(await fetchLlms(sourceUrl))
-      outcome.fetched++
-
-      if ('status' in fetched) {
-        logFetchFailure(providerId, candidate.rawId, fetched.status)
-        outcome.fetchFailed++
-        if (isRetryableLlmsStatus(fetched.status)) {
-          consecutiveFetchFails++
-          cursorFrozen = true
-          if (consecutiveFetchFails >= FAL_PRICING_FETCH_FAIL_ABORT) break
-          if (advance()) break
-          continue
-        }
-        consecutiveFetchFails = 0
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
-
-      consecutiveFetchFails = 0
-      const text = fetched.text
-      const section = pricingSection(text)
-      const sectionHash = await pricingSectionHash(section)
-      const existingCard = parseStoredRateCard(candidate.pricing)
-      const sources = factSourcesOf(candidate.factSources)
-      const storedHash = storedPricingHash(existingCard, sources)
-      const hashSkip = shouldSkipExtract({
-        storedHash,
-        sectionHash,
-        expiresAt: existingCard?.source.expiresAt,
-        now,
-      })
-
-      if (isStubPricingSection(section)) {
-        if (hashSkip) outcome.hashSkipped++
-        else {
-          logRefusal(providerId, candidate.rawId, 'stub')
-          outcome.refused++
-          if (
-            await writePricing({
-              db: deps.db,
-              providerId,
-              candidate,
-              card: null,
-              sourceUrl,
-              sourceHash: sectionHash,
-              now,
-            })
-          ) {
-            outcome.written++
-          }
-        }
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
-
-      if (hashSkip) {
-        outcome.hashSkipped++
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
-
-      if (outcome.extracted >= extractCap) break
-
-      const requestProperties = properties.get(candidate.boundId) ?? new Set()
-      outcome.extracted++
-      const extracted = await extract({
-        pricingText: section,
-        requestProperties,
-        sourceUrl,
-        sourceHash: sectionHash,
-        now,
-      })
-
-      if (extracted === 'unverified') {
-        outcome.unverified++
-        logRefusal(providerId, candidate.rawId, 'unverified')
-        await stampPricingHash({
-          db: deps.db,
-          candidate,
-          sourceUrl,
-          sourceHash: sectionHash,
-          now,
-        })
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
-
-      if (extracted === null) {
-        outcome.refused++
-        logRefusal(providerId, candidate.rawId, 'uncompilable')
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
-
-      if (extracted.examples.length === 0) {
-        outcome.unverified++
-        logRefusal(providerId, candidate.rawId, 'unverified')
-        await stampPricingHash({
-          db: deps.db,
-          candidate,
-          sourceUrl,
-          sourceHash: sectionHash,
-          now,
-        })
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
-      }
-
+    const applyCard = async (
+      candidate: Candidate,
+      card: RateCard,
+      sourceUrl: string,
+      sectionHash: string,
+    ): Promise<void> => {
       const stamped: RateCard = {
-        ...extracted,
+        ...card,
         source: {
+          ...card.source,
           url: sourceUrl,
           hash: sectionHash,
           extractedAt: new Date(now * 1000).toISOString(),
-          ...(extracted.source.expiresAt !== undefined
-            ? { expiresAt: extracted.source.expiresAt }
-            : {}),
         },
       }
       const stored = await storeListedPricing(stamped, {
         existing: candidate.pricing,
-        requestProperties,
+        requestProperties: requestPropertiesOf(candidate),
         sourceUrl,
         now,
       })
@@ -691,11 +626,8 @@ export async function extractFalPricing(
           candidate.rawId,
           stored.refused ?? 'uncompilable',
         )
-        if (!cursorFrozen) lastProcessed = candidate.rawId
-        if (advance()) break
-        continue
+        return
       }
-
       if (
         await writePricing({
           db: deps.db,
@@ -709,16 +641,201 @@ export async function extractFalPricing(
       ) {
         outcome.written++
       }
-      if (!cursorFrozen) lastProcessed = candidate.rawId
-      if (advance()) break
-    } while (outcome.fetched < fetchCap)
+    }
 
-    if (lastProcessed !== null) {
-      await saveCursor(deps.db, providerId, lastProcessed, now)
-      outcome.cursor = lastProcessed
+    const rawIds = candidates.map((row) => row.rawId)
+    const cursor = await loadCursor(deps.db, providerId)
+    const start = resumeIndex(rawIds, cursor)
+    const order = [...candidates.slice(start), ...candidates.slice(0, start)]
+
+    // Held in an object: `mark` assigns it from a closure, where TS's
+    // control-flow analysis would otherwise keep narrowing it to null.
+    const walked: { last: string | null } = { last: null }
+    let consecutiveFetchFails = 0
+    let cursorFrozen = false
+    const fetchLlms = deps.fetchText ?? fetchLlmsTxt
+    const leftovers = new Map<string, LeftoverGroup>()
+
+    // llms.txt is pure I/O — fetch a window ahead so a shard is not 250
+    // sequential round trips. Order of processing is unchanged.
+    const buffer = new Map<number, FalLlmsFetchResult>()
+    const fetchAt = async (i: number): Promise<FalLlmsFetchResult> => {
+      const cached = buffer.get(i)
+      if (cached !== undefined) return cached
+      const width = Math.max(
+        1,
+        Math.min(FAL_PRICING_FETCH_CONCURRENCY, fetchCap - i, order.length - i),
+      )
+      const results = await Promise.all(
+        order
+          .slice(i, i + width)
+          .map((row) => fetchLlms(falLlmsTxtUrl(row.rawId))),
+      )
+      results.forEach((result, k) => buffer.set(i + k, result))
+      return results[0] as FalLlmsFetchResult
+    }
+
+    for (let i = 0; i < order.length && outcome.fetched < fetchCap; i++) {
+      const candidate = order[i] as Candidate
+      const mark = (): void => {
+        if (!cursorFrozen) walked.last = candidate.rawId
+      }
+
+      const sourceUrl = falLlmsTxtUrl(candidate.rawId)
+      const fetched = llmsFetchOutcome(await fetchAt(i))
+      outcome.fetched++
+
+      if ('status' in fetched) {
+        logFetchFailure(providerId, candidate.rawId, fetched.status)
+        outcome.fetchFailed++
+        if (isRetryableLlmsStatus(fetched.status)) {
+          consecutiveFetchFails++
+          cursorFrozen = true
+          if (consecutiveFetchFails >= FAL_PRICING_FETCH_FAIL_ABORT) break
+          continue
+        }
+        consecutiveFetchFails = 0
+        mark()
+        continue
+      }
+
+      consecutiveFetchFails = 0
+      const section = pricingSection(fetched.text)
+      const sectionHash = await pricingSectionHash(section)
+      const existingCard = parseStoredRateCard(candidate.pricing)
+      const sources = factSourcesOf(candidate.factSources)
+      if (
+        shouldSkipExtract({
+          storedHash: storedPricingHash(existingCard, sources),
+          sectionHash,
+          expiresAt: existingCard?.source.expiresAt,
+          now,
+        })
+      ) {
+        outcome.hashSkipped++
+        mark()
+        continue
+      }
+
+      if (isStubPricingSection(section)) {
+        logRefusal(providerId, candidate.rawId, 'stub')
+        outcome.refused++
+        if (
+          await writePricing({
+            db: deps.db,
+            providerId,
+            candidate,
+            card: null,
+            sourceUrl,
+            sourceHash: sectionHash,
+            now,
+          })
+        ) {
+          outcome.written++
+        }
+        mark()
+        continue
+      }
+
+      const known = byHash.get(sectionHash)
+      if (known) {
+        outcome.deduped++
+        await applyCard(candidate, known, sourceUrl, sectionHash)
+        mark()
+        continue
+      }
+
+      const compiled = compileFalUnitCard(
+        section,
+        requestPropertiesOf(candidate),
+        {
+          url: sourceUrl,
+          hash: sectionHash,
+          extractedAt: new Date(now * 1000).toISOString(),
+        },
+      )
+      if (compiled) {
+        outcome.compiled++
+        byHash.set(sectionHash, compiled)
+        await applyCard(candidate, compiled, sourceUrl, sectionHash)
+        mark()
+        continue
+      }
+
+      const group = leftovers.get(sectionHash)
+      if (group) {
+        group.rows.push(candidate)
+        mark()
+        continue
+      }
+      // The cap counts distinct sections, not rows — a row joining a
+      // section already queued is free. Stop before marking so the next
+      // shard resumes on this row.
+      if (leftovers.size >= extractCap) break
+      leftovers.set(sectionHash, { section, sourceUrl, rows: [candidate] })
+      mark()
+    }
+
+    if (walked.last !== null) {
+      await saveCursor(deps.db, providerId, walked.last, now)
+      outcome.cursor = walked.last
     } else {
       outcome.cursor = cursor
     }
+
+    // Everything the parser could not stand behind: one extract call per
+    // distinct Pricing section, then copied onto every row sharing it.
+    if (leftovers.size === 0) return outcome
+    if (extract === null) {
+      outcome.skipped = 'XAI_API_KEY not set — leftovers skipped'
+      return outcome
+    }
+
+    const groups = [...leftovers.entries()]
+    const results = await mapLimit(
+      groups,
+      FAL_PRICING_EXTRACT_CONCURRENCY,
+      async ([hash, group]) => {
+        outcome.extracted++
+        return await extract({
+          pricingText: group.section,
+          requestProperties: requestPropertiesOf(group.rows[0] as Candidate),
+          sourceUrl: group.sourceUrl,
+          sourceHash: hash,
+          now,
+        })
+      },
+    )
+
+    for (const [index, [hash, group]] of groups.entries()) {
+      const result = results[index]
+      if (result === null || result === undefined) {
+        for (const row of group.rows) {
+          outcome.refused++
+          logRefusal(providerId, row.rawId, 'uncompilable')
+        }
+        continue
+      }
+      if (result === 'unverified' || result.examples.length === 0) {
+        for (const row of group.rows) {
+          outcome.unverified++
+          logRefusal(providerId, row.rawId, 'unverified')
+          await stampPricingHash({
+            db: deps.db,
+            candidate: row,
+            sourceUrl: falLlmsTxtUrl(row.rawId),
+            sourceHash: hash,
+            now,
+          })
+        }
+        continue
+      }
+      byHash.set(hash, result)
+      for (const row of group.rows) {
+        await applyCard(row, result, falLlmsTxtUrl(row.rawId), hash)
+      }
+    }
+
     return outcome
   } catch (error) {
     outcome.error = errorMessage(error)

@@ -195,10 +195,14 @@ Cron triggers start automatically on deploy: `*/15 * * * *` (models poll +
 webhook drain), four spec-sync shards (`0/10/20/30 5 * * *`) — each shard
 is its own invocation with its own subrequest/CPU budgets, FAL alone in
 shard 0, the rest of the registry round-robined across the other three
-(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`) — and `0 6 * * *`
-for the FAL per-endpoint `llms.txt` rate-card extract
-(`FAL_PRICING_EXTRACT_CRON`). Force a run with
-`POST /v1/admin/extract/fal`; `POST /v1/admin/sync/fal` stays spec-only.
+(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`) — and six hourly
+firings `0 6-11 * * *` for the FAL per-endpoint `llms.txt` rate-card
+extract (`FAL_PRICING_EXTRACT_CRONS`), each covering ~250 endpoints so the
+whole FAL roster is walked in one calendar day. Most Pricing sections are a
+single unit rate and compile with no model call; only the multi-rate ones
+go to the extract model, once per distinct Pricing-section hash. Force one
+shard's worth with `POST /v1/admin/extract/fal`;
+`POST /v1/admin/sync/fal` stays spec-only.
 
 ### Continuous deploys (Workers Builds)
 

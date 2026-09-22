@@ -80,8 +80,8 @@ rate-limits `/v1/*`, delegates fetch to the Start handler, and runs the
 crons (15-min models poll + webhook drain; daily spec sync sharded across
 four 05:00–05:30 UTC firings — FAL alone in shard 0, the rest round-robin —
 so each shard gets its own invocation budgets; see `SPEC_SYNC_SHARD_CRONS`;
-FAL `llms.txt` rate-card extract at 06:00 UTC —
-`FAL_PRICING_EXTRACT_CRON`).
+FAL `llms.txt` rate-card extract hourly 06:00–11:00 UTC —
+`FAL_PRICING_EXTRACT_CRONS`).
 
 Request path: route files in `src/routes/` (server handlers via
 `server.handlers`) → service functions in `src/server/` → drizzle/D1 +
@@ -113,7 +113,10 @@ ones).
   at write (`src/server/rate-card.ts`), and OpenAI/Anthropic/Gemini prices
   are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
   — every parser fail-closed, a page that parses nothing throws rather than
-  nulling stored cards.
+  nulling stored cards. FAL cards come from `extract-fal-pricing.ts`:
+  `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no
+  model call, leftovers go to one extract model per distinct Pricing-section
+  hash and are copied onto every row sharing it.
 - **API** (`src/routes/v1/`): catalog, schema reads (SWR via
   `src/server/cache.ts`, ETag/304 via `http-cache.ts`), `POST /v1/validate`
   (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),

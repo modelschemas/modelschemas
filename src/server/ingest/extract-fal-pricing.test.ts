@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { NANO_BANANA_2 } from '../../../packages/rate-card/src/fixtures/nano-banana-2.ts'
 
 import {
-  FAL_PRICING_EXTRACT_CRON,
+  FAL_PRICING_EXTRACT_CRONS,
   FAL_PRICING_EXTRACT_CAP,
   FAL_PRICING_EXTRACT_MODEL,
   FAL_PRICING_FETCH_CAP,
@@ -66,6 +66,15 @@ describe('isStubPricingSection', () => {
 
   it('keeps a section that names a positive price', () => {
     expect(isStubPricingSection(pricingSection(NANO_LLMS))).toBe(false)
+  })
+
+  it('keeps bold and suffix-$ prices the old regex missed (#70)', () => {
+    expect(isStubPricingSection('- **Price**: $**0.04** per images')).toBe(
+      false,
+    )
+    expect(isStubPricingSection('- **Price**: **0.17** $ per second')).toBe(
+      false,
+    )
   })
 })
 
@@ -139,24 +148,38 @@ describe('shouldSkipExtract', () => {
   })
 })
 
-describe('FAL_PRICING_EXTRACT_CRON', () => {
-  it('is a named nightly cron after the spec-sync shards', () => {
-    expect(FAL_PRICING_EXTRACT_CRON).toBe('0 6 * * *')
-    expect(FAL_PRICING_FETCH_CAP).toBe(200)
-    expect(FAL_PRICING_EXTRACT_CAP).toBe(20)
+describe('FAL_PRICING_EXTRACT_CRONS', () => {
+  it('is six hourly daytime shards, none of them a spec-sync shard', () => {
+    expect([...FAL_PRICING_EXTRACT_CRONS]).toEqual([
+      '0 6 * * *',
+      '0 7 * * *',
+      '0 8 * * *',
+      '0 9 * * *',
+      '0 10 * * *',
+      '0 11 * * *',
+    ])
+    expect(FAL_PRICING_FETCH_CAP).toBe(250)
+    expect(FAL_PRICING_EXTRACT_CAP).toBe(40)
     expect(FAL_PRICING_FETCH_FAIL_ABORT).toBe(8)
     expect(FAL_PRICING_EXTRACT_MODEL).toBe('grok-4-fast')
+    for (const cron of FAL_PRICING_EXTRACT_CRONS) {
+      expect(
+        (SPEC_SYNC_SHARD_CRONS as ReadonlyArray<string>).includes(cron),
+      ).toBe(false)
+      expect(cron).not.toBe('*/15 * * * *')
+    }
+    // Six shards x 250 fetches covers the FAL roster in one calendar day.
     expect(
-      (SPEC_SYNC_SHARD_CRONS as ReadonlyArray<string>).includes(
-        FAL_PRICING_EXTRACT_CRON,
-      ),
-    ).toBe(false)
+      FAL_PRICING_EXTRACT_CRONS.length * FAL_PRICING_FETCH_CAP,
+    ).toBeGreaterThanOrEqual(1500)
   })
 
   it('keeps wrangler.jsonc in lockstep', async () => {
     const fs = await import('node:fs/promises')
     const raw = await fs.readFile('wrangler.jsonc', 'utf8')
-    expect(raw).toContain(`"${FAL_PRICING_EXTRACT_CRON}"`)
+    for (const cron of FAL_PRICING_EXTRACT_CRONS) {
+      expect(raw).toContain(`"${cron}"`)
+    }
     expect(raw).toContain('"*/15 * * * *"')
     for (const cron of SPEC_SYNC_SHARD_CRONS) {
       expect(raw).toContain(`"${cron}"`)
