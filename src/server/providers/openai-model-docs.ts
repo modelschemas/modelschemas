@@ -251,6 +251,25 @@ export function parseModelPricing(markdown: string): DocsPricing | null {
 
   for (const bullet of bullets) {
     if (/cache writes are billed at|promotional pricing/i.test(bullet)) continue
+    // "Cached input tokens are priced at 10% of the uncached input token
+    // rate." GPT-6 Luna and Sol restate the Cached input row. A percentage
+    // that does not match that row is a different price, so the page refuses.
+    const cacheRead = bullet.match(
+      /cached input tokens are priced at ([\d.]+)% of the uncached input token rate/i,
+    )
+    if (cacheRead?.[1]) {
+      const input = rates.input_tokens
+      const factor = Number(cacheRead[1]) / 100
+      if (input === undefined || !Number.isFinite(factor)) return null
+      const expected = input * factor
+      const cached = rates.cache_read_tokens
+      if (cached === undefined) {
+        rates.cache_read_tokens = expected
+      } else if (Math.abs(cached - expected) > Math.abs(expected) * 1e-9) {
+        return null
+      }
+      continue
+    }
     // "Prompts with >272K input tokens are priced at 2x input and 1.5x
     // output for the full request" — a whole-request re-quote of every
     // rate, which is exactly a tier.

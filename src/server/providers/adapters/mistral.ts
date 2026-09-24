@@ -8,8 +8,10 @@ import {
   mistralGenerationEndpointId,
   mistralModelActivity,
 } from '../model-meta.ts'
+import { mistralModelPricing } from '../mistral-pricing.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
+  ListModelsResult,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -59,14 +61,24 @@ export const provider: ProviderConfig = {
   modelsEndpoint: MISTRAL_MODELS_URL,
   defaultDerivation: 'upstream-spec',
   fetchSpec,
-  listModels: (env) =>
-    listOpenAiCompatibleModels({
+  listModels: async (env, kv): Promise<ListModelsResult> => {
+    const listed = await listOpenAiCompatibleModels({
       providerId: 'mistral',
       url: MISTRAL_MODELS_URL,
       env,
       envVar: 'MISTRAL_API_KEY',
       activity: mistralModelActivity,
-    }),
+    })
+    if (listed.models.length === 0) return listed
+    const pricing = await mistralModelPricing(kv)
+    return {
+      ...listed,
+      models: listed.models.map((model) => ({
+        ...model,
+        ...pricing(model.rawId),
+      })),
+    }
+  },
   classify,
   generationEndpointId: ({ rawId, activity }) =>
     mistralGenerationEndpointId(rawId, activity),

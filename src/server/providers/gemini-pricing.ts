@@ -1,9 +1,9 @@
 /**
  * Gemini prices from Google's own pricing page (issue #61). Google
  * publishes no pricing API and no markdown mirror, so this parses the
- * server-rendered page: one `models-section` per model, the model id in the
- * heading group's `<code>`, and the paid-tier column of the model's
- * "Standard" table.
+ * server-rendered page: one `models-section` per price, every model id in
+ * the heading group's `<code>` (siblings share the table), and the paid-tier
+ * column of the section's "Standard" table.
  *
  * Fail-closed: only the token rows (input / output / context caching) are
  * levers, and any priced row, qualifier or unit the parser does not
@@ -397,7 +397,6 @@ export function parseGeminiPricing(
         .slice(0, chunk.indexOf('</em>'))
         .matchAll(/<code[^>]*>([a-z0-9][a-z0-9.-]+)<\/code>/g),
     ].map(([, value = '']) => value)
-    const id = ids[0]
     // The first table of the chunk is the model's own. Its `</table>` can
     // fall outside the chunk (the last section on the page ends mid-table),
     // so `</tbody>` closes it too — but one of them must be there, or a
@@ -405,7 +404,11 @@ export function parseGeminiPricing(
     const end = ['</tbody>', '</table>']
       .map((tag) => chunk.indexOf(tag))
       .filter((at) => at >= 0)
-    if (!id || end.length === 0 || out.has(id)) continue
+    // A section can name several ids that share one Standard table
+    // (`gemini-3.1-pro-preview` and `gemini-3.1-pro-preview-customtools`).
+    // Skipping on the first id alone dropped the rest.
+    if (ids.length === 0 || end.length === 0) continue
+    if (ids.every((each) => out.has(each))) continue
     const segment = chunk.slice(0, Math.min(...end))
     // Standard rates only: Batch and Flex are separate `<section>` tabs.
     const heading = [...segment.matchAll(/<h3[^>]*data-text="([^"]*)"/g)].at(-1)
@@ -446,16 +449,19 @@ export function parseGeminiPricing(
     }
     const parsed = parseTable(segment, now)
     if (!parsed || Object.keys(parsed.base).length === 0) continue
-    out.set(id, {
+    const rates: GeminiRates = {
       base: parsed.base,
-      tiers: Object.entries(parsed.tiers).map(([min, rates]) => ({
+      tiers: Object.entries(parsed.tiers).map(([min, tierRates]) => ({
         minPromptTokens: Number(min),
-        rates: { ...parsed.base, ...rates },
+        rates: { ...parsed.base, ...tierRates },
       })),
       ...(parsed.expiresAt !== null && {
         expiresAt: new Date(parsed.expiresAt).toISOString(),
       }),
-    })
+    }
+    for (const each of ids) {
+      if (!out.has(each)) out.set(each, rates)
+    }
   }
   return out
 }

@@ -3,6 +3,53 @@ import { describe, expect, it } from 'vitest'
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 import { arkTaskActivity, byteplusProvider } from './byteplus.ts'
+import { BYTEPLUS_PRICING_URL } from './byteplus-pricing.ts'
+
+/**
+ * One standard-table row, enough for listModels to attach a card without
+ * fetching the live pricing page (that fetch races other tests' fetch stubs).
+ */
+function pricingFixtureHtml(): string {
+  const headers = [
+    'Model ID',
+    'Pricing tiers (K tokens)',
+    'Input (non-audio) (USD/M tokens)',
+    'Input (audio) (USD/M tokens)',
+    'Cache-storage (USD/M tokens/Hour)',
+    'Cache-hit input (non-audio) (USD/M tokens)',
+    'Cache-hit input (audio) (USD/M tokens)',
+    'Output (USD/M tokens)',
+  ]
+  const body = [
+    headers,
+    ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
+  ]
+  const data: Record<string, unknown> = {
+    '0': { ops: [{ insert: '*', attributes: { aceTable: 'rows cols' } }] },
+    rows: {
+      ops: body.map((_, index) => ({ insert: { id: `r${index}` } })),
+      zoneType: 'R',
+    },
+    cols: {
+      ops: headers.map((_, index) => ({ insert: { id: `c${index}` } })),
+      zoneType: 'C',
+    },
+  }
+  body.forEach((cells, row) => {
+    cells.forEach((text, column) => {
+      data[`xr${row}xc${column}`] = {
+        ops: [
+          { insert: '*', attributes: { lmkr: '1' } },
+          { insert: `${text}\n` },
+        ],
+      }
+    })
+  })
+  const router = {
+    loaderData: { page: { curDoc: { Content: JSON.stringify({ data }) } } },
+  }
+  return `<script>window._ROUTER_DATA = ${JSON.stringify(router)}</script>`
+}
 
 /**
  * Minimal stand-ins for the four `service/arkruntime/model` files fetchSpec
@@ -201,7 +248,18 @@ describe('byteplus spec generated from the Go SDK', () => {
 
 describe('byteplus curated models (no ARK_API_KEY)', () => {
   it('lists the ported @tanstack/ai-byteplus catalog with metadata', async () => {
-    const { models, skipped } = await byteplusProvider.listModels({})
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (String(url) === BYTEPLUS_PRICING_URL) {
+        return Promise.resolve(new Response(pricingFixtureHtml()))
+      }
+      return original(url, init)
+    }) as typeof fetch
+    const { models, skipped } = await byteplusProvider
+      .listModels({})
+      .finally(() => {
+        globalThis.fetch = original
+      })
     // Keyless is a supported mode, not a skip: the embedded catalog stands in.
     expect(skipped).toBeUndefined()
     // 18 chat + 7 video + 5 image + 2 speech.
@@ -320,10 +378,15 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
     const original = globalThis.fetch
     const calls: Array<{ url: string; auth: string | null }> = []
     globalThis.fetch = ((url: string, init?: RequestInit) => {
+      const href = String(url)
       calls.push({
-        url: String(url),
+        url: href,
         auth: new Headers(init?.headers).get('authorization'),
       })
+      if (href === BYTEPLUS_PRICING_URL) {
+        return Promise.resolve(new Response(pricingFixtureHtml()))
+      }
+      if (!href.includes('/api/v3/models')) return original(url, init)
       return Promise.resolve(new Response(JSON.stringify(body)))
     }) as typeof fetch
     return run()
@@ -337,10 +400,11 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
     const { result, calls } = await withStubbedFetch(ARK_PAGE, () =>
       byteplusProvider.listModels({ ARK_API_KEY: 'ark-test' }),
     )
-    expect(calls[0]?.url).toBe(
+    const ark = calls.find((call) => call.url.includes('/api/v3/models'))
+    expect(ark?.url).toBe(
       'https://ark.ap-southeast.bytepluses.com/api/v3/models',
     )
-    expect(calls[0]?.auth).toBe('Bearer ark-test')
+    expect(ark?.auth).toBe('Bearer ark-test')
 
     const seed = result.models.find((m) => m.rawId === 'seed-2-0-lite-260428')
     expect(seed?.activity).toBe('chat')
