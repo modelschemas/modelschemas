@@ -4,6 +4,10 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import {
+  mistralGenerationEndpointId,
+  mistralModelActivity,
+} from '../model-meta.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ProviderConfig,
@@ -61,6 +65,9 @@ export const provider: ProviderConfig = {
       url: MISTRAL_MODELS_URL,
       env,
       envVar: 'MISTRAL_API_KEY',
+      activity: mistralModelActivity,
     }),
   classify,
+  generationEndpointId: ({ rawId, activity }) =>
+    mistralGenerationEndpointId(rawId, activity),
 }

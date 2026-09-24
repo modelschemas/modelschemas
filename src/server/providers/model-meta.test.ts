@@ -8,6 +8,10 @@ import {
   geminiGenerationEndpointId,
   grokGenerationEndpointId,
   grokModelActivity,
+  groqGenerationEndpointId,
+  groqModelActivity,
+  mistralGenerationEndpointId,
+  mistralModelActivity,
   openaiGenerationEndpointId,
   openaiModelActivity,
   openrouterGenerationEndpointId,
@@ -164,5 +168,77 @@ describe('generation endpoint ids', () => {
     expect(byteplusGenerationEndpointId('seed-asr', 'audio')).toBe(
       'auc/bigmodel/recognize/flash',
     )
+  })
+})
+
+describe('groq model meta', () => {
+  it('reads activity from output_modalities and splits audio routes', () => {
+    const tts = {
+      id: 'canopylabs/orpheus-v1-english',
+      output_modalities: ['speech'],
+    }
+    const stt = { id: 'whisper-large-v3', output_modalities: ['transcription'] }
+    const chat = { id: 'allam-2-7b', output_modalities: ['text'] }
+    expect(groqModelActivity(tts)).toBe('audio')
+    expect(groqModelActivity(stt)).toBe('audio')
+    expect(groqModelActivity(chat)).toBe('chat')
+    expect(
+      groqModelActivity({ id: 'meta-llama/llama-prompt-guard-2-22m' }),
+    ).toBe('chat')
+    expect(groqGenerationEndpointId(tts.id, 'audio')).toBe(
+      'openai/v1/audio/speech',
+    )
+    expect(groqGenerationEndpointId(stt.id, 'audio')).toBe(
+      'openai/v1/audio/transcriptions',
+    )
+    expect(groqGenerationEndpointId(chat.id, 'chat')).toBe(
+      'openai/v1/chat/completions',
+    )
+  })
+})
+
+describe('mistral model meta', () => {
+  it('reads activity from capability flags, falling back to the id', () => {
+    const act = (id: string, flags: Record<string, boolean> = {}) =>
+      mistralModelActivity({ id, capabilities: flags })
+    expect(
+      act('codestral-2508', { completion_chat: true, completion_fim: true }),
+    ).toBe('chat')
+    expect(
+      act('voxtral-small-latest', { completion_chat: true, audio: true }),
+    ).toBe('chat')
+    expect(
+      act('mistral-moderation-2603', {
+        classification: true,
+        moderation: true,
+      }),
+    ).toBe('moderation')
+    expect(act('voxtral-mini-tts-latest', { audio_speech: true })).toBe('audio')
+    expect(act('voxtral-mini-latest', { audio_transcription: true })).toBe(
+      'audio',
+    )
+    expect(act('codestral-embed')).toBe('embeddings')
+    expect(act('mistral-ocr-latest', { ocr: true, vision: true })).toBeNull()
+  })
+
+  it('binds each activity to its route', () => {
+    expect(mistralGenerationEndpointId('mistral-large-latest', 'chat')).toBe(
+      'v1/chat/completions',
+    )
+    expect(mistralGenerationEndpointId('mistral-embed', 'embeddings')).toBe(
+      'v1/embeddings',
+    )
+    expect(
+      mistralGenerationEndpointId('mistral-moderation-2603', 'moderation'),
+    ).toBe('v1/moderations')
+    expect(
+      mistralGenerationEndpointId('voxtral-mini-tts-latest', 'audio'),
+    ).toBe('v1/audio/speech')
+    expect(mistralGenerationEndpointId('voxtral-mini-latest', 'audio')).toBe(
+      'v1/audio/transcriptions',
+    )
+    expect(
+      mistralGenerationEndpointId('voxtral-mini-realtime-latest', 'audio'),
+    ).toBeNull()
   })
 })

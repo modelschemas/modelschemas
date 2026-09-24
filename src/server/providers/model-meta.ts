@@ -233,3 +233,82 @@ export function byteplusGenerationEndpointId(
       return null
   }
 }
+
+/**
+ * Groq listed-model activity from `output_modalities` (issue #72):
+ * `speech` (Orpheus TTS) and `transcription` (Whisper) are audio,
+ * everything else — prompt-guard and safeguard included — is chat.
+ */
+export function groqModelActivity(m: {
+  id: string
+  output_modalities?: Array<string>
+}): Activity {
+  const out = outputModalities(m.output_modalities)
+  if (out.includes('speech') || out.includes('transcription')) return 'audio'
+  if (/whisper|orpheus|tts/i.test(m.id)) return 'audio'
+  return 'chat'
+}
+
+/** Groq routes keep the Stainless `openai/` prefix. */
+export function groqGenerationEndpointId(
+  rawId: string,
+  activity: Activity,
+): string | null {
+  switch (activity) {
+    case 'chat':
+      return 'openai/v1/chat/completions'
+    case 'embeddings':
+      return 'openai/v1/embeddings'
+    case 'audio':
+      return /whisper|transcri/i.test(rawId)
+        ? 'openai/v1/audio/transcriptions'
+        : 'openai/v1/audio/speech'
+    default:
+      return null
+  }
+}
+
+/**
+ * Mistral listed-model activity from its `capabilities` flags (issue #72).
+ * Embedding rows carry no flags, so they fall back to the id. OCR models
+ * serve only `/v1/ocr`, which is not a classified route — null.
+ */
+export function mistralModelActivity(m: {
+  id: string
+  capabilities?: Record<string, boolean | undefined>
+}): Activity | null {
+  const flags = m.capabilities ?? {}
+  if (flags.moderation) return 'moderation'
+  if (flags.completion_chat) return 'chat'
+  if (
+    flags.audio_speech ||
+    flags.audio_transcription ||
+    flags.audio_transcription_realtime
+  ) {
+    return 'audio'
+  }
+  if (m.id.toLowerCase().includes('embed')) return 'embeddings'
+  return null
+}
+
+/** Mistral route; realtime transcription is websocket-only (no route). */
+export function mistralGenerationEndpointId(
+  rawId: string,
+  activity: Activity,
+): string | null {
+  switch (activity) {
+    case 'chat':
+      return 'v1/chat/completions'
+    case 'embeddings':
+      return 'v1/embeddings'
+    case 'moderation':
+      return 'v1/moderations'
+    case 'audio': {
+      const id = rawId.toLowerCase()
+      if (id.includes('tts')) return 'v1/audio/speech'
+      return id.includes('realtime') ? null : 'v1/audio/transcriptions'
+    }
+    default:
+      return null
+  }
+}

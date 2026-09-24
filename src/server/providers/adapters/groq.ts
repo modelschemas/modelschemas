@@ -9,6 +9,7 @@ import {
   classifyOpenAiCompat,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
+import { groqGenerationEndpointId, groqModelActivity } from '../model-meta.ts'
 import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -51,6 +52,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     url: GROQ_MODELS_URL,
     env,
     envVar: 'GROQ_API_KEY',
+    activity: groqModelActivity,
   })
 }
 
@@ -64,4 +66,6 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId, activity }) =>
+    groqGenerationEndpointId(rawId, activity),
 }

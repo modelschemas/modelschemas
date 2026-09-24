@@ -210,6 +210,8 @@ export async function listOpenAiCompatibleModels(opts: {
    */
   headers?: Record<string, string>
   authorization?: string
+  /** Per-row activity when the listing states it (issue #72). */
+  activity?: (m: OpenAiCompatModelRow) => Activity | null
 }): Promise<ListModelsResult> {
   const key = opts.env[opts.envVar]
   if (!key) {
@@ -226,6 +228,7 @@ export async function listOpenAiCompatibleModels(opts: {
       .map((m) => ({
         rawId: m.id,
         releasedAt: m.created ?? null,
+        ...(opts.activity ? { activity: opts.activity(m) } : {}),
         ...openAiCompatModelFacts(m),
       })),
   }
