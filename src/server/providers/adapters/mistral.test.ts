@@ -68,8 +68,12 @@ describe('mistral listModels', () => {
       expect(calls[0]?.url).toBe('https://api.mistral.ai/v1/models')
       expect(calls[0]?.auth).toBe('Bearer mistral-test')
       expect(models).toEqual([
-        { rawId: 'mistral-small-latest', releasedAt: 1_700_000_000 },
-        { rawId: 'mistral-embed', releasedAt: null },
+        {
+          rawId: 'mistral-small-latest',
+          releasedAt: 1_700_000_000,
+          activity: null,
+        },
+        { rawId: 'mistral-embed', releasedAt: null, activity: 'embeddings' },
       ])
     } finally {
       globalThis.fetch = original
