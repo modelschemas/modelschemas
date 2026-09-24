@@ -111,8 +111,8 @@ function tableRows(
   return (row.ops ?? []).flatMap((op) => {
     const rowCell = op.insert
     if (typeof rowCell !== 'object' || !rowCell.id) return []
-    const rowId = rowCell.id
-    return [cols.map((column) => zoneText(doc.data[`x${rowId}x${column}`]))]
+    const cellId = rowCell.id
+    return [cols.map((column) => zoneText(doc.data[`x${cellId}x${column}`]))]
   })
 }
 
