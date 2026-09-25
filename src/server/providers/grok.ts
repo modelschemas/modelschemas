@@ -17,6 +17,7 @@ import {
   NO_FACTS,
   assertParsed,
   cachedDocs,
+  mapConcurrent,
   markdownTableRows,
   tokenCount,
 } from './model-facts.ts'
@@ -41,6 +42,9 @@ const GROK_LANGUAGE_MODELS_URL = 'https://api.x.ai/v1/language-models'
 const GROK_IMAGE_MODELS_URL = 'https://api.x.ai/v1/image-generation-models'
 const GROK_VIDEO_MODELS_URL = 'https://api.x.ai/v1/video-generation-models'
 export const GROK_DOCS_MODELS_URL = 'https://docs.x.ai/docs/models.md'
+/** Per-model docs page: "At a glance" + "Capabilities" bullets. */
+const grokModelDocsUrl = (id: string) =>
+  `https://docs.x.ai/developers/models/${id}.md`
 
 /**
  * xAI tags every operation `v1`, so classify by path. The text-generation
@@ -205,6 +209,35 @@ export function parseGrokContextWindows(markdown: string): Map<string, number> {
   return out
 }
 
+/**
+ * `- **Reasoning:** Yes` on a per-model docs page. Null when the page has
+ * no such bullet, so a reworded page drops nothing it did not state.
+ */
+export function parseGrokReasoning(markdown: string): boolean | null {
+  const value = markdown.match(/^-\s*\*\*Reasoning:\*\*\s*(Yes|No)\b/im)?.[1]
+  return value === undefined ? null : value.toLowerCase() === 'yes'
+}
+
+/**
+ * Reasoning flag per language model. A missing page (new model, not yet
+ * documented) is null for that model; any other failure throws, so a
+ * transient docs outage never strips the flag from stored rows.
+ */
+async function grokReasoning(
+  kv: KVNamespace | undefined,
+  id: string,
+): Promise<boolean | null> {
+  const url = grokModelDocsUrl(id)
+  return cachedDocs(kv, url, async () => {
+    const response = await fetch(url)
+    if (response.status === 404) return null
+    if (!response.ok) {
+      throw new Error(`fetch failed: ${url} → ${String(response.status)}`)
+    }
+    return parseGrokReasoning(await response.text())
+  })
+}
+
 async function grokModelFacts(
   headers: HeadersInit,
   kv: KVNamespace | undefined,
@@ -233,6 +266,11 @@ async function grokModelFacts(
   ]) {
     for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
   }
+  const reasoning = new Map<string, boolean | null>()
+  await mapConcurrent(language.models ?? [], 4, async (m) => {
+    const value = await grokReasoning(kv, m.id)
+    for (const id of [m.id, ...(m.aliases ?? [])]) reasoning.set(id, value)
+  })
   const cards = new Map<string, RateCard | null>()
   for (const m of language.models ?? []) {
     const card = await grokRateCard(m)
@@ -253,23 +291,35 @@ async function grokModelFacts(
     const modalities = m.input_modalities
       ? { input: m.input_modalities, output: m.output_modalities ?? [] }
       : null
+    const reasons = reasoning.get(rawId) === true
     const facts: ModelFacts = {
       contextWindow,
+      // xAI publishes no output cap; the OpenRouter rung fills it at poll.
       maxOutput: null,
       modalities,
-      // xAI publishes no request-feature flags on any endpoint or doc table.
-      capabilities: null,
+      // Request-feature flags come from the bound schema; the per-model
+      // docs page adds `reasoning`, which no request property names.
+      capabilities: reasons ? ['reasoning'] : null,
       pricing: cards.get(rawId) ?? null,
     }
+    const sources: ModelFacts['factSources'] = {}
     if (contextWindow != null) {
-      facts.factSources = {
-        contextWindow: {
+      sources.contextWindow = {
+        derivation: 'docs-derived',
+        sourceUrl: GROK_DOCS_MODELS_URL,
+        path: 'contextWindow',
+      }
+    }
+    if (reasons) {
+      sources.capabilities = {
+        reasoning: {
           derivation: 'docs-derived',
-          sourceUrl: GROK_DOCS_MODELS_URL,
-          path: 'contextWindow',
+          sourceUrl: grokModelDocsUrl(m.id),
+          path: 'Capabilities.Reasoning',
         },
       }
     }
+    if (Object.keys(sources).length > 0) facts.factSources = sources
     return facts
   }
 }

@@ -366,18 +366,65 @@ const OPENROUTER_AUTHOR: Record<string, string> = {
   hyperbolic: 'hyperbolic',
 }
 
+/** OpenRouter author slug (`x-ai`) for a provider we join against. */
+export function openRouterAuthor(providerId: string): string | undefined {
+  return OPENROUTER_AUTHOR[providerId]
+}
+
 export function openRouterJoinIds(
   providerId: string,
   rawId: string,
 ): Array<string> {
-  const author = OPENROUTER_AUTHOR[providerId]
+  const author = openRouterAuthor(providerId)
   if (!author) return []
   const ids = [`${author}/${rawId}`]
   const undated = undatedId(rawId)
   if (undated !== rawId) ids.push(`${author}/${undated}`)
   const dotted = undated.replace(/(\d+)-(\d+)$/, '$1.$2')
   if (dotted !== undated) ids.push(`${author}/${dotted}`)
+  if (providerId === 'grok') {
+    // xAI pins `-MMDD` snapshots and splits reasoning modes into ids;
+    // OpenRouter lists one `x-ai/grok-4.20` for both.
+    const family = undated
+      .replace(/-\d{4}(?=-|$)/, '')
+      .replace(/-(non-)?reasoning$/, '')
+    if (family !== undated) ids.push(`${author}/${family}`)
+  }
   return ids
+}
+
+export const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
+
+/**
+ * The weakest rung: fill a null `maxOutput` from the joined OpenRouter row
+ * (`top_provider.max_completion_tokens`). Never overwrites a stated value.
+ */
+export function fillFromOpenRouter(
+  providerId: string,
+  info: ModelInfo,
+  openRouterMaxOutput: Map<string, number>,
+): ModelInfo {
+  if (info.maxOutput != null) return info
+  const joinIds = [info.rawId, info.aliasOf]
+    .filter((id) => id !== undefined)
+    .flatMap((id) => openRouterJoinIds(providerId, id))
+  for (const id of joinIds) {
+    const maxOutput = openRouterMaxOutput.get(id)
+    if (maxOutput === undefined) continue
+    return {
+      ...info,
+      maxOutput,
+      factSources: {
+        ...info.factSources,
+        maxOutput: {
+          derivation: 'openrouter',
+          sourceUrl: OPENROUTER_MODELS_URL,
+          path: `${id}/top_provider/max_completion_tokens`,
+        },
+      },
+    }
+  }
+  return info
 }
 
 function sortedStrings(value: unknown): Array<string> | null {
