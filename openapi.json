@@ -1216,6 +1216,50 @@
             ]
           },
           "capabilities": {},
+          "reasoning": {
+            "description": "How thinking is configured, or null when unknown. mode: adaptive (the model decides; Anthropic thinking.type adaptive), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget) or effort (a level: reasoning_effort, Gemini thinkingLevel). mandatory: reasoning cannot be turned off. efforts: accepted effort values, when stated.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "mode",
+                  "mandatory"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "adaptive",
+                      "budget",
+                      "effort"
+                    ]
+                  },
+                  "mandatory": {
+                    "type": "boolean"
+                  },
+                  "efforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serverTools": {
+            "description": "Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
           "factSources": {},
           "firstSeenAt": {
             "type": "integer"

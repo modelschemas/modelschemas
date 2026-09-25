@@ -15,6 +15,8 @@ export type ModelFacts = Pick<
   | 'modalities'
   | 'capabilities'
   | 'pricing'
+  | 'reasoning'
+  | 'serverTools'
   | 'factSources'
 >
 
@@ -120,7 +122,7 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
  * shape would otherwise read the old one back out of KV for six hours and
  * see missing fields as missing facts.
  */
-const DOCS_CACHE_VERSION = 'v3'
+const DOCS_CACHE_VERSION = 'v4'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

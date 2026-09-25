@@ -17,6 +17,8 @@ import {
   NO_FACTS,
   assertParsed,
   cachedDocs,
+  mapConcurrent,
+  markdownSection,
   markdownTableRows,
   tokenCount,
 } from './model-facts.ts'
@@ -24,6 +26,7 @@ import type { ModelFacts } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
+  ModelReasoning,
   OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
@@ -41,6 +44,25 @@ const GROK_LANGUAGE_MODELS_URL = 'https://api.x.ai/v1/language-models'
 const GROK_IMAGE_MODELS_URL = 'https://api.x.ai/v1/image-generation-models'
 const GROK_VIDEO_MODELS_URL = 'https://api.x.ai/v1/video-generation-models'
 export const GROK_DOCS_MODELS_URL = 'https://docs.x.ai/docs/models.md'
+const GROK_MODEL_PAGE = (id: string) =>
+  `https://docs.x.ai/developers/models/${id}.md`
+
+/**
+ * A model page's Capabilities bullets: `**Reasoning:** Yes` and
+ * `**Reasoning efforts (supported):** `low`, …`. Reasoning is optional only
+ * when `none` is listed; a reasoning model whose page names no efforts has
+ * no documented knob and stays null. xAI documents no per-model tool list.
+ */
+export function parseGrokReasoning(markdown: string): ModelReasoning | null {
+  const caps = markdownSection(markdown, 'Capabilities')
+  if (!/\*\*Reasoning:\*\*\s*Yes/.test(caps)) return null
+  const line = caps.match(/\*\*Reasoning efforts \(supported\):\*\*(.+)/)?.[1]
+  const efforts = [...(line ?? '').matchAll(/`([a-z]+)`/g)].flatMap((m) =>
+    m[1] ? [m[1]] : [],
+  )
+  if (efforts.length === 0) return null
+  return { mode: 'effort', mandatory: !efforts.includes('none'), efforts }
+}
 
 /**
  * xAI tags every operation `v1`, so classify by path. The text-generation
@@ -233,6 +255,24 @@ async function grokModelFacts(
   ]) {
     for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
   }
+  const reasoning = new Map<string, { value: ModelReasoning; hash: string }>()
+  await mapConcurrent(language.models ?? [], 8, async (m) => {
+    try {
+      const page = await cachedDocs(kv, GROK_MODEL_PAGE(m.id), async () => {
+        const markdown = await fetchText(GROK_MODEL_PAGE(m.id))
+        return {
+          value: parseGrokReasoning(markdown),
+          hash: await sha256Text(markdown),
+        }
+      })
+      if (!page.value) return
+      for (const id of [m.id, ...(m.aliases ?? [])]) {
+        reasoning.set(id, { value: page.value, hash: page.hash })
+      }
+    } catch {
+      // A missing page leaves reasoning unknown, never a guess.
+    }
+  })
   const cards = new Map<string, RateCard | null>()
   for (const m of language.models ?? []) {
     const card = await grokRateCard(m)
@@ -260,16 +300,26 @@ async function grokModelFacts(
       // xAI publishes no request-feature flags on any endpoint or doc table.
       capabilities: null,
       pricing: cards.get(rawId) ?? null,
+      reasoning: reasoning.get(rawId)?.value ?? null,
     }
+    const sources: ModelFacts['factSources'] = {}
     if (contextWindow != null) {
-      facts.factSources = {
-        contextWindow: {
-          derivation: 'docs-derived',
-          sourceUrl: GROK_DOCS_MODELS_URL,
-          path: 'contextWindow',
-        },
+      sources.contextWindow = {
+        derivation: 'docs-derived',
+        sourceUrl: GROK_DOCS_MODELS_URL,
+        path: 'contextWindow',
       }
     }
+    const page = reasoning.get(rawId)
+    if (page) {
+      sources.reasoning = {
+        derivation: 'docs-derived',
+        sourceUrl: GROK_MODEL_PAGE(m.id),
+        sourceHash: page.hash,
+        path: 'Capabilities',
+      }
+    }
+    if (Object.keys(sources).length > 0) facts.factSources = sources
     return facts
   }
 }

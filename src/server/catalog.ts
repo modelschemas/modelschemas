@@ -112,6 +112,8 @@ function toApiModel(
     modalities: row.modalities,
     pricing: servePricing(row.pricing, opts.pricing ?? 'compact'),
     capabilities: row.capabilities,
+    reasoning: row.reasoning,
+    serverTools: row.serverTools,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,

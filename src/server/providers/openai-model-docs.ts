@@ -23,6 +23,7 @@ import {
 } from './model-facts.ts'
 import type { ModelFacts } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
+import type { ModelReasoning } from './types.ts'
 
 export const OPENAI_MODELS_INDEX_URL =
   'https://developers.openai.com/api/docs/models.md'
@@ -347,6 +348,13 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
     capabilities.push('structured_outputs', 'response_format')
   }
 
+  const serverTools = [
+    ...markdownSection(markdown, 'Supported tools').matchAll(/^- (\S+)/gm),
+  ].flatMap((m) => {
+    const type = RESPONSES_TOOL_TYPES[m[1] ?? '']
+    return type ? [type] : []
+  })
+
   return {
     ids: [...ids],
     pricing: parseModelPricing(markdown),
@@ -356,7 +364,51 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
       modalities:
         input.length > 0 || output.length > 0 ? { input, output } : null,
       capabilities: capabilities.length > 0 ? capabilities : null,
+      reasoning: reasoning ? parseReasoningEffort(markdown) : null,
+      serverTools: serverTools.length > 0 ? serverTools : null,
     },
+  }
+}
+
+/**
+ * "Supported tools" names → Responses API `tools[].type`. `function_calling`
+ * is a client tool and `skills` rides on `shell`; neither is a type.
+ */
+const RESPONSES_TOOL_TYPES: Record<string, string> = {
+  web_search: 'web_search',
+  file_search: 'file_search',
+  tool_search: 'tool_search',
+  image_generation: 'image_generation',
+  code_interpreter: 'code_interpreter',
+  hosted_shell: 'shell',
+  apply_patch: 'apply_patch',
+  computer_use: 'computer',
+  mcp: 'mcp',
+}
+
+const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * Effort levels from the page's prose: "Reasoning.effort supports: none
+ * (default), low, …" or "defaults to (and only supports) `reasoning.effort:
+ * high`". Reasoning is optional only when `none` is accepted. A page that
+ * names no levels still states reasoning tokens, which are always spent.
+ */
+export function parseReasoningEffort(markdown: string): ModelReasoning {
+  const only = markdown.match(
+    /only supports\)?\s*`reasoning\.effort:\s*([a-z]+)`/i,
+  )?.[1]
+  const list = markdown.match(
+    /(?:reasoning\.effort`?\s+supports:?|supports\s+`?reasoning\.effort`?:?)\s*([^\n.]+)/i,
+  )
+  const words = only
+    ? [only.toLowerCase()]
+    : (list?.[1]?.toLowerCase().match(/[a-z]+/g) ?? [])
+  const efforts = EFFORTS.filter((level) => words.includes(level))
+  return {
+    mode: 'effort',
+    mandatory: !efforts.includes('none'),
+    ...(efforts.length > 0 ? { efforts } : {}),
   }
 }
 

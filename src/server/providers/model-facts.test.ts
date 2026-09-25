@@ -20,6 +20,7 @@ import {
   parseModelIndex,
   parseModelPage,
   parseModelPricing,
+  parseReasoningEffort,
 } from './openai-model-docs.ts'
 
 describe('model-facts helpers', () => {
@@ -122,6 +123,14 @@ Reasoning.effort supports: minimal, low, medium, and high.
 - structured_outputs
 - function_calling
 
+## Supported tools
+
+- function_calling
+- web_search
+- hosted_shell
+- skills
+- computer_use
+
 ## Snapshots
 
 - \`gpt-5-2025-08-07\`
@@ -146,6 +155,43 @@ Reasoning.effort supports: minimal, low, medium, and high.
         'structured_outputs',
         'response_format',
       ],
+      reasoning: {
+        mode: 'effort',
+        mandatory: true,
+        efforts: ['minimal', 'low', 'medium', 'high'],
+      },
+      // Docs names map to Responses tool types; client-side ones drop.
+      serverTools: ['web_search', 'shell', 'computer'],
+    })
+  })
+
+  it('reads every effort phrasing; none makes reasoning optional', () => {
+    expect(
+      parseReasoningEffort(
+        'Reasoning.effort supports: none (default), low, medium, and high.',
+      ),
+    ).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high'],
+    })
+    expect(
+      parseReasoningEffort(
+        'GPT-5.2 Pro supports reasoning.effort: medium, high, xhigh.',
+      ),
+    ).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts: ['medium', 'high', 'xhigh'],
+    })
+    expect(
+      parseReasoningEffort(
+        'GPT-5 Pro defaults to (and only supports) `reasoning.effort: high`.',
+      ),
+    ).toEqual({ mode: 'effort', mandatory: true, efforts: ['high'] })
+    expect(parseReasoningEffort('No effort prose.')).toEqual({
+      mode: 'effort',
+      mandatory: true,
     })
   })
 

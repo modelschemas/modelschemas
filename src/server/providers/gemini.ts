@@ -5,6 +5,7 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
+import { geminiModelFeatures } from './gemini-features.ts'
 import { geminiModelPricing } from './gemini-pricing.ts'
 import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
@@ -303,7 +304,7 @@ async function listModels(
     return { models: [], ...skippedResult('gemini', 'GEMINI_API_KEY') }
   }
   const pricing = await geminiModelPricing(kv)
-  const models: ListModelsResult['models'] = []
+  const listed: Array<GeminiModel> = []
   let pageToken: string | undefined
   do {
     const url = new URL(GEMINI_MODELS_URL)
@@ -311,11 +312,19 @@ async function listModels(
     url.searchParams.set('pageSize', '1000')
     if (pageToken) url.searchParams.set('pageToken', pageToken)
     const body = (await fetchJson(url.toString())) as GeminiModelList
-    for (const m of body.models ?? []) {
-      const rawId = m.name.replace(/^models\//, '')
+    listed.push(...(body.models ?? []))
+    pageToken = body.nextPageToken
+  } while (pageToken)
+  const rawIdOf = (m: GeminiModel) => m.name.replace(/^models\//, '')
+  const features = await geminiModelFeatures(listed.map(rawIdOf), kv)
+  return {
+    models: listed.map((m) => {
+      const rawId = rawIdOf(m)
       const methods = m.supportedGenerationMethods ?? []
       const activity = geminiModelActivity(rawId, methods)
-      models.push({
+      const priced = pricing(rawId)
+      const feat = features(rawId, m.thinking === true)
+      return {
         rawId,
         displayName: m.displayName ?? null,
         activity,
@@ -331,12 +340,13 @@ async function listModels(
         releasedAt:
           curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
           geminiIdSuffixDate(rawId),
-        ...pricing(rawId),
-      })
-    }
-    pageToken = body.nextPageToken
-  } while (pageToken)
-  return { models }
+        pricing: priced.pricing,
+        reasoning: feat.reasoning,
+        serverTools: feat.serverTools,
+        factSources: { ...priced.factSources, ...feat.factSources },
+      }
+    }),
+  }
 }
 
 export const geminiProvider: ProviderConfig = {
