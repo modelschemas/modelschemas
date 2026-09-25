@@ -167,8 +167,12 @@ const chat = (
 
 const TIV = ['text', 'image', 'video']
 const TIVA = ['text', 'image', 'video', 'audio']
-const REASON_TOOLS = ['reasoning', 'tool_calling']
-const REASON_TOOLS_SO = ['reasoning', 'tool_calling', 'structured_outputs']
+const REASON_TOOLS = ['reasoning', 'tools', 'tool_choice']
+const REASON_TOOLS_SO = [
+  ...REASON_TOOLS,
+  'response_format',
+  'structured_outputs',
+]
 
 const video = (
   rawId: string,
@@ -394,27 +398,57 @@ const PROBED_STRUCTURED_OUTPUT: Record<string, boolean> = {
   'glm-4-7-251222': false,
 }
 
+interface ArkFeatures {
+  structured_outputs?: { json_object?: boolean; json_schema?: boolean }
+  tools?: { function_calling?: boolean }
+}
+
+/**
+ * Chat rows speak the shared OpenRouter parameter vocabulary (#53, #76).
+ * The probe verdict beats Ark's `json_schema` flag whenever one exists.
+ */
+export function arkChatCapabilities(m: ArkModel): Array<string> {
+  const features = (m.features ?? {}) as ArkFeatures
+  const caps: Array<string> = []
+  if (features.tools?.function_calling) caps.push('tools', 'tool_choice')
+  if ((m.token_limits?.max_reasoning_token_length ?? 0) > 0) {
+    caps.push('reasoning')
+  }
+  const structured =
+    PROBED_STRUCTURED_OUTPUT[m.id] ??
+    features.structured_outputs?.json_schema === true
+  if (structured || features.structured_outputs?.json_object) {
+    caps.push('response_format')
+  }
+  if (structured) caps.push('structured_outputs')
+  return caps
+}
+
 function toModelInfo(m: ArkModel): ModelInfo {
   const probed = PROBED_STRUCTURED_OUTPUT[m.id]
+  const activity = arkTaskActivity(m.task_type)
   return {
     rawId: m.id,
     displayName: m.name ?? null,
-    activity: arkTaskActivity(m.task_type),
+    activity,
     contextWindow: m.token_limits?.context_window ?? null,
     maxOutput: m.token_limits?.max_output_token_length ?? null,
     modalities: {
       input: m.modalities?.input_modalities,
       output: m.modalities?.output_modalities,
     },
-    capabilities: {
-      ...m.features,
-      taskType: m.task_type,
-      domain: m.domain || undefined,
-      maxReasoningTokens: m.token_limits?.max_reasoning_token_length,
-      // Distinct key from the upstream `structured_outputs` block above so
-      // the disagreement stays visible instead of one silently winning.
-      ...(probed === undefined ? {} : { structuredOutputProbed: probed }),
-    },
+    capabilities:
+      activity === 'chat'
+        ? arkChatCapabilities(m)
+        : {
+            ...m.features,
+            taskType: m.task_type,
+            domain: m.domain || undefined,
+            maxReasoningTokens: m.token_limits?.max_reasoning_token_length,
+            // Distinct key from the upstream `structured_outputs` block
+            // above so the disagreement stays visible.
+            ...(probed === undefined ? {} : { structuredOutputProbed: probed }),
+          },
     // 'Retiring' models still serve but are on the way out; both states are
     // deprecation signals for consumers picking a model today.
     deprecated: m.status === 'Shutdown' || m.status === 'Retiring',

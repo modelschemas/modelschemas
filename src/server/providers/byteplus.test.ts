@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
-import { arkTaskActivity, byteplusProvider } from './byteplus.ts'
+import {
+  arkChatCapabilities,
+  arkTaskActivity,
+  byteplusProvider,
+} from './byteplus.ts'
 import { BYTEPLUS_PRICING_URL } from './byteplus-pricing.ts'
 
 /**
@@ -429,24 +433,34 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
     ).toBeNull()
   })
 
-  it('keeps the probed structured-output verdict beside the wrong upstream flag', async () => {
+  it('projects chat features onto the shared string[] vocabulary', async () => {
     const { result } = await withStubbedFetch(ARK_PAGE, () =>
       byteplusProvider.listModels({ ARK_API_KEY: 'ark-test' }),
     )
-    const caps = result.models.find((m) => m.rawId === 'seed-2-0-lite-260428')
-      ?.capabilities as Record<string, unknown>
-    // Ark advertises json_schema support for this model...
-    expect(caps.structured_outputs).toEqual({
-      json_object: true,
-      json_schema: true,
-    })
-    // ...but a real request 400s, so the probe verdict rides alongside it.
-    expect(caps.structuredOutputProbed).toBe(false)
-    expect(caps.taskType).toEqual([
-      'TextGeneration',
-      'VisualQuestionAnswering',
-      'SpeechToText',
-    ])
+    // Ark advertises json_schema here, but a real request 400s: the probe
+    // verdict wins, so response_format stays and structured_outputs goes.
+    expect(
+      result.models.find((m) => m.rawId === 'seed-2-0-lite-260428')
+        ?.capabilities,
+    ).toEqual(['tools', 'tool_choice', 'reasoning', 'response_format'])
+    // Every chat row, curated gap-fillers included, is a string[].
+    for (const m of result.models.filter((row) => row.activity === 'chat')) {
+      expect(Array.isArray(m.capabilities)).toBe(true)
+    }
+  })
+
+  it('keeps json_object-only models off structured_outputs', () => {
+    expect(
+      arkChatCapabilities({
+        id: 'glm-5-3-flash-260828',
+        token_limits: { max_reasoning_token_length: 131_072 },
+        features: {
+          structured_outputs: { json_object: true, json_schema: false },
+          tools: { function_calling: true },
+          cache: { prefix_cache: true, session_cache: true },
+        },
+      }),
+    ).toEqual(['tools', 'tool_choice', 'reasoning', 'response_format'])
   })
 
   it('fills the gaps the listing omits from the curated catalog', async () => {
