@@ -9,6 +9,7 @@ import {
   classifyOpenAiCompat,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
+import { groqModelPricing } from '../groq-pricing.ts'
 import { groqGenerationEndpointId, groqModelActivity } from '../model-meta.ts'
 import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import type {
@@ -46,14 +47,26 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   return parseGzippedOpenApi(bytes, 'groq', GROQ_MOCK_URL)
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  return listOpenAiCompatibleModels({
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const listed = await listOpenAiCompatibleModels({
     providerId: 'groq',
     url: GROQ_MODELS_URL,
     env,
     envVar: 'GROQ_API_KEY',
     activity: groqModelActivity,
   })
+  if (listed.models.length === 0) return listed
+  const pricing = await groqModelPricing(kv)
+  return {
+    ...listed,
+    models: listed.models.map((model) => ({
+      ...model,
+      ...pricing(model.rawId),
+    })),
+  }
 }
 
 export const provider: ProviderConfig = {

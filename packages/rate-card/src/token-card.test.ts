@@ -52,6 +52,32 @@ describe('compileTokenCard', () => {
     )
   })
 
+  it('counts extra prompt levers toward the tier', () => {
+    const base = {
+      input_tokens: 1e-6,
+      audio_tokens: 2e-6,
+      output_tokens: 1e-6,
+    }
+    const tiers = [
+      {
+        minPromptTokens: 128_000,
+        rates: {
+          input_tokens: 2e-6,
+          audio_tokens: 4e-6,
+          output_tokens: 2e-6,
+        },
+      },
+    ]
+    const withAudio = compileTokenCard(base, tiers, source, {
+      extraPromptLevers: ['audio_tokens', 'audio_cache_tokens'],
+    })
+    const textOnly = compileTokenCard(base, tiers, source)
+    if (!withAudio || !textOnly) throw new Error('did not compile')
+    const usage = { input_tokens: 0, audio_tokens: 200_000, output_tokens: 0 }
+    expect(price(withAudio, {}, usage)).toBeCloseTo(0.8, 9)
+    expect(price(textOnly, {}, usage)).toBeCloseTo(0.4, 9)
+  })
+
   it('requires token counts but defaults every other lever', () => {
     const card = compile({ input_tokens: 1e-6, output_tokens: 2e-6 })
     expect(() => price(card, {}, { input_tokens: 1 })).toThrow(

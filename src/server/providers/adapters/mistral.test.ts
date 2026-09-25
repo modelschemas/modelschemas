@@ -44,10 +44,14 @@ describe('mistral listModels', () => {
     const original = globalThis.fetch
     const calls: Array<{ url: string; auth: string | null }> = []
     globalThis.fetch = ((url: string, init?: RequestInit) => {
+      const href = String(url)
       calls.push({
-        url: String(url),
+        url: href,
         auth: new Headers(init?.headers).get('authorization'),
       })
+      if (!href.startsWith('https://api.mistral.ai/')) {
+        return original(url, init)
+      }
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -67,7 +71,11 @@ describe('mistral listModels', () => {
       expect(skipped).toBeUndefined()
       expect(calls[0]?.url).toBe('https://api.mistral.ai/v1/models')
       expect(calls[0]?.auth).toBe('Bearer mistral-test')
-      expect(models).toEqual([
+      expect(
+        models.map(
+          ({ pricing: _pricing, factSources: _sources, ...rest }) => rest,
+        ),
+      ).toEqual([
         {
           rawId: 'mistral-small-latest',
           releasedAt: 1_700_000_000,

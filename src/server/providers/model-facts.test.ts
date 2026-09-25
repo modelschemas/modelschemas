@@ -472,6 +472,42 @@ Landscape: 1920x1080 | $0.7 | second |
     ).toBeNull()
   })
 
+  it('accepts a cached-input bullet that restates the table', () => {
+    const page = pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $0.1 | 1M tokens |
+| Cached input | $0.01 | 1M tokens |
+| Cache writes | $0.125 | 1M tokens |
+| Output | $0.5 | 1M tokens |
+
+- Cached input tokens are priced at 10% of the uncached input token rate.
+- Cache writes are billed at 1.25x the uncached input token rate.
+- Regional processing adds a 10% premium where available.
+`)
+    expect(parseModelPricing(page)?.rates).toEqual({
+      input_tokens: 0.1 / 1e6,
+      cache_read_tokens: 0.01 / 1e6,
+      cache_write_tokens: 0.125 / 1e6,
+      output_tokens: 0.5 / 1e6,
+    })
+  })
+
+  it('refuses a cached-input bullet that disagrees with the table', () => {
+    const page = pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $1 | 1M tokens |
+| Cached input | $0.5 | 1M tokens |
+| Output | $2 | 1M tokens |
+
+- Cached input tokens are priced at 10% of the uncached input token rate.
+`)
+    expect(parseModelPricing(page)).toBeNull()
+  })
+
   it('refuses an unrecognised bullet that quotes a surcharge', () => {
     const page = pricing(`### Text tokens
 
@@ -635,9 +671,18 @@ describe('grok model prices', () => {
 })
 
 describe('gemini pricing page', () => {
-  const section = (id: string, rows: string) => `<div class="models-section">
+  const section = (
+    id: string,
+    rows: string,
+    extraIds: Array<string> = [],
+  ) => `<div class="models-section">
   <div class="heading-group"><h2 id="${id}">Name</h2>
-  <em><a href="/gemini-api/docs/models/${id}"><code translate="no" dir="ltr">${id}</code></a></em></div>
+  <em>${[id, ...extraIds]
+    .map(
+      (each) =>
+        `<a href="/gemini-api/docs/models/${each}"><code translate="no" dir="ltr">${each}</code></a>`,
+    )
+    .join('')}</em></div>
   </div>
   <div><devsite-selector><section><h3 id="standard" data-text="Standard">Standard</h3><table class="pricing-table">
   <thead><tr><th></th><th scope="col">Free Tier</th><th scope="col">Paid Tier, per 1M tokens in USD</th></tr></thead>
@@ -668,6 +713,25 @@ describe('gemini pricing page', () => {
     })
     // Batch is a separate tab, and cache storage is a per-hour rate.
     expect(rows.get('gemini-2.5-flash')?.tiers).toEqual([])
+  })
+
+  it('copies one Standard table onto every id the heading names', () => {
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-3.1-pro-preview',
+        `<tr><td>Input price</td><td>Not available</td><td>$2.00</td></tr>
+         <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$12.00</td></tr>`,
+        ['gemini-3.1-pro-preview-customtools'],
+      ),
+      NOW,
+    )
+    expect(rows.get('gemini-3.1-pro-preview')?.base).toEqual({
+      input_tokens: 2e-6,
+      output_tokens: 12e-6,
+    })
+    expect(rows.get('gemini-3.1-pro-preview-customtools')?.base).toEqual(
+      rows.get('gemini-3.1-pro-preview')?.base,
+    )
   })
 
   it('compiles the long-prompt re-quote as a tier', () => {

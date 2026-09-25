@@ -42,6 +42,7 @@ import {
   arkGoFileUrl,
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
+import { byteplusModelPricing } from './byteplus-pricing.ts'
 import { bearerConnect, headerApiKeyConnect } from './connect.ts'
 import {
   BYTEPLUS_ARK_BASE_URL,
@@ -421,11 +422,17 @@ function toModelInfo(m: ArkModel): ModelInfo {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const pricing = await byteplusModelPricing(kv)
+  const withPricing = (models: Array<ModelInfo>): Array<ModelInfo> =>
+    models.map((model) => ({ ...model, ...pricing(model.rawId) }))
   const key = env.ARK_API_KEY
   // No key: the embedded catalog is still a real answer, so serve it rather
   // than reporting the provider skipped.
-  if (!key) return { models: curatedModels() }
+  if (!key) return { models: withPricing(curatedModels()) }
 
   const body = (await fetchJson(ARK_MODELS_URL, {
     headers: { Authorization: `Bearer ${key}` },
@@ -436,7 +443,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   // Ark serves but does not enumerate.
   const liveIds = new Set(live.map((m) => m.rawId))
   const gapFillers = curatedModels().filter((m) => !liveIds.has(m.rawId))
-  return { models: [...live, ...gapFillers] }
+  return { models: withPricing([...live, ...gapFillers]) }
 }
 
 export const byteplusProvider: ProviderConfig = {
