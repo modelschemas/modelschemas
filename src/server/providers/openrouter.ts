@@ -7,6 +7,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
+import { OPENROUTER_MODELS_URL } from './fact-sources.ts'
 import {
   openrouterGenerationEndpointId,
   openrouterModelActivity,
@@ -23,7 +24,6 @@ import type {
 
 const OPENROUTER_OPENAPI_URL = 'https://openrouter.ai/openapi.json'
 const OPENROUTER_VIDEO_MODELS_URL = 'https://openrouter.ai/api/v1/videos/models'
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models'
 
 export const SYNTHETIC_VIDEO_MARKER = 'x-modelschemas-synthetic-video-model'
 

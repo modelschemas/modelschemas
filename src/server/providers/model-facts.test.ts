@@ -10,6 +10,7 @@ import {
   grokRateCard,
   grokVideoCard,
   parseGrokContextWindows,
+  parseGrokReasoning,
   parseGrokVideoPrices,
 } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
@@ -96,6 +97,16 @@ describe('xai model docs', () => {
       ['grok-4.6', 500_000],
       ['grok-4.3', 1_000_000],
     ])
+  })
+})
+
+describe('xai per-model docs', () => {
+  it('reads the Reasoning capability bullet', () => {
+    const page = (value: string) =>
+      `## Capabilities\n\n- **Function calling:** Yes\n- **Reasoning:** ${value}\n- **Reasoning efforts (supported):** \`low\`\n`
+    expect(parseGrokReasoning(page('Yes'))).toBe(true)
+    expect(parseGrokReasoning(page('No'))).toBe(false)
+    expect(parseGrokReasoning('## Capabilities\n')).toBeNull()
   })
 })
 
