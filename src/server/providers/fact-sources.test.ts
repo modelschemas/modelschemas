@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   factDiscrepancies,
-  fillFromOpenRouter,
   listingSources,
   mergeListingAndSchema,
   openRouterJoinIds,
@@ -215,38 +214,6 @@ describe('OpenRouter compare', () => {
       'x-ai/grok-4.20-multi-agent',
     ])
     expect(openRouterJoinIds('fal', 'x')).toEqual([])
-  })
-
-  it('fills a null maxOutput from OpenRouter, never a stated one', () => {
-    const or = new Map([['x-ai/grok-4.7', 450_000]])
-    const filled = fillFromOpenRouter(
-      'grok',
-      {
-        rawId: 'grok-4.7',
-        maxOutput: null,
-        factSources: { contextWindow: { derivation: 'docs-derived' } },
-      },
-      or,
-    )
-    expect(filled.maxOutput).toBe(450_000)
-    expect(filled.factSources).toEqual({
-      contextWindow: { derivation: 'docs-derived' },
-      maxOutput: {
-        derivation: 'openrouter',
-        sourceUrl: 'https://openrouter.ai/api/v1/models',
-        path: 'x-ai/grok-4.7/top_provider/max_completion_tokens',
-      },
-    })
-    const stated = { rawId: 'grok-4.7', maxOutput: 8_192 }
-    expect(fillFromOpenRouter('grok', stated, or)).toBe(stated)
-    const alias = fillFromOpenRouter(
-      'mistral',
-      { rawId: 'mistral-large-latest', aliasOf: 'mistral-large-2512' },
-      new Map([['mistralai/mistral-large-2512', 262_144]]),
-    )
-    expect(alias.maxOutput).toBe(262_144)
-    const unjoined = { rawId: 'grok-9', maxOutput: null }
-    expect(fillFromOpenRouter('grok', unjoined, or)).toBe(unjoined)
   })
 
   it('reports flags we have that OpenRouter lacks, and the reverse', () => {

@@ -294,7 +294,7 @@ async function grokModelFacts(
     const reasons = reasoning.get(rawId) === true
     const facts: ModelFacts = {
       contextWindow,
-      // xAI publishes no output cap; the OpenRouter rung fills it at poll.
+      // xAI publishes no output cap (the spec states only a 128k default).
       maxOutput: null,
       modalities,
       // Request-feature flags come from the bound schema; the per-model

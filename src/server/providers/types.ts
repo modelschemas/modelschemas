@@ -113,15 +113,10 @@ export interface ProviderSecrets {
 
 /**
  * How one catalog fact was arrived at (issue #53). Strongest first:
- * listing → docs-extracted → bound schema (`Derivation` rungs), then
- * `openrouter` (fills remaining nulls only). `generated` schemas are not
- * walked onto catalog rows.
+ * listing → docs-extracted → bound schema (`Derivation` rungs).
+ * `generated` schemas are not walked onto catalog rows.
  */
-export type FactDerivation =
-  | Derivation
-  | 'listing'
-  | 'docs-extracted'
-  | 'openrouter'
+export type FactDerivation = Derivation | 'listing' | 'docs-extracted'
 
 /** Provenance for one stored catalog field or capability flag. */
 export interface FactSource {
@@ -172,12 +167,6 @@ export interface ModelInfo {
    * the provider has no date for the model.
    */
   releasedAt?: number | null
-  /**
-   * Upstream canonical id when `rawId` is an alias (Mistral's
-   * `mistral-large-latest` → `name: mistral-large-2512`). An extra
-   * OpenRouter join key only; never stored.
-   */
-  aliasOf?: string
 }
 
 /** Provenance for one fetched spec document. */

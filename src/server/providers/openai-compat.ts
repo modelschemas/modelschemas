@@ -106,8 +106,6 @@ export async function fetchOpenAiCompatibleSpec(
  */
 export interface OpenAiCompatModelRow {
   id: string
-  /** mistral: canonical id, differs from `id` on `-latest` aliases. */
-  name?: string
   created?: number
   context_window?: number
   context_length?: number
@@ -214,8 +212,6 @@ export async function listOpenAiCompatibleModels(opts: {
   authorization?: string
   /** Per-row activity when the listing states it (issue #72). */
   activity?: (m: OpenAiCompatModelRow) => Activity | null
-  /** Canonical id when the row is an alias (`ModelInfo.aliasOf`). */
-  aliasOf?: (m: OpenAiCompatModelRow) => string | undefined
 }): Promise<ListModelsResult> {
   const key = opts.env[opts.envVar]
   if (!key) {
@@ -233,7 +229,6 @@ export async function listOpenAiCompatibleModels(opts: {
         rawId: m.id,
         releasedAt: m.created ?? null,
         ...(opts.activity ? { activity: opts.activity(m) } : {}),
-        ...(opts.aliasOf?.(m) ? { aliasOf: opts.aliasOf(m) } : {}),
         ...openAiCompatModelFacts(m),
       })),
   }

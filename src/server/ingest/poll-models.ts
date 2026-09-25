@@ -4,7 +4,7 @@
  * model.added/removed/updated changes, bump lastSeenAt. Listings compile to
  * RateCards (or null) before insert/update.
  */
-import { and, eq, inArray, isNotNull, isNull, like, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 
 import {
   changes,
@@ -17,9 +17,7 @@ import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
-  fillFromOpenRouter,
   mergeListingAndSchema,
-  openRouterAuthor,
   requestSchemaPropertyNames,
   schemaRung,
   walkRequestSchema,
@@ -183,30 +181,6 @@ async function loadInputWalks(
   return { walks, properties }
 }
 
-/** Joined OpenRouter `maxOutput` by OpenRouter raw id, for the weakest rung. */
-async function loadOpenRouterMaxOutput(
-  db: SyncDeps['db'],
-  providerId: string,
-): Promise<Map<string, number>> {
-  const author = openRouterAuthor(providerId)
-  if (!author) return new Map()
-  const rows = await db
-    .select({ rawId: models.rawId, maxOutput: models.maxOutput })
-    .from(models)
-    .where(
-      and(
-        eq(models.providerId, 'openrouter'),
-        like(models.rawId, `${author}/%`),
-        isNotNull(models.maxOutput),
-      ),
-    )
-  return new Map(
-    rows.flatMap((row) =>
-      row.maxOutput === null ? [] : [[row.rawId, row.maxOutput] as const],
-    ),
-  )
-}
-
 function logRefusedCard(
   providerId: string,
   rawId: string,
@@ -306,8 +280,6 @@ export async function pollProviderModels(
     listed.models,
   )
 
-  const openRouterMaxOutput = await loadOpenRouterMaxOutput(db, provider.id)
-
   const existingRows = await db
     .select()
     .from(models)
@@ -326,11 +298,7 @@ export async function pollProviderModels(
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
   for (const raw of listed.models) {
-    const enriched = fillFromOpenRouter(
-      provider.id,
-      enrichListed(provider, raw, walks),
-      openRouterMaxOutput,
-    )
+    const enriched = enrichListed(provider, raw, walks)
     const id = modelDbId(provider.id, enriched.rawId)
     const bound = resolveSchemaEndpointId({
       providerId: provider.id,

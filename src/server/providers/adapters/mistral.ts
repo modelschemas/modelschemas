@@ -68,7 +68,6 @@ export const provider: ProviderConfig = {
       env,
       envVar: 'MISTRAL_API_KEY',
       activity: mistralModelActivity,
-      aliasOf: (m) => (m.name && m.name !== m.id ? m.name : undefined),
     })
     if (listed.models.length === 0) return listed
     const pricing = await mistralModelPricing(kv)

@@ -759,36 +759,3 @@ describe('pollProviderModels', () => {
     ).toBe('listing')
   })
 })
-
-describe('OpenRouter rung', () => {
-  it('fills a null maxOutput from the joined OpenRouter row', async () => {
-    const orDeps = await freshDeps('openrouter')
-    await pollProviderModels(
-      orDeps,
-      stubProvider('openrouter', [
-        { rawId: 'x-ai/grok-4.7', activity: 'chat', maxOutput: 450_000 },
-      ]),
-    )
-    const deps = await freshDeps('grok')
-    await pollProviderModels(
-      deps,
-      stubProvider('grok', [
-        { rawId: 'grok-4.7', activity: 'chat' },
-        { rawId: 'grok-build-0.1', activity: 'chat', maxOutput: 8_192 },
-      ]),
-    )
-    const rows = await deps.db
-      .select()
-      .from(models)
-      .where(eq(models.providerId, 'grok'))
-    const byRaw = new Map(rows.map((row) => [row.rawId, row]))
-    expect(byRaw.get('grok-4.7')).toMatchObject({
-      maxOutput: 450_000,
-      factSources: { maxOutput: { derivation: 'openrouter' } },
-    })
-    expect(byRaw.get('grok-build-0.1')).toMatchObject({
-      maxOutput: 8_192,
-      factSources: { maxOutput: { derivation: 'listing' } },
-    })
-  })
-})
