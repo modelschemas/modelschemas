@@ -383,6 +383,9 @@ export const models = sqliteTable(
     modalities: text('modalities', { mode: 'json' }),
     pricing: text('pricing', { mode: 'json' }),
     capabilities: text('capabilities', { mode: 'json' }),
+    // Thinking configuration and provider-hosted tool type ids (issue #77).
+    reasoning: text('reasoning', { mode: 'json' }),
+    serverTools: text('server_tools', { mode: 'json' }),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see

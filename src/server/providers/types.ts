@@ -137,6 +137,22 @@ export interface ModelFactSources {
   modalities?: FactSource
   pricing?: FactSource
   capabilities?: Record<string, FactSource>
+  reasoning?: FactSource
+  /** One source per tool type id in `serverTools`. */
+  serverTools?: Record<string, FactSource>
+}
+
+/**
+ * How a model's thinking is configured (issue #77). `adaptive`: the model
+ * decides (Anthropic `thinking.type: adaptive`); `budget`: a token budget
+ * (`thinking.budget_tokens`, Gemini 2.5 `thinkingBudget`); `effort`: a level
+ * (`reasoning_effort`, Gemini 3 `thinkingLevel`). `mandatory`: reasoning
+ * cannot be turned off. `efforts`: accepted effort values, when stated.
+ */
+export interface ModelReasoning {
+  mode: 'adaptive' | 'budget' | 'effort'
+  mandatory: boolean
+  efforts?: Array<string>
 }
 
 /** Normalised model entry (maps onto the `models` table shape). */
@@ -149,6 +165,13 @@ export interface ModelInfo {
   modalities?: unknown
   pricing?: unknown
   capabilities?: unknown
+  /** Thinking configuration; null when the model does not reason or docs are silent. */
+  reasoning?: ModelReasoning | null
+  /**
+   * Provider-hosted tool type ids the model accepts in `tools`
+   * (`web_search_20250305`, `google_search`, …). Null when unknown.
+   */
+  serverTools?: Array<string> | null
   /**
    * Per-field provenance for the facts this listing already filled.
    * The poller defaults untagged listing fields to `derivation: listing`.

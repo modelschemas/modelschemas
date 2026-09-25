@@ -117,6 +117,11 @@ ones).
   `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no
   model call, leftovers go to one extract model per distinct Pricing-section
   hash and are copied onto every row sharing it.
+  `models.reasoning` (`{ mode, mandatory, efforts? }`) and
+  `models.serverTools` (provider tool type ids) come from docs: OpenAI and
+  xAI model pages, Gemini model pages + thinking tables, the Anthropic
+  Models API + thinking table; Anthropic tools are a hand-written table
+  in `anthropic-features.ts` (re-verify on each Claude launch).
 - **API** (`src/routes/v1/`): catalog, schema reads (SWR via
   `src/server/cache.ts`, ETag/304 via `http-cache.ts`), `POST /v1/validate`
   (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),

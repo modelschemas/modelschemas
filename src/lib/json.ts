@@ -16,10 +16,17 @@ export type Json =
  */
 export type SerializableModel = Omit<
   ApiModel,
-  'modalities' | 'pricing' | 'capabilities' | '_links'
+  | 'modalities'
+  | 'pricing'
+  | 'capabilities'
+  | 'reasoning'
+  | 'serverTools'
+  | '_links'
 > & {
   modalities: Json
   pricing: Json
   capabilities: Json
+  reasoning: Json
+  serverTools: Json
   _links: Json
 }

@@ -80,8 +80,11 @@ export function emptySources(sources: ModelFactSources): boolean {
     sources.maxOutput === undefined &&
     sources.modalities === undefined &&
     sources.pricing === undefined &&
+    sources.reasoning === undefined &&
     (sources.capabilities === undefined ||
-      Object.keys(sources.capabilities).length === 0)
+      Object.keys(sources.capabilities).length === 0) &&
+    (sources.serverTools === undefined ||
+      Object.keys(sources.serverTools).length === 0)
   )
 }
 
@@ -95,9 +98,15 @@ export function listingSources(info: ModelInfo): ModelFactSources {
   if (info.maxOutput != null) out.maxOutput = listingSource()
   if (info.modalities != null) out.modalities = listingSource()
   if (info.pricing != null) out.pricing = listingSource()
+  if (info.reasoning != null) out.reasoning = listingSource()
   if (isStringArray(info.capabilities) && info.capabilities.length > 0) {
     out.capabilities = Object.fromEntries(
       info.capabilities.map((flag) => [flag, listingSource()]),
+    )
+  }
+  if (info.serverTools != null && info.serverTools.length > 0) {
+    out.serverTools = Object.fromEntries(
+      info.serverTools.map((tool) => [tool, listingSource()]),
     )
   }
   if (!info.factSources) return out
@@ -105,10 +114,15 @@ export function listingSources(info: ModelInfo): ModelFactSources {
     out.capabilities || info.factSources.capabilities
       ? { ...out.capabilities, ...info.factSources.capabilities }
       : undefined
+  const serverTools =
+    out.serverTools || info.factSources.serverTools
+      ? { ...out.serverTools, ...info.factSources.serverTools }
+      : undefined
   return {
     ...out,
     ...info.factSources,
     ...(capabilities ? { capabilities } : {}),
+    ...(serverTools ? { serverTools } : {}),
   }
 }
 
@@ -116,7 +130,13 @@ export function listingSources(info: ModelInfo): ModelFactSources {
 export function tagDocsFacts(
   facts: Pick<
     ModelInfo,
-    'contextWindow' | 'maxOutput' | 'modalities' | 'capabilities' | 'pricing'
+    | 'contextWindow'
+    | 'maxOutput'
+    | 'modalities'
+    | 'capabilities'
+    | 'pricing'
+    | 'reasoning'
+    | 'serverTools'
   >,
   sourceUrl: string,
   sourceHash?: string,
@@ -135,6 +155,12 @@ export function tagDocsFacts(
   if (isStringArray(facts.capabilities) && facts.capabilities.length > 0) {
     out.capabilities = Object.fromEntries(
       facts.capabilities.map((flag) => [flag, src(`capabilities.${flag}`)]),
+    )
+  }
+  if (facts.reasoning != null) out.reasoning = src('reasoning')
+  if (facts.serverTools != null && facts.serverTools.length > 0) {
+    out.serverTools = Object.fromEntries(
+      facts.serverTools.map((tool) => [tool, src(`serverTools.${tool}`)]),
     )
   }
   return out

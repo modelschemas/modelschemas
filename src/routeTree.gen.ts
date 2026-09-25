@@ -48,8 +48,8 @@ import { Route as DotwellKnownAgentSkillsIndexDotjsonRouteImport } from './route
 import { Route as V1SchemasProviderIndexRouteImport } from './routes/v1/schemas/$provider/index'
 import { Route as V1ProvidersProviderModelsRouteImport } from './routes/v1/providers/$provider.models'
 import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/$provider.$modelId'
-import { Route as V1AdminExtractFalRouteImport } from './routes/v1/admin/extract.fal'
 import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
+import { Route as V1AdminExtractFalRouteImport } from './routes/v1/admin/extract.fal'
 import { Route as SchemasProviderActivitySplatRouteImport } from './routes/schemas/$provider.$activity.$'
 import { Route as V1SchemasProviderActivityIndexRouteImport } from './routes/v1/schemas/$provider/$activity/index'
 import { Route as V1SchemasProviderActivitySplatRouteImport } from './routes/v1/schemas/$provider/$activity/$'
@@ -255,14 +255,14 @@ const V1ModelsProviderModelIdRoute = V1ModelsProviderModelIdRouteImport.update({
   path: '/v1/models/$provider/$modelId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const V1AdminExtractFalRoute = V1AdminExtractFalRouteImport.update({
-  id: '/v1/admin/extract/fal',
-  path: '/v1/admin/extract/fal',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const V1AdminSyncProviderRoute = V1AdminSyncProviderRouteImport.update({
   id: '/v1/admin/sync/$provider',
   path: '/v1/admin/sync/$provider',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const V1AdminExtractFalRoute = V1AdminExtractFalRouteImport.update({
+  id: '/v1/admin/extract/fal',
+  path: '/v1/admin/extract/fal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SchemasProviderActivitySplatRoute =
@@ -886,18 +886,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1ModelsProviderModelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/v1/admin/extract/fal': {
-      id: '/v1/admin/extract/fal'
-      path: '/v1/admin/extract/fal'
-      fullPath: '/v1/admin/extract/fal'
-      preLoaderRoute: typeof V1AdminExtractFalRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/v1/admin/sync/$provider': {
       id: '/v1/admin/sync/$provider'
       path: '/v1/admin/sync/$provider'
       fullPath: '/v1/admin/sync/$provider'
       preLoaderRoute: typeof V1AdminSyncProviderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/v1/admin/extract/fal': {
+      id: '/v1/admin/extract/fal'
+      path: '/v1/admin/extract/fal'
+      fullPath: '/v1/admin/extract/fal'
+      preLoaderRoute: typeof V1AdminExtractFalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/schemas/$provider/$activity/$': {

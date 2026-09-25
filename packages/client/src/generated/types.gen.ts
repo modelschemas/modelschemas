@@ -116,6 +116,18 @@ export type Model = {
    */
   pricing?: RateCard | CompactPricing | null
   capabilities?: unknown
+  /**
+   * How thinking is configured, or null when unknown. mode: adaptive (the model decides; Anthropic thinking.type adaptive), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget) or effort (a level: reasoning_effort, Gemini thinkingLevel). mandatory: reasoning cannot be turned off. efforts: accepted effort values, when stated.
+   */
+  reasoning?: {
+    mode: 'adaptive' | 'budget' | 'effort'
+    mandatory: boolean
+    efforts?: Array<string>
+  } | null
+  /**
+   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
+   */
+  serverTools?: Array<string> | null
   factSources?: unknown
   firstSeenAt?: number
   lastSeenAt?: number
