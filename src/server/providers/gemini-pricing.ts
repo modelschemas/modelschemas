@@ -404,9 +404,8 @@ export function parseGeminiPricing(
     const end = ['</tbody>', '</table>']
       .map((tag) => chunk.indexOf(tag))
       .filter((at) => at >= 0)
-    // A section can name several ids that share one Standard table
+    // One Standard table covers every id named in the heading
     // (`gemini-3.1-pro-preview` and `gemini-3.1-pro-preview-customtools`).
-    // Skipping on the first id alone dropped the rest.
     if (ids.length === 0 || end.length === 0) continue
     if (ids.every((each) => out.has(each))) continue
     const segment = chunk.slice(0, Math.min(...end))

@@ -142,6 +142,8 @@ function ratesFromGroup(
       continue
     }
     if (floor <= 0) return null
+    // Prompt length is the request's input. Audio columns are re-quoted in
+    // the same bracket, so they count toward it when the card is compiled.
     tiers.push({ minPromptTokens: floor * 1000, rates })
   }
   return Object.keys(base).length > 0 ? { base, tiers } : null
@@ -217,10 +219,14 @@ export function byteplusRatesFor(
 export function parseByteplusPricingPage(
   html: string,
 ): Map<string, ByteplusChatRates> {
-  return parseByteplusPricing(pricingDocument(html))
+  return parseByteplusPricing(JSON.parse(pricingContent(html)) as ByteplusDoc)
 }
 
-function pricingDocument(html: string): ByteplusDoc {
+/**
+ * `curDoc.Content` only. The page shell around it reshuffles between
+ * fetches, so hashing the HTML would mark unchanged prices as new.
+ */
+export function pricingContent(html: string): string {
   const at = html.indexOf('window._ROUTER_DATA')
   const start = html.indexOf('{', at)
   const end = html.indexOf('</script>', start)
@@ -234,7 +240,7 @@ function pricingDocument(html: string): ByteplusDoc {
     (entry) => typeof entry?.curDoc?.Content === 'string',
   )?.curDoc?.Content
   if (!content) throw new Error('byteplus pricing page: no curDoc.Content')
-  return JSON.parse(content) as ByteplusDoc
+  return content
 }
 
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
@@ -245,11 +251,12 @@ export async function byteplusModelPricing(
 ): Promise<(rawId: string) => PricedFacts> {
   const doc = await cachedDocs(kv, BYTEPLUS_PRICING_URL, async () => {
     const html = await fetchText(BYTEPLUS_PRICING_URL)
-    const parsed = parseByteplusPricingPage(html)
+    const content = pricingContent(html)
+    const parsed = parseByteplusPricing(JSON.parse(content) as ByteplusDoc)
     assertParsed(parsed, 'byteplus pricing page')
     return {
       rates: Object.fromEntries(parsed),
-      hash: await sha256Text(html),
+      hash: await sha256Text(content),
       extractedAt: new Date().toISOString(),
     }
   })
@@ -257,11 +264,16 @@ export async function byteplusModelPricing(
   return (rawId) => {
     const row = byteplusRatesFor(rawId, rates)
     const pricing = row
-      ? compileTokenCard(row.base, row.tiers, {
-          url: BYTEPLUS_PRICING_URL,
-          hash: doc.hash,
-          extractedAt: doc.extractedAt,
-        })
+      ? compileTokenCard(
+          row.base,
+          row.tiers,
+          {
+            url: BYTEPLUS_PRICING_URL,
+            hash: doc.hash,
+            extractedAt: doc.extractedAt,
+          },
+          { extraPromptLevers: ['audio_tokens', 'audio_cache_tokens'] },
+        )
       : null
     if (!pricing) return {}
     return {

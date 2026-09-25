@@ -113,6 +113,46 @@ export function parseMistralApiIds(html: string, slug: string): Array<string> {
   return best
 }
 
+export interface MistralModelPage {
+  slug: string
+  ids: Array<string>
+  hash: string
+}
+
+/**
+ * API id → rates. A priced slug with no ids throws: caching a partial map
+ * would drop those models' stored cards for the cache TTL.
+ */
+export function indexMistralApiIds(
+  bySlug: Map<string, MistralTokenRates>,
+  pages: Array<MistralModelPage>,
+): Map<string, MistralTokenRates> {
+  const bySlugPage = new Map(pages.map((page) => [page.slug, page]))
+  const missing = [...bySlug.keys()].filter(
+    (slug) => (bySlugPage.get(slug)?.ids.length ?? 0) === 0,
+  )
+  if (missing.length > 0) {
+    throw new Error(`mistral model pages: no API ids for ${missing.join(', ')}`)
+  }
+  const byId = new Map<string, MistralTokenRates>()
+  const conflicts = new Set<string>()
+  for (const page of pages) {
+    const rates = bySlug.get(page.slug)
+    if (!rates) continue
+    const serialized = JSON.stringify(rates.rates)
+    for (const id of page.ids) {
+      const prior = byId.get(id)
+      if (!prior) {
+        byId.set(id, rates)
+        continue
+      }
+      if (JSON.stringify(prior.rates) !== serialized) conflicts.add(id)
+    }
+  }
+  for (const id of conflicts) byId.delete(id)
+  return byId
+}
+
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 /** Card lookup by API model id. */
@@ -123,34 +163,29 @@ export async function mistralModelPricing(
     const html = await fetchText(MISTRAL_PRICING_URL)
     const bySlug = parseMistralPricing(html)
     assertParsed(bySlug, 'mistral pricing page')
-    const byId = new Map<string, MistralTokenRates>()
-    const conflicts = new Set<string>()
     const pages = await mapConcurrent([...bySlug.keys()], 6, async (slug) => {
-      try {
-        const page = await fetchText(MISTRAL_MODEL_PAGE(slug))
-        return { slug, ids: parseMistralApiIds(page, slug) }
-      } catch {
-        return { slug, ids: [] as Array<string> }
-      }
-    })
-    for (const { slug, ids } of pages) {
-      const rates = bySlug.get(slug)
-      if (!rates) continue
-      const serialized = JSON.stringify(rates.rates)
-      for (const id of ids) {
-        const prior = byId.get(id)
-        if (!prior) {
-          byId.set(id, rates)
-          continue
+      const url = MISTRAL_MODEL_PAGE(slug)
+      const page = await cachedDocs(kv, url, async () => {
+        const body = await fetchText(url)
+        const ids = parseMistralApiIds(body, slug)
+        if (ids.length === 0) {
+          throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
         }
-        if (JSON.stringify(prior.rates) !== serialized) conflicts.add(id)
-      }
-    }
-    for (const id of conflicts) byId.delete(id)
+        return { ids, hash: await sha256Text(body) }
+      })
+      return { slug, ids: page.ids, hash: page.hash }
+    })
+    const byId = indexMistralApiIds(bySlug, pages)
     assertParsed(byId, 'mistral model pages')
+    const hash = await sha256Text(
+      [
+        await sha256Text(html),
+        ...pages.map((page) => `${page.slug} ${page.hash}`).sort(),
+      ].join('\n'),
+    )
     return {
       rates: Object.fromEntries(byId),
-      hash: await sha256Text(html),
+      hash,
       extractedAt: new Date().toISOString(),
     }
   })

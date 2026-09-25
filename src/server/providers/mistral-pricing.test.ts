@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseMistralApiIds, parseMistralPricing } from './mistral-pricing.ts'
+import {
+  indexMistralApiIds,
+  parseMistralApiIds,
+  parseMistralPricing,
+} from './mistral-pricing.ts'
 
 const PAGE = `<h2>Flagship models</h2>
 <p>Prices /M Tokens</p>
@@ -35,6 +39,21 @@ describe('mistral pricing page', () => {
     })
     expect(rates.has('ocr-4-1')).toBe(false)
     expect(rates.has('leanstral-1-5')).toBe(false)
+  })
+
+  it('refuses a priced slug whose model page named no API ids', () => {
+    const rates = parseMistralPricing(PAGE)
+    expect(() =>
+      indexMistralApiIds(rates, [
+        {
+          slug: 'mistral-large-3-25-12',
+          ids: ['mistral-large-2512'],
+          hash: 'a',
+        },
+      ]),
+    ).toThrow(
+      'mistral model pages: no API ids for codestral-embed-25-05, codestral-25-08',
+    )
   })
 
   it('reads the API ids a model page lists for the slug', () => {

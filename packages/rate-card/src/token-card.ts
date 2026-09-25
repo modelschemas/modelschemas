@@ -37,11 +37,16 @@ function usable(rates: Record<string, number>): boolean {
 /**
  * `null` when nothing is priced: an empty, negative/NaN, or all-zero rate
  * map is "unknown", never a free card.
+ *
+ * `extraPromptLevers` join the threshold sum. The default set is text and
+ * cache tokens; a host whose prompt length also counts audio passes those
+ * levers here so other hosts stay on the default.
  */
 export function compileTokenCard(
   base: Record<string, number>,
   tiers: Array<TokenRateTier>,
   source: RateCard['source'],
+  options?: { extraPromptLevers?: ReadonlyArray<string> },
 ): RateCard | null {
   if (Object.keys(base).length === 0 || !usable(base)) return null
   if (Object.values(base).every((n) => n === 0)) return null
@@ -54,9 +59,10 @@ export function compileTokenCard(
     ...new Set([base, ...sorted.map((t) => t.rates)].flatMap(Object.keys)),
   ]
   const promptTotal: Expr = {
-    '+': PROMPT_LEVERS.filter((lever) => levers.includes(lever)).map(
-      (lever) => ({ var: lever }),
-    ),
+    '+': [...PROMPT_LEVERS, ...(options?.extraPromptLevers ?? [])]
+      .filter((lever, index, all) => all.indexOf(lever) === index)
+      .filter((lever) => levers.includes(lever))
+      .map((lever) => ({ var: lever })),
   }
   // Highest matching threshold wins; at or below every threshold is base.
   const tierKey: Expr =
