@@ -40,7 +40,9 @@ function lever(heading: string): string | null {
 
 /** `$12.50 / MTok` (footnote markers allowed) → USD per token. */
 function perToken(cell: string | undefined): number | null {
-  const amount = cell?.match(/^\$([\d,]+(?:\.\d+)?)\s*\/\s*MTok\d*$/)?.[1]
+  // The source markdown retains HTML superscripts on footnoted prices.
+  const value = cell?.replace(/<sup>\d+<\/sup>\s*$/, '').trim()
+  const amount = value?.match(/^\$([\d,]+(?:\.\d+)?)\s*\/\s*MTok\d*$/)?.[1]
   return amount === undefined ? null : Number(amount.replace(/,/g, '')) / 1e6
 }
 

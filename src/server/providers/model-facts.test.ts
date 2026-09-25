@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
 import { parseAnthropicPricing } from './anthropic-pricing.ts'
+import { ANTHROPIC_PRICING_PAGE } from './fixtures/anthropic-pricing.ts'
 import { parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
 import {
@@ -500,6 +501,26 @@ Landscape: 1920x1080 | $0.7 | second |
 })
 
 describe('anthropic pricing page', () => {
+  it('reads HTML-footnoted cache rates from the upstream table', () => {
+    const rows = parseAnthropicPricing(ANTHROPIC_PRICING_PAGE)
+    expect(rows.size).toBe(18)
+    expect(rows.get('claude opus 5.5')?.cache_read_tokens).toBeCloseTo(
+      0.2e-6,
+      15,
+    )
+    expect(rows.get('claude fable 5.1')?.cache_read_tokens).toBe(0.25e-6)
+    expect(rows.get('claude sonnet 5')?.input_tokens).toBe(2e-6)
+    expect(rows.get('claude sonnet 5')?.output_tokens).toBe(10e-6)
+    for (const [name, rates] of rows) {
+      if ('cache_write_tokens' in rates || 'cache_write_1h_tokens' in rates) {
+        expect(
+          rates.cache_read_tokens,
+          `${name} must price cache reads`,
+        ).toBeGreaterThan(0)
+      }
+    }
+  })
+
   const page = `# Pricing
 
 ## Model pricing
