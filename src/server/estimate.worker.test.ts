@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
@@ -6,6 +6,9 @@ import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
 import { models, providers } from '../db/schema.ts'
 import { estimateCost, parseEstimateBody } from './estimate.ts'
+import { anthropicModelPricing } from './providers/anthropic-pricing.ts'
+import { ANTHROPIC_PRICING_PAGE } from './providers/fixtures/anthropic-pricing.ts'
+import { parseStoredRateCard } from './rate-card.ts'
 
 const NOW = 1_781_150_000
 let db: Db
@@ -37,6 +40,37 @@ beforeAll(async () => {
       lastSeenAt: NOW,
     },
   ])
+  await db.insert(providers).values({
+    id: 'est-anthropic',
+    displayName: 'Estimate Anthropic',
+    specSourceUrl: 'https://example.com/anthropic.json',
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(new Response(ANTHROPIC_PRICING_PAGE)),
+  )
+  try {
+    const pricingFor = await anthropicModelPricing()
+    for (const [rawId, displayName] of [
+      ['claude-opus-5-5', 'Claude Opus 5.5'],
+      ['claude-fable-5-1', 'Claude Fable 5.1'],
+    ] as const) {
+      const pricing = parseStoredRateCard(pricingFor(displayName).pricing)
+      expect(pricing?.inputs.cache_read_tokens).toBeDefined()
+      await db.insert(models).values({
+        id: `est-anthropic-${rawId}`,
+        providerId: 'est-anthropic',
+        rawId,
+        displayName,
+        activity: 'chat',
+        pricing,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      })
+    }
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })
 
 describe('parseEstimateBody', () => {
@@ -61,6 +95,25 @@ describe('parseEstimateBody', () => {
 })
 
 describe('estimateCost', () => {
+  it.each([
+    ['claude-opus-5-5', 0.2],
+    ['claude-fable-5-1', 0.25],
+  ])(
+    'prices cache reads for %s from docs-derived cards',
+    async (model, usd) => {
+      const outcome = await estimateCost(db, {
+        provider: 'est-anthropic',
+        model,
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_read_tokens: 1_000_000,
+        },
+      })
+      expect(outcome).toMatchObject({ ok: true, result: { usd } })
+    },
+  )
+
   it('prices a stored token card', async () => {
     const outcome = await estimateCost(db, {
       provider: 'est-openai',
