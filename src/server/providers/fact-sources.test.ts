@@ -205,6 +205,14 @@ describe('OpenRouter compare', () => {
       'anthropic/claude-sonnet-4.5',
     ])
     expect(openRouterJoinIds('grok', 'grok-4.6')).toEqual(['x-ai/grok-4.6'])
+    expect(openRouterJoinIds('grok', 'grok-4.20-0309-non-reasoning')).toEqual([
+      'x-ai/grok-4.20-0309-non-reasoning',
+      'x-ai/grok-4.20',
+    ])
+    expect(openRouterJoinIds('grok', 'grok-4.20-multi-agent-0309')).toEqual([
+      'x-ai/grok-4.20-multi-agent-0309',
+      'x-ai/grok-4.20-multi-agent',
+    ])
     expect(openRouterJoinIds('fal', 'x')).toEqual([])
   })
 

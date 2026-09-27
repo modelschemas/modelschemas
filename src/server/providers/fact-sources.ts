@@ -403,6 +403,14 @@ export function openRouterJoinIds(
   if (undated !== rawId) ids.push(`${author}/${undated}`)
   const dotted = undated.replace(/(\d+)-(\d+)$/, '$1.$2')
   if (dotted !== undated) ids.push(`${author}/${dotted}`)
+  if (providerId === 'grok') {
+    // xAI pins `-MMDD` snapshots and splits reasoning modes into ids;
+    // OpenRouter lists one `x-ai/grok-4.20` for both.
+    const family = undated
+      .replace(/-\d{4}(?=-|$)/, '')
+      .replace(/-(non-)?reasoning$/, '')
+    if (family !== undated) ids.push(`${author}/${family}`)
+  }
   return ids
 }
 

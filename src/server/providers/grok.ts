@@ -64,6 +64,13 @@ export function parseGrokReasoning(markdown: string): ModelReasoning | null {
   return { mode: 'effort', mandatory: !efforts.includes('none'), efforts }
 }
 
+/** `**Reasoning:** Yes` in the Capabilities bullets, efforts or not. */
+export function grokReasons(markdown: string): boolean {
+  return /\*\*Reasoning:\*\*\s*Yes/.test(
+    markdownSection(markdown, 'Capabilities'),
+  )
+}
+
 /**
  * xAI tags every operation `v1`, so classify by path. The text-generation
  * surface spans the OpenAI-compatible endpoints (chat/completions,
@@ -255,20 +262,22 @@ async function grokModelFacts(
   ]) {
     for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
   }
-  const reasoning = new Map<string, { value: ModelReasoning; hash: string }>()
+  const reasoning = new Map<
+    string,
+    { value: ModelReasoning | null; reasons?: boolean; hash: string }
+  >()
   await mapConcurrent(language.models ?? [], 8, async (m) => {
     try {
       const page = await cachedDocs(kv, GROK_MODEL_PAGE(m.id), async () => {
         const markdown = await fetchText(GROK_MODEL_PAGE(m.id))
         return {
           value: parseGrokReasoning(markdown),
+          reasons: grokReasons(markdown),
           hash: await sha256Text(markdown),
         }
       })
-      if (!page.value) return
-      for (const id of [m.id, ...(m.aliases ?? [])]) {
-        reasoning.set(id, { value: page.value, hash: page.hash })
-      }
+      if (!page.value && !page.reasons) return
+      for (const id of [m.id, ...(m.aliases ?? [])]) reasoning.set(id, page)
     } catch {
       // A missing page leaves reasoning unknown, never a guess.
     }
@@ -293,12 +302,15 @@ async function grokModelFacts(
     const modalities = m.input_modalities
       ? { input: m.input_modalities, output: m.output_modalities ?? [] }
       : null
+    const reasons = reasoning.get(rawId)?.reasons === true
     const facts: ModelFacts = {
       contextWindow,
+      // xAI publishes no output cap (the spec states only a 128k default).
       maxOutput: null,
       modalities,
-      // xAI publishes no request-feature flags on any endpoint or doc table.
-      capabilities: null,
+      // Request-feature flags come from the bound schema; the per-model
+      // docs page adds `reasoning`, which no request property names.
+      capabilities: reasons ? ['reasoning'] : null,
       pricing: cards.get(rawId) ?? null,
       reasoning: reasoning.get(rawId)?.value ?? null,
     }
@@ -311,12 +323,22 @@ async function grokModelFacts(
       }
     }
     const page = reasoning.get(rawId)
-    if (page) {
+    if (page?.value) {
       sources.reasoning = {
         derivation: 'docs-derived',
         sourceUrl: GROK_MODEL_PAGE(m.id),
         sourceHash: page.hash,
         path: 'Capabilities',
+      }
+    }
+    if (reasons) {
+      sources.capabilities = {
+        reasoning: {
+          derivation: 'docs-derived',
+          sourceUrl: GROK_MODEL_PAGE(m.id),
+          sourceHash: page?.hash,
+          path: 'Capabilities.Reasoning',
+        },
       }
     }
     if (Object.keys(sources).length > 0) facts.factSources = sources
