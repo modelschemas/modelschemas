@@ -899,3 +899,128 @@ describe('extractFalPricing', () => {
     })
   })
 })
+
+describe('extractFalPricing retries (#84)', () => {
+  it('re-extracts a null card stamped by an unverified leftover', async () => {
+    const providerId = 'extract-retry-null'
+    await seedProvider(providerId)
+    const rawId = 'fal-ai/nano-banana-2'
+    const id = await seedCandidate({
+      providerId,
+      rawId,
+      properties: { num_images: { type: 'integer' } },
+    })
+    let extracts = 0
+    const deps = {
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: async (): Promise<ExtractedCard> => {
+        extracts++
+        return 'unverified'
+      },
+    }
+    const first = await extractFalPricing(deps)
+    expect(first.unverified).toBe(1)
+    const stamped = await getDb(env).query.models.findFirst({
+      where: eq(models.id, id),
+    })
+    expect(stamped?.pricing).toBeNull()
+    expect(
+      (stamped?.factSources as { pricing?: { sourceHash?: string } }).pricing
+        ?.sourceHash,
+    ).toBe(await pricingSectionHash(pricingSection(NANO_LLMS)))
+
+    const second = await extractFalPricing({
+      ...deps,
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => {
+        extracts++
+        return perImageCard(args.sourceUrl)
+      },
+    })
+    expect(second).toMatchObject({ hashSkipped: 0, extracted: 1, written: 1 })
+    expect(extracts).toBe(2)
+
+    // Unchanged hash and a non-null card: no model call.
+    const third = await extractFalPricing({
+      ...deps,
+      extractCard: () => {
+        throw new Error('unchanged hash with a card must not re-extract')
+      },
+    })
+    expect(third).toMatchObject({ hashSkipped: 1, extracted: 0 })
+  })
+
+  it('hash-skips a stub section that already stored null', async () => {
+    const providerId = 'extract-stub-skip'
+    await seedProvider(providerId)
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/stub',
+      properties: { prompt: { type: 'string' } },
+    })
+    const deps = {
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(STUB_LLMS),
+      extractCard: () => {
+        throw new Error('stubs never reach the model')
+      },
+    }
+    const first = await extractFalPricing(deps)
+    expect(first).toMatchObject({ refused: 1, hashSkipped: 0 })
+    const second = await extractFalPricing(deps)
+    expect(second).toMatchObject({ refused: 0, hashSkipped: 1 })
+  })
+
+  it('keeps compiling past the leftover cap and resumes on the first dropped row', async () => {
+    const providerId = 'extract-cap-walk'
+    await seedProvider(providerId)
+    const files = new Map<string, string>([
+      ['fal-ai/a', llmsWithRate('0.08')],
+      ['fal-ai/b', llmsWithRate('0.09')],
+      ['fal-ai/c', UNIT_LLMS],
+    ])
+    const ids = new Map<string, string>()
+    for (const rawId of files.keys()) {
+      ids.set(
+        rawId,
+        await seedCandidate({
+          providerId,
+          rawId,
+          properties: { num_images: { type: 'integer' } },
+        }),
+      )
+    }
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      extractCap: 1,
+      fetchText: (url: string) => {
+        const rawId = url.replace(/.*\/models\//, '').replace(/\/llms.txt$/, '')
+        return Promise.resolve(files.get(rawId) ?? null)
+      },
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> =>
+        perImageCard(args.sourceUrl),
+    })
+    expect(outcome).toMatchObject({
+      fetched: 3,
+      extracted: 1,
+      compiled: 1,
+      cursor: 'fal-ai/a',
+    })
+    const c = await getDb(env).query.models.findFirst({
+      where: eq(models.id, ids.get('fal-ai/c') ?? ''),
+    })
+    expect(c?.pricing).not.toBeNull()
+  })
+})
