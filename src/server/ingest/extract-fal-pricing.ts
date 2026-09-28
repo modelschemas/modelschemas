@@ -148,15 +148,19 @@ export function resumeIndex(
 
 /**
  * Unchanged Pricing hash skips extract unless a promo `expiresAt` is
- * already in the past.
+ * already in the past, or the stored card is still null (an unverified
+ * leftover) and the section is not a stub — those retry every lap (#84).
  */
 export function shouldSkipExtract(args: {
   storedHash: string | null
   sectionHash: string
+  hasCard: boolean
+  stub: boolean
   expiresAt: string | undefined
   now: number
 }): boolean {
   if (args.storedHash !== args.sectionHash) return false
+  if (!args.hasCard && !args.stub) return false
   if (args.expiresAt === undefined) return true
   return Date.parse(args.expiresAt) > args.now * 1000
 }
@@ -704,10 +708,13 @@ export async function extractFalPricing(
       const sectionHash = await pricingSectionHash(section)
       const existingCard = parseStoredRateCard(candidate.pricing)
       const sources = factSourcesOf(candidate.factSources)
+      const stub = isStubPricingSection(section)
       if (
         shouldSkipExtract({
           storedHash: storedPricingHash(existingCard, sources),
           sectionHash,
+          hasCard: existingCard !== null,
+          stub,
           expiresAt: existingCard?.source.expiresAt,
           now,
         })
@@ -717,7 +724,7 @@ export async function extractFalPricing(
         continue
       }
 
-      if (isStubPricingSection(section)) {
+      if (stub) {
         logRefusal(providerId, candidate.rawId, 'stub')
         outcome.refused++
         if (
@@ -769,9 +776,13 @@ export async function extractFalPricing(
         continue
       }
       // The cap counts distinct sections, not rows — a row joining a
-      // section already queued is free. Stop before marking so the next
-      // shard resumes on this row.
-      if (leftovers.size >= extractCap) break
+      // section already queued is free. Past the cap, keep walking so the
+      // rest of the fetch window still compiles/dedups/stamps, but freeze
+      // the cursor so the next shard resumes on this row (#84).
+      if (leftovers.size >= extractCap) {
+        cursorFrozen = true
+        continue
+      }
       leftovers.set(sectionHash, { section, sourceUrl, rows: [candidate] })
       mark()
     }

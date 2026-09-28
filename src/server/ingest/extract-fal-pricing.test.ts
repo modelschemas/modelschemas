@@ -117,6 +117,8 @@ describe('shouldSkipExtract', () => {
       shouldSkipExtract({
         storedHash: hash,
         sectionHash: hash,
+        hasCard: true,
+        stub: false,
         expiresAt: undefined,
         now,
       }),
@@ -125,6 +127,8 @@ describe('shouldSkipExtract', () => {
       shouldSkipExtract({
         storedHash: hash,
         sectionHash: 'b'.repeat(64),
+        hasCard: true,
+        stub: false,
         expiresAt: undefined,
         now,
       }),
@@ -133,6 +137,8 @@ describe('shouldSkipExtract', () => {
       shouldSkipExtract({
         storedHash: hash,
         sectionHash: hash,
+        hasCard: true,
+        stub: false,
         expiresAt: '2020-01-01T00:00:00.000Z',
         now,
       }),
@@ -141,9 +147,21 @@ describe('shouldSkipExtract', () => {
       shouldSkipExtract({
         storedHash: hash,
         sectionHash: hash,
+        hasCard: true,
+        stub: false,
         expiresAt: '2099-01-01T00:00:00.000Z',
         now,
       }),
+    ).toBe(true)
+  })
+
+  it('retries an unchanged hash whose card is still null unless it is a stub (#84)', () => {
+    const base = { storedHash: hash, sectionHash: hash, expiresAt: undefined }
+    expect(
+      shouldSkipExtract({ ...base, hasCard: false, stub: false, now }),
+    ).toBe(false)
+    expect(
+      shouldSkipExtract({ ...base, hasCard: false, stub: true, now }),
     ).toBe(true)
   })
 })
