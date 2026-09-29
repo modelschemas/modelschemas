@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { classifyAndBundle } from '../ingest/sync.ts'
 import { anthropicProvider } from './anthropic.ts'
 import { byteplusProvider } from './byteplus.ts'
 import { elevenlabsProvider } from './elevenlabs.ts'
@@ -225,11 +226,177 @@ describe('elevenlabs classify', () => {
       elevenlabsProvider.classify('/v1/voices', { tags: ['voices'] }),
     ).toBe('audio')
     expect(
+      elevenlabsProvider.classify('/v1/music', { tags: ['music-generation'] }),
+    ).toBe('audio')
+    expect(
+      elevenlabsProvider.classify('/v1/music/detailed', {
+        tags: ['music-generation'],
+      }),
+    ).toBe('audio')
+    expect(
+      elevenlabsProvider.classify('/v1/music/stream', {
+        tags: ['music-generation'],
+      }),
+    ).toBe('audio')
+    expect(
+      elevenlabsProvider.classify('/v1/music/plan', {
+        tags: ['music-generation'],
+      }),
+    ).toBe('audio')
+    expect(
+      elevenlabsProvider.classify('/v1/music/video-to-music', {
+        tags: ['video-to-music'],
+      }),
+    ).toBe('audio')
+    expect(
       elevenlabsProvider.classify('/v1/studio/projects', {
         tags: ['studio'],
       }),
     ).toBeNull()
+    expect(
+      elevenlabsProvider.classify('/v1/music/finetunes', {
+        tags: ['music-finetunes'],
+      }),
+    ).toBeNull()
     expect(elevenlabsProvider.classify('/v1/anything', {})).toBeNull()
+    // The live compose tag is `music-generation`. The rest of that tag
+    // (upload, stem separation, detailed stream) stays out so the
+    // provider OpenAPI document stays within MAX_SPEC_PATHS.
+    expect(
+      elevenlabsProvider.classify('/v1/music/upload', {
+        tags: ['music-generation'],
+      }),
+    ).toBeNull()
+    expect(
+      elevenlabsProvider.classify('/v1/music/stem-separation', {
+        tags: ['music-generation'],
+      }),
+    ).toBeNull()
+    expect(
+      elevenlabsProvider.classify('/v1/music/detailed/stream', {
+        tags: ['music-generation'],
+      }),
+    ).toBeNull()
+    expect(elevenlabsProvider.classify('/v1/music', { tags: ['music'] })).toBe(
+      'audio',
+    )
+  })
+
+  it('bundles compose input schemas, including the MusicModelID enum', () => {
+    const spec: OpenApiDocument = {
+      paths: {
+        '/v1/music': {
+          post: {
+            tags: ['music-generation'],
+            summary: 'Compose music',
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: {
+                    $ref: '#/components/schemas/Body_Compose_music_v1_music_post',
+                  },
+                },
+              },
+            },
+            responses: {
+              '200': {
+                content: {
+                  'audio/*': {
+                    schema: { type: 'string', format: 'binary' },
+                  },
+                },
+              },
+            },
+          },
+        },
+        '/v1/music/plan': {
+          post: {
+            tags: ['music-generation'],
+            summary: 'Compose a plan',
+            requestBody: {
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: { prompt: { type: 'string' } },
+                  },
+                },
+              },
+            },
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    schema: { type: 'object' },
+                  },
+                },
+              },
+            },
+          },
+        },
+        '/v1/music/finetunes': {
+          post: {
+            tags: ['music-finetunes'],
+            requestBody: {
+              content: {
+                'multipart/form-data': {
+                  schema: { type: 'object' },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          Body_Compose_music_v1_music_post: {
+            type: 'object',
+            properties: {
+              model_id: {
+                $ref: '#/components/schemas/MusicModelID',
+                description: 'The model to use for the generation.',
+                default: 'music_v1',
+              },
+            },
+          },
+          MusicModelID: {
+            type: 'string',
+            enum: ['music_v1', 'music_v2', 'music_v2_5'],
+            title: 'MusicModelID',
+          },
+        },
+      },
+    }
+    const { endpoints, warnings } = classifyAndBundle(elevenlabsProvider, {
+      specs: [spec],
+      sources: [{ url: 'https://api.elevenlabs.io/openapi.json', hash: 'abc' }],
+      outputStrategy: 'post-200',
+    })
+    expect(warnings).toEqual([])
+    expect(endpoints.map((endpoint) => endpoint.dbId).sort()).toEqual([
+      'elevenlabs/v1/music',
+      'elevenlabs/v1/music/plan',
+    ])
+    const compose = endpoints.find(
+      (endpoint) => endpoint.dbId === 'elevenlabs/v1/music',
+    )
+    const modelId = compose?.input?.properties
+    expect(modelId).toBeTypeOf('object')
+    const modelIdSchema = (modelId as { model_id?: { $ref?: string } }).model_id
+    expect(modelIdSchema?.$ref).toBe('#/$defs/MusicModelID')
+    const defs = compose?.input?.$defs as
+      | { MusicModelID?: { enum?: Array<string> } }
+      | undefined
+    expect(defs?.MusicModelID?.enum).toEqual([
+      'music_v1',
+      'music_v2',
+      'music_v2_5',
+    ])
+    expect(compose?.output).toBeUndefined()
+    expect(
+      endpoints.find((endpoint) => endpoint.dbId === 'elevenlabs/v1/music/plan')
+        ?.output,
+    ).toBeDefined()
   })
 })
 
