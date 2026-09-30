@@ -19,7 +19,11 @@ import { requestSchemaPropertyNames } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
 import { sha256Text } from '#/server/providers/types.ts'
 import { stableStringify } from '#/server/kv.ts'
-import { parseStoredRateCard, storeListedPricing } from '#/server/rate-card.ts'
+import {
+  cardRequestParamsOk,
+  parseStoredRateCard,
+  storeListedPricing,
+} from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -233,15 +237,24 @@ function parseJsonObject(text: string): unknown {
   return JSON.parse(body) as unknown
 }
 
-const EXTRACT_SYSTEM = `You write a modelschemas RateCard from a FAL model's llms.txt Pricing section.
-Return JSON only. The card is JSONLogic over var, missing, +, -, *, /, max, min, if, ==, !=, <, <=, >, >=, and, or, ceil, floor, and lookup into named tables.
+const EXTRACT_SYSTEM = `You write a modelschemas RateCard — a price calculator — from a FAL model's llms.txt Pricing section.
+Return JSON only: {"inputs": {...}, "tables": {...}, "price": <JSONLogic>, "examples": [...]}, optionally "expiresAt" (ISO datetime) when the text names a promo end. Do not include a source object.
+
+inputs: name → {"param": <field>, "kind": "number"|"enum"|"boolean"|"count", "bound": "request"|"usage", "default"?: ..., "values"?: [...] (enum only)}.
+- A request-bound param MUST be one of the allowed request properties (or a dotted child of one). Give it a default when the request may omit it.
+- A quantity the request cannot state (seconds of output, megapixels, characters, tokens) is "bound": "usage" — never invent a request field.
+tables: name → nested {key: number}, read with {"lookup": {"table": name, "keys": [{"var": input}]}}.
+price: JSONLogic over var, +, -, *, /, max, min, if, ==, !=, <, <=, >, >=, and, or, ceil, floor, lookup. {"var": x} reads the input named x. "==" is strict: compare enum inputs to strings.
+examples: [{"params": {param: value}, "usd": number, "quote": text copied verbatim from the section}]. The card is rejected unless evaluating price on each example's params reproduces usd within 1%.
+
 Rules:
-- Every request-bound input.param MUST be one of the allowed request properties (or a dotted child of one). Usage-bound levers (input_tokens, output_tokens, seconds, megapixels, ...) are allowed when the text prices them; make a quantity the request cannot state usage-bound rather than inventing a request field.
-- A quoted unit rate IS enough. "$0.045 per second of video" is a worked number: emit one example of one unit (params {"seconds": 1}, usd 0.045) whose quote is copied verbatim from the text. "per 1000 characters" means one example of 1000 units at the quoted price.
-- Prefer the page's own worked total when it states one ("a 5 second video costs $0.70"). Every example's quote must be text copied from the section, and verifyExamples must reproduce usd within 1%.
-- If the text names no price at all, is zeros, or is "see pricing page" boilerplate, return {"unverified": true} — never a guessed card.
-- Optional top-level expiresAt (ISO datetime) when the text names a promo end.
-Do not include a source object.`
+- If the section names ANY positive dollar amount you MUST write a card. Several prices, multipliers, add-ons and per-resolution / per-duration tables are what this format is for: combine them with *, +, if and lookup.
+- Quoted rates ARE worked numbers: synthesize one example per stated rate. "$0.08 per image" → params {"num_images": 1}, usd 0.08. "per 1000 characters" → 1000 units at the quoted price. "2K at 1.5 times" → params {"resolution": "2K"}, usd 0.12. "an additional $0.015 if web search is used" → params {"enable_web_search": true}, usd 0.095.
+- Prefer the page's own worked total when it states one ("a 5 second video costs $0.70").
+- Return {"unverified": true} ONLY when the section names no positive price (empty, zeros, or "see pricing page" boilerplate).
+
+Example. Section: "Your request will cost $0.08 per image. 2K outputs are charged at 1.5 times the standard rate. If web search is used, an additional $0.015 will be charged." Allowed: num_images, resolution, enable_web_search.
+{"inputs":{"num_images":{"param":"num_images","kind":"number","bound":"request","default":1},"resolution":{"param":"resolution","kind":"enum","bound":"request","values":["1K","2K"],"default":"1K"},"enable_web_search":{"param":"enable_web_search","kind":"boolean","bound":"request","default":false}},"tables":{"multiplier":{"1K":1,"2K":1.5}},"price":{"+":[{"*":[{"var":"num_images"},0.08,{"lookup":{"table":"multiplier","keys":[{"var":"resolution"}]}}]},{"if":[{"var":"enable_web_search"},0.015,0]}]},"examples":[{"params":{"num_images":1},"usd":0.08,"quote":"Your request will cost $0.08 per image"},{"params":{"resolution":"2K"},"usd":0.12,"quote":"2K outputs are charged at 1.5 times the standard rate"},{"params":{"enable_web_search":true},"usd":0.095,"quote":"If web search is used, an additional $0.015 will be charged"}]}`
 
 function extractUserPrompt(
   pricingText: string,
@@ -270,42 +283,106 @@ function withSource(
   }
 }
 
+/**
+ * The model's reply as a card, `'unverified'`, or why it was rejected.
+ * `{unverified: true}` and an example-less card are only legal for a
+ * section that names no price (#88) — a priced section must become a card.
+ */
+export function checkExtractedCard(
+  content: string,
+  args: ExtractCardArgs,
+): RateCard | 'unverified' | { error: string } {
+  let json: unknown
+  try {
+    json = parseJsonObject(content)
+  } catch {
+    return { error: 'reply is not JSON' }
+  }
+  const parsed = extractedResponseSchema.safeParse(json)
+  if (!parsed.success) {
+    return { error: `not a RateCard: ${z.prettifyError(parsed.error)}` }
+  }
+  const priced = !isStubPricingSection(args.pricingText)
+  if ('unverified' in parsed.data || parsed.data.examples.length === 0) {
+    return priced
+      ? {
+          error: `the section names ${usdAmounts(args.pricingText)
+            .map((usd) => `$${usd}`)
+            .join(', ')}; write the card with one example per quoted rate`,
+        }
+      : 'unverified'
+  }
+  const card = withSource(parsed.data, args)
+  if (!cardRequestParamsOk(card, args.requestProperties)) {
+    return {
+      error:
+        'a request-bound input param is not an allowed request property; bind it to an allowed property or make it "bound": "usage"',
+    }
+  }
+  const failed = verifyExamples(card).filter((result) => !result.ok)
+  if (failed.length > 0) {
+    return {
+      error: `verifyExamples failed: ${failed
+        .map((r) => `${JSON.stringify(r.example.params)} → ${r.error}`)
+        .join('; ')}`,
+    }
+  }
+  return card
+}
+
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+
+async function grokChat(
+  apiKey: string,
+  messages: Array<ChatMessage>,
+): Promise<string | null> {
+  const response = await fetch(XAI_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: FAL_PRICING_EXTRACT_MODEL,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages,
+    }),
+  })
+  if (!response.ok) return null
+  return chatContent((await response.json()) as unknown)
+}
+
+/**
+ * One model, at most two turns: a rejected card goes back once with the
+ * reason (same model — not a fallback). `null` = no card this run; the
+ * caller holds the cursor so the next shard retries it.
+ */
 export async function extractRateCardWithGrok(
   args: ExtractCardArgs & { apiKey: string },
 ): Promise<ExtractedCard> {
+  const messages: Array<ChatMessage> = [
+    { role: 'system', content: EXTRACT_SYSTEM },
+    {
+      role: 'user',
+      content: extractUserPrompt(args.pricingText, args.requestProperties),
+    },
+  ]
   try {
-    const response = await fetch(XAI_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${args.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: FAL_PRICING_EXTRACT_MODEL,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: EXTRACT_SYSTEM },
-          {
-            role: 'user',
-            content: extractUserPrompt(
-              args.pricingText,
-              args.requestProperties,
-            ),
-          },
-        ],
-      }),
-    })
-    if (!response.ok) return null
-    const content = chatContent((await response.json()) as unknown)
-    if (content === null) return null
-    const parsed = extractedResponseSchema.safeParse(parseJsonObject(content))
-    if (!parsed.success) return null
-    if ('unverified' in parsed.data) return 'unverified'
-    if (parsed.data.examples.length === 0) return 'unverified'
-    const card = withSource(parsed.data, args)
-    if (verifyExamples(card).some((result) => !result.ok)) return null
-    return card
+    for (let turn = 0; turn < 2; turn++) {
+      const content = await grokChat(args.apiKey, messages)
+      if (content === null) return null
+      const checked = checkExtractedCard(content, args)
+      if (checked === 'unverified' || !('error' in checked)) return checked
+      messages.push(
+        { role: 'assistant', content },
+        {
+          role: 'user',
+          content: `Rejected: ${checked.error}. Return the corrected full JSON.`,
+        },
+      )
+    }
+    return null
   } catch {
     return null
   }
@@ -327,12 +404,13 @@ function logRefusal(
   )
 }
 
+/** Cursor and held rawId live in `cache_meta.lastError` under their own keys. */
 async function loadCursor(
   db: SyncDeps['db'],
-  providerId: string,
+  key: string,
 ): Promise<string | null> {
   const row = await db.query.cacheMeta.findFirst({
-    where: eq(cacheMeta.key, falPricingExtractCursorKey(providerId)),
+    where: eq(cacheMeta.key, key),
   })
   const cursor = row?.lastError
   return cursor && cursor.length > 0 ? cursor : null
@@ -340,14 +418,14 @@ async function loadCursor(
 
 async function saveCursor(
   db: SyncDeps['db'],
-  providerId: string,
+  key: string,
   cursor: string,
   now: number,
 ): Promise<void> {
   await db
     .insert(cacheMeta)
     .values({
-      key: falPricingExtractCursorKey(providerId),
+      key,
       fetchedAt: now,
       staleTime: 0,
       lastError: cursor,
@@ -607,7 +685,7 @@ export async function extractFalPricing(
       card: RateCard,
       sourceUrl: string,
       sectionHash: string,
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       const stamped: RateCard = {
         ...card,
         source: {
@@ -630,7 +708,7 @@ export async function extractFalPricing(
           candidate.rawId,
           stored.refused ?? 'uncompilable',
         )
-        return
+        return false
       }
       if (
         await writePricing({
@@ -645,10 +723,13 @@ export async function extractFalPricing(
       ) {
         outcome.written++
       }
+      return true
     }
 
     const rawIds = candidates.map((row) => row.rawId)
-    const cursor = await loadCursor(deps.db, providerId)
+    const cursorKey = falPricingExtractCursorKey(providerId)
+    const heldKey = `${cursorKey}:held`
+    const cursor = await loadCursor(deps.db, cursorKey)
     const start = resumeIndex(rawIds, cursor)
     const order = [...candidates.slice(start), ...candidates.slice(0, start)]
 
@@ -659,6 +740,9 @@ export async function extractFalPricing(
     let cursorFrozen = false
     const fetchLlms = deps.fetchText ?? fetchLlmsTxt
     const leftovers = new Map<string, LeftoverGroup>()
+    // Each queued leftover row → the cursor just before it, in walk order,
+    // so a failed extract can rewind the cursor onto it.
+    const cursorBefore = new Map<string, string | null>()
 
     // llms.txt is pure I/O — fetch a window ahead so a shard is not 250
     // sequential round trips. Order of processing is unchanged.
@@ -772,6 +856,7 @@ export async function extractFalPricing(
       const group = leftovers.get(sectionHash)
       if (group) {
         group.rows.push(candidate)
+        cursorBefore.set(candidate.rawId, walked.last)
         mark()
         continue
       }
@@ -784,69 +869,97 @@ export async function extractFalPricing(
         continue
       }
       leftovers.set(sectionHash, { section, sourceUrl, rows: [candidate] })
+      cursorBefore.set(candidate.rawId, walked.last)
       mark()
-    }
-
-    if (walked.last !== null) {
-      await saveCursor(deps.db, providerId, walked.last, now)
-      outcome.cursor = walked.last
-    } else {
-      outcome.cursor = cursor
     }
 
     // Everything the parser could not stand behind: one extract call per
     // distinct Pricing section, then copied onto every row sharing it.
-    if (leftovers.size === 0) return outcome
-    if (extract === null) {
+    const failed = new Set<string>()
+    if (leftovers.size > 0 && extract === null) {
       outcome.skipped = 'XAI_API_KEY not set — leftovers skipped'
-      return outcome
-    }
-
-    const groups = [...leftovers.entries()]
-    const results = await mapLimit(
-      groups,
-      FAL_PRICING_EXTRACT_CONCURRENCY,
-      async ([hash, group]) => {
-        outcome.extracted++
-        return await extract({
-          pricingText: group.section,
-          requestProperties: requestPropertiesOf(group.rows[0] as Candidate),
-          sourceUrl: group.sourceUrl,
-          sourceHash: hash,
-          now,
-        })
-      },
-    )
-
-    for (const [index, [hash, group]] of groups.entries()) {
-      const result = results[index]
-      if (result === null || result === undefined) {
-        for (const row of group.rows) {
-          outcome.refused++
-          logRefusal(providerId, row.rawId, 'uncompilable')
-        }
-        continue
-      }
-      if (result === 'unverified' || result.examples.length === 0) {
-        for (const row of group.rows) {
-          outcome.unverified++
-          logRefusal(providerId, row.rawId, 'unverified')
-          await stampPricingHash({
-            db: deps.db,
-            candidate: row,
-            sourceUrl: falLlmsTxtUrl(row.rawId),
+    } else if (leftovers.size > 0 && extract !== null) {
+      const groups = [...leftovers.entries()]
+      const results = await mapLimit(
+        groups,
+        FAL_PRICING_EXTRACT_CONCURRENCY,
+        async ([hash, group]) => {
+          outcome.extracted++
+          return await extract({
+            pricingText: group.section,
+            requestProperties: requestPropertiesOf(group.rows[0] as Candidate),
+            sourceUrl: group.sourceUrl,
             sourceHash: hash,
             now,
           })
+        },
+      )
+
+      for (const [index, [hash, group]] of groups.entries()) {
+        const result = results[index]
+        if (result === 'unverified' || result?.examples.length === 0) {
+          for (const row of group.rows) {
+            outcome.unverified++
+            logRefusal(providerId, row.rawId, 'unverified')
+            await stampPricingHash({
+              db: deps.db,
+              candidate: row,
+              sourceUrl: falLlmsTxtUrl(row.rawId),
+              sourceHash: hash,
+              now,
+            })
+          }
+          continue
         }
-        continue
-      }
-      byHash.set(hash, result)
-      for (const row of group.rows) {
-        await applyCard(row, result, falLlmsTxtUrl(row.rawId), hash)
+        if (result) byHash.set(hash, result)
+        for (const row of group.rows) {
+          const sourceUrl = falLlmsTxtUrl(row.rawId)
+          if (result && (await applyCard(row, result, sourceUrl, hash))) {
+            continue
+          }
+          if (!result) {
+            outcome.refused++
+            logRefusal(providerId, row.rawId, 'uncompilable')
+          }
+          failed.add(row.rawId)
+          // Stamp so the row is not left unwritten; a card it already
+          // has is kept, and its old hash keeps it due for a retry.
+          if (parseStoredRateCard(row.pricing) === null) {
+            await stampPricingHash({
+              db: deps.db,
+              candidate: row,
+              sourceUrl,
+              sourceHash: hash,
+              now,
+            })
+          }
+        }
       }
     }
 
+    // A leftover with no card this run rewinds the cursor onto itself so
+    // the next shard retries it (#88). Only once: a row that fails again
+    // while already held moves on and waits for the next lap, so one bad
+    // page cannot stall the walk.
+    let last = walked.last
+    if (failed.size > 0) {
+      const held = await loadCursor(deps.db, heldKey)
+      const retry = [...cursorBefore.keys()].find(
+        (rawId) => failed.has(rawId) && rawId !== held,
+      )
+      if (retry !== undefined) {
+        // null: nothing was walked before it — the stored cursor already
+        // sits just before it.
+        last = cursorBefore.get(retry) ?? null
+        await saveCursor(deps.db, heldKey, retry, now)
+      }
+    }
+    if (last !== null) {
+      await saveCursor(deps.db, cursorKey, last, now)
+      outcome.cursor = last
+    } else {
+      outcome.cursor = cursor
+    }
     return outcome
   } catch (error) {
     outcome.error = errorMessage(error)

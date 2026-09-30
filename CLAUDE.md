@@ -116,7 +116,9 @@ ones).
   nulling stored cards. FAL cards come from `extract-fal-pricing.ts`:
   `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no
   model call, leftovers go to one extract model per distinct Pricing-section
-  hash and are copied onto every row sharing it.
+  hash and are copied onto every row sharing it. A priced leftover must
+  become a card (one repair turn, same model); a failed one rewinds the
+  cursor so the next shard retries it once.
   `models.reasoning` (`{ mode, mandatory, efforts? }`) and
   `models.serverTools` (provider tool type ids) come from docs: OpenAI and
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
