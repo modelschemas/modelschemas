@@ -89,7 +89,6 @@ interface ReplicateModel {
   name?: string
   description?: string | null
   visibility?: string
-  run_count?: number
   created_at?: string
   is_official?: boolean
   latest_version?: { created_at?: string }
@@ -128,7 +127,6 @@ function toModelInfo(model: ReplicateModel): ModelInfo | null {
       isoToEpochSeconds(model.latest_version?.created_at),
     capabilities: {
       visibility: model.visibility,
-      runCount: model.run_count,
       official: model.is_official,
     },
   }

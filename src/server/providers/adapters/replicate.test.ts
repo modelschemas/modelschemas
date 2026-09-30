@@ -75,6 +75,8 @@ describe('replicate listModels', () => {
             owner: 'black-forest-labs',
             name: 'flux-schnell',
             description: 'Fast text-to-image',
+            visibility: 'public',
+            run_count: 26026,
             created_at: '2024-08-01T00:00:00Z',
             is_official: true,
           },
@@ -121,6 +123,11 @@ describe('replicate listModels', () => {
         ['black-forest-labs/flux-schnell', 'image'],
         ['openai/whisper', 'audio'],
       ])
+      // run_count is usage telemetry; storing it made every poll a model.updated (#92).
+      expect(result.models[0]?.capabilities).toEqual({
+        visibility: 'public',
+        official: true,
+      })
       expect(result.models[0]?.releasedAt).toBe(
         Date.parse('2024-08-01T00:00:00Z') / 1000,
       )
