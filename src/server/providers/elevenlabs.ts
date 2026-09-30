@@ -5,9 +5,11 @@
 import type { Activity } from '#/db/schema.ts'
 import { ELEVENLABS_RELEASE_DATES, curatedReleasedAt } from './release-dates.ts'
 import { headerApiKeyConnect } from './connect.ts'
+import { cachedDocs } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   OpenApiDocument,
   OpenApiOperation,
   ProviderConfig,
@@ -77,7 +79,70 @@ interface ElevenLabsModel {
   languages?: Array<{ language_id: string; name: string }>
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+/**
+ * Routes whose request `model_id` enum names models `GET /v1/models`
+ * omits (music, voice design, sound effects).
+ */
+const ELEVENLABS_ENUM_MODEL_ROUTES = [
+  'v1/music',
+  'v1/text-to-voice/design',
+  'v1/sound-generation',
+]
+
+interface EnumModel {
+  rawId: string
+  schemaEndpointId: string
+  deprecated: boolean
+}
+
+function deref(spec: OpenApiDocument, node: unknown): Record<string, unknown> {
+  const obj = (node ?? {}) as Record<string, unknown>
+  const ref = obj.$ref
+  if (typeof ref !== 'string') return obj
+  const name = ref.replace('#/components/schemas/', '')
+  const components = spec.components as
+    | { schemas?: Record<string, unknown> }
+    | undefined
+  return (components?.schemas?.[name] ?? {}) as Record<string, unknown>
+}
+
+/**
+ * The `model_id` enum values on each enum route's JSON request body. Throws
+ * when a route yields none — the enum moving would otherwise silently
+ * remove those catalog rows.
+ */
+export function elevenlabsEnumModels(spec: OpenApiDocument): Array<EnumModel> {
+  return ELEVENLABS_ENUM_MODEL_ROUTES.flatMap((endpointId) => {
+    const op = spec.paths?.[`/${endpointId}`]?.post as
+      | { requestBody?: { content?: Record<string, { schema?: unknown }> } }
+      | undefined
+    const body = deref(
+      spec,
+      op?.requestBody?.content?.['application/json']?.schema,
+    )
+    const properties = (body.properties ?? {}) as Record<string, unknown>
+    const modelId = deref(spec, properties.model_id)
+    const values = Array.isArray(modelId.enum) ? modelId.enum : []
+    const ids = values.filter((v): v is string => typeof v === 'string')
+    if (ids.length === 0) {
+      throw new Error(`elevenlabs spec: no model_id enum on ${endpointId}`)
+    }
+    const meta = (modelId['x-fern-enum'] ?? {}) as Record<
+      string,
+      { deprecated?: boolean } | undefined
+    >
+    return ids.map((rawId) => ({
+      rawId,
+      schemaEndpointId: endpointId,
+      deprecated: meta[rawId]?.deprecated === true,
+    }))
+  })
+}
+
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.ELEVENLABS_API_KEY
   if (!key) {
     return {
@@ -88,20 +153,36 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(ELEVENLABS_MODELS_URL, {
     headers: { 'xi-api-key': key },
   })) as Array<ElevenLabsModel>
-  return {
-    models: body.map((m) => ({
-      rawId: m.model_id,
-      displayName: m.name ?? null,
+  const enumModels = await cachedDocs(kv, ELEVENLABS_OPENAPI_URL, async () =>
+    elevenlabsEnumModels(
+      JSON.parse(await fetchText(ELEVENLABS_OPENAPI_URL)) as OpenApiDocument,
+    ),
+  )
+  const speechIds = new Set(body.map((m) => m.model_id))
+  const speech: Array<ModelInfo> = body.map((m) => ({
+    rawId: m.model_id,
+    displayName: m.name ?? null,
+    activity: 'audio',
+    // ElevenLabs' API has no release timestamp — curated dates only.
+    releasedAt: curatedReleasedAt(ELEVENLABS_RELEASE_DATES, m.model_id),
+    capabilities: {
+      canDoTextToSpeech: m.can_do_text_to_speech,
+      canDoVoiceConversion: m.can_do_voice_conversion,
+      languages: m.languages?.map((l) => l.language_id),
+    },
+  }))
+  // A speech id that also sits in an enum keeps its speech row.
+  const extra: Array<ModelInfo> = enumModels
+    .filter((m) => !speechIds.has(m.rawId))
+    .map((m) => ({
+      rawId: m.rawId,
+      displayName: null,
       activity: 'audio',
-      // ElevenLabs' API has no release timestamp — curated dates only.
-      releasedAt: curatedReleasedAt(ELEVENLABS_RELEASE_DATES, m.model_id),
-      capabilities: {
-        canDoTextToSpeech: m.can_do_text_to_speech,
-        canDoVoiceConversion: m.can_do_voice_conversion,
-        languages: m.languages?.map((l) => l.language_id),
-      },
-    })),
-  }
+      releasedAt: curatedReleasedAt(ELEVENLABS_RELEASE_DATES, m.rawId),
+      schemaEndpointId: m.schemaEndpointId,
+      deprecated: m.deprecated,
+    }))
+  return { models: [...speech, ...extra] }
 }
 
 export const elevenlabsProvider: ProviderConfig = {
