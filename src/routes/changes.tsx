@@ -4,6 +4,7 @@ import { createServerFn } from '@tanstack/react-start'
 
 import {
   CHANGE_STYLES,
+  ChangeSummary,
   JsonPane,
   MetaStrip,
   ReqLine,
@@ -157,7 +158,7 @@ function Changes() {
                           {change.type}
                         </td>
                         <td className="max-w-[38em] truncate">
-                          {change.summary}
+                          <ChangeSummary change={change} />
                         </td>
                         <td className="font-mono text-xs text-ink-faint max-sm:hidden">
                           <a

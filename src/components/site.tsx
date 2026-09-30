@@ -5,6 +5,8 @@
  */
 import { useState } from 'react'
 
+import { modelChangeHref } from '#/lib/change-link.ts'
+
 export const GITHUB_URL = 'https://github.com/tombeckenham/modelschemas'
 
 export function GithubIcon({ className = '' }: { className?: string }) {
@@ -311,6 +313,25 @@ export function SectionHead({
         </span>
       ) : null}
     </div>
+  )
+}
+
+export function ChangeSummary({
+  change,
+}: {
+  change: {
+    type: string
+    providerId: string
+    subjectId: string
+    summary: string
+  }
+}) {
+  const href = modelChangeHref(change)
+  if (href === null) return change.summary
+  return (
+    <a className="text-ink hover:text-tok-blue" href={href}>
+      {change.summary}
+    </a>
   )
 }
 

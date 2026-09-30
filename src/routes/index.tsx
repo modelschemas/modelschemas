@@ -8,6 +8,7 @@ import { EXAMPLES } from '#/lib/examples.ts'
 
 import {
   CHANGE_STYLES,
+  ChangeSummary,
   CodePanel,
   SectionHead,
   SiteFooter,
@@ -22,6 +23,7 @@ interface DashboardChange {
   id: string
   type: string
   providerId: string
+  subjectId: string
   summary: string
   createdAt: number
 }
@@ -50,6 +52,7 @@ const getDashboardData = createServerFn({ method: 'GET' }).handler(
             id: c.id,
             type: c.type,
             providerId: c.providerId,
+            subjectId: c.subjectId,
             summary: c.summary,
             createdAt: c.createdAt,
           }))
@@ -295,7 +298,7 @@ function Landing() {
                           {change.type}
                         </td>
                         <td className="max-w-[38em] truncate">
-                          {change.summary}
+                          <ChangeSummary change={change} />
                         </td>
                         <td className="font-mono text-xs text-ink-faint max-sm:hidden">
                           {change.providerId}
