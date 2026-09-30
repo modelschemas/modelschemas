@@ -1024,3 +1024,107 @@ describe('extractFalPricing retries (#84)', () => {
     expect(c?.pricing).not.toBeNull()
   })
 })
+
+describe('extractFalPricing failed leftovers (#88)', () => {
+  it('stamps a failed leftover and rewinds the cursor onto it once', async () => {
+    const providerId = 'extract-hold'
+    await seedProvider(providerId)
+    const files = new Map<string, string>([
+      ['fal-ai/a', UNIT_LLMS],
+      ['fal-ai/b', NANO_LLMS],
+      ['fal-ai/c', UNIT_LLMS],
+    ])
+    const ids = new Map<string, string>()
+    for (const rawId of files.keys()) {
+      ids.set(
+        rawId,
+        await seedCandidate({
+          providerId,
+          rawId,
+          properties: { num_images: { type: 'integer' } },
+        }),
+      )
+    }
+    const seen: Array<string> = []
+    let extracts = 0
+    const deps = {
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchCap: 2,
+      fetchText: (url: string) => {
+        const rawId = url.replace(/.*\/models\//, '').replace(/\/llms.txt$/, '')
+        seen.push(rawId)
+        return Promise.resolve(files.get(rawId) ?? null)
+      },
+      extractCard: async (): Promise<ExtractedCard> => {
+        extracts++
+        return null
+      },
+    }
+
+    // a compiles, b fails: b is stamped, and the cursor stays on a.
+    const first = await extractFalPricing(deps)
+    expect(first).toMatchObject({
+      extracted: 1,
+      refused: 1,
+      cursor: 'fal-ai/a',
+    })
+    const b = await getDb(env).query.models.findFirst({
+      where: eq(models.id, ids.get('fal-ai/b') ?? ''),
+    })
+    expect(b?.pricing).toBeNull()
+    expect(
+      (b?.factSources as { pricing?: { sourceHash?: string } }).pricing
+        ?.sourceHash,
+    ).toBe(await pricingSectionHash(pricingSection(NANO_LLMS)))
+
+    // The next shard starts on b and retries it; failing again while held
+    // moves the walk on instead of stalling there.
+    seen.length = 0
+    const second = await extractFalPricing(deps)
+    expect(seen.slice(0, 2)).toEqual(['fal-ai/b', 'fal-ai/c'])
+    expect(second).toMatchObject({ extracted: 1, cursor: 'fal-ai/c' })
+    expect(extracts).toBe(2)
+
+    // Once held, a success clears the way as usual.
+    seen.length = 0
+    const third = await extractFalPricing({
+      ...deps,
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> =>
+        perImageCard(args.sourceUrl),
+    })
+    expect(seen.slice(0, 2)).toEqual(['fal-ai/a', 'fal-ai/b'])
+    expect(third).toMatchObject({ written: 1, cursor: 'fal-ai/b' })
+  })
+
+  it('holds the cursor when an extracted card is refused for a row', async () => {
+    const providerId = 'extract-hold-refused'
+    await seedProvider(providerId)
+    for (const rawId of ['fal-ai/a', 'fal-ai/b']) {
+      await seedCandidate({
+        providerId,
+        rawId,
+        properties: { num_images: { type: 'integer' } },
+      })
+    }
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: (url: string) =>
+        Promise.resolve(url.includes('/fal-ai/a/') ? UNIT_LLMS : NANO_LLMS),
+      extractCard: async (args: ExtractCardArgs): Promise<ExtractedCard> => ({
+        ...perImageCard(args.sourceUrl),
+        inputs: {
+          num_images: { param: 'image_count', kind: 'number', default: 1 },
+        },
+      }),
+    })
+    expect(outcome).toMatchObject({ refused: 1, cursor: 'fal-ai/a' })
+  })
+})

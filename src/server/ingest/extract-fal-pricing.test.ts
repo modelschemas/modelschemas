@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { verifyExamples } from '@modelschemas/rate-card'
+
 import { NANO_BANANA_2 } from '../../../packages/rate-card/src/fixtures/nano-banana-2.ts'
 
 import {
@@ -8,6 +10,7 @@ import {
   FAL_PRICING_EXTRACT_MODEL,
   FAL_PRICING_FETCH_CAP,
   FAL_PRICING_FETCH_FAIL_ABORT,
+  checkExtractedCard,
   isRetryableLlmsStatus,
   extractRateCardWithGrok,
   isStubPricingSection,
@@ -16,7 +19,22 @@ import {
   resumeIndex,
   shouldSkipExtract,
 } from './extract-fal-pricing.ts'
+import { parseFalUnitRate } from './fal-unit-rate.ts'
 import { SPEC_SYNC_SHARD_CRONS } from './sync.ts'
+
+/** A fetch mock answering successive chat calls with these contents. */
+function grokReplies(...replies: Array<unknown>) {
+  const mock = vi.fn<typeof fetch>()
+  for (const reply of replies) {
+    const content = typeof reply === 'string' ? reply : JSON.stringify(reply)
+    mock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+        status: 200,
+      }),
+    )
+  }
+  return mock
+}
 
 const NANO_LLMS = `# Nano Banana 2
 
@@ -264,78 +282,94 @@ describe('extractRateCardWithGrok', () => {
     }
   })
 
-  it('returns unverified when the model refuses to guess', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [
-              { message: { content: JSON.stringify({ unverified: true }) } },
-            ],
-          }),
-          { status: 200 },
-        ),
-      ),
-    )
+  it('returns unverified only for a section that names no price', async () => {
+    const fetchMock = grokReplies({ unverified: true })
+    vi.stubGlobal('fetch', fetchMock)
     try {
-      await expect(extractRateCardWithGrok(args)).resolves.toBe('unverified')
+      await expect(
+        extractRateCardWithGrok({
+          ...args,
+          pricingText:
+            '## Pricing\n\nSee [fal.ai pricing](https://fal.ai/pricing).',
+        }),
+      ).resolves.toBe('unverified')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.unstubAllGlobals()
     }
   })
 
-  it('returns unverified when the card has no examples', async () => {
+  it('sends a priced section back once when the model says unverified (#88)', async () => {
     const { source: _source, ...body } = NANO_BANANA_2
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({ ...body, examples: [] }),
-                },
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      ),
-    )
+    const fetchMock = grokReplies({ unverified: true }, body)
+    vi.stubGlobal('fetch', fetchMock)
     try {
-      await expect(extractRateCardWithGrok(args)).resolves.toBe('unverified')
+      const card = await extractRateCardWithGrok(args)
+      expect(card).toMatchObject({ price: NANO_BANANA_2.price })
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      const retry = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+        model: string
+        messages: Array<{ role: string; content: string }>
+      }
+      expect(retry.model).toBe(FAL_PRICING_EXTRACT_MODEL)
+      expect(retry.messages.map((m) => m.role)).toEqual([
+        'system',
+        'user',
+        'assistant',
+        'user',
+      ])
+      expect(retry.messages[3]?.content).toContain('$0.08')
     } finally {
       vi.unstubAllGlobals()
     }
   })
 
-  it('returns null when verifyExamples fails', async () => {
+  it('returns null when a priced section is refused twice', async () => {
+    const { source: _source, ...body } = NANO_BANANA_2
+    for (const reply of [{ unverified: true }, { ...body, examples: [] }]) {
+      const fetchMock = grokReplies(reply, reply)
+      vi.stubGlobal('fetch', fetchMock)
+      try {
+        await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    }
+  })
+
+  it('returns null when verifyExamples fails on both turns', async () => {
     const { source: _source, examples, ...body } = NANO_BANANA_2
     const first = examples[0]
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [
-              {
-                message: {
-                  content: JSON.stringify({
-                    ...body,
-                    examples: first
-                      ? [{ ...first, usd: 999 }]
-                      : [{ params: {}, usd: 999, quote: 'nope' }],
-                  }),
-                },
-              },
-            ],
-          }),
-          { status: 200 },
-        ),
-      ),
-    )
+    const bad = {
+      ...body,
+      examples: first
+        ? [{ ...first, usd: 999 }]
+        : [{ params: {}, usd: 999, quote: 'nope' }],
+    }
+    const fetchMock = grokReplies(bad, bad)
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
+      const retry = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+        messages: Array<{ content: string }>
+      }
+      expect(retry.messages[3]?.content).toContain('verifyExamples failed')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('rejects a request-bound param the input schema does not have', async () => {
+    const { source: _source, ...body } = NANO_BANANA_2
+    const invented = {
+      ...body,
+      inputs: {
+        ...body.inputs,
+        num_images: { param: 'image_count', kind: 'number', default: 1 },
+      },
+    }
+    vi.stubGlobal('fetch', grokReplies(invented, invented))
     try {
       await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
     } finally {
@@ -344,21 +378,98 @@ describe('extractRateCardWithGrok', () => {
   })
 
   it('fails closed on a non-card payload', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: '{"nope":true}' } }],
-          }),
-          { status: 200 },
-        ),
-      ),
-    )
+    vi.stubGlobal('fetch', grokReplies({ nope: true }, 'not json'))
     try {
       await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+})
+
+describe('checkExtractedCard', () => {
+  const base = {
+    requestProperties: new Set(['resolution', 'duration']),
+    sourceUrl:
+      'https://fal.ai/models/fal-ai/wan-25-preview/text-to-video/llms.txt',
+    sourceHash: 'd'.repeat(64),
+    now: 1_781_150_000,
+  }
+
+  /** Live fal-ai/wan-25-preview/text-to-video, read 2026-09-30. */
+  const WAN_TABLE = `## Pricing
+
+Your request will cost **$0.05** per second for **480p**, **$0.10** per second for **720p**, **$0.15** per second for **1080p**.
+
+For more details, see [fal.ai pricing](https://fal.ai/pricing).`
+
+  it('accepts a lookup calculator for a per-second resolution table', () => {
+    // The fast path refuses several rates by design — this is leftover work.
+    expect(parseFalUnitRate(WAN_TABLE)).toBeNull()
+    const reply = {
+      inputs: {
+        resolution: {
+          param: 'resolution',
+          kind: 'enum',
+          bound: 'request',
+          values: ['480p', '720p', '1080p'],
+          default: '1080p',
+        },
+        seconds: { param: 'seconds', kind: 'number', bound: 'usage' },
+      },
+      tables: { rate: { '480p': 0.05, '720p': 0.1, '1080p': 0.15 } },
+      price: {
+        '*': [
+          { var: 'seconds' },
+          { lookup: { table: 'rate', keys: [{ var: 'resolution' }] } },
+        ],
+      },
+      examples: [
+        {
+          params: { resolution: '480p', seconds: 1 },
+          usd: 0.05,
+          quote: 'Your request will cost **$0.05** per second for **480p**',
+        },
+        {
+          params: { resolution: '720p', seconds: 1 },
+          usd: 0.1,
+          quote: '**$0.10** per second for **720p**',
+        },
+        {
+          params: { seconds: 1 },
+          usd: 0.15,
+          quote: '**$0.15** per second for **1080p**',
+        },
+      ],
+    }
+    const card = checkExtractedCard(JSON.stringify(reply), {
+      ...base,
+      pricingText: WAN_TABLE,
+    })
+    if (card === 'unverified' || 'error' in card) {
+      throw new Error(JSON.stringify(card))
+    }
+    expect(card.source.hash).toBe(base.sourceHash)
+    expect(verifyExamples(card).every((r) => r.ok)).toBe(true)
+    expect(card.price).toMatchObject({
+      '*': [{ var: 'seconds' }, { lookup: {} }],
+    })
+  })
+
+  it('refuses unverified for the table but allows it for a zero-price stub', () => {
+    const refused = checkExtractedCard('{"unverified":true}', {
+      ...base,
+      pricingText: WAN_TABLE,
+    })
+    expect(
+      typeof refused === 'object' && 'error' in refused && refused.error,
+    ).toContain('$0.05')
+    expect(
+      checkExtractedCard('{"unverified":true}', {
+        ...base,
+        pricingText:
+          '## Pricing\n\nYour request will cost **$0.00** per image.',
+      }),
+    ).toBe('unverified')
   })
 })

@@ -67,7 +67,7 @@ function requestParamAllowed(
   return root !== undefined && requestProperties.has(root)
 }
 
-function cardRequestParamsOk(
+export function cardRequestParamsOk(
   card: RateCard,
   requestProperties: ReadonlySet<string> | undefined,
 ): boolean {
