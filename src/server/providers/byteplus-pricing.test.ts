@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { byteplusRatesFor, parseByteplusPricing } from './byteplus-pricing.ts'
+import { price } from '@modelschemas/rate-card'
+
+import {
+  byteplusRatesFor,
+  compileSeedanceCard,
+  parseByteplusImages,
+  parseByteplusPricing,
+  parseByteplusVideo,
+} from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
 
 function cell(id: string, text: string) {
@@ -11,46 +19,41 @@ function cell(id: string, text: string) {
   }
 }
 
-/**
- * One standard-table row group. `rows` are cell texts in header order:
- * model, tier, input, audio, cache storage, cache hit, audio cache, output.
- */
-function doc(rows: Array<Array<string>>): ByteplusDoc {
-  const headers = [
-    'Model ID',
-    'Pricing tiers (K tokens)',
-    'Input (non-audio) (USD/M tokens)',
-    'Input (audio) (USD/M tokens)',
-    'Cache-storage (USD/M tokens/Hour)',
-    'Cache-hit input (non-audio) (USD/M tokens)',
-    'Cache-hit input (audio) (USD/M tokens)',
-    'Output (USD/M tokens)',
-  ]
-  const body = [headers, ...rows]
-  const rowIds = body.map((_, index) => `r${index}`)
-  const colIds = headers.map((_, index) => `c${index}`)
-  const data: ByteplusDoc['data'] = {
-    '0': {
-      ops: [
-        {
-          insert: '*',
-          attributes: { aceTable: 'rows cols' },
-        },
-      ],
-    },
-    rows: {
-      ops: rowIds.map((id) => ({ insert: { id } })),
+/** Chat-table header: model, tier, input, audio, cache storage, cache hit, audio cache, output. */
+const CHAT_HEADERS = [
+  'Model ID',
+  'Pricing tiers (K tokens)',
+  'Input (non-audio) (USD/M tokens)',
+  'Input (audio) (USD/M tokens)',
+  'Cache-storage (USD/M tokens/Hour)',
+  'Cache-hit input (non-audio) (USD/M tokens)',
+  'Cache-hit input (audio) (USD/M tokens)',
+  'Output (USD/M tokens)',
+]
+
+/** Page document of `tables`, each a header row then body rows. */
+function doc(...tables: Array<Array<Array<string>>>): ByteplusDoc {
+  const data: ByteplusDoc['data'] = { '0': { ops: [] } }
+  tables.forEach((body, t) => {
+    data['0']?.ops?.push({
+      insert: '*',
+      attributes: { aceTable: `rows${t} cols${t}` },
+    })
+    data[`rows${t}`] = {
+      ops: body.map((_, index) => ({ insert: { id: `t${t}r${index}` } })),
       zoneType: 'R',
-    },
-    cols: {
-      ops: colIds.map((id) => ({ insert: { id } })),
+    }
+    data[`cols${t}`] = {
+      ops: (body[0] ?? []).map((_, index) => ({
+        insert: { id: `t${t}c${index}` },
+      })),
       zoneType: 'C',
-    },
-  }
-  body.forEach((cells, row) => {
-    cells.forEach((text, column) => {
-      const id = `xr${row}xc${column}`
-      data[id] = cell(id, text)
+    }
+    body.forEach((cells, row) => {
+      cells.forEach((text, column) => {
+        const id = `xt${t}r${row}xt${t}c${column}`
+        data[id] = cell(id, text)
+      })
     })
   })
   return { data }
@@ -60,6 +63,7 @@ describe('byteplus pricing page', () => {
   it('reads standard token rates, tiers, and a dated catalog suffix', () => {
     const rates = parseByteplusPricing(
       doc([
+        CHAT_HEADERS,
         [
           'dola-seed-2-1-turbo',
           'Prompt length [0, 256]',
@@ -143,5 +147,110 @@ describe('byteplus pricing page', () => {
       byteplusRatesFor('dola-seed-2-1-turbo-260628', rates)?.base.input_tokens,
     ).toBe(0.5e-6)
     expect(byteplusRatesFor('seed-translation-250915', rates)).toBeUndefined()
+  })
+})
+
+const SOURCE = {
+  url: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+  hash: 'a'.repeat(64),
+  extractedAt: '2026-10-02T00:00:00Z',
+}
+
+/** Rate cells as the live page words them (read 2026-10-02). */
+const VIDEO_TABLE = [
+  [
+    'Model ID',
+    'Online inference (USD / M tokens)',
+    'Offline inference (USD / M tokens)',
+  ],
+  [
+    'dreamina-seedance-2-5-260628 Pricing varies based on output video resolution and whether the input includes video.',
+    'For 480p and 720p outputs: Input without video: 10.70 Input with video: 6.40 For 1080p outputs: Input without video: 11.7 Input with video: 7.0',
+    'Not supported yet',
+  ],
+  [
+    'dreamina-seedance-2-0-fast-260128 Pricing varies based on whether the input includes video.',
+    'For 480p and 720p outputs: Input without video: (Original) 5.6 Time limited 25% off Input with video: (Original) 3.3 Time limited 25% off',
+    'Not supported yet',
+  ],
+  [
+    'seedance-1-5-pro-251215 Pricing varies based on whether the output includes audio',
+    'Video with audio: 2.4 Video without audio: 1.2',
+    'Video with audio: 1.2 Video without audio: 0.6',
+  ],
+  ['seedance-1-0-pro-250528', '2.5', '1.25'],
+  ['seedance-9-unknown-261231', 'Contact sales', 'Not supported yet'],
+]
+
+const IMAGE_TABLE = [
+  [
+    'Model ID',
+    'Input image price (USD / image)',
+    'Output image price (USD / image)',
+  ],
+  [
+    'dola-seedream-5-0-pro-260628 Pricing varies by image generation scenario.',
+    'First image: Free From the 2nd image: 0.003',
+    'Single image generation: ≤ 2.61 million pixels (1.5K or lower): 0.045',
+  ],
+  ['seedream-4-5-251128', 'Free', '0.04'],
+]
+
+describe('byteplus video and image tables', () => {
+  const page = doc(VIDEO_TABLE, IMAGE_TABLE)
+  const video = parseByteplusVideo(page)
+
+  it('reads list prices per tier, resolution, and variant', () => {
+    expect(video.get('dreamina-seedance-2-0-fast-260128')).toEqual({
+      default: {
+        '480p': { no_video: 5.6, video: 3.3 },
+        '720p': { no_video: 5.6, video: 3.3 },
+      },
+    })
+    expect(video.get('seedance-1-0-pro-250528')?.flex?.['1080p']).toEqual({
+      all: 1.25,
+    })
+    expect(video.has('seedance-9-unknown-261231')).toBe(false)
+    expect(parseByteplusImages(page)).toEqual(
+      new Map([['seedream-4-5-251128', 0.04]]),
+    )
+  })
+
+  it("reproduces the page's worked video prices", () => {
+    const usd = (
+      id: string,
+      request: Record<string, unknown>,
+      usage?: Record<string, unknown>,
+    ) => {
+      const rates = video.get(id)
+      const card = rates && compileSeedanceCard(id, rates, SOURCE)
+      if (!card) throw new Error(`no card for ${id}`)
+      return Number(price(card, request, usage).toFixed(3))
+    }
+    const v25 = 'dreamina-seedance-2-5-260628'
+    // "Dreamina Seedance 2.5 price (USD)", 16:9, 5 s.
+    expect(usd(v25, { resolution: '480p' })).toBe(0.514)
+    expect(usd(v25, { resolution: '1080p', duration: 5 })).toBe(2.843)
+    // With 30 s of input video: 4.838 per video.
+    expect(usd(v25, { resolution: '720p' }, { input_video_duration: 30 })).toBe(
+      4.838,
+    )
+    // Billed tokens win over the estimate.
+    expect(usd(v25, { resolution: '720p' }, { completion_tokens: 1e6 })).toBe(
+      10.7,
+    )
+    // Seedance 1.0 Pro usage table: 1080p 16:9 10 s = 489600 tokens, 1.22.
+    expect(
+      usd('seedance-1-0-pro-250528', { resolution: '1080p', duration: 10 }),
+    ).toBe(1.224)
+    expect(
+      usd('seedance-1-5-pro-251215', {
+        resolution: '480p',
+        generate_audio: true,
+        service_tier: 'flex',
+      }),
+    ).toBe(0.058)
+    // No offline column: flex refuses rather than pricing at online rates.
+    expect(() => usd(v25, { service_tier: 'flex' })).toThrow(/flex/)
   })
 })

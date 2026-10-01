@@ -113,7 +113,9 @@ ones).
   at write (`src/server/rate-card.ts`), and OpenAI/Anthropic/Gemini prices
   are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
   — every parser fail-closed, a page that parses nothing throws rather than
-  nulling stored cards. FAL cards come from `extract-fal-pricing.ts`:
+  nulling stored cards. BytePlus chat, Seedance, and Seedream cards come
+  from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
+  pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:
   `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no
   model call, leftovers go to one extract model per distinct Pricing-section
   hash and are copied onto every row sharing it. A priced leftover must

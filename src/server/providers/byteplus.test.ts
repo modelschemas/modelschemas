@@ -10,11 +10,12 @@ import {
 import { BYTEPLUS_PRICING_URL } from './byteplus-pricing.ts'
 
 /**
- * One standard-table row, enough for listModels to attach a card without
- * fetching the live pricing page (that fetch races other tests' fetch stubs).
+ * One chat, video, and image row, enough for listModels to attach cards
+ * without fetching the live pricing page (that fetch races other tests'
+ * fetch stubs).
  */
 function pricingFixtureHtml(): string {
-  const headers = [
+  const chat = [
     'Model ID',
     'Pricing tiers (K tokens)',
     'Input (non-audio) (USD/M tokens)',
@@ -24,29 +25,56 @@ function pricingFixtureHtml(): string {
     'Cache-hit input (audio) (USD/M tokens)',
     'Output (USD/M tokens)',
   ]
-  const body = [
-    headers,
-    ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
+  const tables = [
+    [
+      chat,
+      ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
+    ],
+    [
+      [
+        'Model ID',
+        'Online inference (USD / M tokens)',
+        'Offline inference (USD / M tokens)',
+      ],
+      ['seedance-1-0-pro-250528', '2.5', '1.25'],
+    ],
+    [
+      [
+        'Model ID',
+        'Input image price (USD / image)',
+        'Output image price (USD / image)',
+      ],
+      ['seedream-4-5-251128', 'Free', '0.04'],
+    ],
   ]
   const data: Record<string, unknown> = {
-    '0': { ops: [{ insert: '*', attributes: { aceTable: 'rows cols' } }] },
-    rows: {
-      ops: body.map((_, index) => ({ insert: { id: `r${index}` } })),
-      zoneType: 'R',
-    },
-    cols: {
-      ops: headers.map((_, index) => ({ insert: { id: `c${index}` } })),
-      zoneType: 'C',
+    '0': {
+      ops: tables.map((_, t) => ({
+        insert: '*',
+        attributes: { aceTable: `rows${t} cols${t}` },
+      })),
     },
   }
-  body.forEach((cells, row) => {
-    cells.forEach((text, column) => {
-      data[`xr${row}xc${column}`] = {
-        ops: [
-          { insert: '*', attributes: { lmkr: '1' } },
-          { insert: `${text}\n` },
-        ],
-      }
+  tables.forEach((body, t) => {
+    data[`rows${t}`] = {
+      ops: body.map((_, index) => ({ insert: { id: `t${t}r${index}` } })),
+      zoneType: 'R',
+    }
+    data[`cols${t}`] = {
+      ops: (body[0] ?? []).map((_, index) => ({
+        insert: { id: `t${t}c${index}` },
+      })),
+      zoneType: 'C',
+    }
+    body.forEach((cells, row) => {
+      cells.forEach((text, column) => {
+        data[`xt${t}r${row}xt${t}c${column}`] = {
+          ops: [
+            { insert: '*', attributes: { lmkr: '1' } },
+            { insert: `${text}\n` },
+          ],
+        }
+      })
     })
   })
   const router = {
@@ -285,6 +313,15 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
 
     const seedance = models.find((m) => m.rawId === 'seedance-1-5-pro-251215')
     expect(seedance?.releasedAt).toBe(Date.parse('2025-12-15') / 1000)
+    // Video and image rows from the pricing page become cards.
+    const priced = (rawId: string) =>
+      models.find((m) => m.rawId === rawId)?.pricing
+    expect(priced('seedance-1-0-pro-250528')).toMatchObject({
+      inputs: { resolution: { kind: 'enum' } },
+    })
+    expect(priced('seedream-4-5-251128')).toMatchObject({
+      inputs: { generated_images: { bound: 'usage' } },
+    })
     // Undated Seed Speech ids keep their poll-time firstSeenAt.
     const asr = models.find((m) => m.rawId === 'seed-asr')
     expect(asr?.releasedAt).toBeNull()
