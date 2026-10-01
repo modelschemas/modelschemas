@@ -317,7 +317,7 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
     const priced = (rawId: string) =>
       models.find((m) => m.rawId === rawId)?.pricing
     expect(priced('seedance-1-0-pro-250528')).toMatchObject({
-      inputs: { resolution: { kind: 'enum' } },
+      inputs: { completion_tokens: { bound: 'usage' } },
     })
     expect(priced('seedream-4-5-251128')).toMatchObject({
       inputs: { generated_images: { bound: 'usage' } },

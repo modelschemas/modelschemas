@@ -227,9 +227,10 @@ export function byteplusRatesFor<T>(
 
 /**
  * Seedance rates, USD per million tokens: service tier (`default` online,
- * `flex` offline) → resolution → variant. A variant is `no_video`/`video`
- * (does the input carry a video), `silent`/`audio` (`generate_audio`), or
- * `all` when the model has one rate.
+ * `flex` offline) → resolution (`*` when the row names none) → variant. A
+ * variant is `no_video`/`video` (does the input carry a video),
+ * `silent`/`audio` (`generate_audio`), or `all` when the model has one
+ * rate.
  */
 export type ByteplusVideoRates = Record<
   string,
@@ -242,9 +243,6 @@ const VIDEO_VARIANTS: Array<[RegExp, string]> = [
   [/Video with audio: ([\d.]+)/i, 'audio'],
   [/Video without audio: ([\d.]+)/i, 'silent'],
 ]
-
-/** Rows that name no resolution (the 1.x models) price every 1.x tier. */
-const ALL_RESOLUTIONS = ['480p', '720p', '1080p']
 
 /** Both halves of a split, or one flat rate — anything else refuses. */
 function variantRates(body: string): Record<string, number> | null {
@@ -288,9 +286,9 @@ function videoCell(
   // [lead, "480p and 720p", body, "1080p", body, …]
   const parts = text.split(/For ([^:]+?) outputs?:/i)
   const lead = parts[0]?.trim() ?? ''
-  const segments: Array<[Array<string>, string]> = lead
-    ? [[ALL_RESOLUTIONS, lead]]
-    : []
+  // A rate with no "For … outputs" applies whatever the resolution.
+  if (lead && parts.length > 1) return null
+  const segments: Array<[Array<string>, string]> = lead ? [[['*'], lead]] : []
   for (let at = 1; at < parts.length; at += 2) {
     const named = parts[at]?.toLowerCase().match(/\d+p|4k/g) ?? []
     segments.push([named, parts[at + 1] ?? ''])
@@ -358,62 +356,36 @@ export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
 }
 
 /**
- * Pixel area each resolution renders at — the page's token formula reads
- * only w × h. Seedance 1.0 publishes its own sizes (864×480, 1248×704,
- * 1920×1088 reproduce its usage table exactly); every later model's worked
- * examples reproduce at the plain 16:9 sizes. Ark sizes a resolution class
- * to the same area whatever the ratio, so 16:9 stands in for all of them.
- */
-const SEEDANCE_DIMS: Record<string, { w: number; h: number }> = {
-  '480p': { w: 854, h: 480 },
-  '720p': { w: 1280, h: 720 },
-  '1080p': { w: 1920, h: 1080 },
-  '4k': { w: 3840, h: 2160 },
-}
-const SEEDANCE_1_0_DIMS: Record<string, { w: number; h: number }> = {
-  '480p': { w: 864, h: 480 },
-  '720p': { w: 1248, h: 704 },
-  '1080p': { w: 1920, h: 1088 },
-}
-
-/**
- * `rate × tokens / 1e6`, where tokens are the caller's
- * `usage.completion_tokens` (what Ark bills) when given, else the page's
- * estimate `(input video s + output s) × w × h × 24 / 1024`. Draft renders
- * and the with-video minimum-token floor (a Lark base the cron cannot read)
- * are not modelled; supply `completion_tokens` for those.
+ * `rate × usage.completion_tokens / 1e6`. The page bills "Token unit price ×
+ * Token consumption" and says consumption is what `usage.completion_tokens`
+ * returns; its pixel formula and minimum-token tables are labelled
+ * estimates, so the card prices only the billed count and refuses without it.
+ *
+ * Draft (`draft: true`) refuses on resolution-priced models: the page bills
+ * a draft at a different resolution than the request names. Video input is
+ * not a request field Ark exposes as one value (it rides in `content`), so
+ * the caller states it as `usage.input_video`.
  */
 export function compileSeedanceCard(
-  rawId: string,
   rates: ByteplusVideoRates,
   source: RateCard['source'],
 ): RateCard | null {
   const online = rates.default
   if (!online) return null
   const resolutions = Object.keys(online)
-  const dims = rawId.startsWith('seedance-1-0')
-    ? SEEDANCE_1_0_DIMS
-    : SEEDANCE_DIMS
-  if (resolutions.some((r) => !dims[r])) return null
-  // Tiers must price the same resolutions with the same variants.
   const variants = Object.keys(online[resolutions[0] ?? ''] ?? {})
-  const shapes = Object.values(rates).flatMap((tier) => Object.values(tier))
-  if (
-    shapes.some(
-      (v) => Object.keys(v).sort().join() !== [...variants].sort().join(),
-    )
-  ) {
+  // Every tier must price the same resolutions with the same variants.
+  const shape = (tier: Record<string, Record<string, number>>) =>
+    Object.entries(tier)
+      .map(([r, v]) => `${r}:${Object.keys(v).sort().join()}`)
+      .sort()
+      .join(';')
+  if (Object.values(rates).some((tier) => shape(tier) !== shape(online))) {
     return null
   }
 
   const inputs: RateCard['inputs'] = {
-    resolution: {
-      param: 'resolution',
-      kind: 'enum',
-      values: resolutions,
-      default: resolutions.includes('720p') ? '720p' : resolutions[0],
-    },
-    duration: { param: 'duration', kind: 'number', default: 5 },
+    // Ark's own default: omitted means online inference.
     service_tier: {
       param: 'service_tier',
       kind: 'enum',
@@ -424,43 +396,33 @@ export function compileSeedanceCard(
       param: 'completion_tokens',
       bound: 'usage',
       kind: 'number',
-      default: 0,
     },
+  }
+  let resolution: Expr = '*'
+  if (!resolutions.includes('*')) {
+    inputs.resolution = {
+      param: 'resolution',
+      kind: 'enum',
+      values: resolutions,
+    }
+    inputs.draft = { param: 'draft', kind: 'boolean', default: false }
+    resolution = { if: [{ var: 'draft' }, 'draft', { var: 'resolution' }] }
   }
   let variant: Expr = 'all'
   if (variants.includes('video')) {
-    inputs.input_video_duration = {
-      param: 'input_video_duration',
+    inputs.input_video = {
+      param: 'input_video',
       bound: 'usage',
-      kind: 'number',
-      default: 0,
-    }
-    variant = {
-      if: [{ '>': [{ var: 'input_video_duration' }, 0] }, 'video', 'no_video'],
-    }
-  } else if (variants.includes('audio')) {
-    inputs.generate_audio = {
-      param: 'generate_audio',
       kind: 'boolean',
-      default: false,
     }
+    variant = { if: [{ var: 'input_video' }, 'video', 'no_video'] }
+  } else if (variants.includes('audio')) {
+    inputs.generate_audio = { param: 'generate_audio', kind: 'boolean' }
     variant = { if: [{ var: 'generate_audio' }, 'audio', 'silent'] }
-  }
-  const side = (s: 'w' | 'h'): Expr => ({
-    lookup: { table: 'dims', keys: [{ var: 'resolution' }, s] },
-  })
-  const seconds: Expr = variants.includes('video')
-    ? { '+': [{ var: 'input_video_duration' }, { var: 'duration' }] }
-    : { var: 'duration' }
-  const estimate: Expr = {
-    '/': [{ '*': [seconds, side('w'), side('h'), 24] }, 1024],
   }
   return {
     inputs,
-    tables: {
-      rate: rates,
-      dims: Object.fromEntries(resolutions.map((r) => [r, dims[r] ?? {}])),
-    },
+    tables: { rate: rates },
     price: {
       '/': [
         {
@@ -468,16 +430,10 @@ export function compileSeedanceCard(
             {
               lookup: {
                 table: 'rate',
-                keys: [{ var: 'service_tier' }, { var: 'resolution' }, variant],
+                keys: [{ var: 'service_tier' }, resolution, variant],
               },
             },
-            {
-              if: [
-                { '>': [{ var: 'completion_tokens' }, 0] },
-                { var: 'completion_tokens' },
-                estimate,
-              ],
-            },
+            { var: 'completion_tokens' },
           ],
         },
         1_000_000,
@@ -569,13 +525,14 @@ export async function byteplusModelPricing(
       })
     }
     const seedance = byteplusRatesFor(rawId, video)
-    if (seedance) return compileSeedanceCard(rawId, seedance, source)
+    if (seedance) return compileSeedanceCard(seedance, source)
     const perImage = byteplusRatesFor(rawId, images)
     if (perImage === undefined) return null
-    // Group-image mode bills each image returned (usage.generated_images).
+    // Billed per image returned (usage.generated_images); group-image mode
+    // returns a variable count, so the caller supplies it.
     return compileUnitCard(
       {
-        quantity: { param: 'generated_images', bound: 'usage', default: 1 },
+        quantity: { param: 'generated_images', bound: 'usage' },
         rates: perImage,
       },
       source,

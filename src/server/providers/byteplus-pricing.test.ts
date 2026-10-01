@@ -207,8 +207,10 @@ describe('byteplus video and image tables', () => {
         '720p': { no_video: 5.6, video: 3.3 },
       },
     })
-    expect(video.get('seedance-1-0-pro-250528')?.flex?.['1080p']).toEqual({
-      all: 1.25,
+    // No "For … outputs": one rate whatever the resolution.
+    expect(video.get('seedance-1-0-pro-250528')).toEqual({
+      default: { '*': { all: 2.5 } },
+      flex: { '*': { all: 1.25 } },
     })
     expect(video.has('seedance-9-unknown-261231')).toBe(false)
     expect(parseByteplusImages(page)).toEqual(
@@ -216,41 +218,53 @@ describe('byteplus video and image tables', () => {
     )
   })
 
-  it("reproduces the page's worked video prices", () => {
+  it('prices billed completion_tokens and refuses what it cannot know', () => {
     const usd = (
       id: string,
       request: Record<string, unknown>,
       usage?: Record<string, unknown>,
     ) => {
       const rates = video.get(id)
-      const card = rates && compileSeedanceCard(id, rates, SOURCE)
+      const card = rates && compileSeedanceCard(rates, SOURCE)
       if (!card) throw new Error(`no card for ${id}`)
-      return Number(price(card, request, usage).toFixed(3))
+      return Number(price(card, request, usage).toFixed(4))
     }
     const v25 = 'dreamina-seedance-2-5-260628'
-    // "Dreamina Seedance 2.5 price (USD)", 16:9, 5 s.
-    expect(usd(v25, { resolution: '480p' })).toBe(0.514)
-    expect(usd(v25, { resolution: '1080p', duration: 5 })).toBe(2.843)
-    // With 30 s of input video: 4.838 per video.
-    expect(usd(v25, { resolution: '720p' }, { input_video_duration: 30 })).toBe(
-      4.838,
-    )
-    // Billed tokens win over the estimate.
-    expect(usd(v25, { resolution: '720p' }, { completion_tokens: 1e6 })).toBe(
-      10.7,
-    )
-    // Seedance 1.0 Pro usage table: 1080p 16:9 10 s = 489600 tokens, 1.22.
     expect(
-      usd('seedance-1-0-pro-250528', { resolution: '1080p', duration: 10 }),
+      usd(
+        v25,
+        { resolution: '1080p' },
+        { completion_tokens: 1e6, input_video: true },
+      ),
+    ).toBe(7)
+    // Seedance 1.0 Pro usage table: 489600 tokens → 1.22.
+    expect(
+      usd('seedance-1-0-pro-250528', {}, { completion_tokens: 489_600 }),
     ).toBe(1.224)
     expect(
-      usd('seedance-1-5-pro-251215', {
-        resolution: '480p',
-        generate_audio: true,
-        service_tier: 'flex',
-      }),
-    ).toBe(0.058)
-    // No offline column: flex refuses rather than pricing at online rates.
-    expect(() => usd(v25, { service_tier: 'flex' })).toThrow(/flex/)
+      usd(
+        'seedance-1-5-pro-251215',
+        { generate_audio: true, service_tier: 'flex' },
+        { completion_tokens: 1e6 },
+      ),
+    ).toBe(1.2)
+    const billed = { completion_tokens: 1e6, input_video: false }
+    // No billed count, no stated video input, no audio choice: refuse.
+    expect(() => usd(v25, { resolution: '720p' }, {})).toThrow(
+      /completion_tokens/,
+    )
+    expect(() =>
+      usd(v25, { resolution: '720p' }, { completion_tokens: 1e6 }),
+    ).toThrow(/input_video/)
+    expect(() =>
+      usd('seedance-1-5-pro-251215', {}, { completion_tokens: 1 }),
+    ).toThrow(/generate_audio/)
+    // Draft bills at another resolution; flex has no offline column.
+    expect(() =>
+      usd(v25, { resolution: '1080p', draft: true }, billed),
+    ).toThrow(/draft/)
+    expect(() =>
+      usd(v25, { resolution: '720p', service_tier: 'flex' }, billed),
+    ).toThrow(/flex/)
   })
 })
