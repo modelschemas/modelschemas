@@ -17,8 +17,6 @@ import {
 } from '#/components/site.tsx'
 import type { ServiceStatus } from '#/server/status.ts'
 
-export { timeAgo } from '#/lib/time.ts'
-
 interface DashboardChange {
   id: string
   type: string
