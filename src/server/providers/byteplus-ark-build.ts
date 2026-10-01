@@ -12,7 +12,8 @@
  * regressed away:
  *
  * 1. A handful of request fields Ark accepts that the Go structs omit
- *    (`reasoning_effort`, `top_k` and `seed` on chat; `stream` on images;
+ *    (`reasoning_effort`, `top_k` and `seed` on chat; `stream` and
+ *    `layer_decomposition` on images;
  *    `output_format` on video). These are listed explicitly in
  *    {@link ARK_CURATED_PROPERTIES} — an explicit list, not a blanket merge of
  *    the old static document, so that a field genuinely REMOVED upstream
@@ -105,8 +106,8 @@ const ARK_ENDPOINTS: Array<ArkEndpoint> = [
 
 /**
  * Request fields Ark accepts that the Go SDK's structs do not declare, keyed
- * by the schema they belong to. All were exercised live by TanStack AI's
- * 2026-07-31 probe sweep; the SDK simply lags.
+ * by the schema they belong to. Each description says where it is from:
+ * TanStack AI's 2026-07-31 probe sweep or Ark's API doc. The SDK lags.
  */
 const ARK_CURATED_PROPERTIES: Record<string, Record<string, JsonSchema>> = {
   CreateChatCompletionRequest: {
@@ -132,6 +133,11 @@ const ARK_CURATED_PROPERTIES: Record<string, Record<string, JsonSchema>> = {
       type: 'boolean',
       description:
         'Server-sent-events mode, emitting each image as it finishes. Absent from the Go SDK request struct, which models the unary call only.',
+    },
+    layer_decomposition: {
+      type: 'boolean',
+      description:
+        'Layer decomposition (Seedream 5.0 pro and flash): true splits the single input `image` into a base image plus up to 16 PNG layers. Server default false. Absent from the Go SDK; from the Image generation API doc (docs.byteplus.com/en/docs/ModelArk/1541523).',
     },
   },
   CreateContentGenerationTaskRequest: {

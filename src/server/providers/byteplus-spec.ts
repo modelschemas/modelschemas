@@ -562,6 +562,11 @@ const imageSchemas: Record<string, Schema> = {
         description:
           'Server-sent-events mode, emitting each image as it finishes.',
       },
+      layer_decomposition: {
+        type: 'boolean',
+        description:
+          'Layer decomposition (Seedream 5.0 pro and flash): true splits the single input `image` into a base image plus up to 16 PNG layers. Server default false.',
+      },
     },
     required: ['model', 'prompt'],
   },

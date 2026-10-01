@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
+import { cardRequestParamsOk } from '#/server/rate-card.ts'
 import {
   arkChatCapabilities,
   arkTaskActivity,
@@ -10,6 +11,7 @@ import {
 import {
   BYTEPLUS_PRICING_URL,
   BYTEPLUS_VIDEO_GUIDE_URL,
+  compileSeedreamProCard,
 } from './byteplus-pricing.ts'
 
 /**
@@ -148,10 +150,11 @@ type ChatCompletionResponse struct {
 `,
   'images.go': `
 type GenerateImagesRequest struct {
-	Model     string  \`json:"model"\`
-	Prompt    string  \`json:"prompt"\`
-	Size      *string \`json:"size,omitempty"\`
-	Watermark *bool   \`json:"watermark,omitempty"\`
+	Model     string      \`json:"model"\`
+	Prompt    string      \`json:"prompt"\`
+	Image     interface{} \`json:"image,omitempty"\`
+	Size      *string     \`json:"size,omitempty"\`
+	Watermark *bool       \`json:"watermark,omitempty"\`
 }
 type ImagesResponse struct {
 	Model string \`json:"model"\`
@@ -298,6 +301,35 @@ describe('byteplus spec generated from the Go SDK', () => {
     expect(warnings).toEqual([])
     expect(endpoints).toHaveLength(5)
   })
+
+  it.each(['ok', 'unreachable'] as const)(
+    'images schema (%s SDK) carries every request field the Seedream 5.0 pro card reads',
+    async (mode) => {
+      const { result: fetched } = await withGoSdk(mode, () =>
+        byteplusProvider.fetchSpec({}),
+      )
+      const image = classifyAndBundle(byteplusProvider, fetched).endpoints.find(
+        (e) => e.dbId === 'byteplus/images/generations',
+      )
+      const props = Object.keys(image?.input?.properties ?? {})
+      const card = compileSeedreamProCard(
+        {
+          extraInput: 0.003,
+          maxLowPixels: 2.61e6,
+          lowLevel: '1.5K',
+          low: 0.045,
+          high: 0.09,
+        },
+        {
+          url: BYTEPLUS_PRICING_URL,
+          hash: 'a'.repeat(64),
+          extractedAt: '2026-10-02T00:00:00Z',
+        },
+      )
+      // The write gate refuses a card whose request param the schema lacks.
+      expect(card && cardRequestParamsOk(card, new Set(props))).toBe(true)
+    },
+  )
 
   it('derives identical content hashes on every build (sync idempotence)', async () => {
     const { result: a } = await withGoSdk('ok', () =>
