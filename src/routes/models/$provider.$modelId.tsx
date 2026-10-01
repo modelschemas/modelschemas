@@ -16,6 +16,7 @@ import {
 } from '#/components/site.tsx'
 import type { ResourceView } from '#/components/site.tsx'
 import type { SerializableModel } from '#/lib/json.ts'
+import { formatUsd } from '#/lib/rate-card-form.ts'
 import { timeAgo, shortDate } from '#/lib/time.ts'
 
 interface EndpointLink {
@@ -116,18 +117,13 @@ export const Route = createFileRoute('/models/$provider/$modelId')({
   component: ModelDetail,
 })
 
-function formatUsd(n: number): string {
-  if (Number.isInteger(n)) return `$${String(n)}`
-  const fixed = n >= 0.01 ? n.toFixed(4) : n.toFixed(6)
-  return `$${fixed.replace(/0+$/, '').replace(/\.$/, '')}`
-}
-
 function ModelDetail() {
   const { model, pricing, providerStatus, endpoints, endpointsFiltered } =
     Route.useLoaderData()
   const [view, setView] = useState<ResourceView>('readable')
 
-  const apiPath = `/v1/models/${model.provider}/${model.rawId.includes('/') ? model.id : model.rawId}`
+  const modelPathId = model.rawId.includes('/') ? model.id : model.rawId
+  const apiPath = `/v1/models/${model.provider}/${modelPathId}`
   const jsonBody = JSON.stringify(model, null, 2)
   const firstEndpoint = endpoints.at(0)
   const schemaCurl = firstEndpoint
@@ -279,20 +275,26 @@ function ModelDetail() {
                         </span>
                       ) : (
                         <div className="space-y-1">
-                          {pricing.compact.inputPerMillion !== undefined ? (
-                            <div>
-                              {formatUsd(pricing.compact.inputPerMillion)} / 1M
-                              input
-                              {pricing.compact.outputPerMillion !== undefined
-                                ? ` · ${formatUsd(pricing.compact.outputPerMillion)} / 1M output`
-                                : ''}
-                              {pricing.compact.tiered
-                                ? ' · base rate; long prompts re-quote'
-                                : ''}
-                            </div>
-                          ) : (
-                            <div>rate card, per {pricing.compact.per}</div>
-                          )}
+                          <a
+                            className="press-link block"
+                            href={`/models/${model.provider}/${modelPathId}/pricing`}
+                          >
+                            {pricing.compact.inputPerMillion !== undefined ? (
+                              <span>
+                                {formatUsd(pricing.compact.inputPerMillion)} /
+                                1M input
+                                {pricing.compact.outputPerMillion !== undefined
+                                  ? ` · ${formatUsd(pricing.compact.outputPerMillion)} / 1M output`
+                                  : ''}
+                                {pricing.compact.tiered
+                                  ? ' · base rate; long prompts re-quote'
+                                  : ''}
+                              </span>
+                            ) : (
+                              <span>rate card, per {pricing.compact.per}</span>
+                            )}{' '}
+                            → open calculator
+                          </a>
                           {pricing.sourceUrl ? (
                             <div>
                               <a

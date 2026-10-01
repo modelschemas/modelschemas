@@ -51,6 +51,7 @@ import { Route as V1ModelsProviderModelIdRouteImport } from './routes/v1/models/
 import { Route as V1AdminSyncProviderRouteImport } from './routes/v1/admin/sync.$provider'
 import { Route as V1AdminExtractFalRouteImport } from './routes/v1/admin/extract.fal'
 import { Route as SchemasProviderActivitySplatRouteImport } from './routes/schemas/$provider.$activity.$'
+import { Route as ModelsProviderModelIdPricingRouteImport } from './routes/models/$provider.$modelId_.pricing'
 import { Route as V1SchemasProviderActivityIndexRouteImport } from './routes/v1/schemas/$provider/$activity/index'
 import { Route as V1SchemasProviderActivitySplatRouteImport } from './routes/v1/schemas/$provider/$activity/$'
 
@@ -271,6 +272,12 @@ const SchemasProviderActivitySplatRoute =
     path: '/schemas/$provider/$activity/$',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ModelsProviderModelIdPricingRoute =
+  ModelsProviderModelIdPricingRouteImport.update({
+    id: '/models/$provider/$modelId_/pricing',
+    path: '/models/$provider/$modelId/pricing',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const V1SchemasProviderActivityIndexRoute =
   V1SchemasProviderActivityIndexRouteImport.update({
     id: '/v1/schemas/$provider/$activity/',
@@ -321,6 +328,7 @@ export interface FileRoutesByFullPath {
   '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/schemas/': typeof V1SchemasIndexRoute
   '/v1/subscriptions/': typeof V1SubscriptionsIndexRoute
+  '/models/$provider/$modelId/pricing': typeof ModelsProviderModelIdPricingRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/extract/fal': typeof V1AdminExtractFalRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -367,6 +375,7 @@ export interface FileRoutesByTo {
   '/v1/providers': typeof V1ProvidersIndexRoute
   '/v1/schemas': typeof V1SchemasIndexRoute
   '/v1/subscriptions': typeof V1SubscriptionsIndexRoute
+  '/models/$provider/$modelId/pricing': typeof ModelsProviderModelIdPricingRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/extract/fal': typeof V1AdminExtractFalRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -414,6 +423,7 @@ export interface FileRoutesById {
   '/v1/providers/': typeof V1ProvidersIndexRoute
   '/v1/schemas/': typeof V1SchemasIndexRoute
   '/v1/subscriptions/': typeof V1SubscriptionsIndexRoute
+  '/models/$provider/$modelId_/pricing': typeof ModelsProviderModelIdPricingRoute
   '/schemas/$provider/$activity/$': typeof SchemasProviderActivitySplatRoute
   '/v1/admin/extract/fal': typeof V1AdminExtractFalRoute
   '/v1/admin/sync/$provider': typeof V1AdminSyncProviderRoute
@@ -462,6 +472,7 @@ export interface FileRouteTypes {
     | '/v1/providers/'
     | '/v1/schemas/'
     | '/v1/subscriptions/'
+    | '/models/$provider/$modelId/pricing'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/extract/fal'
     | '/v1/admin/sync/$provider'
@@ -508,6 +519,7 @@ export interface FileRouteTypes {
     | '/v1/providers'
     | '/v1/schemas'
     | '/v1/subscriptions'
+    | '/models/$provider/$modelId/pricing'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/extract/fal'
     | '/v1/admin/sync/$provider'
@@ -554,6 +566,7 @@ export interface FileRouteTypes {
     | '/v1/providers/'
     | '/v1/schemas/'
     | '/v1/subscriptions/'
+    | '/models/$provider/$modelId_/pricing'
     | '/schemas/$provider/$activity/$'
     | '/v1/admin/extract/fal'
     | '/v1/admin/sync/$provider'
@@ -601,6 +614,7 @@ export interface RootRouteChildren {
   V1ProvidersIndexRoute: typeof V1ProvidersIndexRoute
   V1SchemasIndexRoute: typeof V1SchemasIndexRoute
   V1SubscriptionsIndexRoute: typeof V1SubscriptionsIndexRoute
+  ModelsProviderModelIdPricingRoute: typeof ModelsProviderModelIdPricingRoute
   SchemasProviderActivitySplatRoute: typeof SchemasProviderActivitySplatRoute
   V1AdminExtractFalRoute: typeof V1AdminExtractFalRoute
   V1AdminSyncProviderRoute: typeof V1AdminSyncProviderRoute
@@ -907,6 +921,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SchemasProviderActivitySplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/models/$provider/$modelId_/pricing': {
+      id: '/models/$provider/$modelId_/pricing'
+      path: '/models/$provider/$modelId/pricing'
+      fullPath: '/models/$provider/$modelId/pricing'
+      preLoaderRoute: typeof ModelsProviderModelIdPricingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/v1/schemas/$provider/$activity/': {
       id: '/v1/schemas/$provider/$activity/'
       path: '/v1/schemas/$provider/$activity'
@@ -964,6 +985,7 @@ const rootRouteChildren: RootRouteChildren = {
   V1ProvidersIndexRoute: V1ProvidersIndexRoute,
   V1SchemasIndexRoute: V1SchemasIndexRoute,
   V1SubscriptionsIndexRoute: V1SubscriptionsIndexRoute,
+  ModelsProviderModelIdPricingRoute: ModelsProviderModelIdPricingRoute,
   SchemasProviderActivitySplatRoute: SchemasProviderActivitySplatRoute,
   V1AdminExtractFalRoute: V1AdminExtractFalRoute,
   V1AdminSyncProviderRoute: V1AdminSyncProviderRoute,
