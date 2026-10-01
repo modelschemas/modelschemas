@@ -71,7 +71,13 @@ export function cardRequestParamsOk(
   card: RateCard,
   requestProperties: ReadonlySet<string> | undefined,
 ): boolean {
-  for (const input of Object.values(card.inputs)) {
+  const inputs = Object.values(card.inputs).flatMap((input) => [
+    input,
+    ...(input.kind === 'number' && input.estimate
+      ? Object.values(input.estimate.inputs)
+      : []),
+  ])
+  for (const input of inputs) {
     if (input.bound === 'usage') continue
     if (!requestParamAllowed(input.param, requestProperties)) return false
   }

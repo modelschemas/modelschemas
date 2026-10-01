@@ -47,7 +47,9 @@ availability and schema questions.
    \`modelschemas validate anthropic/v1/messages payload.json\` (exit 2 when
    invalid).
 5. **Estimate USD.** \`POST /v1/estimate {"provider","model","request"?,"usage"?}\`
-   → \`{usd, cardSource}\`. Missing levers → 422; no card → 404
+   → \`{usd, cardSource, estimated}\`. \`estimated\` names any omitted
+   usage the card filled by the source's published estimate method (empty:
+   billed price). Missing levers → 422; no card → 404
    \`unknown_pricing\`. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.
 6. **Stay current.** Poll \`GET /v1/changes?since=<epoch>\` (cursor-paginated)
    or subscribe: \`POST /v1/subscriptions\` (authed) delivers HMAC-signed

@@ -7,7 +7,10 @@ import {
   arkTaskActivity,
   byteplusProvider,
 } from './byteplus.ts'
-import { BYTEPLUS_PRICING_URL } from './byteplus-pricing.ts'
+import {
+  BYTEPLUS_PRICING_URL,
+  BYTEPLUS_VIDEO_GUIDE_URL,
+} from './byteplus-pricing.ts'
 
 /**
  * One chat, video, and image row, enough for listModels to attach cards
@@ -15,6 +18,31 @@ import { BYTEPLUS_PRICING_URL } from './byteplus-pricing.ts'
  * fetch stubs).
  */
 function pricingFixtureHtml(): string {
+  return docFixtureHtml(PRICING_TABLES)
+}
+
+/** The tutorial's model and pixel tables, one Seedance 1.0 row each. */
+function guideFixtureHtml(): string {
+  return docFixtureHtml([
+    [
+      ['Model name', '', 'Seedance 1.0 Pro'],
+      ['Model ID', '', 'seedance-1-0-pro-250528'],
+      ['', 'Frame rate', '24 fps'],
+    ],
+    [
+      ['Resolution', 'Aspect ratio', 'Seedance 1.0 series'],
+      ['1080p', '16:9', '1920×1088'],
+    ],
+  ])
+}
+
+/** Pages the provider fetches besides the Ark listing, by URL. */
+const DOC_FIXTURES: Record<string, () => string> = {
+  [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
+  [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
+}
+
+const PRICING_TABLES = (() => {
   const chat = [
     'Model ID',
     'Pricing tiers (K tokens)',
@@ -25,7 +53,7 @@ function pricingFixtureHtml(): string {
     'Cache-hit input (audio) (USD/M tokens)',
     'Output (USD/M tokens)',
   ]
-  const tables = [
+  const tables: Array<Array<Array<string>>> = [
     [
       chat,
       ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
@@ -47,6 +75,10 @@ function pricingFixtureHtml(): string {
       ['seedream-4-5-251128', 'Free', '0.04'],
     ],
   ]
+  return tables
+})()
+
+function docFixtureHtml(tables: Array<Array<Array<string>>>): string {
   const data: Record<string, unknown> = {
     '0': {
       ops: tables.map((_, t) => ({
@@ -282,9 +314,8 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
   it('lists the ported @tanstack/ai-byteplus catalog with metadata', async () => {
     const original = globalThis.fetch
     globalThis.fetch = ((url: string, init?: RequestInit) => {
-      if (String(url) === BYTEPLUS_PRICING_URL) {
-        return Promise.resolve(new Response(pricingFixtureHtml()))
-      }
+      const doc = DOC_FIXTURES[String(url)]
+      if (doc) return Promise.resolve(new Response(doc()))
       return original(url, init)
     }) as typeof fetch
     const { models, skipped } = await byteplusProvider
@@ -317,7 +348,12 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
     const priced = (rawId: string) =>
       models.find((m) => m.rawId === rawId)?.pricing
     expect(priced('seedance-1-0-pro-250528')).toMatchObject({
-      inputs: { completion_tokens: { bound: 'usage' } },
+      inputs: {
+        completion_tokens: {
+          bound: 'usage',
+          estimate: { source: { url: BYTEPLUS_VIDEO_GUIDE_URL } },
+        },
+      },
     })
     expect(priced('seedream-4-5-251128')).toMatchObject({
       inputs: { generated_images: { bound: 'usage' } },
@@ -424,9 +460,8 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
         url: href,
         auth: new Headers(init?.headers).get('authorization'),
       })
-      if (href === BYTEPLUS_PRICING_URL) {
-        return Promise.resolve(new Response(pricingFixtureHtml()))
-      }
+      const doc = DOC_FIXTURES[href]
+      if (doc) return Promise.resolve(new Response(doc()))
       if (!href.includes('/api/v3/models')) return original(url, init)
       return Promise.resolve(new Response(JSON.stringify(body)))
     }) as typeof fetch

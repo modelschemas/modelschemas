@@ -17,7 +17,12 @@
  * chat, video, or image row throws.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
-import type { Expr, RateCard, TokenRateTier } from '@modelschemas/rate-card'
+import type {
+  Expr,
+  RateCard,
+  RateCardEstimate,
+  TokenRateTier,
+} from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs } from './model-facts.ts'
@@ -26,6 +31,10 @@ import type { ModelInfo } from './types.ts'
 
 export const BYTEPLUS_PRICING_URL =
   'https://docs.byteplus.com/en/docs/ModelArk/1544106'
+
+/** Seedance output sizes and frame rates (the token formula's inputs). */
+export const BYTEPLUS_VIDEO_GUIDE_URL =
+  'https://docs.byteplus.com/en/docs/modelark/video-generation-tutorial'
 
 /** Header (unit stripped) → request lever. Cache storage is not one. */
 const LEVERS: Record<string, string> = {
@@ -356,19 +365,93 @@ export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
 }
 
 /**
+ * Output frame rate and pixel size per Seedance model, from the video
+ * generation tutorial. The page's token formula reads only these:
+ * `(input s + output s) × width × height × fps / 1024`.
+ */
+export interface SeedanceGeometry {
+  fps: number
+  /** resolution → ratio → output pixels */
+  dims: Record<string, Record<string, { w: number; h: number }>>
+}
+
+/**
+ * Two tables on the tutorial: the model table (`Model name` header row of
+ * display names, a `Model ID` row, a `Frame rate` row) and the pixel table
+ * (`Resolution ‖ Aspect ratio ‖ <model or "… series">…`). A pixel column
+ * names one display name, or a series every display name it prefixes.
+ * Models missing either fact get no geometry.
+ */
+export function parseSeedanceGeometry(
+  doc: ByteplusDoc,
+): Map<string, SeedanceGeometry> {
+  const out = new Map<string, SeedanceGeometry>()
+  const [models] = tablesWith(doc, ['model name'])
+  const [pixels] = tablesWith(doc, ['resolution', 'aspect ratio'])
+  if (!models || !pixels) return out
+  const row = (label: string) =>
+    models.rows.find((r) => r.some((c) => c.toLowerCase() === label))
+  const ids = row('model id')
+  const fpsRow = row('frame rate')
+  if (!ids || !fpsRow) return out
+
+  // Display name (lowercase) → model id and fps.
+  const byName = new Map<string, { id: string; fps: number }>()
+  models.keys.forEach((name, column) => {
+    const id = ids[column] ?? ''
+    const fps = fpsRow[column]?.match(/^(\d+) fps$/i)?.[1]
+    if (/^[a-z0-9-]+$/.test(id) && fps)
+      byName.set(name, { id, fps: Number(fps) })
+  })
+
+  const at = (key: string) => pixels.keys.indexOf(key)
+  let resolution = ''
+  for (const cells of pixels.rows) {
+    const named = cells[at('resolution')]?.split(' ')[0]?.toLowerCase() ?? ''
+    if (named) resolution = named
+    const ratio = cells[at('aspect ratio')] ?? ''
+    if (!/^(\d+p|4k)$/.test(resolution) || !/^\d+:\d+$/.test(ratio)) continue
+    pixels.keys.forEach((column, index) => {
+      const size = cells[index]?.match(/^(\d+)×(\d+)$/)
+      if (!size) return
+      const series = column.replace(/ series$/, '')
+      for (const [name, model] of byName) {
+        const covered =
+          name === column ||
+          (series !== column &&
+            (name === series || name.startsWith(`${series} `)))
+        if (!covered) continue
+        const geometry = out.get(model.id) ?? { fps: model.fps, dims: {} }
+        const byRatio = (geometry.dims[resolution] ??= {})
+        byRatio[ratio] = { w: Number(size[1]), h: Number(size[2]) }
+        out.set(model.id, geometry)
+      }
+    })
+  }
+  return out
+}
+
+/**
  * `rate × usage.completion_tokens / 1e6`. The page bills "Token unit price ×
  * Token consumption" and says consumption is what `usage.completion_tokens`
- * returns; its pixel formula and minimum-token tables are labelled
- * estimates, so the card prices only the billed count and refuses without it.
+ * returns, so that is the price as billed.
  *
- * Draft (`draft: true`) refuses on resolution-priced models: the page bills
- * a draft at a different resolution than the request names. Video input is
- * not a request field Ark exposes as one value (it rides in `content`), so
- * the caller states it as `usage.input_video`.
+ * With `geometry`, an omitted `completion_tokens` is estimated by the
+ * page's own formula over the tutorial's published sizes, and the estimate
+ * endpoint labels it as such. The estimate refuses where the published
+ * method does not hold: video input (a minimum-token floor applies, in a
+ * table the cron cannot read), draft renders, `ratio: adaptive`, and any
+ * resolution × ratio the tutorial does not list.
+ *
+ * Draft refuses outright on resolution-priced models: the page bills a draft
+ * at a different resolution than the request names. Video input is not a
+ * request field Ark exposes as one value (it rides in `content`), so the
+ * caller states it as `usage.input_video`.
  */
 export function compileSeedanceCard(
   rates: ByteplusVideoRates,
   source: RateCard['source'],
+  geometry?: { model: SeedanceGeometry; url: string; hash: string },
 ): RateCard | null {
   const online = rates.default
   if (!online) return null
@@ -385,13 +468,14 @@ export function compileSeedanceCard(
   }
 
   const inputs: RateCard['inputs'] = {
-    // Ark's own default: omitted means online inference.
+    // Ark's own defaults: omitted means online inference, not a draft.
     service_tier: {
       param: 'service_tier',
       kind: 'enum',
       values: Object.keys(rates),
       default: 'default',
     },
+    draft: { param: 'draft', kind: 'boolean', default: false },
     completion_tokens: {
       param: 'completion_tokens',
       bound: 'usage',
@@ -405,10 +489,10 @@ export function compileSeedanceCard(
       kind: 'enum',
       values: resolutions,
     }
-    inputs.draft = { param: 'draft', kind: 'boolean', default: false }
     resolution = { if: [{ var: 'draft' }, 'draft', { var: 'resolution' }] }
   }
   let variant: Expr = 'all'
+  let inputVideo: Expr = 'no_input_video'
   if (variants.includes('video')) {
     inputs.input_video = {
       param: 'input_video',
@@ -416,13 +500,81 @@ export function compileSeedanceCard(
       kind: 'boolean',
     }
     variant = { if: [{ var: 'input_video' }, 'video', 'no_video'] }
+    inputVideo = {
+      if: [{ var: 'input_video' }, 'input_video', 'no_input_video'],
+    }
   } else if (variants.includes('audio')) {
     inputs.generate_audio = { param: 'generate_audio', kind: 'boolean' }
     variant = { if: [{ var: 'generate_audio' }, 'audio', 'silent'] }
   }
+
+  const tables: RateCard['tables'] = { rate: rates }
+  if (geometry && inputs.completion_tokens?.kind === 'number') {
+    // A series column also lists resolutions a member does not serve
+    // ("2.0 Fast and Mini do not support 1080p"); the rate table is the
+    // model's own list.
+    const dims = inputs.resolution
+      ? Object.fromEntries(
+          Object.entries(geometry.model.dims).filter(([r]) =>
+            resolutions.includes(r),
+          ),
+        )
+      : geometry.model.dims
+    const ratios = [...new Set(Object.values(dims).flatMap(Object.keys))]
+    const estimateInputs: RateCardEstimate['inputs'] = {
+      ratio: { param: 'ratio', kind: 'enum', values: ratios },
+      duration: { param: 'duration', kind: 'number' },
+    }
+    if (!inputs.resolution) {
+      estimateInputs.resolution = {
+        param: 'resolution',
+        kind: 'enum',
+        values: Object.keys(dims),
+      }
+    }
+    const side = (key: 'w' | 'h'): Expr => ({
+      lookup: {
+        table: 'pixels',
+        keys: [{ var: 'resolution' }, { var: 'ratio' }, key],
+      },
+    })
+    tables.pixels = dims
+    // Shapes the published method covers; any other key refuses.
+    tables.estimate_supported = { no_input_video: { not_draft: 1 } }
+    inputs.completion_tokens.estimate = {
+      inputs: estimateInputs,
+      value: {
+        '*': [
+          {
+            lookup: {
+              table: 'estimate_supported',
+              keys: [
+                inputVideo,
+                { if: [{ var: 'draft' }, 'draft', 'not_draft'] },
+              ],
+            },
+          },
+          {
+            '/': [
+              {
+                '*': [
+                  { var: 'duration' },
+                  side('w'),
+                  side('h'),
+                  geometry.model.fps,
+                ],
+              },
+              1024,
+            ],
+          },
+        ],
+      },
+      source: { url: geometry.url, hash: geometry.hash },
+    }
+  }
   return {
     inputs,
-    tables: { rate: rates },
+    tables,
     price: {
       '/': [
         {
@@ -455,12 +607,15 @@ export function parseByteplusPricingPage(
  * `curDoc.Content` only. The page shell around it reshuffles between
  * fetches, so hashing the HTML would mark unchanged prices as new.
  */
-export function pricingContent(html: string): string {
+export function pricingContent(
+  html: string,
+  label = 'byteplus pricing page',
+): string {
   const at = html.indexOf('window._ROUTER_DATA')
   const start = html.indexOf('{', at)
   const end = html.indexOf('</script>', start)
   if (at < 0 || start < 0 || end < 0) {
-    throw new Error('byteplus pricing page: no _ROUTER_DATA')
+    throw new Error(`${label}: no _ROUTER_DATA`)
   }
   const router = JSON.parse(html.slice(start, end)) as {
     loaderData?: Record<string, { curDoc?: { Content?: string } } | null>
@@ -468,7 +623,7 @@ export function pricingContent(html: string): string {
   const content = Object.values(router.loaderData ?? {}).find(
     (entry) => typeof entry?.curDoc?.Content === 'string',
   )?.curDoc?.Content
-  if (!content) throw new Error('byteplus pricing page: no curDoc.Content')
+  if (!content) throw new Error(`${label}: no curDoc.Content`)
   return content
 }
 
@@ -509,6 +664,20 @@ export async function byteplusModelPricing(
       }
     },
   )
+  const guide = await cachedDocs(kv, BYTEPLUS_VIDEO_GUIDE_URL, async () => {
+    const label = 'byteplus video generation tutorial'
+    const content = pricingContent(
+      await fetchText(BYTEPLUS_VIDEO_GUIDE_URL),
+      label,
+    )
+    const parsed = parseSeedanceGeometry(JSON.parse(content) as ByteplusDoc)
+    assertParsed(parsed, label)
+    return {
+      geometry: Object.fromEntries(parsed),
+      hash: await sha256Text(content),
+    }
+  })
+  const geometry = new Map(Object.entries(guide.geometry))
   const rates = new Map(Object.entries(doc.rates))
   const video = new Map(Object.entries(doc.video ?? {}))
   const images = new Map(Object.entries(doc.images ?? {}))
@@ -525,7 +694,14 @@ export async function byteplusModelPricing(
       })
     }
     const seedance = byteplusRatesFor(rawId, video)
-    if (seedance) return compileSeedanceCard(seedance, source)
+    if (seedance) {
+      const model = geometry.get(rawId)
+      return compileSeedanceCard(
+        seedance,
+        source,
+        model && { model, url: BYTEPLUS_VIDEO_GUIDE_URL, hash: guide.hash },
+      )
+    }
     const perImage = byteplusRatesFor(rawId, images)
     if (perImage === undefined) return null
     // Billed per image returned (usage.generated_images); group-image mode

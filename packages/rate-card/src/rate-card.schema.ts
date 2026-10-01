@@ -86,45 +86,78 @@ const inputBase = {
   bound: z.enum(['request', 'usage']).optional(),
 }
 
-const inputSchema = z.discriminatedUnion('kind', [
-  z.object({
-    ...inputBase,
-    kind: z.literal('number'),
-    default: z.number().optional(),
-  }),
-  z
-    .object({
+/** sha256 of fetched source text, plus where it came from. */
+const sourceRefSchema = z.object({
+  url: z.string().url(),
+  hash: z.string().regex(/^[0-9a-f]{64}$/),
+})
+
+/**
+ * Kinds every input shares. `estimate` is the one extension, and only on a
+ * top-level number input, so an estimate's own inputs cannot nest another.
+ */
+function inputKinds<TNumber extends z.ZodRawShape>(numberExtra: TNumber) {
+  return z.discriminatedUnion('kind', [
+    z.object({
       ...inputBase,
-      kind: z.literal('enum'),
-      values: z.array(z.string()).min(1),
-      default: z.string().optional(),
-    })
-    .refine(
-      (i) => i.default === undefined || i.values.includes(i.default),
-      'default must be one of values',
-    ),
-  z.object({
-    ...inputBase,
-    kind: z.literal('boolean'),
-    default: z.boolean().optional(),
-  }),
-  /** Length of a list param (`image_urls`), 0 when absent. */
-  z.object({ ...inputBase, kind: z.literal('count') }),
-  /** `{width, height}` or a preset name; binds `<name>.width` / `<name>.height`. */
-  z
-    .object({
+      kind: z.literal('number'),
+      default: z.number().optional(),
+      ...numberExtra,
+    }),
+    z
+      .object({
+        ...inputBase,
+        kind: z.literal('enum'),
+        values: z.array(z.string()).min(1),
+        default: z.string().optional(),
+      })
+      .refine(
+        (i) => i.default === undefined || i.values.includes(i.default),
+        'default must be one of values',
+      ),
+    z.object({
       ...inputBase,
-      kind: z.literal('dimensions'),
-      presets: z
-        .record(z.string(), z.tuple([z.number(), z.number()]))
-        .optional(),
-      default: z.string().optional(),
-    })
-    .refine(
-      (i) => i.default === undefined || i.presets?.[i.default] !== undefined,
-      'default must be a preset name',
-    ),
-])
+      kind: z.literal('boolean'),
+      default: z.boolean().optional(),
+    }),
+    /** Length of a list param (`image_urls`), 0 when absent. */
+    z.object({ ...inputBase, kind: z.literal('count') }),
+    /** `{width, height}` or a preset name; binds `<name>.width` / `<name>.height`. */
+    z
+      .object({
+        ...inputBase,
+        kind: z.literal('dimensions'),
+        presets: z
+          .record(z.string(), z.tuple([z.number(), z.number()]))
+          .optional(),
+        default: z.string().optional(),
+      })
+      .refine(
+        (i) => i.default === undefined || i.presets?.[i.default] !== undefined,
+        'default must be a preset name',
+      ),
+  ])
+}
+
+const plainInputSchema = inputKinds({})
+
+/**
+ * A source-published way to estimate a number the caller did not supply
+ * (`completion_tokens` from resolution × duration). Used only when the
+ * input is absent; the result then names the input as estimated, never as
+ * a billed price. `inputs` bind only on that path, so a caller who supplies
+ * the real number is not asked for them.
+ */
+const estimateSchema = z.object({
+  inputs: z.record(z.string(), plainInputSchema),
+  value: exprSchema,
+  /** The text the estimate method was read from. */
+  source: sourceRefSchema,
+})
+
+export type RateCardEstimate = z.infer<typeof estimateSchema>
+
+const inputSchema = inputKinds({ estimate: estimateSchema.optional() })
 
 const rateCardExampleSchema = z.object({
   /**

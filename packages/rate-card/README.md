@@ -39,6 +39,13 @@ const tokenCard = compileOpenRouterPricing(model.pricing, {
 })
 ```
 
+A number input may carry an `estimate`: the source's published way to
+derive it when the caller omits it (Seedance `completion_tokens` from
+resolution × ratio × duration), with its own `inputs` and `source`.
+`priceDetailed` returns `{ usd, estimated }`; `estimated` lists the params
+that were filled that way, so an estimate is never mistaken for the billed
+price. Supplying the real value skips the estimate and its inputs.
+
 Token counts on compiled OpenRouter cards are disjoint: `input_tokens`
 excludes `cache_read_tokens` / `cache_write_tokens`, `output_tokens`
 excludes `reasoning_tokens`. `min_prompt_tokens` overrides become rate

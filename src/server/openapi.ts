@@ -386,7 +386,8 @@ export const openApiDocument = {
         },
         responses: {
           '200': {
-            description: 'USD for this call and the card source.',
+            description:
+              'USD for this call, the card source, and which inputs (if any) were estimated.',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/EstimateResult' },
@@ -609,6 +610,31 @@ export const openApiDocument = {
             type: 'string',
             enum: ['number', 'enum', 'boolean', 'count', 'dimensions'],
           },
+          estimate: {
+            type: 'object',
+            description:
+              'Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated.',
+            required: ['inputs', 'value', 'source'],
+            properties: {
+              inputs: {
+                type: 'object',
+                additionalProperties: {
+                  $ref: '#/components/schemas/RateCardInput',
+                },
+              },
+              value: {
+                description: 'JSONLogic expression over the closed op set.',
+              },
+              source: {
+                type: 'object',
+                required: ['url', 'hash'],
+                properties: {
+                  url: { type: 'string', format: 'uri' },
+                  hash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
+                },
+              },
+            },
+          },
         },
       },
       RateCard: {
@@ -707,10 +733,16 @@ export const openApiDocument = {
       },
       EstimateResult: {
         type: 'object',
-        required: ['usd', 'cardSource'],
+        required: ['usd', 'cardSource', 'estimated'],
         properties: {
           usd: { type: 'number' },
           cardSource: { $ref: '#/components/schemas/RateCardSource' },
+          estimated: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Params the caller omitted that the card estimated by its published method. Empty: usd is the price as billed for the supplied request and usage.',
+          },
         },
       },
     },

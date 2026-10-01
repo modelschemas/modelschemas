@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { price } from '@modelschemas/rate-card'
+import { price, priceDetailed } from '@modelschemas/rate-card'
 
 import {
   byteplusRatesFor,
@@ -8,6 +8,7 @@ import {
   parseByteplusImages,
   parseByteplusPricing,
   parseByteplusVideo,
+  parseSeedanceGeometry,
 } from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
 
@@ -266,5 +267,92 @@ describe('byteplus video and image tables', () => {
     expect(() =>
       usd(v25, { resolution: '720p', service_tier: 'flex' }, billed),
     ).toThrow(/flex/)
+  })
+})
+
+/** The tutorial's model and pixel tables as the live page words them. */
+const GUIDE = doc(
+  [
+    [
+      'Model name',
+      '',
+      'Dreamina Seedance 2.0',
+      'Dreamina Seedance 2.0 Fast',
+      'Seedance 1.0 Pro',
+    ],
+    [
+      'Model ID',
+      '',
+      'dreamina-seedance-2-0-260128',
+      'dreamina-seedance-2-0-fast-260128',
+      'seedance-1-0-pro-250528',
+    ],
+    ['', 'Frame rate', '24 fps', '24 fps', '24 fps'],
+  ],
+  [
+    [
+      'Resolution',
+      'Aspect ratio',
+      'Dreamina Seedance 2.0 series',
+      'Seedance 1.0 series',
+    ],
+    ['720p', '16:9', '1280×720', '1248×704'],
+    ['', '4:3', '1112×834', '1120×832'],
+    [
+      '1080p Dreamina Seedance 2.0 Fast and Dreamina Seedance 2.0 Mini do not support 1080p',
+      '16:9',
+      '1920×1080',
+      '1920×1088',
+    ],
+    ['4k Only Dreamina Seedance 2.0 supports 4K', '16:9', '3840×2160', ''],
+    ['', '4:3', '3326×2494', '-'],
+  ],
+)
+
+describe('byteplus video generation tutorial', () => {
+  const geometry = parseSeedanceGeometry(GUIDE)
+
+  it('reads frame rate and sizes per model, series columns included', () => {
+    expect(geometry.get('seedance-1-0-pro-250528')).toEqual({
+      fps: 24,
+      dims: {
+        '720p': {
+          '16:9': { w: 1248, h: 704 },
+          '4:3': { w: 1120, h: 832 },
+        },
+        '1080p': { '16:9': { w: 1920, h: 1088 } },
+      },
+    })
+    expect(
+      geometry.get('dreamina-seedance-2-0-260128')?.dims['4k']?.['4:3'],
+    ).toEqual({ w: 3326, h: 2494 })
+  })
+
+  it('labels the estimate, and keeps sizes to the resolutions priced', () => {
+    const id = 'dreamina-seedance-2-0-fast-260128'
+    const model = geometry.get(id)
+    if (!model) throw new Error('no geometry')
+    const card = compileSeedanceCard(
+      {
+        default: {
+          '480p': { no_video: 5.6, video: 3.3 },
+          '720p': { no_video: 5.6, video: 3.3 },
+        },
+      },
+      SOURCE,
+      { model, url: 'https://example.test/guide', hash: 'b'.repeat(64) },
+    )
+    if (!card) throw new Error('no card')
+    // The series column lists 1080p and 4K; Fast prices neither.
+    expect(Object.keys(card.tables.pixels ?? {})).toEqual(['720p'])
+    // Page: "Dreamina Seedance 2.0 Fast (USD) 0.60 per video" (720p 16:9 5 s).
+    const request = { resolution: '720p', ratio: '16:9', duration: 5 }
+    const result = priceDetailed(card, request, { input_video: false })
+    expect(result.estimated).toEqual(['completion_tokens'])
+    expect(result.usd.toFixed(2)).toBe('0.60')
+    // Video input carries a minimum-token floor the method does not cover.
+    expect(() => priceDetailed(card, request, { input_video: true })).toThrow(
+      /estimate_supported/,
+    )
   })
 })

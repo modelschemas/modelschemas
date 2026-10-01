@@ -209,7 +209,7 @@ const isNumeric = (v: unknown): v is number | string =>
   (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
 
 /** Bind every card input from `vars` by param name, with defaults. */
-export function bindInputs(card: RateCard, params: Vars): Vars {
+export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
   const vars: Vars = {}
   for (const [name, input] of Object.entries(card.inputs)) {
     const raw = params[input.param]
@@ -234,6 +234,7 @@ export function bindInputs(card: RateCard, params: Vars): Vars {
       }
       case 'boolean': {
         const value = raw ?? input.default
+        if (value === undefined) throw bad('required')
         if (typeof value !== 'boolean')
           throw bad('expected a boolean, got', value)
         vars[name] = value
@@ -241,6 +242,7 @@ export function bindInputs(card: RateCard, params: Vars): Vars {
       }
       case 'enum': {
         const value = raw ?? input.default
+        if (value === undefined) throw bad('required')
         if (typeof value !== 'string' || !input.values.includes(value)) {
           throw bad(`not one of ${input.values.join('|')}:`, value)
         }
@@ -285,20 +287,75 @@ export function price(
   request: Vars = {},
   usage: Vars = {},
 ): number {
+  return priceDetailed(card, request, usage).usd
+}
+
+export interface PriceResult {
+  usd: number
+  /**
+   * Params of inputs the caller omitted whose value came from the card's
+   * published `estimate`. Empty means every input was supplied (or a plain
+   * default), so `usd` is the price as billed.
+   */
+  estimated: string[]
+}
+
+/** Read each input's param from the request or usage object by bound. */
+function collect(inputs: RateCard['inputs'], request: Vars, usage: Vars): Vars {
   const vars: Vars = {}
-  for (const input of Object.values(card.inputs)) {
+  for (const input of Object.values(inputs)) {
     const from = input.bound === 'usage' ? usage : request
     if (input.param in from) vars[input.param] = from[input.param]
   }
-  const usd = evalExpr(card.price, bindInputs(card, vars), card.tables)
+  return vars
+}
+
+/** `price`, plus which inputs were estimated rather than supplied. */
+export function priceDetailed(
+  card: RateCard,
+  request: Vars = {},
+  usage: Vars = {},
+): PriceResult {
+  const given = collect(card.inputs, request, usage)
+  const estimated: string[] = []
+  const direct: RateCard['inputs'] = {}
+  const pending: Array<[string, NonNullable<EstimatedInput['estimate']>]> = []
+  for (const [name, input] of Object.entries(card.inputs)) {
+    if (
+      input.kind === 'number' &&
+      input.estimate &&
+      !(input.param in given) &&
+      input.default === undefined
+    ) {
+      pending.push([name, input.estimate])
+      estimated.push(input.param)
+    } else {
+      direct[name] = input
+    }
+  }
+  const vars = bindInputs({ inputs: direct }, given)
+  for (const [name, estimate] of pending) {
+    const own = bindInputs(estimate, collect(estimate.inputs, request, usage))
+    const value = evalExpr(estimate.value, { ...vars, ...own }, card.tables)
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      throw new RateCardError(
+        'bad-result',
+        `${name} estimate evaluated to ${JSON.stringify(value)}`,
+      )
+    }
+    vars[name] = value
+  }
+  const usd = evalExpr(card.price, vars, card.tables)
   if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
     throw new RateCardError(
       'bad-result',
       `price evaluated to ${JSON.stringify(usd)}`,
     )
   }
-  return usd
+  return { usd, estimated }
 }
+
+type EstimatedInput = Extract<RateCard['inputs'][string], { kind: 'number' }>
 
 /** Relative tolerance when reproducing a source's worked example. */
 const EXAMPLE_TOLERANCE = 0.01

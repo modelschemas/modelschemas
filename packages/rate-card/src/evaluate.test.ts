@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { RateCardError, bindInputs, price, verifyExamples } from './evaluate.ts'
+import {
+  RateCardError,
+  bindInputs,
+  price,
+  priceDetailed,
+  verifyExamples,
+} from './evaluate.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
 
@@ -254,5 +260,51 @@ describe('verifyExamples', () => {
       ok: false,
       error: expect.stringContaining('bad-input') as string,
     })
+  })
+})
+
+describe('estimate', () => {
+  // rate × tokens; tokens estimated as seconds × per-second[resolution].
+  const card: RateCard = {
+    inputs: {
+      resolution: { param: 'resolution', kind: 'enum', values: ['480p'] },
+      tokens: {
+        param: 'tokens',
+        bound: 'usage',
+        kind: 'number',
+        estimate: {
+          inputs: { seconds: { param: 'seconds', kind: 'number' } },
+          value: {
+            '*': [
+              { var: 'seconds' },
+              {
+                lookup: { table: 'per_second', keys: [{ var: 'resolution' }] },
+              },
+            ],
+          },
+          source: { url: 'https://example.test/guide', hash: 'b'.repeat(64) },
+        },
+      },
+    },
+    tables: { per_second: { '480p': 1000 } },
+    price: { '*': [{ var: 'tokens' }, 0.001] },
+    examples: [],
+    source,
+  }
+
+  it('prices supplied usage as billed, without the estimate inputs', () => {
+    expect(rateCardSchema.parse(card)).toEqual(card)
+    expect(
+      priceDetailed(card, { resolution: '480p' }, { tokens: 500 }),
+    ).toEqual({ usd: 0.5, estimated: [] })
+  })
+
+  it('labels an estimated input and binds its own inputs only then', () => {
+    expect(priceDetailed(card, { resolution: '480p', seconds: 2 }, {})).toEqual(
+      { usd: 2, estimated: ['tokens'] },
+    )
+    expect(() => priceDetailed(card, { resolution: '480p' }, {})).toThrow(
+      /seconds.*required/,
+    )
   })
 })
