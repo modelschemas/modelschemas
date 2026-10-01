@@ -228,6 +228,8 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
       case 'count':
         if (raw === undefined) vars[name] = 0
         else if (Array.isArray(raw)) vars[name] = raw.length
+        // Ark's `image` is a string or a list of them.
+        else if (typeof raw === 'string') vars[name] = 1
         else throw bad('expected a list, got', raw)
         break
       case 'number': {
@@ -266,6 +268,16 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
             width: Number(value.width),
             height: Number(value.height),
           }
+          break
+        }
+        const pixels =
+          typeof value === 'string' ? /^(\d+)x(\d+)$/.exec(value) : null
+        if (pixels) {
+          vars[name] = { width: Number(pixels[1]), height: Number(pixels[2]) }
+          break
+        }
+        if (typeof value === 'string' && input.levels?.includes(value)) {
+          vars[name] = { level: value }
           break
         }
         const preset =

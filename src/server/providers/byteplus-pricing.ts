@@ -360,9 +360,9 @@ export function parseByteplusVideo(
 
 /**
  * Image table: `Model ID ‖ Input image price ‖ Output image price`, USD per
- * image. Only flat rows with free input images are read; Seedream 5.0 pro
- * (pixel tiers, per-image input fee, layer decomposition) is left unpriced
- * (#102). Only the first matching table is read.
+ * image. Only flat rows with free input images are read here; Seedream 5.0
+ * pro's pixel-tiered row is `parseByteplusPixelTiers`. Only the first
+ * matching table is read.
  */
 export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
   const out = new Map<string, number>()
@@ -380,7 +380,9 @@ export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
     const input = (row[at('input image price')] ?? '').trim()
     const output = decimal((row[at('output image price')] ?? '').trim())
     if (!/^free$/i.test(input) || output === null) {
-      warnUnread('image', id, row)
+      // Pixel-tiered rows belong to `parseByteplusPixelTiers`.
+      const tiered = pixelTierRates(input, row[at('output image price')] ?? '')
+      if (!tiered) warnUnread('image', id, row)
       continue
     }
     out.set(id, output)
@@ -513,6 +515,142 @@ export function parseSeedanceGeometry(
   }
   for (const id of conflicted) out.delete(id)
   return out
+}
+
+/** Seedream 5.0 pro: per-image output rates split at a pixel count. */
+export interface ByteplusPixelTiers {
+  /** USD per input image after the first (the first is free). */
+  extraInput: number
+  /** Tier boundary in pixels; at or below it is `low`. */
+  maxLowPixels: number
+  /** The largest `size` level the page puts in the low tier (`1.5K`). */
+  lowLevel: string
+  low: number
+  high: number
+}
+
+const PIXEL_TIER_INPUT = /^First image: Free From the 2nd image: ([\d.]+)$/i
+// Layer decomposition is not read: the page says one request's layers can
+// land in different tiers, so the card refuses that mode.
+const PIXEL_TIER_OUTPUT =
+  /^Single image generation: ≤ ([\d.]+) million pixels \(([\d.]+)K or lower\): ([\d.]+) > \1 million pixels \(higher than \2K\): ([\d.]+) Layer decomposition: /i
+
+/** One image-table row as pixel tiers, or null for any other wording. */
+function pixelTierRates(
+  input: string,
+  output: string,
+): ByteplusPixelTiers | null {
+  const inMatch = PIXEL_TIER_INPUT.exec(input)
+  const outMatch = PIXEL_TIER_OUTPUT.exec(output)
+  if (!inMatch || !outMatch) return null
+  const extraInput = decimal(inMatch[1] ?? '')
+  const millions = decimal(outMatch[1] ?? '')
+  const low = decimal(outMatch[3] ?? '')
+  const high = decimal(outMatch[4] ?? '')
+  if (extraInput === null || millions === null || low === null) return null
+  if (high === null) return null
+  const lowLevel = `${outMatch[2]}K`
+  return { extraInput, maxLowPixels: millions * 1e6, lowLevel, low, high }
+}
+
+/** The image table's pixel-tiered rows; only the first table is read. */
+export function parseByteplusPixelTiers(
+  doc: ByteplusDoc,
+): Map<string, ByteplusPixelTiers> {
+  const out = new Map<string, ByteplusPixelTiers>()
+  const [table] = tablesWith(doc, [
+    'model id',
+    'input image price',
+    'output image price',
+  ])
+  if (!table) return out
+  const at = (key: string) => table.keys.indexOf(key)
+  for (const row of table.rows) {
+    const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
+    const rates = pixelTierRates(
+      row[at('input image price')] ?? '',
+      row[at('output image price')] ?? '',
+    )
+    if (/^[a-z0-9-]+$/.test(id) && rates) out.set(id, rates)
+  }
+  return out
+}
+
+/**
+ * Ark's `size` levels for Seedream 5.0 pro image generation (Image
+ * generation API, docs.byteplus.com/en/docs/ModelArk/1541523; default
+ * `2K`). The model picks the pixels, but every size that API doc lists for
+ * a level sits on one side of 2.61 MP, as the pricing page's "(1.5K or
+ * lower)" says. `4K` and `auto` are not image-generation sizes.
+ */
+const SEEDREAM_PRO_LEVELS = ['1K', '1.5K', '2K']
+
+/**
+ * `usage.generated_images × tier rate + max(0, images in − 1) × input fee`.
+ * `size` is a level (tier from the page's "(1.5K or lower)") or `WxH`
+ * (tier from its pixel count). `layer_decomposition: true` refuses: its
+ * layers are billed per layer at each one's own tier, which no request
+ * field fixes.
+ */
+export function compileSeedreamProCard(
+  rates: ByteplusPixelTiers,
+  source: RateCard['source'],
+): RateCard | null {
+  const levelNumber = (level: string) => Number(level.replace(/K$/, ''))
+  const boundary = levelNumber(rates.lowLevel)
+  if (!SEEDREAM_PRO_LEVELS.includes(rates.lowLevel)) return null
+  const levelTier: Array<Expr> = SEEDREAM_PRO_LEVELS.flatMap((level) => [
+    { '==': [{ var: 'size.level' }, level] },
+    levelNumber(level) <= boundary ? 'low' : 'high',
+  ])
+  const pixels = { '*': [{ var: 'size.width' }, { var: 'size.height' }] }
+  const tier: Expr = {
+    if: [
+      { missing: 'size.level' },
+      { if: [{ '<=': [pixels, rates.maxLowPixels] }, 'low', 'high'] },
+      { if: levelTier },
+    ],
+  }
+  const mode: Expr = {
+    if: [{ var: 'layer_decomposition' }, 'layer_decomposition', 'generation'],
+  }
+  return {
+    inputs: {
+      size: {
+        param: 'size',
+        kind: 'dimensions',
+        levels: SEEDREAM_PRO_LEVELS,
+        default: '2K',
+      },
+      layer_decomposition: {
+        param: 'layer_decomposition',
+        kind: 'boolean',
+        default: false,
+      },
+      image: { param: 'image', kind: 'count' },
+      generated_images: {
+        param: 'generated_images',
+        bound: 'usage',
+        kind: 'number',
+      },
+    },
+    tables: { output: { generation: { low: rates.low, high: rates.high } } },
+    price: {
+      '+': [
+        {
+          '*': [
+            { var: 'generated_images' },
+            { lookup: { table: 'output', keys: [mode, tier] } },
+          ],
+        },
+        {
+          '*': [{ max: [0, { '-': [{ var: 'image' }, 1] }] }, rates.extraInput],
+        },
+      ],
+    },
+    examples: [],
+    source,
+  }
 }
 
 /**
@@ -717,6 +855,8 @@ interface CachedPricing {
   rates: Record<string, ByteplusChatRates>
   video: Record<string, ByteplusVideoRates>
   images: Record<string, number>
+  // Absent on entries cached before #102.
+  pixelTiers?: Record<string, ByteplusPixelTiers>
   hash: string
   extractedAt: string
 }
@@ -776,6 +916,7 @@ export async function byteplusModelPricing(
       const parsed = parseByteplusPricing(page)
       const video = parseByteplusVideo(page)
       const images = parseByteplusImages(page)
+      const pixelTiers = parseByteplusPixelTiers(page)
       assertParsed(parsed, 'byteplus pricing page')
       assertParsed(video, 'byteplus pricing page (video)')
       assertParsed(images, 'byteplus pricing page (images)')
@@ -783,6 +924,7 @@ export async function byteplusModelPricing(
         rates: Object.fromEntries(parsed),
         video: Object.fromEntries(video),
         images: Object.fromEntries(images),
+        pixelTiers: Object.fromEntries(pixelTiers),
         hash: await sha256Text(content),
         extractedAt: new Date().toISOString(),
       }
@@ -793,6 +935,7 @@ export async function byteplusModelPricing(
   const rates = new Map(Object.entries(doc.rates))
   const video = new Map(Object.entries(doc.video))
   const images = new Map(Object.entries(doc.images))
+  const pixelTiers = new Map(Object.entries(doc.pixelTiers ?? {}))
   const source = {
     url: BYTEPLUS_PRICING_URL,
     hash: doc.hash,
@@ -816,6 +959,8 @@ export async function byteplusModelPricing(
           : undefined,
       )
     }
+    const tiered = byteplusRatesFor(rawId, pixelTiers)
+    if (tiered) return compileSeedreamProCard(tiered, source)
     const perImage = byteplusRatesFor(rawId, images)
     if (perImage === undefined) return null
     // Billed per image returned (usage.generated_images); group-image mode

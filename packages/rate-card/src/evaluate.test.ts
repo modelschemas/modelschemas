@@ -135,6 +135,21 @@ describe('binding', () => {
     })
   })
 
+  it('reads a bare string as one, WxH as pixels, and a level by name', () => {
+    const c: RateCard = {
+      ...card,
+      inputs: {
+        ...card.inputs,
+        size: { param: 'image_size', kind: 'dimensions', levels: ['2K'] },
+      },
+    }
+    expect(
+      bindInputs(c, { image_urls: 'a', image_size: '2048x1152' }),
+    ).toMatchObject({ refs: 1, size: { width: 2048, height: 1152 } })
+    expect(bindInputs(c, { image_size: '2K' }).size).toEqual({ level: '2K' })
+    expect(() => bindInputs(c, { image_size: '4K' })).toThrow(RateCardError)
+  })
+
   it('var walks dotted paths into dimensions', () => {
     const c: RateCard = {
       ...card,
@@ -147,7 +162,7 @@ describe('binding', () => {
     ['enum outside values', { resolution: '1080p' }],
     ['non-numeric number', { duration: 'five' }],
     ['non-boolean boolean', { generate_audio: 'yes' }],
-    ['non-list count', { image_urls: 'a' }],
+    ['non-list count', { image_urls: 3 }],
     ['unknown size preset', { image_size: 'portrait_4_3' }],
   ])('refuses %s', (_name, params) => {
     expect(() => price(card, params)).toThrow(RateCardError)

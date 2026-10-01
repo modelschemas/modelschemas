@@ -120,9 +120,13 @@ function inputKinds<TNumber extends z.ZodRawShape>(numberExtra: TNumber) {
       kind: z.literal('boolean'),
       default: z.boolean().optional(),
     }),
-    /** Length of a list param (`image_urls`), 0 when absent. */
+    /** Length of a list param (`image_urls`), 0 when absent, 1 for a bare string. */
     z.object({ ...inputBase, kind: z.literal('count') }),
-    /** `{width, height}` or a preset name; binds `<name>.width` / `<name>.height`. */
+    /**
+     * `{width, height}`, a `WxH` string or a preset name; binds
+     * `<name>.width` / `<name>.height`. A `levels` name (Ark's `2K`, sized
+     * by the provider) binds `<name>.level` instead, with no width or height.
+     */
     z
       .object({
         ...inputBase,
@@ -130,11 +134,15 @@ function inputKinds<TNumber extends z.ZodRawShape>(numberExtra: TNumber) {
         presets: z
           .record(z.string(), z.tuple([z.number(), z.number()]))
           .optional(),
+        levels: z.array(z.string()).optional(),
         default: z.string().optional(),
       })
       .refine(
-        (i) => i.default === undefined || i.presets?.[i.default] !== undefined,
-        'default must be a preset name',
+        (i) =>
+          i.default === undefined ||
+          i.presets?.[i.default] !== undefined ||
+          i.levels?.includes(i.default),
+        'default must be a preset or level name',
       ),
   ])
 }

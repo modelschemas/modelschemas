@@ -5,7 +5,9 @@ import { price, priceDetailed } from '@modelschemas/rate-card'
 import {
   byteplusRatesFor,
   compileSeedanceCard,
+  compileSeedreamProCard,
   parseByteplusImages,
+  parseByteplusPixelTiers,
   parseByteplusPricing,
   parseByteplusVideo,
   parseSeedanceGeometry,
@@ -198,7 +200,7 @@ const IMAGE_TABLE = [
   [
     'dola-seedream-5-0-pro-260628 Pricing varies by image generation scenario.',
     'First image: Free From the 2nd image: 0.003',
-    'Single image generation: ≤ 2.61 million pixels (1.5K or lower): 0.045',
+    'Single image generation: ≤ 2.61 million pixels (1.5K or lower): 0.045 > 2.61 million pixels (higher than 1.5K): 0.09 Layer decomposition: ≤ 2.61 million pixels (1.5K or lower): 0.0225 > 2.61 million pixels (higher than 1.5K): 0.045',
   ],
   ['seedream-4-5-251128', 'Free', '0.04'],
 ]
@@ -274,6 +276,31 @@ describe('byteplus video and image tables', () => {
     expect(() =>
       usd(v25, { resolution: '720p', service_tier: 'flex' }, billed),
     ).toThrow(/flex/)
+  })
+
+  it('prices Seedream 5.0 pro by size tier and extra input images', () => {
+    const tiers = parseByteplusPixelTiers(page).get(
+      'dola-seedream-5-0-pro-260628',
+    )
+    const card = tiers && compileSeedreamProCard(tiers, SOURCE)
+    if (!card) throw new Error('no Seedream 5.0 pro card')
+    const usd = (request: Record<string, unknown>, generated = 1) =>
+      Number(price(card, request, { generated_images: generated }).toFixed(4))
+    // Omitted size is Ark's default 2K, the high tier.
+    expect(usd({})).toBe(0.09)
+    expect(usd({ size: '1K' })).toBe(0.045)
+    expect(usd({ size: '1.5K' })).toBe(0.045)
+    // WxH by pixel count: 1536² = 2.36 MP ≤ 2.61 MP; 2048² is above.
+    expect(usd({ size: '1536x1536' })).toBe(0.045)
+    expect(usd({ size: '2048x2048' })).toBe(0.09)
+    // First input image free, each further one 0.003; a bare string is one.
+    expect(usd({ size: '1K', image: 'a' })).toBe(0.045)
+    expect(usd({ size: '1K', image: ['a', 'b', 'c'] })).toBe(0.051)
+    // Layers mix tiers; 4K/auto are not generation sizes; usage is required.
+    expect(() => usd({ layer_decomposition: true })).toThrow(/layer/)
+    expect(() => usd({ size: '4K' })).toThrow(/unknown size/)
+    expect(() => usd({ size: 'auto' })).toThrow(/unknown size/)
+    expect(() => price(card, {}, {})).toThrow(/generated_images/)
   })
 })
 
