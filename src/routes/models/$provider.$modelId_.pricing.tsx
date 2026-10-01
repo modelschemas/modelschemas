@@ -27,31 +27,39 @@ interface CalculatorData {
   quote: Quote
 }
 
-interface QuoteInput {
-  provider: string
-  modelId: string
-  request: Record<string, unknown>
-  usage: Record<string, unknown>
-}
+const QUOTE_FAILED =
+  'Could not reach the estimator; the last quote is kept. Edit a field to retry.'
 
-/** Same service function `POST /v1/estimate` wraps — no second formula. */
-async function runQuote(data: QuoteInput): Promise<Quote> {
+/**
+ * Same validator and service function `POST /v1/estimate` uses — no second
+ * formula. Unexpected throws come back as a failed quote, not a 500.
+ */
+async function runQuote(raw: unknown): Promise<Quote> {
   const { env } = await import('cloudflare:workers')
   const { getDb } = await import('#/db/index.ts')
-  const { estimateCost } = await import('#/server/estimate.ts')
-  const outcome = await estimateCost(getDb(env), {
-    provider: data.provider,
-    model: data.modelId,
-    request: data.request,
-    usage: data.usage,
-  })
-  return outcome.ok
-    ? { ok: true, usd: outcome.result.usd }
-    : { ok: false, message: outcome.message }
+  const { estimateCost, parseEstimateBody } =
+    await import('#/server/estimate.ts')
+  const body = parseEstimateBody(raw)
+  if (!body) {
+    return {
+      ok: false,
+      message:
+        'Body must be { provider: string, model: string, request?: object, usage?: object }.',
+    }
+  }
+  try {
+    const outcome = await estimateCost(getDb(env), body)
+    return outcome.ok
+      ? { ok: true, usd: outcome.result.usd }
+      : { ok: false, message: outcome.message }
+  } catch (cause) {
+    console.error('rate card quote failed', body.provider, body.model, cause)
+    return { ok: false, message: QUOTE_FAILED }
+  }
 }
 
 const quoteRateCard = createServerFn({ method: 'POST' })
-  .inputValidator((data: QuoteInput) => data)
+  .inputValidator((data: unknown) => data)
   .handler(({ data }) => runQuote(data))
 
 const getCalculator = createServerFn({ method: 'GET' })
@@ -66,6 +74,13 @@ const getCalculator = createServerFn({ method: 'GET' })
 
     const model = await getModelDetail(getDb(env), data.provider, data.modelId)
     const card = model ? parseStoredRateCard(model.pricing) : null
+    if (model && model.pricing != null && !card) {
+      console.error(
+        'stored rate card failed to parse',
+        data.provider,
+        data.modelId,
+      )
+    }
     if (!model || !card) return null
     const values = seedValues(card)
     return {
@@ -79,7 +94,8 @@ const getCalculator = createServerFn({ method: 'GET' })
       examples: card.examples.map(({ usd, quote }) => ({ usd, quote })),
       values,
       quote: await runQuote({
-        ...data,
+        provider: data.provider,
+        model: data.modelId,
         ...toEstimateParts(card.inputs, values),
       }),
     }
@@ -141,15 +157,21 @@ function RateCardCalculator() {
           setError(quote.message)
         }
       }
-      quoteRateCard({
-        data: {
-          provider: data.provider,
-          modelId: data.modelId,
-          ...toEstimateParts(inputs, values),
-        },
-      }).then(settle, (cause: unknown) =>
-        settle({ ok: false, message: String(cause) }),
-      )
+      // Inside the promise so a throw while building the body still settles.
+      Promise.resolve()
+        .then(() =>
+          quoteRateCard({
+            data: {
+              provider: data.provider,
+              model: data.modelId,
+              ...toEstimateParts(inputs, values),
+            },
+          }),
+        )
+        .then(settle, (cause: unknown) => {
+          console.error('rate card quote failed', cause)
+          settle({ ok: false, message: QUOTE_FAILED })
+        })
     }, 250)
     return () => clearTimeout(timer)
   }, [values, data.provider, data.modelId, inputs])

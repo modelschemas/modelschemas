@@ -74,6 +74,20 @@ export function seedValues(
   )
 }
 
+// ponytail: lists past this are sent raw and refused, not built in memory.
+const MAX_COUNT = 1000
+
+/**
+ * `count` prices a list's length; the items are never read. Anything but a
+ * whole number up to MAX_COUNT goes through as-is so the estimator refuses
+ * it ("expected a list") instead of pricing a guessed length.
+ */
+function countList(value: FieldValue): unknown {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return value
+  const length = Number(value)
+  return length <= MAX_COUNT ? Array.from({ length }, () => '') : value
+}
+
 /** Split field values into the estimate body's request/usage slots. */
 export function toEstimateParts(
   inputs: RateCard['inputs'],
@@ -85,14 +99,7 @@ export function toEstimateParts(
     const value = values[name]
     if (value === undefined) continue
     const slot = input.bound === 'usage' ? usage : request
-    // `count` prices a list's length; the items themselves are never read.
-    slot[input.param] =
-      input.kind === 'count'
-        ? Array.from(
-            { length: Math.max(0, Math.floor(Number(value)) || 0) },
-            () => '',
-          )
-        : value
+    slot[input.param] = input.kind === 'count' ? countList(value) : value
   }
   return { request, usage }
 }

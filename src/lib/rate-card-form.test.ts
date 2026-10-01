@@ -58,8 +58,54 @@ describe('rate card form', () => {
     const inputs = {
       image_urls: { param: 'image_urls', kind: 'count' as const },
     }
-    expect(toEstimateParts(inputs, { image_urls: '3' }).request).toEqual({
-      image_urls: ['', '', ''],
+    const sent = (value: string) =>
+      toEstimateParts(inputs, { image_urls: value }).request.image_urls
+    expect(sent('3')).toEqual(['', '', ''])
+    // Anything else goes through raw for the estimator to refuse — never a
+    // guessed length, never a huge list built in memory.
+    for (const bad of ['', 'abc', '-3', '2.7', '1e10', '5000']) {
+      expect(sent(bad)).toBe(bad)
+    }
+    const card = { ...FIXTURE_CARDS['openai/gpt-4o']!, inputs, examples: [] }
+    expect(() => price(card, { image_urls: sent('') })).toThrow(
+      /expected a list/,
+    )
+  })
+
+  it('seeds a preset-name example to that preset size', () => {
+    const card = {
+      inputs: {
+        image_size: {
+          param: 'image_size',
+          kind: 'dimensions' as const,
+          presets: {
+            square_hd: [1024, 1024] as [number, number],
+            landscape: [1536, 1024] as [number, number],
+          },
+        },
+      },
+      examples: [{ params: { image_size: 'landscape' }, usd: 1, quote: 'q' }],
+    }
+    expect(seedValues(card).image_size).toEqual({
+      width: '1536',
+      height: '1024',
     })
   })
+
+  // The loader quotes the seeded fields, so the first number on the page
+  // must reproduce the example those fields came from.
+  it.each(Object.entries(FIXTURE_CARDS))(
+    '%s: seeded quote reproduces its example',
+    (_id, card) => {
+      const params = Object.values(card.inputs).map((input) => input.param)
+      const covered = (example: (typeof card.examples)[number]) =>
+        params.filter((param) => param in example.params).length
+      const best = card.examples.reduce((top, example) =>
+        covered(example) > covered(top) ? example : top,
+      )
+      expect(Math.abs(quote(card) - best.usd)).toBeLessThanOrEqual(
+        best.usd * 0.01,
+      )
+    },
+  )
 })
