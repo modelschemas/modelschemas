@@ -106,6 +106,7 @@ function Changes() {
           }
           copyUrl={`https://modelschemas.com${apiPath}`}
           right={<ViewToggle view={view} onChange={setView} />}
+          intro="Everything that moved upstream: models added or retired, metadata updates and schema changes, newest first. Poll this feed, or subscribe a webhook to have it pushed."
         />
         <MetaStrip
           items={[

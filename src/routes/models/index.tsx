@@ -133,6 +133,7 @@ function ModelsCatalog() {
           }
           copyUrl={`https://modelschemas.com${apiPath}`}
           right={<ViewToggle view={view} onChange={setView} />}
+          intro="Every model each provider serves right now, polled every 15 minutes. Use it to pick a valid model id or to spot new and retired ones."
         />
         <MetaStrip
           items={[

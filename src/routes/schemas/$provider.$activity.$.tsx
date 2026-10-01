@@ -179,7 +179,7 @@ function SchemaDetail() {
 
   return (
     <div className="min-h-screen text-ink">
-      <SiteNav active="models" />
+      <SiteNav active="schemas" />
       <main className="mx-auto max-w-[1080px] px-6 pb-16">
         <ReqLine
           path={
@@ -216,6 +216,7 @@ function SchemaDetail() {
               <ViewToggle view={view} onChange={setView} />
             </div>
           }
+          intro={`The ${result.kind === 'input' ? 'request body you send to' : 'response body you get back from'} ${result.provider} ${result.endpointId}, taken from the provider’s published spec. Validate a payload against it before you send.`}
         />
         <MetaStrip
           items={[

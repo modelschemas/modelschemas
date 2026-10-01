@@ -3,7 +3,7 @@
  * webhooks. Cursor-paginated, newest first; the cursor is an opaque
  * (createdAt, id) keyset token, so pages stay stable while new changes land.
  */
-import { and, desc, eq, gte, lt, or } from 'drizzle-orm'
+import { and, count, desc, eq, gte, lt, or } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
@@ -130,4 +130,17 @@ export async function listChanges(
       },
     },
   }
+}
+
+/** Change counts per type since `since` — the landing page's drift tally. */
+export async function countChangesByType(
+  db: Db,
+  since: number,
+): Promise<Partial<Record<ChangeType, number>>> {
+  const rows = await db
+    .select({ type: changes.type, n: count() })
+    .from(changes)
+    .where(gte(changes.createdAt, since))
+    .groupBy(changes.type)
+  return Object.fromEntries(rows.map((r) => [r.type, r.n]))
 }

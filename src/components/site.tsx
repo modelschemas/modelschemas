@@ -7,7 +7,7 @@ import { useState } from 'react'
 
 import { modelChangeHref } from '#/lib/change-link.ts'
 
-export const GITHUB_URL = 'https://github.com/tombeckenham/modelschemas'
+export const GITHUB_URL = 'https://github.com/modelschemas/modelschemas'
 
 export function GithubIcon({ className = '' }: { className?: string }) {
   return (
@@ -258,23 +258,33 @@ export function ReqLine({
   path,
   copyUrl,
   right,
+  intro,
 }: {
   method?: string
   path: React.ReactNode
   copyUrl?: string
   right?: React.ReactNode
+  /** One plain-language line: what this resource is and why you'd read it. */
+  intro?: React.ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 pt-7 pb-3.5">
-      <span className="method-chip">{method}</span>
-      <h1 className="m-0 font-mono text-[19px] font-medium break-all text-ink max-sm:text-base">
-        {path}
-      </h1>
-      {copyUrl !== undefined ? (
-        <CopyButton text={copyUrl} label="copy url" />
+    <>
+      <div className="flex flex-wrap items-center gap-3 pt-7 pb-3.5">
+        <span className="method-chip">{method}</span>
+        <h1 className="m-0 font-mono text-[19px] font-medium break-all text-ink max-sm:text-base">
+          {path}
+        </h1>
+        {copyUrl !== undefined ? (
+          <CopyButton text={copyUrl} label="copy url" />
+        ) : null}
+        {right}
+      </div>
+      {intro !== undefined ? (
+        <p className="m-0 max-w-[48em] text-[14px] leading-relaxed text-ink-soft">
+          {intro}
+        </p>
       ) : null}
-      {right}
-    </div>
+    </>
   )
 }
 

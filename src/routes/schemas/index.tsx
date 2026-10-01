@@ -133,6 +133,7 @@ function SchemaIndex() {
           path="/v1/schemas"
           copyUrl="https://modelschemas.com/v1/schemas"
           right={<ViewToggle view={view} onChange={setView} />}
+          intro="Request and response JSON Schemas for every provider endpoint, extracted from each provider’s own API spec and versioned by content hash. Open one to see each field, its type and its constraints."
         />
         <MetaStrip
           items={[

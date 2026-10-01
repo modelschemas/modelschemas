@@ -4,7 +4,12 @@ import { env } from 'cloudflare:test'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
 import { changes, providers } from '../db/schema.ts'
-import { decodeCursor, encodeCursor, listChanges } from './changes-api.ts'
+import {
+  countChangesByType,
+  decodeCursor,
+  encodeCursor,
+  listChanges,
+} from './changes-api.ts'
 
 const NOW = 1_781_150_000
 let db: Db
@@ -122,5 +127,15 @@ describe('listChanges pagination', () => {
     const cursor = { createdAt: NOW, id: 'a:b:c' }
     expect(decodeCursor(encodeCursor(cursor))).toEqual(cursor)
     expect(decodeCursor('AAAA')).toBeNull()
+  })
+})
+
+describe('countChangesByType', () => {
+  it('tallies changes per type from `since` onward', async () => {
+    expect(await countChangesByType(db, NOW + 2)).toEqual({
+      'model.added': 1,
+      'schema.updated': 2,
+      'model.removed': 1,
+    })
   })
 })

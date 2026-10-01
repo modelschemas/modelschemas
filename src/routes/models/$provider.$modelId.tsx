@@ -158,6 +158,15 @@ function ModelDetail() {
           }
           copyUrl={`https://modelschemas.com${apiPath}`}
           right={<ViewToggle view={view} onChange={setView} />}
+          intro={
+            <>
+              <b className="font-semibold text-ink">
+                {model.displayName ?? model.rawId}
+              </b>{' '}
+              from {model.provider}: its metadata and pricing, plus the
+              endpoints that accept it and the schemas for their payloads.
+            </>
+          }
         />
         <MetaStrip
           items={[
@@ -275,7 +284,7 @@ function ModelDetail() {
                     <td className="font-mono text-[12.5px]">
                       {pricing === null ? (
                         <span className="text-ink-faint">
-                          not published by this provider’s list endpoint
+                          no published pricing found for this model
                         </span>
                       ) : (
                         <div className="space-y-1">
