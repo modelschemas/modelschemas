@@ -1,20 +1,51 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
+import { cardRequestParamsOk } from '#/server/rate-card.ts'
 import {
   arkChatCapabilities,
   arkTaskActivity,
   byteplusProvider,
 } from './byteplus.ts'
-import { BYTEPLUS_PRICING_URL } from './byteplus-pricing.ts'
+import {
+  BYTEPLUS_PRICING_URL,
+  BYTEPLUS_VIDEO_GUIDE_URL,
+  compileSeedreamProCard,
+} from './byteplus-pricing.ts'
 
 /**
- * One standard-table row, enough for listModels to attach a card without
- * fetching the live pricing page (that fetch races other tests' fetch stubs).
+ * One chat, video, and image row, enough for listModels to attach cards
+ * without fetching the live pricing page (that fetch races other tests'
+ * fetch stubs).
  */
 function pricingFixtureHtml(): string {
-  const headers = [
+  return docFixtureHtml(PRICING_TABLES)
+}
+
+/** The tutorial's model and pixel tables, one Seedance 1.0 row each. */
+function guideFixtureHtml(): string {
+  return docFixtureHtml([
+    [
+      ['Model name', '', 'Seedance 1.0 Pro'],
+      ['Model ID', '', 'seedance-1-0-pro-250528'],
+      ['', 'Frame rate', '24 fps'],
+    ],
+    [
+      ['Resolution', 'Aspect ratio', 'Seedance 1.0 series'],
+      ['1080p', '16:9', '1920×1088'],
+    ],
+  ])
+}
+
+/** Pages the provider fetches besides the Ark listing, by URL. */
+const DOC_FIXTURES: Record<string, () => string> = {
+  [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
+  [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
+}
+
+const PRICING_TABLES = (() => {
+  const chat = [
     'Model ID',
     'Pricing tiers (K tokens)',
     'Input (non-audio) (USD/M tokens)',
@@ -24,29 +55,60 @@ function pricingFixtureHtml(): string {
     'Cache-hit input (audio) (USD/M tokens)',
     'Output (USD/M tokens)',
   ]
-  const body = [
-    headers,
-    ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
+  const tables: Array<Array<Array<string>>> = [
+    [
+      chat,
+      ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
+    ],
+    [
+      [
+        'Model ID',
+        'Online inference (USD / M tokens)',
+        'Offline inference (USD / M tokens)',
+      ],
+      ['seedance-1-0-pro-250528', '2.5', '1.25'],
+    ],
+    [
+      [
+        'Model ID',
+        'Input image price (USD / image)',
+        'Output image price (USD / image)',
+      ],
+      ['seedream-4-5-251128', 'Free', '0.04'],
+    ],
   ]
+  return tables
+})()
+
+function docFixtureHtml(tables: Array<Array<Array<string>>>): string {
   const data: Record<string, unknown> = {
-    '0': { ops: [{ insert: '*', attributes: { aceTable: 'rows cols' } }] },
-    rows: {
-      ops: body.map((_, index) => ({ insert: { id: `r${index}` } })),
-      zoneType: 'R',
-    },
-    cols: {
-      ops: headers.map((_, index) => ({ insert: { id: `c${index}` } })),
-      zoneType: 'C',
+    '0': {
+      ops: tables.map((_, t) => ({
+        insert: '*',
+        attributes: { aceTable: `rows${t} cols${t}` },
+      })),
     },
   }
-  body.forEach((cells, row) => {
-    cells.forEach((text, column) => {
-      data[`xr${row}xc${column}`] = {
-        ops: [
-          { insert: '*', attributes: { lmkr: '1' } },
-          { insert: `${text}\n` },
-        ],
-      }
+  tables.forEach((body, t) => {
+    data[`rows${t}`] = {
+      ops: body.map((_, index) => ({ insert: { id: `t${t}r${index}` } })),
+      zoneType: 'R',
+    }
+    data[`cols${t}`] = {
+      ops: (body[0] ?? []).map((_, index) => ({
+        insert: { id: `t${t}c${index}` },
+      })),
+      zoneType: 'C',
+    }
+    body.forEach((cells, row) => {
+      cells.forEach((text, column) => {
+        data[`xt${t}r${row}xt${t}c${column}`] = {
+          ops: [
+            { insert: '*', attributes: { lmkr: '1' } },
+            { insert: `${text}\n` },
+          ],
+        }
+      })
     })
   })
   const router = {
@@ -88,10 +150,11 @@ type ChatCompletionResponse struct {
 `,
   'images.go': `
 type GenerateImagesRequest struct {
-	Model     string  \`json:"model"\`
-	Prompt    string  \`json:"prompt"\`
-	Size      *string \`json:"size,omitempty"\`
-	Watermark *bool   \`json:"watermark,omitempty"\`
+	Model     string      \`json:"model"\`
+	Prompt    string      \`json:"prompt"\`
+	Image     interface{} \`json:"image,omitempty"\`
+	Size      *string     \`json:"size,omitempty"\`
+	Watermark *bool       \`json:"watermark,omitempty"\`
 }
 type ImagesResponse struct {
 	Model string \`json:"model"\`
@@ -239,6 +302,35 @@ describe('byteplus spec generated from the Go SDK', () => {
     expect(endpoints).toHaveLength(5)
   })
 
+  it.each(['ok', 'unreachable'] as const)(
+    'images schema (%s SDK) carries every request field the Seedream 5.0 pro card reads',
+    async (mode) => {
+      const { result: fetched } = await withGoSdk(mode, () =>
+        byteplusProvider.fetchSpec({}),
+      )
+      const image = classifyAndBundle(byteplusProvider, fetched).endpoints.find(
+        (e) => e.dbId === 'byteplus/images/generations',
+      )
+      const props = Object.keys(image?.input?.properties ?? {})
+      const card = compileSeedreamProCard(
+        {
+          extraInput: 0.003,
+          maxLowPixels: 2.61e6,
+          lowLevel: '1.5K',
+          low: 0.045,
+          high: 0.09,
+        },
+        {
+          url: BYTEPLUS_PRICING_URL,
+          hash: 'a'.repeat(64),
+          extractedAt: '2026-10-02T00:00:00Z',
+        },
+      )
+      // The write gate refuses a card whose request param the schema lacks.
+      expect(card && cardRequestParamsOk(card, new Set(props))).toBe(true)
+    },
+  )
+
   it('derives identical content hashes on every build (sync idempotence)', async () => {
     const { result: a } = await withGoSdk('ok', () =>
       byteplusProvider.fetchSpec({}),
@@ -250,13 +342,68 @@ describe('byteplus spec generated from the Go SDK', () => {
   })
 })
 
+/** Keyless listModels with each fixture page swapped by URL (`null`: 503). */
+async function listWith(pages: Record<string, (() => string) | null>) {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    const href = String(url)
+    if (href in pages) {
+      const page = pages[href]
+      return Promise.resolve(
+        page ? new Response(page()) : new Response('down', { status: 503 }),
+      )
+    }
+    return original(url, init)
+  }) as typeof fetch
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  try {
+    return await byteplusProvider.listModels({})
+  } finally {
+    globalThis.fetch = original
+    warn.mockRestore()
+  }
+}
+
+describe('byteplus pricing pages failing', () => {
+  it('publishes billed-only Seedance cards when the tutorial is down', async () => {
+    const { models } = await listWith({
+      [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
+      [BYTEPLUS_VIDEO_GUIDE_URL]: null,
+    })
+    const seedance = models.find((m) => m.rawId === 'seedance-1-0-pro-250528')
+    expect(seedance?.pricing).toMatchObject({
+      inputs: { completion_tokens: { bound: 'usage' } },
+    })
+    expect(seedance?.pricing).not.toMatchObject({
+      inputs: { completion_tokens: { estimate: expect.anything() as object } },
+    })
+    expect(
+      models.find((m) => m.rawId === 'seed-2-0-pro-260328')?.pricing,
+    ).toBeTruthy()
+  })
+
+  it('throws when the pricing page loses a table, keeping stored cards', async () => {
+    const withoutVideo = () =>
+      docFixtureHtml(
+        PRICING_TABLES.filter(
+          (table) => !table[0]?.includes('Online inference (USD / M tokens)'),
+        ),
+      )
+    await expect(
+      listWith({
+        [BYTEPLUS_PRICING_URL]: withoutVideo,
+        [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
+      }),
+    ).rejects.toThrow(/video\): parsed 0/)
+  })
+})
+
 describe('byteplus curated models (no ARK_API_KEY)', () => {
   it('lists the ported @tanstack/ai-byteplus catalog with metadata', async () => {
     const original = globalThis.fetch
     globalThis.fetch = ((url: string, init?: RequestInit) => {
-      if (String(url) === BYTEPLUS_PRICING_URL) {
-        return Promise.resolve(new Response(pricingFixtureHtml()))
-      }
+      const doc = DOC_FIXTURES[String(url)]
+      if (doc) return Promise.resolve(new Response(doc()))
       return original(url, init)
     }) as typeof fetch
     const { models, skipped } = await byteplusProvider
@@ -285,6 +432,20 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
 
     const seedance = models.find((m) => m.rawId === 'seedance-1-5-pro-251215')
     expect(seedance?.releasedAt).toBe(Date.parse('2025-12-15') / 1000)
+    // Video and image rows from the pricing page become cards.
+    const priced = (rawId: string) =>
+      models.find((m) => m.rawId === rawId)?.pricing
+    expect(priced('seedance-1-0-pro-250528')).toMatchObject({
+      inputs: {
+        completion_tokens: {
+          bound: 'usage',
+          estimate: { source: { url: BYTEPLUS_VIDEO_GUIDE_URL } },
+        },
+      },
+    })
+    expect(priced('seedream-4-5-251128')).toMatchObject({
+      inputs: { generated_images: { bound: 'usage' } },
+    })
     // Undated Seed Speech ids keep their poll-time firstSeenAt.
     const asr = models.find((m) => m.rawId === 'seed-asr')
     expect(asr?.releasedAt).toBeNull()
@@ -387,9 +548,8 @@ describe('byteplus live models (ARK_API_KEY set)', () => {
         url: href,
         auth: new Headers(init?.headers).get('authorization'),
       })
-      if (href === BYTEPLUS_PRICING_URL) {
-        return Promise.resolve(new Response(pricingFixtureHtml()))
-      }
+      const doc = DOC_FIXTURES[href]
+      if (doc) return Promise.resolve(new Response(doc()))
       if (!href.includes('/api/v3/models')) return original(url, init)
       return Promise.resolve(new Response(JSON.stringify(body)))
     }) as typeof fetch

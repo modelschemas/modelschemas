@@ -1,8 +1,9 @@
 /**
  * POST /v1/estimate — evaluate a stored rate card against a request/usage
- * pair. Thin wrapper around `price` from @modelschemas/rate-card.
+ * pair. Thin wrapper around `priceDetailed` from @modelschemas/rate-card;
+ * `estimated` names any input filled by the card's published estimate.
  */
-import { price, RateCardError } from '@modelschemas/rate-card'
+import { priceDetailed, RateCardError } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Db } from '#/db/index.ts'
@@ -19,7 +20,12 @@ export interface EstimateRequestBody {
 export type EstimateOutcome =
   | {
       ok: true
-      result: { usd: number; cardSource: RateCard['source'] }
+      result: {
+        usd: number
+        cardSource: RateCard['source']
+        /** Omitted params the card estimated; empty means billed price. */
+        estimated: string[]
+      }
     }
   | { ok: false; status: number; code: string; message: string }
 
@@ -50,16 +56,26 @@ function mapRateCardError(
   const input =
     (name !== undefined ? card.inputs[name] : undefined) ??
     Object.values(card.inputs).find((entry) => entry.param === name)
+  const slot = input
+    ? `${input.bound === 'usage' ? 'usage' : 'request'}.${input.param}`
+    : undefined
   if (
     error.code === 'bad-input' &&
     error.message.includes('required') &&
-    input
+    slot
   ) {
-    const slot = input.bound === 'usage' ? 'usage' : 'request'
     return {
       code: 'unbound_input',
       message:
-        `Rate card requires ${slot}.${input.param} which was not provided. ` +
+        `Rate card requires ${slot} which was not provided. ` +
+        `Pass it on the estimate body. See GET /v1/models/${body.provider}/${body.model}.`,
+    }
+  }
+  if (error.code === 'estimate-unavailable' && slot) {
+    return {
+      code: 'unbound_input',
+      message:
+        `Rate card requires ${slot}; it was not provided and could not be estimated (${error.message}). ` +
         `Pass it on the estimate body. See GET /v1/models/${body.provider}/${body.model}.`,
     }
   }
@@ -94,8 +110,12 @@ export async function estimateCost(
     }
   }
   try {
-    const usd = price(card, body.request ?? {}, body.usage ?? {})
-    return { ok: true, result: { usd, cardSource: card.source } }
+    const { usd, estimated } = priceDetailed(
+      card,
+      body.request ?? {},
+      body.usage ?? {},
+    )
+    return { ok: true, result: { usd, cardSource: card.source, estimated } }
   } catch (error) {
     if (error instanceof RateCardError) {
       const mapped = mapRateCardError(error, card, body)

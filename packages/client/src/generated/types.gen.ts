@@ -77,6 +77,22 @@ export type RateCardInput = {
   param: string
   bound?: 'request' | 'usage'
   kind: 'number' | 'enum' | 'boolean' | 'count' | 'dimensions'
+  /**
+   * Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.
+   */
+  estimate?: {
+    inputs: {
+      [key: string]: RateCardInput
+    }
+    /**
+     * JSONLogic expression over the closed op set.
+     */
+    value: unknown
+    source: {
+      url: string
+      hash: string
+    }
+  }
 }
 
 export type RateCard = {
@@ -153,6 +169,10 @@ export type EstimateRequest = {
 export type EstimateResult = {
   usd: number
   cardSource: RateCardSource
+  /**
+   * Params the caller omitted that the card estimated by its published method. Empty: usd is the price as billed for the supplied request and usage.
+   */
+  estimated: Array<string>
 }
 
 export type GetServiceIndexData = {
@@ -585,7 +605,7 @@ export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors]
 
 export type EstimateCostResponses = {
   /**
-   * USD for this call and the card source.
+   * USD for this call, the card source, and which inputs (if any) were estimated.
    */
   200: EstimateResult
 }

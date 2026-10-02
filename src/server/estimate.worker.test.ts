@@ -7,6 +7,7 @@ import type { Db } from '../db/index.ts'
 import { models, providers } from '../db/schema.ts'
 import { estimateCost, parseEstimateBody } from './estimate.ts'
 import { anthropicModelPricing } from './providers/anthropic-pricing.ts'
+import { compileSeedanceCard } from './providers/byteplus-pricing.ts'
 import { ANTHROPIC_PRICING_PAGE } from './providers/fixtures/anthropic-pricing.ts'
 import { parseStoredRateCard } from './rate-card.ts'
 
@@ -40,6 +41,28 @@ beforeAll(async () => {
       lastSeenAt: NOW,
     },
   ])
+  await db.insert(providers).values({
+    id: 'est-byteplus',
+    displayName: 'Estimate BytePlus',
+    specSourceUrl: 'https://example.com/b.json',
+  })
+  await db.insert(models).values({
+    id: 'est-byteplus-seedance',
+    providerId: 'est-byteplus',
+    rawId: 'seedance-1-0-pro-250528',
+    activity: 'video',
+    pricing: compileSeedanceCard(
+      { default: { '*': { all: 2.5 } } },
+      GPT_4O.source,
+      {
+        model: { fps: 24, dims: { '1080p': { '16:9': { w: 1920, h: 1088 } } } },
+        url: 'https://example.com/guide',
+        hash: 'b'.repeat(64),
+      },
+    ),
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+  })
   await db.insert(providers).values({
     id: 'est-anthropic',
     displayName: 'Estimate Anthropic',
@@ -122,7 +145,7 @@ describe('estimateCost', () => {
     })
     expect(outcome).toEqual({
       ok: true,
-      result: { usd: 0.007, cardSource: GPT_4O.source },
+      result: { usd: 0.007, cardSource: GPT_4O.source, estimated: [] },
     })
   })
 
@@ -162,5 +185,46 @@ describe('estimateCost', () => {
       expect(outcome.code).toBe('unbound_input')
       expect(outcome.message).toContain('usage.input_tokens')
     }
+  })
+
+  it('labels an estimated price and names both ways to supply it', async () => {
+    const body = { provider: 'est-byteplus', model: 'seedance-1-0-pro-250528' }
+    // Seedance 1.0 Pro usage table: 1080p 16:9 10 s = 489600 tokens.
+    const estimated = await estimateCost(db, {
+      ...body,
+      request: { resolution: '1080p', ratio: '16:9', duration: 10 },
+    })
+    expect(estimated).toMatchObject({
+      ok: true,
+      result: { usd: 1.224, estimated: ['completion_tokens'] },
+    })
+    const billed = await estimateCost(db, {
+      ...body,
+      usage: { completion_tokens: 489_600 },
+    })
+    expect(billed).toMatchObject({
+      ok: true,
+      result: { usd: 1.224, estimated: [] },
+    })
+    const neither = await estimateCost(db, {
+      ...body,
+      request: { resolution: '1080p', duration: 10 },
+    })
+    expect(neither).toMatchObject({ ok: false, code: 'unbound_input' })
+    if (!neither.ok) {
+      expect(neither.message).toContain('requires usage.completion_tokens')
+      expect(neither.message).toContain('ratio (ratio): required')
+    }
+    // A draft's tokens are not what the formula gives: no estimate.
+    const draft = await estimateCost(db, {
+      ...body,
+      request: {
+        resolution: '1080p',
+        ratio: '16:9',
+        duration: 10,
+        draft: true,
+      },
+    })
+    expect(draft).toMatchObject({ ok: false, code: 'unbound_input' })
   })
 })

@@ -10,7 +10,10 @@ import {
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { contentHash } from '#/server/kv.ts'
+import { compileSeedanceCard } from '#/server/providers/byteplus-pricing.ts'
+import { bytePlusArkSpec } from '#/server/providers/byteplus-spec.ts'
 import {
+  cardRequestParamsOk,
   parseStoredRateCard,
   projectTokenPricing,
   servePricing,
@@ -322,5 +325,60 @@ describe('servePricing', () => {
   it('does not serve leftover vendor blobs', () => {
     expect(servePricing(GPT_4O_LISTING, 'full')).toBeNull()
     expect(servePricing({ prompt: '0', completion: '0' }, 'compact')).toBeNull()
+  })
+})
+
+/** A Seedance-shaped card whose completion_tokens estimate reads `guideHash`. */
+function estimatedCard(guideHash: string, param = 'duration'): RateCard {
+  const card = compileSeedanceCard(
+    { default: { '*': { all: 2.5 } } },
+    GPT_4O.source,
+    {
+      model: { fps: 24, dims: { '720p': { '16:9': { w: 1280, h: 720 } } } },
+      url: 'https://example.com/guide',
+      hash: guideHash,
+    },
+  )
+  if (!card) throw new Error('no card')
+  const tokens = card.inputs.completion_tokens
+  if (tokens?.kind === 'number' && tokens.estimate && param !== 'duration') {
+    tokens.estimate.inputs.duration = { param, kind: 'number' }
+  }
+  return card
+}
+
+describe('estimate sources', () => {
+  it('replaces a stored card when only the estimate source changed', async () => {
+    const stored = estimatedCard('b'.repeat(64))
+    const fresh = estimatedCard('c'.repeat(64))
+    expect(
+      await storeListedPricing(fresh, {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: fresh })
+    expect(
+      await storeListedPricing(estimatedCard('b'.repeat(64)), {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: stored })
+  })
+
+  it("checks an estimate's request levers against the bound schema", () => {
+    const spec = bytePlusArkSpec() as {
+      components: { schemas: Record<string, { properties?: object }> }
+    }
+    const task = new Set(
+      Object.keys(
+        spec.components.schemas.VideoTaskCreateRequest?.properties ?? {},
+      ),
+    )
+    expect(cardRequestParamsOk(estimatedCard('b'.repeat(64)), task)).toBe(true)
+    expect(
+      cardRequestParamsOk(estimatedCard('b'.repeat(64), 'seconds'), task),
+    ).toBe(false)
   })
 })

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { RateCardError, bindInputs, price, verifyExamples } from './evaluate.ts'
+import {
+  RateCardError,
+  bindInputs,
+  price,
+  priceDetailed,
+  verifyExamples,
+} from './evaluate.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
 
@@ -129,6 +135,22 @@ describe('binding', () => {
     })
   })
 
+  it('reads WxH as pixels and a level by name', () => {
+    const c: RateCard = {
+      ...card,
+      inputs: {
+        ...card.inputs,
+        size: { param: 'image_size', kind: 'dimensions', levels: ['2K'] },
+      },
+    }
+    expect(bindInputs(c, { image_size: '2048x1152' }).size).toEqual({
+      width: 2048,
+      height: 1152,
+    })
+    expect(bindInputs(c, { image_size: '2K' }).size).toEqual({ level: '2K' })
+    expect(() => bindInputs(c, { image_size: '4K' })).toThrow(RateCardError)
+  })
+
   it('var walks dotted paths into dimensions', () => {
     const c: RateCard = {
       ...card,
@@ -254,5 +276,92 @@ describe('verifyExamples', () => {
       ok: false,
       error: expect.stringContaining('bad-input') as string,
     })
+  })
+})
+
+describe('estimate', () => {
+  // rate × tokens; tokens estimated as seconds × per-second[resolution].
+  const card: RateCard = {
+    inputs: {
+      resolution: { param: 'resolution', kind: 'enum', values: ['480p'] },
+      tokens: {
+        param: 'tokens',
+        bound: 'usage',
+        kind: 'number',
+        estimate: {
+          inputs: { seconds: { param: 'seconds', kind: 'number' } },
+          value: {
+            '*': [
+              { var: 'seconds' },
+              {
+                lookup: { table: 'per_second', keys: [{ var: 'resolution' }] },
+              },
+            ],
+          },
+          source: { url: 'https://example.test/guide', hash: 'b'.repeat(64) },
+        },
+      },
+    },
+    tables: { per_second: { '480p': 1000 } },
+    price: { '*': [{ var: 'tokens' }, 0.001] },
+    examples: [],
+    source,
+  }
+
+  it('prices supplied usage as billed, without the estimate inputs', () => {
+    expect(rateCardSchema.parse(card)).toEqual(card)
+    expect(
+      priceDetailed(card, { resolution: '480p' }, { tokens: 500 }),
+    ).toEqual({ usd: 0.5, estimated: [] })
+  })
+
+  it('labels an estimated input and binds its own inputs only then', () => {
+    expect(priceDetailed(card, { resolution: '480p', seconds: 2 }, {})).toEqual(
+      { usd: 2, estimated: ['tokens'] },
+    )
+    expect(() => priceDetailed(card, { resolution: '480p' }, {})).toThrow(
+      /tokens \(tokens\): not supplied, and cannot be estimated.*seconds.*required/,
+    )
+  })
+
+  it('never estimates through price(), the billed entry point', () => {
+    expect(price(card, { resolution: '480p' }, { tokens: 500 })).toBe(0.5)
+    expect(() => price(card, { resolution: '480p', seconds: 2 }, {})).toThrow(
+      /tokens \(tokens\): required/,
+    )
+  })
+
+  it('refuses a non-positive estimate rather than pricing it', () => {
+    expect(() =>
+      priceDetailed(card, { resolution: '480p', seconds: -1 }, {}),
+    ).toThrow(
+      expect.objectContaining({ code: 'estimate-unavailable' }) as Error,
+    )
+  })
+
+  it('rejects an estimate beside a default, or shadowing a card input', () => {
+    const tokens = card.inputs.tokens
+    if (tokens?.kind !== 'number' || !tokens.estimate) throw new Error('shape')
+    const withDefault = {
+      ...card,
+      inputs: { ...card.inputs, tokens: { ...tokens, default: 1 } },
+    }
+    expect(rateCardSchema.safeParse(withDefault).success).toBe(false)
+    const shadowing = {
+      ...card,
+      inputs: {
+        ...card.inputs,
+        tokens: {
+          ...tokens,
+          estimate: {
+            ...tokens.estimate,
+            inputs: {
+              resolution: { param: 'resolution', kind: 'enum', values: ['1'] },
+            },
+          },
+        },
+      },
+    }
+    expect(rateCardSchema.safeParse(shadowing).success).toBe(false)
   })
 })

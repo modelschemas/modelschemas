@@ -624,7 +624,7 @@
         },
         "responses": {
           "200": {
-            "description": "USD for this call and the card source.",
+            "description": "USD for this call, the card source, and which inputs (if any) were estimated.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1113,6 +1113,43 @@
               "count",
               "dimensions"
             ]
+          },
+          "estimate": {
+            "type": "object",
+            "description": "Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.",
+            "required": [
+              "inputs",
+              "value",
+              "source"
+            ],
+            "properties": {
+              "inputs": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/RateCardInput"
+                }
+              },
+              "value": {
+                "description": "JSONLogic expression over the closed op set."
+              },
+              "source": {
+                "type": "object",
+                "required": [
+                  "url",
+                  "hash"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "hash": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -1314,7 +1351,8 @@
         "type": "object",
         "required": [
           "usd",
-          "cardSource"
+          "cardSource",
+          "estimated"
         ],
         "properties": {
           "usd": {
@@ -1322,6 +1360,13 @@
           },
           "cardSource": {
             "$ref": "#/components/schemas/RateCardSource"
+          },
+          "estimated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Params the caller omitted that the card estimated by its published method. Empty: usd is the price as billed for the supplied request and usage."
           }
         }
       }
