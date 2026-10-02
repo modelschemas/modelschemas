@@ -629,7 +629,8 @@ export function compileSeedreamProCard(
         default: false,
       },
       // Ark's own count of the request's images: `image` is a string or a
-      // list, and the bill counts what Ark received.
+      // list, and the bill counts what Ark received. Live 2026-10-02: no
+      // image → 0, a string → 1, a list of 3 → 3.
       input_images: { param: 'input_images', bound: 'usage', kind: 'number' },
       generated_images: {
         param: 'generated_images',
