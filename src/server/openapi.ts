@@ -613,7 +613,7 @@ export const openApiDocument = {
           estimate: {
             type: 'object',
             description:
-              'Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated.',
+              'Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.',
             required: ['inputs', 'value', 'source'],
             properties: {
               inputs: {

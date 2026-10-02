@@ -13,8 +13,10 @@
  * (`dola-seed-2-1-turbo` → `dola-seed-2-1-turbo-260628`).
  *
  * Video (Seedance) and image (Seedream) tables are read too (issue #99):
- * see `parseByteplusVideo` and `parseByteplusImages`. A page that yields no
- * chat, video, or image row throws.
+ * see `parseByteplusVideo` and `parseByteplusImages`. A page missing chat,
+ * video, or image rows throws. Seedance estimates also read frame rate and
+ * output sizes from the video generation tutorial; if that page fails, the
+ * cards publish without an estimate rather than failing the lookup.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
 import type {
@@ -23,6 +25,8 @@ import type {
   RateCardEstimate,
   TokenRateTier,
 } from '@modelschemas/rate-card'
+
+import { errorMessage } from '#/server/errors.ts'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs } from './model-facts.ts'
@@ -217,8 +221,9 @@ export function parseByteplusPricing(
 }
 
 /**
- * Catalog id → page row. Exact id wins. Otherwise the single longest page
- * id that the catalog id extends with `-{suffix}`.
+ * Catalog id → page row. Exact id wins. Otherwise the undated page id the
+ * catalog id extends with a `-YYMMDD` date — never another suffix, so
+ * `seedance-1-0-pro-fast-…` cannot take an undated `seedance-1-0-pro` row.
  */
 export function byteplusRatesFor<T>(
   rawId: string,
@@ -226,12 +231,8 @@ export function byteplusRatesFor<T>(
 ): T | undefined {
   const exact = rates.get(rawId)
   if (exact) return exact
-  const prefixes = [...rates.keys()]
-    .filter((key) => rawId.startsWith(`${key}-`))
-    .sort((a, b) => b.length - a.length)
-  const best = prefixes[0]
-  if (!best || prefixes[1]?.length === best.length) return undefined
-  return rates.get(best)
+  const dated = rawId.match(/^(.+)-\d{6}$/)?.[1]
+  return dated === undefined ? undefined : rates.get(dated)
 }
 
 /**
@@ -247,16 +248,24 @@ export type ByteplusVideoRates = Record<
 >
 
 const VIDEO_VARIANTS: Array<[RegExp, string]> = [
-  [/Input without video: ([\d.]+)/i, 'no_video'],
-  [/Input with video: ([\d.]+)/i, 'video'],
-  [/Video with audio: ([\d.]+)/i, 'audio'],
-  [/Video without audio: ([\d.]+)/i, 'silent'],
+  [/Input without video: (\d+(?:\.\d+)?)/i, 'no_video'],
+  [/Input with video: (\d+(?:\.\d+)?)/i, 'video'],
+  [/Video with audio: (\d+(?:\.\d+)?)/i, 'audio'],
+  [/Video without audio: (\d+(?:\.\d+)?)/i, 'silent'],
 ]
+
+/** A plain positive decimal, or `null`. */
+function decimal(text: string): number | null {
+  const value = /^\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN
+  return Number.isFinite(value) && value > 0 ? value : null
+}
 
 /** Both halves of a split, or one flat rate — anything else refuses. */
 function variantRates(body: string): Record<string, number> | null {
   const text = body.trim()
-  if (/^[\d.]+$/.test(text)) return { all: Number(text) }
+  const flat = decimal(text)
+  if (flat !== null) return { all: flat }
+  if (/^[\d.]+$/.test(text)) return null
   const rates: Record<string, number> = {}
   let rest = text
   for (const [pattern, variant] of VIDEO_VARIANTS) {
@@ -281,11 +290,16 @@ function variantRates(body: string): Record<string, number> | null {
  * One rate cell → resolution → variant. `undefined` is "Not supported yet";
  * `null` is a cell this parser cannot read. Promo cells quote the list
  * price as "(Original) 5.6 Time limited 25% off"; the list price is kept
- * (the discount is enterprise-only and time-boxed).
+ * (the discount is enterprise-only and time-boxed). Promo text with no
+ * "(Original)" price beside it may be quoting the discounted rate, so it
+ * refuses.
  */
 function videoCell(
   cell: string,
 ): Record<string, Record<string, number>> | null | undefined {
+  const promos = cell.match(/Time limited \d+% off/gi)?.length ?? 0
+  const originals = cell.match(/\(Original\)/gi)?.length ?? 0
+  if (promos !== originals) return null
   const text = cell
     .replace(/\(Original\)/gi, '')
     .replace(/Time limited \d+% off/gi, '')
@@ -315,7 +329,8 @@ function videoCell(
 /**
  * Video table: `Model ID ‖ Online inference ‖ Offline inference`. The id
  * cell trails a description ("… Pricing varies based on …"); its first word
- * is the id. A model with any unreadable cell gets no rates.
+ * is the id. A model with any unreadable cell gets no rates (and a warning).
+ * Only the first matching table is read.
  */
 export function parseByteplusVideo(
   doc: ByteplusDoc,
@@ -326,15 +341,19 @@ export function parseByteplusVideo(
     'online inference',
     'offline inference',
   ])
-  for (const { keys, rows } of tables) {
-    const at = (key: string) => keys.indexOf(key)
-    for (const row of rows) {
-      const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
-      const online = videoCell(row[at('online inference')] ?? '')
-      const offline = videoCell(row[at('offline inference')] ?? '')
-      if (!/^[a-z0-9-]+$/.test(id) || !online || offline === null) continue
-      out.set(id, { default: online, ...(offline && { flex: offline }) })
+  const [table] = tables
+  if (!table) return out
+  const at = (key: string) => table.keys.indexOf(key)
+  for (const row of table.rows) {
+    const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
+    if (!/^[a-z0-9-]+$/.test(id)) continue
+    const online = videoCell(row[at('online inference')] ?? '')
+    const offline = videoCell(row[at('offline inference')] ?? '')
+    if (!online || offline === null) {
+      warnUnread('video', id, row)
+      continue
     }
+    out.set(id, { default: online, ...(offline && { flex: offline }) })
   }
   return out
 }
@@ -342,7 +361,8 @@ export function parseByteplusVideo(
 /**
  * Image table: `Model ID ‖ Input image price ‖ Output image price`, USD per
  * image. Only flat rows with free input images are read; Seedream 5.0 pro
- * (pixel tiers, per-image input fee, layer decomposition) is left unpriced.
+ * (pixel tiers, per-image input fee, layer decomposition) is left unpriced
+ * (#102). Only the first matching table is read.
  */
 export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
   const out = new Map<string, number>()
@@ -351,23 +371,41 @@ export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
     'input image price',
     'output image price',
   ])
-  for (const { keys, rows } of tables) {
-    for (const row of rows) {
-      const id = (row[keys.indexOf('model id')] ?? '').split(' ')[0] ?? ''
-      const input = row[keys.indexOf('input image price')] ?? ''
-      const output = (row[keys.indexOf('output image price')] ?? '').trim()
-      if (!/^[a-z0-9-]+$/.test(id) || !/^free$/i.test(input.trim())) continue
-      if (!/^[\d.]+$/.test(output) || Number(output) <= 0) continue
-      out.set(id, Number(output))
+  const [table] = tables
+  if (!table) return out
+  const at = (key: string) => table.keys.indexOf(key)
+  for (const row of table.rows) {
+    const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
+    if (!/^[a-z0-9-]+$/.test(id)) continue
+    const input = (row[at('input image price')] ?? '').trim()
+    const output = decimal((row[at('output image price')] ?? '').trim())
+    if (!/^free$/i.test(input) || output === null) {
+      warnUnread('image', id, row)
+      continue
     }
+    out.set(id, output)
   }
   return out
 }
 
+/** A priced row this parser could not read: logged so drift is visible. */
+function warnUnread(table: string, id: string, row: Array<string>): void {
+  console.warn(
+    JSON.stringify({
+      job: 'byteplus-pricing',
+      skipped: id,
+      table,
+      cells: row,
+    }),
+  )
+}
+
 /**
  * Output frame rate and pixel size per Seedance model, from the video
- * generation tutorial. The page's token formula reads only these:
- * `(input s + output s) × width × height × fps / 1024`.
+ * generation tutorial. The page's token formula is
+ * `(input s + output s) × width × height × fps / 1024`; cards apply it to
+ * output seconds only, since a request with input video refuses the
+ * estimate (see `compileSeedanceCard`).
  */
 export interface SeedanceGeometry {
   fps: number
@@ -376,11 +414,30 @@ export interface SeedanceGeometry {
 }
 
 /**
+ * A resolution cell's note, for one display name: `true` serves it,
+ * `false` does not, `null` is a note this parser cannot read. Known
+ * shapes: "X and Y do not support 1080p", "Only X supports 4K".
+ */
+function noteServes(note: string, name: string): boolean | null {
+  if (note === '') return true
+  const names = (list: string) =>
+    list.split(/,\s*|\s+and\s+/i).map((part) => part.trim().toLowerCase())
+  const excluded = note.match(/^(.+?) (?:do|does) not support\b/i)?.[1]
+  if (excluded) return !names(excluded).includes(name)
+  const only = note.match(/^Only (.+?) supports?\b/i)?.[1]
+  if (only) return names(only).includes(name)
+  return null
+}
+
+/**
  * Two tables on the tutorial: the model table (`Model name` header row of
  * display names, a `Model ID` row, a `Frame rate` row) and the pixel table
  * (`Resolution ‖ Aspect ratio ‖ <model or "… series">…`). A pixel column
- * names one display name, or a series every display name it prefixes.
- * Models missing either fact get no geometry.
+ * names one display name, or a series every display name it prefixes; a
+ * model's own column beats its series. A resolution note ("… do not support
+ * 1080p") limits who gets that row, and a note it cannot read drops the row.
+ * Two columns of the same rank disagreeing on a size drops the model, as
+ * does a repeated display name. Models missing a fact get no geometry.
  */
 export function parseSeedanceGeometry(
   doc: ByteplusDoc,
@@ -397,18 +454,29 @@ export function parseSeedanceGeometry(
 
   // Display name (lowercase) → model id and fps.
   const byName = new Map<string, { id: string; fps: number }>()
+  const repeated = new Set<string>()
   models.keys.forEach((name, column) => {
     const id = ids[column] ?? ''
     const fps = fpsRow[column]?.match(/^(\d+) fps$/i)?.[1]
-    if (/^[a-z0-9-]+$/.test(id) && fps)
-      byName.set(name, { id, fps: Number(fps) })
+    if (!/^[a-z0-9-]+$/.test(id) || !fps) return
+    if (byName.has(name)) repeated.add(name)
+    byName.set(name, { id, fps: Number(fps) })
   })
+  for (const name of repeated) byName.delete(name)
 
   const at = (key: string) => pixels.keys.indexOf(key)
+  // id|resolution|ratio → rank of the column that set it (2 own, 1 series).
+  const rank = new Map<string, number>()
+  const conflicted = new Set<string>()
   let resolution = ''
+  let note = ''
   for (const cells of pixels.rows) {
-    const named = cells[at('resolution')]?.split(' ')[0]?.toLowerCase() ?? ''
-    if (named) resolution = named
+    const label = (cells[at('resolution')] ?? '').trim()
+    if (label) {
+      const [first = '', ...rest] = label.split(' ')
+      resolution = first.toLowerCase()
+      note = rest.join(' ')
+    }
     const ratio = cells[at('aspect ratio')] ?? ''
     if (!/^(\d+p|4k)$/.test(resolution) || !/^\d+:\d+$/.test(ratio)) continue
     pixels.keys.forEach((column, index) => {
@@ -416,18 +484,34 @@ export function parseSeedanceGeometry(
       if (!size) return
       const series = column.replace(/ series$/, '')
       for (const [name, model] of byName) {
-        const covered =
-          name === column ||
-          (series !== column &&
-            (name === series || name.startsWith(`${series} `)))
-        if (!covered) continue
+        const own = name === column
+        const inSeries =
+          series !== column &&
+          (name === series || name.startsWith(`${series} `))
+        if (!own && !inSeries) continue
+        if (noteServes(note, name) !== true) continue
+        const key = `${model.id}|${resolution}|${ratio}`
+        const level = own ? 2 : 1
         const geometry = out.get(model.id) ?? { fps: model.fps, dims: {} }
         const byRatio = (geometry.dims[resolution] ??= {})
-        byRatio[ratio] = { w: Number(size[1]), h: Number(size[2]) }
+        const size2 = { w: Number(size[1]), h: Number(size[2]) }
+        const prior = rank.get(key) ?? 0
+        if (prior > level) continue
+        const held = byRatio[ratio]
+        if (
+          prior === level &&
+          held &&
+          (held.w !== size2.w || held.h !== size2.h)
+        ) {
+          conflicted.add(model.id)
+        }
+        byRatio[ratio] = size2
+        rank.set(key, level)
         out.set(model.id, geometry)
       }
     })
   }
+  for (const id of conflicted) out.delete(id)
   return out
 }
 
@@ -446,7 +530,9 @@ export function parseSeedanceGeometry(
  * Draft refuses outright on resolution-priced models: the page bills a draft
  * at a different resolution than the request names. Video input is not a
  * request field Ark exposes as one value (it rides in `content`), so the
- * caller states it as `usage.input_video`.
+ * caller states it as `usage.input_video`. Only models whose rates split on
+ * video input take it (the tutorial lists no video reference for 1.x), so
+ * the others' estimate has no video input to refuse.
  */
 export function compileSeedanceCard(
   rates: ByteplusVideoRates,
@@ -457,15 +543,13 @@ export function compileSeedanceCard(
   if (!online) return null
   const resolutions = Object.keys(online)
   const variants = Object.keys(online[resolutions[0] ?? ''] ?? {})
-  // Every tier must price the same resolutions with the same variants.
+  // Every tier prices the same resolutions, each with the same variants.
   const shape = (tier: Record<string, Record<string, number>>) =>
-    Object.entries(tier)
-      .map(([r, v]) => `${r}:${Object.keys(v).sort().join()}`)
-      .sort()
-      .join(';')
-  if (Object.values(rates).some((tier) => shape(tier) !== shape(online))) {
-    return null
-  }
+    Object.keys(tier).sort().join() === [...resolutions].sort().join() &&
+    Object.values(tier).every(
+      (v) => Object.keys(v).sort().join() === [...variants].sort().join(),
+    )
+  if (!Object.values(rates).every(shape)) return null
 
   const inputs: RateCard['inputs'] = {
     // Ark's own defaults: omitted means online inference, not a draft.
@@ -631,11 +715,51 @@ type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 interface CachedPricing {
   rates: Record<string, ByteplusChatRates>
-  // Absent on entries cached before #99; they age out within the docs TTL.
-  video?: Record<string, ByteplusVideoRates>
-  images?: Record<string, number>
+  video: Record<string, ByteplusVideoRates>
+  images: Record<string, number>
   hash: string
   extractedAt: string
+}
+
+interface CachedGuide {
+  geometry: Record<string, SeedanceGeometry>
+  hash: string
+}
+
+/**
+ * Tutorial geometry, or none: it only feeds the labelled estimate, so a
+ * failed fetch or parse publishes billed-only cards rather than failing
+ * every BytePlus price with it.
+ */
+async function seedanceGuide(kv?: KVNamespace): Promise<CachedGuide | null> {
+  const label = 'byteplus video generation tutorial'
+  try {
+    return await cachedDocs<CachedGuide>(
+      kv,
+      BYTEPLUS_VIDEO_GUIDE_URL,
+      async () => {
+        const content = pricingContent(
+          await fetchText(BYTEPLUS_VIDEO_GUIDE_URL),
+          label,
+        )
+        const parsed = parseSeedanceGeometry(JSON.parse(content) as ByteplusDoc)
+        assertParsed(parsed, label)
+        return {
+          geometry: Object.fromEntries(parsed),
+          hash: await sha256Text(content),
+        }
+      },
+    )
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        job: 'byteplus-pricing',
+        skipped: 'seedance estimates',
+        error: errorMessage(error),
+      }),
+    )
+    return null
+  }
 }
 
 /** Card lookup by catalog id. Ids no table prices get nothing. */
@@ -664,23 +788,11 @@ export async function byteplusModelPricing(
       }
     },
   )
-  const guide = await cachedDocs(kv, BYTEPLUS_VIDEO_GUIDE_URL, async () => {
-    const label = 'byteplus video generation tutorial'
-    const content = pricingContent(
-      await fetchText(BYTEPLUS_VIDEO_GUIDE_URL),
-      label,
-    )
-    const parsed = parseSeedanceGeometry(JSON.parse(content) as ByteplusDoc)
-    assertParsed(parsed, label)
-    return {
-      geometry: Object.fromEntries(parsed),
-      hash: await sha256Text(content),
-    }
-  })
-  const geometry = new Map(Object.entries(guide.geometry))
+  const guide = await seedanceGuide(kv)
+  const geometry = new Map(Object.entries(guide?.geometry ?? {}))
   const rates = new Map(Object.entries(doc.rates))
-  const video = new Map(Object.entries(doc.video ?? {}))
-  const images = new Map(Object.entries(doc.images ?? {}))
+  const video = new Map(Object.entries(doc.video))
+  const images = new Map(Object.entries(doc.images))
   const source = {
     url: BYTEPLUS_PRICING_URL,
     hash: doc.hash,
@@ -695,11 +807,13 @@ export async function byteplusModelPricing(
     }
     const seedance = byteplusRatesFor(rawId, video)
     if (seedance) {
-      const model = geometry.get(rawId)
+      const model = byteplusRatesFor(rawId, geometry)
       return compileSeedanceCard(
         seedance,
         source,
-        model && { model, url: BYTEPLUS_VIDEO_GUIDE_URL, hash: guide.hash },
+        model && guide
+          ? { model, url: BYTEPLUS_VIDEO_GUIDE_URL, hash: guide.hash }
+          : undefined,
       )
     }
     const perImage = byteplusRatesFor(rawId, images)

@@ -113,17 +113,29 @@ export type StoredPricing = {
  * Value to write to `models.pricing`. Null means unknown — never a vendor
  * blob, never an all-zero OpenRouter-shaped listing.
  */
+/** Every source text a card was read from: its own plus each estimate's. */
+function sourceHashes(card: RateCard): string {
+  return [
+    card.source.hash,
+    ...Object.values(card.inputs).flatMap((input) =>
+      input.kind === 'number' && input.estimate
+        ? [input.estimate.source.hash]
+        : [],
+    ),
+  ].join()
+}
+
 /**
- * A stored card stands in for a fresh one while its source text is
+ * A stored card stands in for a fresh one while all its source text is
  * unchanged — except past `expiresAt`, the instant the source said the
  * price changes, where the re-read wins.
  */
 function reusable(
   prior: RateCard | null,
-  hash: string,
+  hashes: string,
   now: number,
 ): prior is RateCard {
-  if (!prior || prior.source.hash !== hash) return false
+  if (!prior || sourceHashes(prior) !== hashes) return false
   const expiresAt = prior.source.expiresAt
   return expiresAt === undefined || Date.parse(expiresAt) > now * 1000
 }
@@ -145,7 +157,7 @@ export async function storeListedPricing(
     // fix therefore lands with the next upstream edit, not before.
     const prior = parseStoredRateCard(options.existing)
     return {
-      card: reusable(prior, parsed.source.hash, options.now) ? prior : parsed,
+      card: reusable(prior, sourceHashes(parsed), options.now) ? prior : parsed,
     }
   }
 

@@ -117,7 +117,7 @@ export const TOOLS: Array<ToolDefinition> = [
   {
     name: 'estimate_cost',
     description:
-      'Evaluate the stored rate card for a model. Pass request-bound levers in request and usage-bound levers (input_tokens, output_tokens, …) in usage. Returns { usd, cardSource }.',
+      'Evaluate the stored rate card for a model. Pass request-bound levers in request and usage-bound levers (input_tokens, output_tokens, …) in usage. Returns { usd, cardSource, estimated }: a non-empty estimated names omitted usage the card filled by the published estimate method of its source, so usd is then an estimate, not the billed price.',
     inputSchema: {
       type: 'object',
       properties: {

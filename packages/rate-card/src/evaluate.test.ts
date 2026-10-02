@@ -304,7 +304,48 @@ describe('estimate', () => {
       { usd: 2, estimated: ['tokens'] },
     )
     expect(() => priceDetailed(card, { resolution: '480p' }, {})).toThrow(
-      /seconds.*required/,
+      /tokens \(tokens\): not supplied, and cannot be estimated.*seconds.*required/,
     )
+  })
+
+  it('never estimates through price(), the billed entry point', () => {
+    expect(price(card, { resolution: '480p' }, { tokens: 500 })).toBe(0.5)
+    expect(() => price(card, { resolution: '480p', seconds: 2 }, {})).toThrow(
+      /tokens \(tokens\): required/,
+    )
+  })
+
+  it('refuses a non-positive estimate rather than pricing it', () => {
+    expect(() =>
+      priceDetailed(card, { resolution: '480p', seconds: -1 }, {}),
+    ).toThrow(
+      expect.objectContaining({ code: 'estimate-unavailable' }) as Error,
+    )
+  })
+
+  it('rejects an estimate beside a default, or shadowing a card input', () => {
+    const tokens = card.inputs.tokens
+    if (tokens?.kind !== 'number' || !tokens.estimate) throw new Error('shape')
+    const withDefault = {
+      ...card,
+      inputs: { ...card.inputs, tokens: { ...tokens, default: 1 } },
+    }
+    expect(rateCardSchema.safeParse(withDefault).success).toBe(false)
+    const shadowing = {
+      ...card,
+      inputs: {
+        ...card.inputs,
+        tokens: {
+          ...tokens,
+          estimate: {
+            ...tokens.estimate,
+            inputs: {
+              resolution: { param: 'resolution', kind: 'enum', values: ['1'] },
+            },
+          },
+        },
+      },
+    }
+    expect(rateCardSchema.safeParse(shadowing).success).toBe(false)
   })
 })

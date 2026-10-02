@@ -148,6 +148,10 @@ describe('byteplus pricing page', () => {
       byteplusRatesFor('dola-seed-2-1-turbo-260628', rates)?.base.input_tokens,
     ).toBe(0.5e-6)
     expect(byteplusRatesFor('seed-translation-250915', rates)).toBeUndefined()
+    // Only a dated suffix reaches an undated row, never a sibling model.
+    expect(
+      byteplusRatesFor('dola-seed-2-1-turbo-flash-260628', rates),
+    ).toBeUndefined()
   })
 })
 
@@ -181,6 +185,8 @@ const VIDEO_TABLE = [
   ],
   ['seedance-1-0-pro-250528', '2.5', '1.25'],
   ['seedance-9-unknown-261231', 'Contact sales', 'Not supported yet'],
+  // Promo text with no "(Original)" may be the discounted rate: refuse.
+  ['seedance-9-promo-261231', '4.2 Time limited 25% off', 'Not supported yet'],
 ]
 
 const IMAGE_TABLE = [
@@ -214,6 +220,7 @@ describe('byteplus video and image tables', () => {
       flex: { '*': { all: 1.25 } },
     })
     expect(video.has('seedance-9-unknown-261231')).toBe(false)
+    expect(video.has('seedance-9-promo-261231')).toBe(false)
     expect(parseByteplusImages(page)).toEqual(
       new Map([['seedream-4-5-251128', 0.04]]),
     )
@@ -256,10 +263,10 @@ describe('byteplus video and image tables', () => {
     )
     expect(() =>
       usd(v25, { resolution: '720p' }, { completion_tokens: 1e6 }),
-    ).toThrow(/input_video/)
+    ).toThrow(/input_video.*required/)
     expect(() =>
       usd('seedance-1-5-pro-251215', {}, { completion_tokens: 1 }),
-    ).toThrow(/generate_audio/)
+    ).toThrow(/generate_audio.*required/)
     // Draft bills at another resolution; flex has no offline column.
     expect(() =>
       usd(v25, { resolution: '1080p', draft: true }, billed),
@@ -306,6 +313,8 @@ const GUIDE = doc(
     ],
     ['4k Only Dreamina Seedance 2.0 supports 4K', '16:9', '3840×2160', ''],
     ['', '4:3', '3326×2494', '-'],
+    ['', '1:1', '2880×2880', '-'],
+    ['8k Contact sales for 8K', '16:9', '7680×4320', '7680×4320'],
   ],
 )
 
@@ -354,5 +363,98 @@ describe('byteplus video generation tutorial', () => {
     expect(() => priceDetailed(card, request, { input_video: true })).toThrow(
       /estimate_supported/,
     )
+  })
+})
+
+describe('byteplus tutorial notes and columns', () => {
+  it('applies resolution notes, and drops rows whose note it cannot read', () => {
+    const geometry = parseSeedanceGeometry(GUIDE)
+    // "2.0 Fast and Mini do not support 1080p"; "Only 2.0 supports 4K".
+    const fast = geometry.get('dreamina-seedance-2-0-fast-260128')?.dims
+    expect(Object.keys(fast ?? {})).toEqual(['720p'])
+    expect(
+      geometry.get('dreamina-seedance-2-0-260128')?.dims['4k']?.['1:1'],
+    ).toEqual({ w: 2880, h: 2880 })
+    // "Contact sales for 8K" names no rule: nobody gets 8K.
+    for (const model of geometry.values()) {
+      expect(model.dims).not.toHaveProperty('8k')
+    }
+  })
+
+  it("prefers a model's own column, and drops a model whose sizes conflict", () => {
+    const geometry = parseSeedanceGeometry(
+      doc(
+        [
+          ['Model name', '', 'Seedance 1.0 Pro', 'Seedance 1.0 Pro Fast'],
+          [
+            'Model ID',
+            '',
+            'seedance-1-0-pro-250528',
+            'seedance-1-0-pro-fast-251015',
+          ],
+          ['', 'Frame rate', '24 fps', '24 fps'],
+        ],
+        [
+          [
+            'Resolution',
+            'Aspect ratio',
+            'Seedance 1.0 series',
+            'Seedance 1.0 Pro Fast',
+            'Seedance 1.0 Pro',
+          ],
+          ['720p', '16:9', '1248×704', '1280×720', '1248×704'],
+          ['', '4:3', '1120×832', '1120×832', '1112×834'],
+        ],
+      ),
+    )
+    expect(
+      geometry.get('seedance-1-0-pro-fast-251015')?.dims['720p']?.['16:9'],
+    ).toEqual({ w: 1280, h: 720 })
+    // Pro's own column agrees at 16:9 but the series disagrees at 4:3 —
+    // own beats series, so Pro keeps its own 1112×834.
+    expect(
+      geometry.get('seedance-1-0-pro-250528')?.dims['720p']?.['4:3'],
+    ).toEqual({ w: 1112, h: 834 })
+    const twice = parseSeedanceGeometry(
+      doc(
+        [
+          ['Model name', '', 'Seedance 1.0 Pro'],
+          ['Model ID', '', 'seedance-1-0-pro-250528'],
+          ['', 'Frame rate', '24 fps'],
+        ],
+        [
+          [
+            'Resolution',
+            'Aspect ratio',
+            'Seedance 1.0 Pro',
+            'Seedance 1.0 Pro',
+          ],
+          ['720p', '16:9', '1248×704', '1280×720'],
+        ],
+      ),
+    )
+    expect(twice.has('seedance-1-0-pro-250528')).toBe(false)
+  })
+
+  it('refuses to estimate a draft', () => {
+    const model = parseSeedanceGeometry(GUIDE).get('seedance-1-0-pro-250528')
+    if (!model) throw new Error('no geometry')
+    const card = compileSeedanceCard(
+      { default: { '*': { all: 2.5 } } },
+      SOURCE,
+      { model, url: 'https://example.test/guide', hash: 'b'.repeat(64) },
+    )
+    if (!card) throw new Error('no card')
+    const request = { resolution: '720p', ratio: '16:9', duration: 5 }
+    expect(priceDetailed(card, request).estimated).toEqual([
+      'completion_tokens',
+    ])
+    expect(() => priceDetailed(card, { ...request, draft: true })).toThrow(
+      /cannot be estimated.*draft/,
+    )
+    // Billed tokens price a 1.0 draft: its rate does not split on resolution.
+    expect(
+      priceDetailed(card, { draft: true }, { completion_tokens: 1e6 }),
+    ).toEqual({ usd: 2.5, estimated: [] })
   })
 })

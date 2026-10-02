@@ -1,6 +1,7 @@
 /**
  * POST /v1/estimate — evaluate a stored rate card against a request/usage
- * pair. Thin wrapper around `price` from @modelschemas/rate-card.
+ * pair. Thin wrapper around `priceDetailed` from @modelschemas/rate-card;
+ * `estimated` names any input filled by the card's published estimate.
  */
 import { priceDetailed, RateCardError } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -52,39 +53,30 @@ function mapRateCardError(
   body: EstimateRequestBody,
 ): { code: string; message: string } {
   const name = error.message.split(/[\s(]/)[0]
-  const slot = (entry: { bound?: string; param: string }) =>
-    `${entry.bound === 'usage' ? 'usage' : 'request'}.${entry.param}`
   const input =
     (name !== undefined ? card.inputs[name] : undefined) ??
     Object.values(card.inputs).find((entry) => entry.param === name)
-  // An input only the estimate reads: name the real value it stands in for.
-  const estimated = Object.values(card.inputs).find(
-    (entry) =>
-      entry.kind === 'number' &&
-      entry.estimate &&
-      name !== undefined &&
-      name in entry.estimate.inputs,
-  )
-  if (error.code === 'bad-input' && error.message.includes('required')) {
-    if (input) {
-      return {
-        code: 'unbound_input',
-        message:
-          `Rate card requires ${slot(input)} which was not provided. ` +
-          `Pass it on the estimate body. See GET /v1/models/${body.provider}/${body.model}.`,
-      }
+  const slot = input
+    ? `${input.bound === 'usage' ? 'usage' : 'request'}.${input.param}`
+    : undefined
+  if (
+    error.code === 'bad-input' &&
+    error.message.includes('required') &&
+    slot
+  ) {
+    return {
+      code: 'unbound_input',
+      message:
+        `Rate card requires ${slot} which was not provided. ` +
+        `Pass it on the estimate body. See GET /v1/models/${body.provider}/${body.model}.`,
     }
-    const via =
-      estimated?.kind === 'number' && name !== undefined
-        ? estimated.estimate?.inputs[name]
-        : undefined
-    if (estimated && via) {
-      return {
-        code: 'unbound_input',
-        message:
-          `Rate card requires ${slot(estimated)}, or ${slot(via)} to estimate it. ` +
-          `See GET /v1/models/${body.provider}/${body.model}.`,
-      }
+  }
+  if (error.code === 'estimate-unavailable' && slot) {
+    return {
+      code: 'unbound_input',
+      message:
+        `Rate card requires ${slot}; it was not provided and could not be estimated (${error.message}). ` +
+        `Pass it on the estimate body. See GET /v1/models/${body.provider}/${body.model}.`,
     }
   }
   return {

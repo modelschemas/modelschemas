@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
@@ -307,6 +307,62 @@ describe('byteplus spec generated from the Go SDK', () => {
       byteplusProvider.fetchSpec({}),
     )
     expect(a.sources.map((s) => s.hash)).toEqual(b.sources.map((s) => s.hash))
+  })
+})
+
+/** Keyless listModels with each fixture page swapped by URL (`null`: 503). */
+async function listWith(pages: Record<string, (() => string) | null>) {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    const href = String(url)
+    if (href in pages) {
+      const page = pages[href]
+      return Promise.resolve(
+        page ? new Response(page()) : new Response('down', { status: 503 }),
+      )
+    }
+    return original(url, init)
+  }) as typeof fetch
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  try {
+    return await byteplusProvider.listModels({})
+  } finally {
+    globalThis.fetch = original
+    warn.mockRestore()
+  }
+}
+
+describe('byteplus pricing pages failing', () => {
+  it('publishes billed-only Seedance cards when the tutorial is down', async () => {
+    const { models } = await listWith({
+      [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
+      [BYTEPLUS_VIDEO_GUIDE_URL]: null,
+    })
+    const seedance = models.find((m) => m.rawId === 'seedance-1-0-pro-250528')
+    expect(seedance?.pricing).toMatchObject({
+      inputs: { completion_tokens: { bound: 'usage' } },
+    })
+    expect(seedance?.pricing).not.toMatchObject({
+      inputs: { completion_tokens: { estimate: expect.anything() as object } },
+    })
+    expect(
+      models.find((m) => m.rawId === 'seed-2-0-pro-260328')?.pricing,
+    ).toBeTruthy()
+  })
+
+  it('throws when the pricing page loses a table, keeping stored cards', async () => {
+    const withoutVideo = () =>
+      docFixtureHtml(
+        PRICING_TABLES.filter(
+          (table) => !table[0]?.includes('Online inference (USD / M tokens)'),
+        ),
+      )
+    await expect(
+      listWith({
+        [BYTEPLUS_PRICING_URL]: withoutVideo,
+        [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
+      }),
+    ).rejects.toThrow(/video\): parsed 0/)
   })
 })
 

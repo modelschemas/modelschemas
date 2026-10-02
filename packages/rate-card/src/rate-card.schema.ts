@@ -143,10 +143,12 @@ const plainInputSchema = inputKinds({})
 
 /**
  * A source-published way to estimate a number the caller did not supply
- * (`completion_tokens` from resolution × duration). Used only when the
- * input is absent; the result then names the input as estimated, never as
- * a billed price. `inputs` bind only on that path, so a caller who supplies
- * the real number is not asked for them.
+ * (`completion_tokens` from resolution × ratio × duration). Used only when
+ * the input is absent; the result then names the input as estimated, never
+ * as a billed price. `inputs` bind only on that path, so a caller who
+ * supplies the real number is not asked for them. `value` also reads the
+ * card's own bound inputs; estimate input names may not repeat them, and
+ * an input with an estimate has no `default` (which would silently win).
  */
 const estimateSchema = z.object({
   inputs: z.record(z.string(), plainInputSchema),
@@ -173,7 +175,27 @@ const rateCardExampleSchema = z.object({
 export type RateCardExample = z.infer<typeof rateCardExampleSchema>
 
 export const rateCardSchema = z.object({
-  inputs: z.record(z.string(), inputSchema),
+  inputs: z.record(z.string(), inputSchema).superRefine((inputs, ctx) => {
+    for (const [name, input] of Object.entries(inputs)) {
+      if (input.kind !== 'number' || !input.estimate) continue
+      if (input.default !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [name],
+          message: 'an input with an estimate cannot have a default',
+        })
+      }
+      for (const shadowed of Object.keys(input.estimate.inputs)) {
+        if (shadowed in inputs) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [name, 'estimate', 'inputs', shadowed],
+            message: 'estimate input repeats a card input name',
+          })
+        }
+      }
+    }
+  }),
   tables: z.record(z.string(), tableSchema),
   /** JSONLogic yielding USD for one request. */
   price: exprSchema,

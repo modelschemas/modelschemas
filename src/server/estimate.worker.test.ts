@@ -212,9 +212,19 @@ describe('estimateCost', () => {
     })
     expect(neither).toMatchObject({ ok: false, code: 'unbound_input' })
     if (!neither.ok) {
-      expect(neither.message).toContain(
-        'usage.completion_tokens, or request.ratio',
-      )
+      expect(neither.message).toContain('requires usage.completion_tokens')
+      expect(neither.message).toContain('ratio (ratio): required')
     }
+    // A draft's tokens are not what the formula gives: no estimate.
+    const draft = await estimateCost(db, {
+      ...body,
+      request: {
+        resolution: '1080p',
+        ratio: '16:9',
+        duration: 10,
+        draft: true,
+      },
+    })
+    expect(draft).toMatchObject({ ok: false, code: 'unbound_input' })
   })
 })
