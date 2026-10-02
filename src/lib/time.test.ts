@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { timeAgo } from './index.tsx'
+import { timeAgo } from './time.ts'
 
 describe('timeAgo', () => {
   it('formats deltas into human buckets', () => {
