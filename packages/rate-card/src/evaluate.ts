@@ -228,8 +228,6 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
       case 'count':
         if (raw === undefined) vars[name] = 0
         else if (Array.isArray(raw)) vars[name] = raw.length
-        // Ark's `image` is a string or a list of them.
-        else if (typeof raw === 'string') vars[name] = 1
         else throw bad('expected a list, got', raw)
         break
       case 'number': {

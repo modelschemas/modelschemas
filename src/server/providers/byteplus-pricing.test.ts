@@ -284,8 +284,13 @@ describe('byteplus video and image tables', () => {
     )
     const card = tiers && compileSeedreamProCard(tiers, SOURCE)
     if (!card) throw new Error('no Seedream 5.0 pro card')
-    const usd = (request: Record<string, unknown>, generated = 1) =>
-      Number(price(card, request, { generated_images: generated }).toFixed(4))
+    const usd = (request: Record<string, unknown>, inputImages = 0) =>
+      Number(
+        price(card, request, {
+          generated_images: 1,
+          input_images: inputImages,
+        }).toFixed(4),
+      )
     // Omitted size is Ark's default 2K, the high tier.
     expect(usd({})).toBe(0.09)
     expect(usd({ size: '1K' })).toBe(0.045)
@@ -293,14 +298,19 @@ describe('byteplus video and image tables', () => {
     // WxH by pixel count: 1536² = 2.36 MP ≤ 2.61 MP; 2048² is above.
     expect(usd({ size: '1536x1536' })).toBe(0.045)
     expect(usd({ size: '2048x2048' })).toBe(0.09)
-    // First input image free, each further one 0.003; a bare string is one.
-    expect(usd({ size: '1K', image: 'a' })).toBe(0.045)
-    expect(usd({ size: '1K', image: ['a', 'b', 'c'] })).toBe(0.051)
+    // First input image free, each further one 0.003 (usage.input_images).
+    expect(usd({ size: '1K' }, 1)).toBe(0.045)
+    expect(usd({ size: '1K' }, 3)).toBe(0.051)
     // Layers mix tiers; 4K/auto are not generation sizes; usage is required.
     expect(() => usd({ layer_decomposition: true })).toThrow(/layer/)
     expect(() => usd({ size: '4K' })).toThrow(/unknown size/)
     expect(() => usd({ size: 'auto' })).toThrow(/unknown size/)
-    expect(() => price(card, {}, {})).toThrow(/generated_images/)
+    expect(() => price(card, {}, { input_images: 0 })).toThrow(
+      /generated_images/,
+    )
+    expect(() => price(card, {}, { generated_images: 1 })).toThrow(
+      /input_images/,
+    )
   })
 })
 

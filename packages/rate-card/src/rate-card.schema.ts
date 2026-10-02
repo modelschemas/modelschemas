@@ -120,7 +120,7 @@ function inputKinds<TNumber extends z.ZodRawShape>(numberExtra: TNumber) {
       kind: z.literal('boolean'),
       default: z.boolean().optional(),
     }),
-    /** Length of a list param (`image_urls`), 0 when absent, 1 for a bare string. */
+    /** Length of a list param (`image_urls`), 0 when absent. */
     z.object({ ...inputBase, kind: z.literal('count') }),
     /**
      * `{width, height}`, a `WxH` string or a preset name; binds

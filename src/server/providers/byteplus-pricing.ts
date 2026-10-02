@@ -586,7 +586,8 @@ export function parseByteplusPixelTiers(
 const SEEDREAM_PRO_LEVELS = ['1K', '1.5K', '2K']
 
 /**
- * `usage.generated_images × tier rate + max(0, images in − 1) × input fee`.
+ * `usage.generated_images × tier rate + max(0, usage.input_images − 1) ×
+ * input fee`.
  * `size` is a level (tier from the page's "(1.5K or lower)") or `WxH`
  * (tier from its pixel count). `layer_decomposition: true` refuses: its
  * layers are billed per layer at each one's own tier, which no request
@@ -627,7 +628,9 @@ export function compileSeedreamProCard(
         kind: 'boolean',
         default: false,
       },
-      image: { param: 'image', kind: 'count' },
+      // Ark's own count of the request's images: `image` is a string or a
+      // list, and the bill counts what Ark received.
+      input_images: { param: 'input_images', bound: 'usage', kind: 'number' },
       generated_images: {
         param: 'generated_images',
         bound: 'usage',
@@ -644,7 +647,10 @@ export function compileSeedreamProCard(
           ],
         },
         {
-          '*': [{ max: [0, { '-': [{ var: 'image' }, 1] }] }, rates.extraInput],
+          '*': [
+            { max: [0, { '-': [{ var: 'input_images' }, 1] }] },
+            rates.extraInput,
+          ],
         },
       ],
     },
