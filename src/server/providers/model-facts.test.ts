@@ -889,6 +889,16 @@ describe('grok model prices', () => {
     }
     expect(grokImageUnpricedField(imagine2)).toBe('quality')
     expect(await grokImageCard(imagine2)).toBeNull()
+    const byResolution = {
+      id: 'grok-imagine-image',
+      image_price: 200_000_000,
+      pricing: [
+        { resolution: '1k', price_per_image: 2e8 },
+        { resolution: '2k', price_per_image: 7e8 },
+      ],
+    }
+    expect(grokImageUnpricedField(byResolution)).toBe('resolution')
+    expect(await grokImageCard(byResolution)).toBeNull()
   })
 
   it('reads a stated output cap and ignores "no limit" and price rows', () => {

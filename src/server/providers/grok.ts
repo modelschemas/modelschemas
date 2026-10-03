@@ -205,14 +205,19 @@ export function grokImageUnpricedField(m: GrokExtrasModel): string | null {
   const matrix: unknown = m.pricing
   if (!Array.isArray(matrix)) return null
   const blocked = new Set<string>()
+  let varies = false
   for (const tier of matrix) {
     for (const key of recordKeys(tier)) {
       if (key === 'price_per_image') continue
+      varies = true
       if (!GROK_IMAGE_REQUEST_FIELDS.has(key)) blocked.add(key)
     }
   }
+  // A tier key other than price_per_image means image_price is one cell,
+  // not the rate for every request. Do not compile that flat number.
+  if (!varies) return null
   if (blocked.has('quality')) return 'quality'
-  return [...blocked][0] ?? null
+  return [...blocked][0] ?? 'resolution'
 }
 
 /**
