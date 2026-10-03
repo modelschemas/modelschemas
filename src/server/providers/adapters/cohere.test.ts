@@ -34,6 +34,13 @@ describe('cohere listModels', () => {
     const original = globalThis.fetch
     globalThis.fetch = ((url: string) => {
       const href = String(url)
+      if (href.includes('docs.cohere.com')) {
+        return Promise.resolve(
+          new Response(
+            'model="command-a-reasoning-08-2025"\n"type": "disabled" turns off thinking\ntoken_budget: 500\n',
+          ),
+        )
+      }
       if (href.includes('page_token=page-2')) {
         return Promise.resolve(
           Response.json({

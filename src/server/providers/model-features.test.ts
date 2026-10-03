@@ -10,7 +10,7 @@ import {
   parsePageTools,
   parseThinkingPage,
 } from './gemini-features.ts'
-import { parseGrokReasoning } from './grok.ts'
+import { grokReasoningGap, parseGrokReasoning } from './grok.ts'
 
 describe('anthropic features (issue #77)', () => {
   const table = `| Model                 | Thinking types                   | Default   | Rejected with 400          |
@@ -120,6 +120,14 @@ describe('gemini features (issue #77)', () => {
     expect(familyOf('gemini-2.5-flash-image', families)).toBeNull()
   })
 
+  it('does not invent a mode when the thinking tables omit the id', () => {
+    const parsed = parseThinkingPage(thinking)
+    expect(
+      familyOf('gemini-2.5-computer-use-preview-10-2025', parsed.keys()),
+    ).toBeNull()
+    expect(familyOf('deep-research-preview-04-2026', parsed.keys())).toBeNull()
+  })
+
   it('maps Supported capabilities to generateContent tool fields', () => {
     const row =
       '| Capabilities | **[Code execution](u)** Supported **[Computer use](u)** Supported (Preview) **[File search](u)** Not supported **[Search grounding](u)** Supported **[Thinking](u)** Supported |'
@@ -152,7 +160,11 @@ describe('grok reasoning (issue #77)', () => {
   })
 
   it('stays null without a documented knob or without reasoning', () => {
-    expect(parseGrokReasoning(page('- **Reasoning:** Yes'))).toBeNull()
-    expect(parseGrokReasoning(page('- **Reasoning:** No'))).toBeNull()
+    const yes = page('- **Reasoning:** Yes')
+    expect(parseGrokReasoning(yes)).toBeNull()
+    expect(grokReasoningGap(yes)).toBe('silent')
+    const no = page('- **Reasoning:** No')
+    expect(parseGrokReasoning(no)).toBeNull()
+    expect(grokReasoningGap(no)).toBeNull()
   })
 })
