@@ -6,6 +6,7 @@ import type { RateCard } from '@modelschemas/rate-card'
 import {
   compileFalUnitCard,
   parseFalUnitRate,
+  priceFalNamedSection,
   usdAmounts,
 } from './fal-unit-rate.ts'
 
@@ -59,6 +60,11 @@ describe('parseFalUnitRate', () => {
     expect(
       parseFalUnitRate('- **Price**: **0.17** $ per second'),
     ).toMatchObject({ amount: 0.17, param: 'seconds' })
+    expect(
+      parseFalUnitRate(
+        'Generation will cost **$0.025** per output video second.',
+      ),
+    ).toMatchObject({ amount: 0.025, param: 'video_seconds' })
   })
 
   it('ignores the "for $1.00 you can run this N times" restatement', () => {
@@ -125,6 +131,46 @@ describe('compileFalUnitCard', () => {
       compile(
         'Video costs **$0.025** per second at **480p**, and **$0.08** per second at **1080p**.',
       ),
+    ).toBeNull()
+  })
+})
+
+describe('priceFalNamedSection', () => {
+  it('writes a card when the section names one dollar amount', () => {
+    const card = priceFalNamedSection(
+      '- **Price**: $0.3 per requests',
+      new Set<string>(),
+      SOURCE,
+    )
+    expect(card?.examples[0]).toMatchObject({
+      params: { requests: 1 },
+      usd: 0.3,
+    })
+    expect(card && verifyExamples(card).every((result) => result.ok)).toBe(true)
+  })
+
+  it('stays null when the section names no price', () => {
+    const none = [
+      '',
+      'For more details, see [fal.ai pricing](https://fal.ai/pricing).',
+      '- **Price**: $0 per compute seconds',
+      '- **Price**: $0.00 per images',
+    ]
+    for (const section of none) {
+      expect(priceFalNamedSection(section, new Set(), SOURCE)).toBeNull()
+    }
+  })
+
+  it('does not invent a card for a named price with no single unit', () => {
+    expect(
+      priceFalNamedSection(
+        'Your request will cost **$0.02** per image for 480p or **$0.03** per image for 720p.',
+        new Set(),
+        SOURCE,
+      ),
+    ).toBeNull()
+    expect(
+      priceFalNamedSection('- **Price**: $0.01 per widgets', new Set(), SOURCE),
     ).toBeNull()
   })
 })

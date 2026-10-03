@@ -380,7 +380,73 @@ describe('extractFalPricing', () => {
     ).toBeUndefined()
   })
 
-  it('skips deprecated rows and rows with no input schema', async () => {
+  it('prices a unit-rate section with no activity and no input schema (#114)', async () => {
+    const providerId = 'extract-named'
+    await seedProvider(providerId)
+    await getDb(env)
+      .insert(models)
+      .values({
+        id: modelDbId(providerId, 'bria/ad-delayer'),
+        providerId,
+        rawId: 'bria/ad-delayer',
+        activity: null,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      })
+    await getDb(env)
+      .insert(models)
+      .values({
+        id: modelDbId(providerId, 'fal-ai/aura-flow'),
+        providerId,
+        rawId: 'fal-ai/aura-flow',
+        activity: null,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      })
+    const files = new Map<string, string>([
+      [
+        falLlmsTxtUrl('bria/ad-delayer'),
+        `# Delayer\n\n## Pricing\n\n- **Price**: $0.3 per requests\n\n## API Information\n`,
+      ],
+      [falLlmsTxtUrl('fal-ai/aura-flow'), STUB_LLMS],
+    ])
+    let extracted = 0
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: (url: string) => Promise.resolve(files.get(url) ?? null),
+      extractCard: async (args: ExtractCardArgs) => {
+        extracted++
+        return perImageCard(args.sourceUrl)
+      },
+    })
+    expect(outcome).toMatchObject({
+      candidates: 2,
+      compiled: 1,
+      written: 1,
+      refused: 1,
+      extracted: 0,
+    })
+    expect(extracted).toBe(0)
+    const db = getDb(env)
+    const priced = await db.query.models.findFirst({
+      where: eq(models.id, modelDbId(providerId, 'bria/ad-delayer')),
+    })
+    const card = priced?.pricing as RateCard | null
+    expect(card?.examples[0]).toMatchObject({
+      params: { requests: 1 },
+      usd: 0.3,
+    })
+    const stub = await db.query.models.findFirst({
+      where: eq(models.id, modelDbId(providerId, 'fal-ai/aura-flow')),
+    })
+    expect(stub?.pricing).toBeNull()
+  })
+
+  it('skips deprecated rows and still fetches rows with no input schema', async () => {
     const providerId = 'extract-skip'
     await seedProvider(providerId)
     await seedCandidate({
@@ -418,8 +484,10 @@ describe('extractFalPricing', () => {
       extractCard: async (args: ExtractCardArgs) =>
         perImageCard(args.sourceUrl),
     })
-    expect(outcome.candidates).toBe(1)
-    expect(fetched).toEqual([falLlmsTxtUrl('fal-ai/live')])
+    expect(outcome.candidates).toBe(2)
+    expect([...fetched].sort()).toEqual(
+      [falLlmsTxtUrl('fal-ai/live'), falLlmsTxtUrl('fal-ai/no-schema')].sort(),
+    )
   })
 
   it('stops extracting at the extract cap and retries the leftover next run', async () => {
