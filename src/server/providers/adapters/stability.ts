@@ -5,6 +5,7 @@
  * Model catalog is GET /v1/engines/list (Bearer).
  */
 import type { Activity } from '#/db/schema.ts'
+import { stabilityModelPricing } from '../stability-pricing.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -51,7 +52,10 @@ interface StabilityEngine {
   type?: string
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.STABILITY_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('stability', 'STABILITY_API_KEY') }
@@ -59,6 +63,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(STABILITY_ENGINES_URL, {
     headers: { Authorization: `Bearer ${key}` },
   })) as Array<StabilityEngine>
+  const pricing = await stabilityModelPricing(kv)
   return {
     models: (Array.isArray(body) ? body : [])
       .filter((m) => typeof m.id === 'string' && m.id.length > 0)
@@ -66,6 +71,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         rawId: m.id,
         displayName: m.name ?? null,
         activity: ENGINE_ACTIVITIES[m.type ?? ''] ?? null,
+        ...pricing(m.id),
       })),
   }
 }

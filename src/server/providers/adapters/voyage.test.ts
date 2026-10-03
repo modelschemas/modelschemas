@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 
 import { provider, voyageModelsFromSpec } from './voyage.ts'
+import { VOYAGE_PRICING_URL } from '../voyage-pricing.ts'
 
 const SPEC_URL =
   'https://raw.githubusercontent.com/voyage-ai/openapi/main/voyage-openapi.yml'
@@ -143,6 +144,11 @@ describe('voyage listModels', () => {
     const result = await withStubbedFetch(
       (url) => {
         urls.push(url)
+        if (url === VOYAGE_PRICING_URL) {
+          return new Response(
+            '| Model | Price per million tokens |\n| --- | --- |\n| `voyage-4` | $0.06 |\n',
+          )
+        }
         return new Response(`openapi: 3.0.2
 info: { title: Voyage API, version: "1.1" }
 paths:
@@ -161,7 +167,7 @@ paths:
       () => provider.listModels({}),
     )
 
-    expect(urls).toEqual([SPEC_URL])
+    expect(urls).toEqual([SPEC_URL, VOYAGE_PRICING_URL])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
       { rawId: 'voyage-3-large', activity: 'embeddings' },
