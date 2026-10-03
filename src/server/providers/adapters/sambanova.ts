@@ -61,6 +61,5 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify: classifyOpenAiCompat,
-  generationEndpointId: ({ activity }) =>
-    compatGenerationEndpointId(activity, 'v1/'),
+  generationEndpointId: ({ activity }) => compatGenerationEndpointId(activity),
 }

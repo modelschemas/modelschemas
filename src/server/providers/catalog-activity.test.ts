@@ -510,12 +510,12 @@ describe('issue #109 listModels', () => {
             {
               type: 'input_token',
               price: '2',
-              price_unit: 'Per 1M tokens',
+              price_unit: 'per million tokens',
             },
             {
               type: 'output_token',
               price: '6',
-              price_unit: 'Per 1M tokens',
+              price_unit: 'per million tokens',
             },
           ],
         },
@@ -543,5 +543,29 @@ describe('issue #109 listModels', () => {
     expect(inputUsd(priced?.pricing)).toBeCloseTo(2, 9)
     expect(free?.activity).toBe('chat')
     expect(free?.pricing ?? null).toBeNull()
+  })
+
+  it('binds schema ids that the generated OpenAI-compat spec actually stores', () => {
+    expect(
+      hyperbolic.generationEndpointId?.({ rawId: 'x', activity: 'chat' }),
+    ).toBe('chat/completions')
+    expect(
+      sambanova.generationEndpointId?.({ rawId: 'x', activity: 'chat' }),
+    ).toBe('chat/completions')
+    expect(
+      novita.generationEndpointId?.({ rawId: 'x', activity: 'chat' }),
+    ).toBe('chat/completions')
+    expect(
+      novita.generationEndpointId?.({ rawId: 'x', activity: 'image' }),
+    ).toBe('images/generations')
+    expect(
+      novita.generationEndpointId?.({ rawId: 'x', activity: 'video' }),
+    ).toBeNull()
+    expect(
+      novita.generationEndpointId?.({ rawId: 'x', activity: 'audio' }),
+    ).toBeNull()
+    expect(
+      novita.generationEndpointId?.({ rawId: 'x', activity: 'embeddings' }),
+    ).toBeNull()
   })
 })

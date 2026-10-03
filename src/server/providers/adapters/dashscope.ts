@@ -161,7 +161,9 @@ export async function dashscopeListedCard(
       source,
     )
   }
-  if ([...units].some((unit) => !/per 1m tokens/i.test(unit))) return null
+  if ([...units].some((unit) => !/per (1m|million) tokens/i.test(unit))) {
+    return null
+  }
 
   const rateMap = (
     prices: Array<DashscopePrice>,

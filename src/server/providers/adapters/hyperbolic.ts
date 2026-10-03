@@ -66,6 +66,5 @@ export const provider: ProviderConfig = {
       },
     }),
   classify: classifyOpenAiCompat,
-  generationEndpointId: ({ activity }) =>
-    compatGenerationEndpointId(activity, 'v1/'),
+  generationEndpointId: ({ activity }) => compatGenerationEndpointId(activity),
 }
