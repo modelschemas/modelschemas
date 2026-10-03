@@ -71,6 +71,13 @@
       "when": 1791015836637,
       "tag": "0009_calm_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791015997769,
+      "tag": "0010_provider_aliases",
+      "breakpoints": true
     }
   ]
 }
