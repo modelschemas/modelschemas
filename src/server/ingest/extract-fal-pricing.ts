@@ -29,6 +29,7 @@ import {
   captureIngestEvents,
   ingestFailedEvent,
   noteIngest,
+  runIngestScope,
 } from './ingest-signals.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -632,6 +633,12 @@ interface LeftoverGroup {
 }
 
 export async function extractFalPricing(
+  deps: FalPricingExtractDeps,
+): Promise<FalPricingExtractOutcome> {
+  return runIngestScope(() => extractFalPricingScoped(deps))
+}
+
+async function extractFalPricingScoped(
   deps: FalPricingExtractDeps,
 ): Promise<FalPricingExtractOutcome> {
   const providerId = deps.providerId ?? 'fal'

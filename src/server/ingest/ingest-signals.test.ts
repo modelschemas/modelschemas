@@ -6,8 +6,11 @@ import {
   POSTHOG_CAPTURE_URL,
   captureIngestEvents,
   ingestFailedEvent,
+  noteIngest,
   observePricingWrite,
+  parseRowsEvent,
   posthogBatch,
+  runIngestScope,
   takeIngestEvents,
 } from './ingest-signals.ts'
 
@@ -133,6 +136,34 @@ describe('posthog capture', () => {
       event: 'parse_rows',
       properties: { source: 'byteplus pricing page', rows: 1 },
     })
+  })
+
+  it('keeps overlapping scopes from mixing events', async () => {
+    takeIngestEvents()
+    const outer = runIngestScope(async () => {
+      noteIngest(parseRowsEvent('outer', 1))
+      const inner = await runIngestScope(async () => {
+        noteIngest(parseRowsEvent('inner', 2))
+        return takeIngestEvents()
+      })
+      return { inner, outer: takeIngestEvents() }
+    })
+    const taken = await outer
+    expect(taken.inner).toEqual([parseRowsEvent('inner', 2)])
+    expect(taken.outer).toEqual([parseRowsEvent('outer', 1)])
+    expect(takeIngestEvents()).toEqual([])
+  })
+
+  it('passes an abort signal so a hung PostHog capture cannot stall the cron', async () => {
+    takeIngestEvents()
+    noteIngest(parseRowsEvent('page', 1))
+    const fetchImpl: typeof fetch = (_input, init) => {
+      expect(init?.signal?.aborted).toBe(false)
+      return Promise.reject(new Error('down'))
+    }
+    await expect(
+      captureIngestEvents('phc_test', fetchImpl),
+    ).resolves.toBeUndefined()
   })
 
   it('assertParsed throws on zero rows and does not emit parse_rows', () => {

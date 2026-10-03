@@ -3,6 +3,8 @@
  * Builders are pure. `captureIngestEvents` posts them to PostHog US and
  * never throws — a dead analytics host must not fail a cron.
  */
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 import { errorMessage } from '#/server/errors.ts'
 
 export const POSTHOG_CAPTURE_URL = 'https://us.i.posthog.com/batch/'
@@ -38,13 +40,21 @@ export interface PostHogBatch {
 }
 
 const pending: Array<IngestEvent> = []
+const scopes = new AsyncLocalStorage<Array<IngestEvent>>()
+
+/** One buffer per poll, sync, or extract call so overlapping crons do not mix events. */
+export function runIngestScope<T>(fn: () => Promise<T>): Promise<T> {
+  return scopes.run([], fn)
+}
 
 export function noteIngest(event: IngestEvent): void {
-  pending.push(event)
+  const scope = scopes.getStore()
+  ;(scope ?? pending).push(event)
 }
 
 export function takeIngestEvents(): Array<IngestEvent> {
-  return pending.splice(0)
+  const scope = scopes.getStore()
+  return (scope ?? pending).splice(0)
 }
 
 export function ingestFailedEvent(
@@ -154,6 +164,7 @@ export async function captureIngestEvents(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(posthogBatch(events, apiKey)),
+      signal: AbortSignal.timeout(5_000),
     })
     if (!response.ok) {
       console.error(

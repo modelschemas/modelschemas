@@ -39,6 +39,7 @@ import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
 import {
   captureIngestEvents,
+  runIngestScope,
   ingestFailedEvent,
   noteIngest,
   observePricingWrite,
@@ -537,33 +538,35 @@ export async function pollAllProviders(
 ): Promise<Array<PollOutcome>> {
   const outcomes: Array<PollOutcome> = []
   for (const provider of providerRegistry) {
-    try {
-      outcomes.push(await pollProviderModels(deps, provider))
-    } catch (error) {
-      const message = errorMessage(error)
-      // Own log line per failure: the aggregate outcomes blob can exceed
-      // what Workers Logs stores, which silently loses these errors.
-      console.error(
-        JSON.stringify({
-          job: 'models-poll',
+    await runIngestScope(async () => {
+      try {
+        outcomes.push(await pollProviderModels(deps, provider))
+      } catch (error) {
+        const message = errorMessage(error)
+        // Own log line per failure: the aggregate outcomes blob can exceed
+        // what Workers Logs stores, which silently loses these errors.
+        console.error(
+          JSON.stringify({
+            job: 'models-poll',
+            providerId: provider.id,
+            error: message,
+          }),
+        )
+        noteIngest(ingestFailedEvent('models-poll', provider.id, message))
+        outcomes.push({
           providerId: provider.id,
+          modelsSeen: 0,
+          added: 0,
+          removed: 0,
+          updated: 0,
+          backdated: 0,
+          failures: 1,
           error: message,
-        }),
-      )
-      noteIngest(ingestFailedEvent('models-poll', provider.id, message))
-      outcomes.push({
-        providerId: provider.id,
-        modelsSeen: 0,
-        added: 0,
-        removed: 0,
-        updated: 0,
-        backdated: 0,
-        failures: 1,
-        error: message,
-      })
-    } finally {
-      await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
-    }
+        })
+      } finally {
+        await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
+      }
+    })
   }
   return outcomes
 }
