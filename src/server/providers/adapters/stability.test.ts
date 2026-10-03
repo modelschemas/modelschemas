@@ -4,6 +4,7 @@ import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 import type { OpenApiDocument } from '../types.ts'
 import { provider } from './stability.ts'
+import { STABILITY_PRICING_URL } from '../stability-pricing.ts'
 
 const SPEC_URL = 'https://api.stability.ai/v2alpha/openapi'
 const ENGINES_URL = 'https://api.stability.ai/v1/engines/list'
@@ -159,6 +160,14 @@ describe('stability listModels', () => {
   it('maps engines/list entries without calling a live host', async () => {
     const { result, urls } = await withFetch(
       (url) => {
+        if (url === STABILITY_PRICING_URL) {
+          return new Response('<script src="/assets/pricing.js"></script>')
+        }
+        if (url === 'https://platform.stability.ai/assets/pricing.js') {
+          return new Response(
+            '1 credit = $0.01.\n{id:"generate-ultra",service:"Stable Image Ultra",description:"Flagship",price:"8"}',
+          )
+        }
         expect(url).toBe(ENGINES_URL)
         return new Response(
           JSON.stringify([
@@ -173,7 +182,11 @@ describe('stability listModels', () => {
       },
       () => provider.listModels({ STABILITY_API_KEY: 'test-key' }),
     )
-    expect(urls).toEqual([ENGINES_URL])
+    expect(urls).toEqual([
+      ENGINES_URL,
+      STABILITY_PRICING_URL,
+      'https://platform.stability.ai/assets/pricing.js',
+    ])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
       {

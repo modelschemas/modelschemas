@@ -5,6 +5,7 @@
  * (that URL 404s); the catalog is the model names the spec documents.
  */
 import type { Activity } from '#/db/schema.ts'
+import { voyageModelPricing } from '../voyage-pricing.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -79,9 +80,18 @@ export function voyageModelsFromSpec(spec: OpenApiDocument): Array<ModelInfo> {
     .map((rawId) => ({ rawId, activity: 'embeddings' as const }))
 }
 
-async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  _env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const { spec } = await fetchOpenApi(VOYAGE_OPENAPI_URL)
-  return { models: voyageModelsFromSpec(spec) }
+  const pricing = await voyageModelPricing(kv)
+  return {
+    models: voyageModelsFromSpec(spec).map((model) => ({
+      ...model,
+      ...pricing(model.rawId),
+    })),
+  }
 }
 
 export const provider: ProviderConfig = {
