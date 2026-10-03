@@ -527,7 +527,17 @@ export const openApiDocument = {
                     models: { type: 'integer' },
                     priced: {
                       type: 'integer',
-                      description: 'Models with a stored rate card.',
+                      description:
+                        'Models with a stored rate card. priced / models is the price score.',
+                    },
+                    reasoning: {
+                      type: 'integer',
+                      description:
+                        'Models with stored reasoning metadata. reasoning / chat is the reasoning score.',
+                    },
+                    chat: {
+                      type: 'integer',
+                      description: 'Models whose activity is chat.',
                     },
                     endpoints: { type: 'integer' },
                     schemas: { type: 'integer' },
