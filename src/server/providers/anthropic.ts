@@ -5,6 +5,10 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { anthropicModelFeatures } from './anthropic-features.ts'
+import {
+  anthropicAliasMap,
+  applyDocumentedAliases,
+} from './provider-aliases.ts'
 import type { AnthropicThinkingCaps } from './anthropic-features.ts'
 import { anthropicModelPricing } from './anthropic-pricing.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
@@ -99,9 +103,10 @@ async function listModels(
     return { models: [], ...skippedResult('anthropic', 'ANTHROPIC_API_KEY') }
   }
   const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION }
-  const [pricing, features] = await Promise.all([
+  const [pricing, features, aliasMap] = await Promise.all([
     anthropicModelPricing(kv),
     anthropicModelFeatures(kv),
+    anthropicAliasMap(kv),
   ])
   const models: ListModelsResult['models'] = []
   let afterId: string | undefined
@@ -136,7 +141,7 @@ async function listModels(
     }
     afterId = body.has_more ? body.last_id : undefined
   } while (afterId)
-  return { models }
+  return { models: applyDocumentedAliases(models, aliasMap) }
 }
 
 export const anthropicProvider: ProviderConfig = {

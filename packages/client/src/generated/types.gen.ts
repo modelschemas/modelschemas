@@ -152,6 +152,10 @@ export type Model = {
    * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
    */
   serverTools?: Array<string> | null
+  /**
+   * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
+   */
+  aliases?: Array<string> | null
   factSources?: unknown
   firstSeenAt?: number
   lastSeenAt?: number

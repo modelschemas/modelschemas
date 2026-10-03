@@ -715,6 +715,12 @@ export const openApiDocument = {
             type: ['array', 'null'],
             items: { type: 'string' },
           },
+          aliases: {
+            description:
+              'Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.',
+            type: ['array', 'null'],
+            items: { type: 'string' },
+          },
           factSources: {},
           firstSeenAt: { type: 'integer' },
           lastSeenAt: { type: 'integer' },
