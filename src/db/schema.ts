@@ -386,6 +386,8 @@ export const models = sqliteTable(
     // Thinking configuration and provider-hosted tool type ids (issue #77).
     reasoning: text('reasoning', { mode: 'json' }),
     serverTools: text('server_tools', { mode: 'json' }),
+    // Caller ids that resolve to this dated row (issue #112).
+    aliases: text('aliases', { mode: 'json' }).$type<Array<string> | null>(),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see

@@ -183,6 +183,11 @@ export interface ModelInfo {
    * Omit to let the provider's `generationEndpointId` bind by activity.
    */
   schemaEndpointId?: string | null
+  /**
+   * Caller ids that resolve to this row (Anthropic `claude-opus-4-5` →
+   * the dated snapshot). Empty when the provider documents none.
+   */
+  aliases?: Array<string> | null
   deprecated?: boolean
   /**
    * Upstream release/creation time (epoch seconds) when the provider reports
