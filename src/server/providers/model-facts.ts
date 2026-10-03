@@ -122,7 +122,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
  * shape would otherwise read the old one back out of KV for six hours and
  * see missing fields as missing facts.
  */
-const DOCS_CACHE_VERSION = 'v6'
+// v7: OpenAI model pages price the first token table and only the default
+// snapshot. A v6 entry would keep o3's batch table and gpt-4o's old snapshot.
+const DOCS_CACHE_VERSION = 'v7'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
