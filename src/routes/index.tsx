@@ -66,6 +66,11 @@ export const Route = createFileRoute('/')({
 
 const fmt = new Intl.NumberFormat('en-US')
 
+/** Whole-percent coverage, or null when there is nothing to cover. */
+const pct = (part: number, whole: number) =>
+  whole > 0 ? Math.round((part / whole) * 100) : null
+const showPct = (value: number | null) => (value === null ? '—' : `${value}%`)
+
 function Landing() {
   const { status, changes } = Route.useLoaderData()
   // WebMCP (task 10.6): in-page tools for browsers that ship
@@ -81,6 +86,13 @@ function Landing() {
     }),
     { models: 0, endpoints: 0, schemas: 0 },
   )
+  // Unweighted across providers, so one huge catalog can't swamp the rest.
+  const pricePcts = status.providers
+    .map((p) => pct(p.counts.priced, p.counts.models))
+    .filter((v) => v !== null)
+  const avgPrice = pricePcts.length
+    ? Math.round(pricePcts.reduce((a, b) => a + b, 0) / pricePcts.length)
+    : null
   const lastPolledAt = Math.max(
     0,
     ...status.providers.map((p) => p.lastPolledAt ?? 0),
@@ -196,6 +208,12 @@ function Landing() {
               schema versions
             </span>
             <span>
+              <b className="font-semibold text-ink tabular-nums">
+                {showPct(avgPrice)}
+              </b>{' '}
+              priced, avg per provider
+            </span>
+            <span>
               polled{' '}
               <b className="font-semibold text-ink">{timeAgo(lastPolledAt)}</b>{' '}
               · specs synced{' '}
@@ -214,7 +232,7 @@ function Landing() {
             }
           />
           <div className="figure overflow-x-auto">
-            <table className="dtable">
+            <table className="dtable dtable-cards">
               <thead>
                 <tr>
                   <th>provider</th>
@@ -222,8 +240,10 @@ function Landing() {
                   <th className="num">models</th>
                   <th className="num">endpoints</th>
                   <th className="num">schemas</th>
-                  <th className="num max-sm:hidden">polled</th>
-                  <th className="num max-sm:hidden">synced</th>
+                  <th className="num">price</th>
+                  <th className="num">reasoning</th>
+                  <th className="num">polled</th>
+                  <th className="num">synced</th>
                 </tr>
               </thead>
               <tbody>
@@ -240,9 +260,13 @@ function Landing() {
                     <td>
                       <StatusDot status={p.status} />
                     </td>
-                    <td className="num">{fmt.format(p.counts.models)}</td>
-                    <td className="num">{fmt.format(p.counts.endpoints)}</td>
-                    <td className="num">
+                    <td className="num" data-label="models">
+                      {fmt.format(p.counts.models)}
+                    </td>
+                    <td className="num" data-label="endpoints">
+                      {fmt.format(p.counts.endpoints)}
+                    </td>
+                    <td className="num" data-label="schemas">
                       {p.counts.schemas > 0 ? (
                         <a
                           className="text-ink hover:text-tok-blue"
@@ -254,10 +278,16 @@ function Landing() {
                         fmt.format(p.counts.schemas)
                       )}
                     </td>
-                    <td className="num text-ink-faint max-sm:hidden">
+                    <td className="num" data-label="price">
+                      {showPct(pct(p.counts.priced, p.counts.models))}
+                    </td>
+                    <td className="num" data-label="reasoning">
+                      {showPct(pct(p.counts.reasoning, p.counts.chat))}
+                    </td>
+                    <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt)}
                     </td>
-                    <td className="num text-ink-faint max-sm:hidden">
+                    <td className="num text-ink-faint max-[899px]:hidden">
                       {timeAgo(p.lastSyncedAt)}
                     </td>
                   </tr>

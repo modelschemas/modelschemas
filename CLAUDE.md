@@ -28,7 +28,7 @@ Bun is the package manager; the repo is a bun workspace (`packages/*`).
 
 ```bash
 bun install              # install + link workspace packages
-bun run dev              # dev server on http://localhost:3100 (NOT --bun: bun's ws shim hangs vite)
+bun run dev              # local D1 migrate, then dev server on http://localhost:3100 (NOT --bun: bun's ws shim hangs vite)
 bun run test             # vitest, unit + workers projects (NOT --bun: cloudflare pool needs node)
 bun run test src/path/to/file.test.ts       # single test file
 bun --bun run lint       # eslint (no-explicit-any + no-unsafe-* are errors)

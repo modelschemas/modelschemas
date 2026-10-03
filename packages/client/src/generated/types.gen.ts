@@ -23,9 +23,17 @@ export type ServiceStatus = {
     counts?: {
       models?: number
       /**
-       * Models with a stored rate card.
+       * Models with a stored rate card. priced / models is the price score.
        */
       priced?: number
+      /**
+       * Models with stored reasoning metadata. reasoning / chat is the reasoning score.
+       */
+      reasoning?: number
+      /**
+       * Models whose activity is chat.
+       */
+      chat?: number
       endpoints?: number
       schemas?: number
     }

@@ -43,6 +43,24 @@ describe('getServiceStatus', () => {
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       },
+      {
+        // Chat without reasoning metadata: denominator only.
+        id: 'status-a-chat',
+        providerId: 'status-a',
+        rawId: 'chat',
+        activity: 'chat',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'status-a-reasoner',
+        providerId: 'status-a',
+        rawId: 'reasoner',
+        activity: 'chat',
+        reasoning: { mode: 'effort', mandatory: false },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
     ])
     await db.insert(endpoints).values({
       id: 'status-a/v1/things',
@@ -80,12 +98,26 @@ describe('getServiceStatus', () => {
       status: 'active',
       lastPolledAt: NOW,
       lastSyncedAt: NOW - 100,
-      counts: { models: 2, priced: 1, endpoints: 1, schemas: 1 },
+      counts: {
+        models: 4,
+        priced: 1,
+        reasoning: 1,
+        chat: 2,
+        endpoints: 1,
+        schemas: 1,
+      },
     })
     expect(b).toMatchObject({
       status: 'degraded',
       lastPolledAt: null,
-      counts: { models: 0, priced: 0, endpoints: 0, schemas: 0 },
+      counts: {
+        models: 0,
+        priced: 0,
+        reasoning: 0,
+        chat: 0,
+        endpoints: 0,
+        schemas: 0,
+      },
     })
   })
 
@@ -99,7 +131,14 @@ describe('getServiceStatus', () => {
       expect(listed).toMatchObject({
         displayName: config.displayName,
         status: 'pending',
-        counts: { models: 0, priced: 0, endpoints: 0, schemas: 0 },
+        counts: {
+          models: 0,
+          priced: 0,
+          reasoning: 0,
+          chat: 0,
+          endpoints: 0,
+          schemas: 0,
+        },
       })
     }
   })
