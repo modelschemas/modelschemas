@@ -55,10 +55,10 @@ describe('together media catalog', () => {
     expect(cardFor('black-forest-labs/FLUX.2-pro')).toBeNull()
   })
 
-  it('compiles video per second when a length is published, else per video', () => {
+  it('keeps the published price-per-video figure and does not divide by duration', () => {
     const clip = cardFor('ByteDance/Seedance-1.0-pro')
     if (!clip) throw new Error('did not compile')
-    expect(price(clip, {}, { seconds: 5 })).toBeCloseTo(0.57, 9)
+    expect(price(clip, {}, {})).toBeCloseTo(0.57, 9)
     const flat = cardFor('bytedance/seedance-2.0')
     if (!flat) throw new Error('did not compile')
     expect(price(flat, {}, {})).toBeCloseTo(0.16, 9)
