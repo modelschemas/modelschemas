@@ -156,6 +156,7 @@ Reasoning.effort supports: minimal, low, medium, and high.
       'gpt-5-2025-08-07',
       'gpt-5-2025-09-01',
     ])
+    expect(parsed?.pricedIds).toEqual(['gpt-5', 'gpt-5-2025-08-07'])
     expect(parsed?.facts).toEqual({
       contextWindow: 400_000,
       maxOutput: 128_000,
@@ -342,6 +343,72 @@ describe('openai pricing tables', () => {
         audio_output_tokens: 64e-6,
       },
       tiers: [],
+    })
+  })
+
+  it('uses the first Text tokens table when the heading is repeated', () => {
+    // o3.md publishes standard rates, then the same heading again at half
+    // price for batch/flex, with no label on the second table.
+    expect(
+      parseModelPricing(
+        pricing(`### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $2 | 1M tokens |
+| Cached input | $0.5 | 1M tokens |
+| Output | $8 | 1M tokens |
+
+### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $1 | 1M tokens |
+| Cached input | $0.25 | 1M tokens |
+| Output | $4 | 1M tokens |
+`),
+      ),
+    ).toEqual({
+      rates: {
+        input_tokens: 0.000002,
+        cache_read_tokens: 5e-7,
+        output_tokens: 0.000008,
+      },
+      tiers: [],
+    })
+  })
+
+  it('prices the alias and default snapshot, not an older dated snapshot', () => {
+    const parsed = parseModelPage(`# GPT-4o
+
+Model ID: \`gpt-4o\`
+
+## Model details
+
+- Default snapshot: \`gpt-4o-2024-08-06\`
+
+## Pricing
+
+### Text tokens
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Input | $2.50 | 1M tokens |
+| Cached input | $1.25 | 1M tokens |
+| Output | $10 | 1M tokens |
+
+## Snapshots
+
+- \`gpt-4o-2024-08-06\`
+- \`gpt-4o-2024-11-20\`
+- \`gpt-4o-2024-05-13\`
+`)
+    expect(parsed?.pricedIds).toEqual(['gpt-4o', 'gpt-4o-2024-08-06'])
+    expect(parsed?.ids).toContain('gpt-4o-2024-05-13')
+    expect(parsed?.pricing?.rates).toEqual({
+      input_tokens: 2.5e-6,
+      cache_read_tokens: 1.25e-6,
+      output_tokens: 10e-6,
     })
   })
 
