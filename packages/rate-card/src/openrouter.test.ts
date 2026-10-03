@@ -116,11 +116,32 @@ describe('compileOpenRouterPricing', () => {
     )
   })
 
+  it('compiles when only prompt or only completion is a non-zero number', () => {
+    const promptOnly = compile({ prompt: '0.000001', completion: '0' })
+    expect(
+      price(promptOnly, {}, { input_tokens: 1_000_000, output_tokens: 0 }),
+    ).toBe(1)
+    const completionOnly = compile({ prompt: 0, completion: 0.000004 })
+    expect(
+      price(completionOnly, {}, { input_tokens: 0, output_tokens: 1_000_000 }),
+    ).toBe(4)
+    const promptKeyOnly = compile({ prompt: '0.000002' })
+    expect(Object.keys(promptKeyOnly.inputs)).toEqual(['input_tokens'])
+    expect(price(promptKeyOnly, {}, { input_tokens: 1_000_000 })).toBe(2)
+  })
+
   it.each<[string, unknown]>([
     ['Together-style all-zero listing', { prompt: '0', completion: '0' }],
+    ['*-free row', { prompt: '0', completion: '0', request: '0' }],
+    ['Lyria listing with no per-song unit', { prompt: '0', completion: '0' }],
     ['router variable-price sentinel', { prompt: '-1', completion: '-1' }],
-    ['no completion rate', { prompt: '0.000001' }],
+    ['openrouter/auto', { prompt: '-1', completion: '-1' }],
     ['non-numeric rate', { prompt: 'free', completion: '0' }],
+    [
+      'non-zero prompt with a bad completion',
+      { prompt: '0.000001', completion: 'free' },
+    ],
+    ['neither prompt nor completion', { image: '0.000002' }],
     ['not an object', null],
   ])('%s does not compile', (_name, listing) => {
     expect(compileOpenRouterPricing(listing, source)).toBeNull()
