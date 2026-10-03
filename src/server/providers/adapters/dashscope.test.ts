@@ -45,7 +45,7 @@ describe('dashscope adapter', () => {
     expect(provider.defaultDerivation).toBe('generated')
     expect(provider.specSourceUrl).toMatch(/^https:\/\//)
     expect(provider.modelsEndpoint).toBe(
-      'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models',
+      'https://dashscope-intl.aliyuncs.com/api/v1/models',
     )
   })
 
@@ -100,20 +100,30 @@ describe('dashscope adapter', () => {
       () =>
         new Response(
           JSON.stringify({
-            data: [{ id: 'qwen-plus', created: 1_716_430_652 }],
+            output: {
+              total: 1,
+              models: [{ model: 'qwen-plus', name: 'Qwen Plus' }],
+            },
           }),
         ),
       () => provider.listModels({ DASHSCOPE_API_KEY: 'test-key' }),
     )
     expect(calls).toEqual([
       {
-        url: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models',
+        url: 'https://dashscope-intl.aliyuncs.com/api/v1/models?page_no=1&page_size=100&language=en-US',
         auth: 'Bearer test-key',
       },
     ])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
-      { rawId: 'qwen-plus', releasedAt: 1_716_430_652 },
+      {
+        rawId: 'qwen-plus',
+        displayName: 'Qwen Plus',
+        activity: null,
+        contextWindow: null,
+        maxOutput: null,
+        releasedAt: null,
+      },
     ])
   })
 })

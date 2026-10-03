@@ -47,6 +47,11 @@ describe('moonshot adapter', () => {
     const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
       urls.push(String(url))
+      if (String(url).includes('platform.kimi.ai')) {
+        return Promise.resolve(
+          new Response('["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'),
+        )
+      }
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -59,10 +64,14 @@ describe('moonshot adapter', () => {
       const result = await provider.listModels({
         MOONSHOT_API_KEY: 'test-key',
       })
-      expect(urls).toEqual(['https://api.moonshot.ai/v1/models'])
+      expect(urls[0]).toBe('https://api.moonshot.ai/v1/models')
       expect(result.skipped).toBeUndefined()
       expect(result.models).toEqual([
-        { rawId: 'kimi-k2.7-code', releasedAt: 1_786_418_420 },
+        {
+          rawId: 'kimi-k2.7-code',
+          releasedAt: 1_786_418_420,
+          activity: 'chat',
+        },
       ])
     } finally {
       globalThis.fetch = original

@@ -4,6 +4,7 @@
  * requires DEEPGRAM_API_KEY. Auth is `Authorization: Token`.
  */
 import type { Activity } from '#/db/schema.ts'
+import { deepgramModelPricing } from '../deepgram-pricing.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -74,7 +75,10 @@ function listedModel(entry: DeepgramListedModel): ModelInfo | null {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.DEEPGRAM_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('deepgram', 'DEEPGRAM_API_KEY') }
@@ -90,7 +94,11 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     seen.add(model.rawId)
     models.push(model)
   }
-  return { models }
+  if (models.length === 0) return { models }
+  const pricing = await deepgramModelPricing(kv)
+  return {
+    models: models.map((model) => ({ ...model, ...pricing(model.rawId) })),
+  }
 }
 
 export const provider: ProviderConfig = {

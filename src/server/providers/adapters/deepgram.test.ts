@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { DEEPGRAM_PRICING_URL } from '../deepgram-pricing.ts'
 import { provider } from './deepgram.ts'
 
 const originalFetch = globalThis.fetch
@@ -51,12 +52,31 @@ describe('deepgram listModels', () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       calls.push({ url: String(url), init })
+      if (String(url) === DEEPGRAM_PRICING_URL) {
+        return Promise.resolve(
+          new Response(
+            [
+              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Flux English - Pay As You Go","price":"0.0065"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Flux Multilingual - Pay As You Go","price":"0.0078"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Nova-3 Monolingual - Pay As You Go","price":"0.0048"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Nova-3 Multilingual - Pay As You Go","price":"0.0058"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Pre-Recorded - Nova-3 Monolingual - Pay As You Go","price":"0.0043"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Pre-Recorded - Nova-3 Multilingual - Pay As You Go","price":"0.0052"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Flux TTS - Pay As You Go","price":"0.0450"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Aura-2 - Pay As You Go","price":"0.030"}',
+              '{"name":"Deepgram Voice AI Platform Pricing - Aura-1 - Pay As You Go","price":"0.0150"}',
+              '$0.0065/min $0.0078/min $0.0048/min $0.0058/min $0.0043/min $0.0052/min $0.0450/1k $0.030/1k $0.0150/1k',
+            ].join(' '),
+          ),
+        )
+      }
       return Promise.resolve(
         new Response(
           JSON.stringify({
             stt: [{ name: 'Nova-3', canonical_name: 'nova-3' }],
             tts: [
               { name: 'Aura-2 Thalia', canonical_name: 'aura-2-thalia-en' },
+              { name: 'Nova-2', canonical_name: 'nova-2-general' },
             ],
           }),
         ),
@@ -65,20 +85,19 @@ describe('deepgram listModels', () => {
 
     const result = await provider.listModels({ DEEPGRAM_API_KEY: 'test-key' })
     expect(result.skipped).toBeUndefined()
-    expect(result.models).toEqual([
-      { rawId: 'nova-3', displayName: 'Nova-3', activity: 'audio' },
-      {
-        rawId: 'aura-2-thalia-en',
-        displayName: 'Aura-2 Thalia',
-        activity: 'audio',
-      },
+    expect(result.models.map((model) => model.rawId)).toEqual([
+      'nova-3',
+      'aura-2-thalia-en',
+      'nova-2-general',
     ])
-    expect(calls).toEqual([
-      {
-        url: 'https://api.deepgram.com/v1/models',
-        init: { headers: { Authorization: 'Token test-key' } },
-      },
-    ])
+    expect(result.models[0]?.pricing).toBeTruthy()
+    expect(result.models[1]?.pricing).toBeTruthy()
+    expect(result.models[2]?.pricing ?? null).toBeNull()
+    expect(calls[0]).toEqual({
+      url: 'https://api.deepgram.com/v1/models',
+      init: { headers: { Authorization: 'Token test-key' } },
+    })
+    expect(calls[1]?.url).toBe(DEEPGRAM_PRICING_URL)
   })
 })
 

@@ -152,9 +152,26 @@ describe('together listModels', () => {
   it('parses Together’s bare-array catalog', async () => {
     const original = globalThis.fetch
     globalThis.fetch = ((url: string, init?: RequestInit) => {
-      expect(String(url)).toBe('https://api.together.xyz/v1/models')
       const headers = new Headers(init?.headers)
       expect(headers.get('Authorization')).toBe('Bearer test-key')
+      if (String(url).includes('/v2/supported-models')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  name: 'Qwen/Qwen3.5-9B',
+                  inputModalities: ['MODALITY_TEXT'],
+                  outputModalities: ['MODALITY_TEXT'],
+                  features: ['FEATURE_TOOL_CALLING', 'FEATURE_REASONING'],
+                },
+              ],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        )
+      }
+      expect(String(url)).toBe('https://api.together.xyz/v1/models')
       return Promise.resolve(
         new Response(
           JSON.stringify([
@@ -182,6 +199,8 @@ describe('together listModels', () => {
           activity: 'chat',
           contextWindow: 32768,
           releasedAt: 1692896905,
+          modalities: { input: ['text'], output: ['text'] },
+          capabilities: ['tools', 'reasoning'],
         },
         {
           rawId: 'BAAI/bge-large-en-v1.5',
