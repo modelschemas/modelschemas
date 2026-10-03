@@ -66,11 +66,19 @@ describe('deepgram listModels', () => {
     const result = await provider.listModels({ DEEPGRAM_API_KEY: 'test-key' })
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
-      { rawId: 'nova-3', displayName: 'Nova-3', activity: 'audio' },
+      {
+        rawId: 'nova-3',
+        displayName: 'Nova-3',
+        activity: 'audio',
+        modalities: { input: ['audio'], output: ['text'] },
+        schemaEndpointId: 'v1/listen',
+      },
       {
         rawId: 'aura-2-thalia-en',
         displayName: 'Aura-2 Thalia',
         activity: 'audio',
+        modalities: { input: ['text'], output: ['audio'] },
+        schemaEndpointId: 'v1/speak',
       },
     ])
     expect(calls).toEqual([
