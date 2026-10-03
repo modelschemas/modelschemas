@@ -429,11 +429,21 @@ export function parseReasoningEffort(markdown: string): ModelReasoning {
   }
 }
 
+/**
+ * Model pages the models index no longer links, which still publish a price.
+ * Dated snapshots resolve to that page; `pricedIds` decides whether the
+ * price applies. A family page is never used for an id that is not that
+ * page's model id or its dated form (`tts-1-1106` is not `tts-1`).
+ */
+const UNINDEXED_MODEL_PAGES = new Set(['sora-2', 'sora-2-pro'])
+
 /** Page slug a listed id resolves to, or null when the docs have no page. */
 export function pageSlugFor(rawId: string, slugs: Set<string>): string | null {
   if (slugs.has(rawId)) return rawId
   const undated = undatedId(rawId)
   if (slugs.has(undated)) return undated
+  if (UNINDEXED_MODEL_PAGES.has(rawId)) return rawId
+  if (UNINDEXED_MODEL_PAGES.has(undated)) return undated
   return null
 }
 

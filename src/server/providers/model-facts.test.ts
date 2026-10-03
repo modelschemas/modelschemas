@@ -214,6 +214,16 @@ Reasoning.effort supports: minimal, low, medium, and high.
     expect(pageSlugFor('gpt-5-2025-08-07', slugs)).toBe('gpt-5')
     expect(pageSlugFor('whisper-1', slugs)).toBe('whisper-1')
     expect(pageSlugFor('gpt-5-search-api', slugs)).toBeNull()
+    // The models index dropped Sora after the Videos API shutdown. The
+    // pages still publish per-second rates, so the slug is fetched anyway.
+    expect(pageSlugFor('sora-2', slugs)).toBe('sora-2')
+    expect(pageSlugFor('sora-2-pro', slugs)).toBe('sora-2-pro')
+    expect(pageSlugFor('sora-2-2025-10-06', slugs)).toBe('sora-2')
+    expect(pageSlugFor('sora-2-pro-2025-10-06', slugs)).toBe('sora-2-pro')
+    // Dated TTS snapshots have no page of their own and are not the
+    // family's default snapshot, so they do not inherit tts-1's price.
+    expect(pageSlugFor('tts-1-1106', slugs)).toBeNull()
+    expect(pageSlugFor('tts-1-hd-1106', slugs)).toBeNull()
   })
 })
 
@@ -529,6 +539,106 @@ Model ID: \`gpt-4o\`
         rates: 0.0045 / 60,
       },
     })
+  })
+
+  it('prices sora-2 and sora-2-pro from their own video tables', () => {
+    expect(
+      parseModelPricing(
+        pricing(`### Video generation
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Portrait: 720x1280
+Landscape: 1280x720 | $0.1 | second |
+`),
+      )?.unit,
+    ).toEqual({
+      quantity: { param: 'seconds', bound: 'request' },
+      keys: [{ param: 'size', values: ['720x1280', '1280x720'] }],
+      rates: { '720x1280': 0.1, '1280x720': 0.1 },
+    })
+    expect(
+      parseModelPricing(
+        pricing(`### Video generation
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Portrait: 720x1280
+Landscape: 1280x720 | $0.3 | second |
+| Portrait: 1024x1792
+Landscape: 1792x1024 | $0.5 | second |
+| Portrait: 1080x1920
+Landscape: 1920x1080 | $0.7 | second |
+`),
+      )?.unit?.rates,
+    ).toEqual({
+      '720x1280': 0.3,
+      '1280x720': 0.3,
+      '1024x1792': 0.5,
+      '1792x1024': 0.5,
+      '1080x1920': 0.7,
+      '1920x1080': 0.7,
+    })
+  })
+
+  it('leaves image-2, moderation, and dated TTS snapshots unpriced', () => {
+    const image = parseModelPage(`# GPT-Image-2
+
+Model ID: \`gpt-image-2\`
+
+GPT Image 2 points at the [pricing page](/api/docs/pricing#image-generation) but this page lists no amount.
+
+## Model details
+
+- Default snapshot: \`gpt-image-2-2026-04-21\`
+
+## Snapshots
+
+- \`gpt-image-2-2026-04-21\`
+`)
+    expect(image?.pricing).toBeNull()
+    expect(image?.pricedIds).toEqual(['gpt-image-2', 'gpt-image-2-2026-04-21'])
+
+    const moderation = parseModelPage(`# omni-moderation
+
+Model ID: \`omni-moderation-latest\`
+
+Moderation models are free models designed to detect harmful content.
+
+## Model details
+
+- Default snapshot: \`omni-moderation-2024-09-26\`
+
+## Snapshots
+
+- \`omni-moderation-2024-09-26\`
+`)
+    expect(moderation?.pricing).toBeNull()
+
+    const tts = parseModelPage(`# TTS-1
+
+Model ID: \`tts-1\`
+
+## Model details
+
+- Default snapshot: \`tts-1\`
+
+## Pricing
+
+### Pricing
+
+| Metric | Price | Unit |
+| --- | ---: | --- |
+| Use case | Speech generation | 1M tokens |
+| Cost | $15 | 1M characters |
+
+## Snapshots
+
+- \`tts-1\`
+`)
+    expect(tts?.pricedIds).toEqual(['tts-1'])
+    expect(tts?.ids).not.toContain('tts-1-1106')
+    expect(tts?.pricing?.unit?.rates).toBe(15 / 1e6)
   })
 
   it('prices speech by character and video by size and second', () => {
