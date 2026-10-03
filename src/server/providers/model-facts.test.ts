@@ -7,9 +7,11 @@ import { parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
 import {
   grokImageCard,
+  grokImageUnpricedField,
   grokRateCard,
   grokVideoCard,
   parseGrokContextWindows,
+  parseGrokMaxOutput,
   grokReasons,
   parseGrokVideoPrices,
 } from './grok.ts'
@@ -697,13 +699,39 @@ describe('grok model prices', () => {
     if (!card) throw new Error('did not compile')
     expect(price(card, {}, {})).toBeCloseTo(0.02, 9)
     expect(price(card, { n: 4 }, {})).toBeCloseTo(0.08, 9)
-    // `quality` is not a field of /v1/images/generations.
+    // The live matrix prices grok-imagine-image-2.0 by quality. `quality`
+    // is not a field of /v1/images/generations, so the card stays null
+    // even though image_price and the model page quote one tier.
+    const imagine2 = {
+      id: 'grok-imagine-image-2.0',
+      image_price: 600_000_000,
+      pricing: [
+        { quality: 'low', resolution: '1k', price_per_image: 4e8 },
+        { quality: 'medium', resolution: '1k', price_per_image: 6e8 },
+      ],
+    }
+    expect(grokImageUnpricedField(imagine2)).toBe('quality')
+    expect(await grokImageCard(imagine2)).toBeNull()
+  })
+
+  it('reads a stated output cap and ignores "no limit" and price rows', () => {
+    const page = `# Grok 3
+
+## At a glance
+
+- **Context window:** 131,072 tokens
+- **Output limit:** 8,192 tokens
+`
+    expect(parseGrokMaxOutput(page)).toBe(8_192)
     expect(
-      await grokImageCard({
-        id: 'grok-imagine-image-2.0',
-        image_price: 600_000_000,
-        pricing: [{ quality: 'low', resolution: '1k', price_per_image: 4e8 }],
-      }),
+      parseGrokMaxOutput(
+        '| Property | Value |\n| --- | --- |\n| Output limit | No text output limit |\n',
+      ),
+    ).toBeNull()
+    expect(
+      parseGrokMaxOutput(
+        '| Type | Price |\n| --- | --- |\n| Output | $6.00 |\n',
+      ),
     ).toBeNull()
   })
 
