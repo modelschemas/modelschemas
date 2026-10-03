@@ -117,15 +117,26 @@ function matches(rawId: string, name: string): boolean {
   return bare === name || bare.startsWith(`${name}-`)
 }
 
-function levelsFor(rawId: string): EffortLevelMap | null {
-  if (matches(rawId, 'gpt-5.1')) return GPT_51_LEVELS
-  if (matches(rawId, 'deepseek-flash')) return DEEPSEEK_FLASH_LEVELS
-  if (matches(rawId, 'glm-5.2')) return GLM_52_LEVELS
+function levelsFor(providerId: string, rawId: string): EffortLevelMap | null {
+  if (providerId === 'openai' && matches(rawId, 'gpt-5.1')) return GPT_51_LEVELS
+  if (providerId === 'deepseek' && matches(rawId, 'deepseek-flash')) {
+    return DEEPSEEK_FLASH_LEVELS
+  }
+  if (
+    (providerId === 'zai' || providerId === 'glm') &&
+    matches(rawId, 'glm-5.2')
+  ) {
+    return GLM_52_LEVELS
+  }
   return null
 }
 
-function withLevels(thinking: ThinkingRequest, rawId: string): ThinkingRequest {
-  const levels = levelsFor(rawId)
+function withLevels(
+  thinking: ThinkingRequest,
+  providerId: string,
+  rawId: string,
+): ThinkingRequest {
+  const levels = levelsFor(providerId, rawId)
   return levels === null ? thinking : { ...thinking, levels }
 }
 
@@ -142,7 +153,11 @@ export function chatRequestMap(
   switch (providerId) {
     case 'openai':
       return blank({
-        thinking: withLevels({ on: OPENAI_ON, off: null, levels: null }, rawId),
+        thinking: withLevels(
+          { on: OPENAI_ON, off: null, levels: null },
+          providerId,
+          rawId,
+        ),
         maxTokensField: 'max_completion_tokens',
         developerRole: true,
         reasoningEffort: true,
@@ -151,6 +166,7 @@ export function chatRequestMap(
       return blank({
         thinking: withLevels(
           { on: DEEPSEEK_ON, off: DEEPSEEK_OFF, levels: null },
+          providerId,
           rawId,
         ),
         maxTokensField: 'max_tokens',
@@ -161,7 +177,11 @@ export function chatRequestMap(
     case 'zai':
     case 'glm':
       return blank({
-        thinking: withLevels({ on: GLM_ON, off: null, levels: null }, rawId),
+        thinking: withLevels(
+          { on: GLM_ON, off: null, levels: null },
+          providerId,
+          rawId,
+        ),
         maxTokensField: 'max_tokens',
         developerRole: false,
         toolStream: true,
@@ -169,13 +189,18 @@ export function chatRequestMap(
       })
     case 'qwen':
       return blank({
-        thinking: withLevels({ on: QWEN_ON, off: null, levels: null }, rawId),
+        thinking: withLevels(
+          { on: QWEN_ON, off: null, levels: null },
+          providerId,
+          rawId,
+        ),
         developerRole: false,
       })
     case 'vllm':
       return blank({
         thinking: withLevels(
           { on: VLLM_QWEN_ON, off: null, levels: null },
+          providerId,
           rawId,
         ),
         developerRole: false,
@@ -184,6 +209,7 @@ export function chatRequestMap(
       return blank({
         thinking: withLevels(
           { on: OPENROUTER_ON, off: null, levels: null },
+          providerId,
           rawId,
         ),
         sessionAffinity: true,
@@ -193,6 +219,7 @@ export function chatRequestMap(
       return blank({
         thinking: withLevels(
           { on: TOGETHER_ON, off: null, levels: null },
+          providerId,
           rawId,
         ),
         maxTokensField: 'max_tokens',

@@ -82,7 +82,7 @@ describe('chatRequestMap', () => {
   it('sends OpenRouter and Together thinking-on bodies', () => {
     const openrouter = chatRequestMap('openrouter', 'openai/gpt-5.1', 'chat')
     expect(openrouter?.thinking?.on).toEqual({ reasoning: { effort: 'high' } })
-    expect(openrouter?.thinking?.levels?.off).toBe('none')
+    expect(openrouter?.thinking?.levels ?? null).toBeNull()
     expect(openrouter?.sessionAffinity).toBe(true)
     expect(
       chatRequestMap('openrouter', 'anthropic/claude-opus-4', 'chat')
