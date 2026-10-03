@@ -87,6 +87,7 @@ describe('cartesia listModels', () => {
         rawId: 'voice-1',
         displayName: 'Guide',
         activity: 'audio',
+        modalities: { input: ['text'], output: ['audio'] },
         releasedAt: Date.parse('2024-06-01T00:00:00Z') / 1000,
       },
     ])

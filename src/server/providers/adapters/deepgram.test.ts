@@ -85,10 +85,30 @@ describe('deepgram listModels', () => {
 
     const result = await provider.listModels({ DEEPGRAM_API_KEY: 'test-key' })
     expect(result.skipped).toBeUndefined()
-    expect(result.models.map((model) => model.rawId)).toEqual([
-      'nova-3',
-      'aura-2-thalia-en',
-      'nova-2-general',
+    expect(
+      result.models.map(({ pricing: _pricing, ...model }) => model),
+    ).toEqual([
+      {
+        rawId: 'nova-3',
+        displayName: 'Nova-3',
+        activity: 'audio',
+        modalities: { input: ['audio'], output: ['text'] },
+        schemaEndpointId: 'v1/listen',
+      },
+      {
+        rawId: 'aura-2-thalia-en',
+        displayName: 'Aura-2 Thalia',
+        activity: 'audio',
+        modalities: { input: ['text'], output: ['audio'] },
+        schemaEndpointId: 'v1/speak',
+      },
+      {
+        rawId: 'nova-2-general',
+        displayName: 'Nova-2',
+        activity: 'audio',
+        modalities: { input: ['text'], output: ['audio'] },
+        schemaEndpointId: 'v1/speak',
+      },
     ])
     expect(result.models[0]?.pricing).toBeTruthy()
     expect(result.models[1]?.pricing).toBeTruthy()

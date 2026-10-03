@@ -6,6 +6,7 @@
  * small curated speech-model catalog when ASSEMBLYAI_API_KEY is set.
  */
 import type { Activity } from '#/db/schema.ts'
+import { normalizeMediaModalities } from '../media-modalities.ts'
 import { fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -61,6 +62,12 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       rawId: m.rawId,
       displayName: m.displayName,
       activity: 'audio' as const,
+      modalities: normalizeMediaModalities({
+        activity: 'audio',
+        listingInput: ['audio'],
+        listingOutput: ['text'],
+      }),
+      schemaEndpointId: 'v2/transcript',
       releasedAt: null,
     })),
   }
