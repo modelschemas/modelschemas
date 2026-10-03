@@ -11,6 +11,7 @@ import {
   openrouterGenerationEndpointId,
   openrouterModelActivity,
 } from './model-meta.ts'
+import { openRouterReasoning } from './reasoning-config.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
@@ -249,6 +250,11 @@ interface OpenRouterModelList {
     }
     supported_parameters?: Array<string>
     top_provider?: { max_completion_tokens?: number | null }
+    reasoning?: {
+      supported_efforts?: Array<string | null> | null
+      mandatory?: boolean
+      supports_max_tokens?: boolean
+    } | null
   }>
 }
 
@@ -270,6 +276,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
           }
         : undefined,
       capabilities: m.supported_parameters,
+      reasoning: openRouterReasoning(m),
     })),
   }
 }

@@ -73,7 +73,12 @@ describe('mistral listModels', () => {
       expect(calls[0]?.auth).toBe('Bearer mistral-test')
       expect(
         models.map(
-          ({ pricing: _pricing, factSources: _sources, ...rest }) => rest,
+          ({
+            pricing: _pricing,
+            factSources: _sources,
+            reasoning: _reasoning,
+            ...rest
+          }) => rest,
         ),
       ).toEqual([
         {
