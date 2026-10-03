@@ -71,15 +71,15 @@ function imageSpec(unitCell: string, priceCell: string): UnitCardSpec | null {
   return null
 }
 
-function videoSpec(priceCell: string, detailCell: string): UnitCardSpec | null {
+function videoSpec(
+  priceCell: string,
+  _detailCell: string,
+): UnitCardSpec | null {
+  // The catalog column is "Price per video". Dividing by the duration cell
+  // would invent a per-second rate the page does not print.
   const amount = fixedDollars(priceCell)
   if (amount === null) return null
-  const seconds = clean(detailCell).match(/(\d+)\s*s\b/i)?.[1]
-  if (!seconds) return { rates: amount }
-  return {
-    quantity: { param: 'seconds', bound: 'usage' },
-    rates: amount / Number(seconds),
-  }
+  return { rates: amount }
 }
 
 function audioSpec(priceCell: string): UnitCardSpec | null {
