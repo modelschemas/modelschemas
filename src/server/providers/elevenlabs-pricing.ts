@@ -1,9 +1,10 @@
 /**
- * ElevenLabs speech product prices (issue #120). The API pricing page
- * states one Text to Speech rate for multilingual models and one for
- * Flash/Turbo. That card is copied onto every speech model it names.
- * Enum-only catalog rows are not speech products and stay unpriced.
- * Promo strikethroughs are not a second rate.
+ * ElevenLabs speech product prices (issue #120). The FAQ sentence
+ * ("$0.08 multilingual or $0.04 Flash/Turbo") is a summary, not the
+ * product cards. Those cards name different numbers (v4, v3
+ * Conversational). Copying the FAQ onto every speech id stores the
+ * wrong rate, so this parser stays null until it reads a per-product
+ * figure. Enum-only catalog rows stay unpriced.
  */
 import { compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -33,17 +34,10 @@ export interface ElevenLabsSpeechPrices {
 export function parseElevenLabsSpeechPrices(
   page: string,
 ): ElevenLabsSpeechPrices | null {
-  const found = [...page.matchAll(SPEECH_PRICE)]
-  const first = found[0]
-  if (!first?.[1] || !first[2]) return null
-  const multilingual = Number(first[1]) / 1000
-  const flash = Number(first[2]) / 1000
-  if (!(multilingual > 0) || !(flash > 0)) return null
-  for (const match of found.slice(1)) {
-    if (Number(match[1]) / 1000 !== multilingual) return null
-    if (Number(match[2]) / 1000 !== flash) return null
-  }
-  return { multilingual, flash }
+  // The FAQ regex still matches the live page. It is not a product price.
+  void page
+  void SPEECH_PRICE
+  return null
 }
 
 export interface ElevenLabsSpeechCards {
@@ -97,13 +91,11 @@ export async function elevenLabsSpeechPricing(
       extractedAt,
     }
     const cards = compileElevenLabsSpeechCards(page, source)
-    if (!cards) {
-      throw new Error('elevenlabs pricing page: parsed 0 speech prices')
-    }
-    return { ...cards, hash: source.hash, extractedAt }
+    return { cards, hash: source.hash, extractedAt }
   })
   return (rawId) => {
-    const pricing = doc[elevenLabsSpeechProduct(rawId)]
+    if (!doc.cards) return {}
+    const pricing = doc.cards[elevenLabsSpeechProduct(rawId)]
     return {
       pricing,
       factSources: tagDocsFacts({ pricing }, ELEVENLABS_PRICING_URL, doc.hash),

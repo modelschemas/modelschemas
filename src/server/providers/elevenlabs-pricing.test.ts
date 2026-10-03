@@ -18,24 +18,9 @@ const SOURCE = {
 }
 
 describe('elevenlabs speech prices', () => {
-  it('compiles one multilingual card and one Flash/Turbo card', () => {
-    expect(parseElevenLabsSpeechPrices(PAGE)).toEqual({
-      multilingual: 0.08 / 1000,
-      flash: 0.04 / 1000,
-    })
-    const cards = compileElevenLabsSpeechCards(PAGE, SOURCE)
-    expect(cards?.multilingual.price).toEqual({
-      '*': [{ var: 'characters' }, 0.08 / 1000],
-    })
-    expect(cards?.flash.price).toEqual({
-      '*': [{ var: 'characters' }, 0.04 / 1000],
-    })
-    expect(cards?.multilingual.inputs.characters).toMatchObject({
-      bound: 'usage',
-      param: 'characters',
-    })
-    expect(cards?.multilingual.source).toEqual(SOURCE)
-    expect(cards?.flash.source).toBe(cards?.multilingual.source)
+  it('does not copy the FAQ summary onto speech products', () => {
+    expect(parseElevenLabsSpeechPrices(PAGE)).toBeNull()
+    expect(compileElevenLabsSpeechCards(PAGE, SOURCE)).toBeNull()
   })
 
   it('refuses a page that does not state the speech product price', () => {
