@@ -118,6 +118,45 @@ export type RateCard = {
   source: RateCardSource
 }
 
+/**
+ * Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field.
+ */
+export type ChatRequestMap = {
+  thinking?: {
+    /**
+     * Request body for thinking on at effort high.
+     */
+    on: {
+      [key: string]: unknown
+    }
+    /**
+     * Request body that turns thinking off, or null when silence is off.
+     */
+    off: unknown
+    /**
+     * Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.
+     */
+    levels: {
+      off: string | null
+      minimal: string | null
+      low: string | null
+      medium: string | null
+      high: string | null
+      xhigh: string | null
+      max: string | null
+    } | null
+  } | null
+  maxTokensField?: 'max_completion_tokens' | 'max_tokens' | null
+  developerRole?: boolean | null
+  replayReasoningContent?: boolean | null
+  store?: boolean | null
+  strictTools?: boolean | null
+  sessionAffinity?: boolean | null
+  cacheControl?: 'anthropic' | null
+  toolStream?: boolean | null
+  reasoningEffort?: boolean | null
+}
+
 export type Model = {
   id?: string
   provider?: string
@@ -152,6 +191,10 @@ export type Model = {
    * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
    */
   serverTools?: Array<string> | null
+  /**
+   * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
+   */
+  requestMap?: ChatRequestMap | null
   factSources?: unknown
   firstSeenAt?: number
   lastSeenAt?: number
