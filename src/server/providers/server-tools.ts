@@ -5,7 +5,7 @@
  * router-level.
  */
 import { tagDocsFacts } from './fact-sources.ts'
-import { cachedDocs, markdownTableRows } from './model-facts.ts'
+import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
@@ -56,33 +56,30 @@ export function parseGroqBuiltinTools(
   return out
 }
 
-/** Lookup from the built-in tools page. A fetch or empty parse leaves tools unset. */
+/** Lookup from the built-in tools page. A fetch or empty parse throws so the poll keeps stored tools. */
 export async function groqModelServerTools(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => HostedFacts> {
-  try {
-    const doc = await cachedDocs(kv, GROQ_BUILTIN_TOOLS_URL, async () => {
-      const markdown = await fetchText(GROQ_BUILTIN_TOOLS_URL)
-      const parsed = parseGroqBuiltinTools(markdown)
-      return {
-        tools: Object.fromEntries(parsed),
-        hash: await sha256Text(markdown),
-      }
-    })
-    return (rawId) => {
-      const tools = doc.tools[rawId]
-      if (!tools || tools.length === 0) return {}
-      return {
-        serverTools: tools,
-        factSources: tagDocsFacts(
-          { serverTools: tools },
-          GROQ_BUILTIN_TOOLS_URL,
-          doc.hash,
-        ),
-      }
+  const doc = await cachedDocs(kv, GROQ_BUILTIN_TOOLS_URL, async () => {
+    const markdown = await fetchText(GROQ_BUILTIN_TOOLS_URL)
+    const parsed = parseGroqBuiltinTools(markdown)
+    assertParsed(parsed, 'groq built-in tools')
+    return {
+      tools: Object.fromEntries(parsed),
+      hash: await sha256Text(markdown),
     }
-  } catch {
-    return () => ({})
+  })
+  return (rawId) => {
+    const tools = doc.tools[rawId]
+    if (!tools || tools.length === 0) return {}
+    return {
+      serverTools: tools,
+      factSources: tagDocsFacts(
+        { serverTools: tools },
+        GROQ_BUILTIN_TOOLS_URL,
+        doc.hash,
+      ),
+    }
   }
 }
 
