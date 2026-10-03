@@ -180,11 +180,13 @@ describe('stability listModels', () => {
         rawId: 'stable-diffusion-xl-1024-v1-0',
         displayName: 'Stable Diffusion XL 1.0',
         activity: 'image',
+        modalities: { input: ['text', 'image'], output: ['image'] },
       },
       {
         rawId: 'stable-audio',
         displayName: 'Stable Audio',
         activity: 'audio',
+        modalities: { input: ['text'], output: ['audio'] },
       },
     ])
   })

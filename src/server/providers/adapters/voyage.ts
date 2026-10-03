@@ -5,6 +5,7 @@
  * (that URL 404s); the catalog is the model names the spec documents.
  */
 import type { Activity } from '#/db/schema.ts'
+import { normalizeMediaModalities } from '../media-modalities.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -76,7 +77,17 @@ export function voyageModelsFromSpec(spec: OpenApiDocument): Array<ModelInfo> {
   return [...ids]
     .filter((id) => id.startsWith('voyage-'))
     .sort()
-    .map((rawId) => ({ rawId, activity: 'embeddings' as const }))
+    .map((rawId) => ({
+      rawId,
+      activity: 'embeddings' as const,
+      modalities: normalizeMediaModalities({
+        activity: 'embeddings',
+        listingInput: rawId.includes('multimodal')
+          ? ['text', 'image']
+          : ['text'],
+        listingOutput: [],
+      }),
+    }))
 }
 
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
@@ -94,4 +105,10 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId }) =>
+    rawId.includes('multimodal')
+      ? 'multimodalembeddings'
+      : rawId.includes('context')
+        ? 'contextualizedembeddings'
+        : 'embeddings',
 }

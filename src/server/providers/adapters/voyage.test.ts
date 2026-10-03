@@ -131,8 +131,16 @@ describe('voyageModelsFromSpec', () => {
       },
     })
     expect(models).toEqual([
-      { rawId: 'voyage-3', activity: 'embeddings' },
-      { rawId: 'voyage-3-large', activity: 'embeddings' },
+      {
+        rawId: 'voyage-3',
+        activity: 'embeddings',
+        modalities: { input: ['text'], output: [] },
+      },
+      {
+        rawId: 'voyage-3-large',
+        activity: 'embeddings',
+        modalities: { input: ['text'], output: [] },
+      },
     ])
   })
 })
@@ -164,7 +172,11 @@ paths:
     expect(urls).toEqual([SPEC_URL])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
-      { rawId: 'voyage-3-large', activity: 'embeddings' },
+      {
+        rawId: 'voyage-3-large',
+        activity: 'embeddings',
+        modalities: { input: ['text'], output: [] },
+      },
     ])
   })
 })

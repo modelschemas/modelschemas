@@ -10,6 +10,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { contentHash } from '#/server/kv.ts'
+import { normalizeMediaModalities } from '../media-modalities.ts'
 import { skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -553,38 +554,67 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
+function klingModalities(activity: Activity): ModelInfo['modalities'] {
+  return (
+    normalizeMediaModalities({
+      activity,
+      requestSchemas:
+        activity === 'image'
+          ? [imageGenerationsRequest]
+          : [text2VideoRequest, image2VideoRequest],
+    }) ?? undefined
+  )
+}
+
 /** Docs-derived catalog — Kling has no GET /models. */
-const CURATED_MODELS: Array<ModelInfo> = [
-  { rawId: 'kling-v1', displayName: 'Kling V1', activity: 'video' },
-  { rawId: 'kling-v1-5', displayName: 'Kling V1.5', activity: 'image' },
-  { rawId: 'kling-v1-6', displayName: 'Kling V1.6', activity: 'video' },
-  {
-    rawId: 'kling-v2-master',
-    displayName: 'Kling V2 Master',
-    activity: 'video',
-  },
-  {
-    rawId: 'kling-v2-1',
-    displayName: 'Kling V2.1',
-    activity: 'image',
-  },
-  {
-    rawId: 'kling-v2-1-master',
-    displayName: 'Kling V2.1 Master',
-    activity: 'video',
-  },
-  {
-    rawId: 'kling-v2-5-turbo',
-    displayName: 'Kling V2.5 Turbo',
-    activity: 'video',
-  },
-  { rawId: 'kling-v2-6', displayName: 'Kling V2.6', activity: 'video' },
-  { rawId: 'kling-v2', displayName: 'Kling V2 Image', activity: 'image' },
-  { rawId: 'kling-v2-new', displayName: 'Kling V2 New', activity: 'image' },
-  { rawId: 'kling-v3', displayName: 'Kling V3', activity: 'video' },
-  { rawId: 'kling-image-o1', displayName: 'Kling Image O1', activity: 'image' },
-  { rawId: 'kling-video-o1', displayName: 'Kling Video O1', activity: 'video' },
-]
+const CURATED_MODELS: Array<ModelInfo> = (
+  [
+    { rawId: 'kling-v1', displayName: 'Kling V1', activity: 'video' },
+    { rawId: 'kling-v1-5', displayName: 'Kling V1.5', activity: 'image' },
+    { rawId: 'kling-v1-6', displayName: 'Kling V1.6', activity: 'video' },
+    {
+      rawId: 'kling-v2-master',
+      displayName: 'Kling V2 Master',
+      activity: 'video',
+    },
+    {
+      rawId: 'kling-v2-1',
+      displayName: 'Kling V2.1',
+      activity: 'image',
+    },
+    {
+      rawId: 'kling-v2-1-master',
+      displayName: 'Kling V2.1 Master',
+      activity: 'video',
+    },
+    {
+      rawId: 'kling-v2-5-turbo',
+      displayName: 'Kling V2.5 Turbo',
+      activity: 'video',
+    },
+    { rawId: 'kling-v2-6', displayName: 'Kling V2.6', activity: 'video' },
+    { rawId: 'kling-v2', displayName: 'Kling V2 Image', activity: 'image' },
+    { rawId: 'kling-v2-new', displayName: 'Kling V2 New', activity: 'image' },
+    { rawId: 'kling-v3', displayName: 'Kling V3', activity: 'video' },
+    {
+      rawId: 'kling-image-o1',
+      displayName: 'Kling Image O1',
+      activity: 'image',
+    },
+    {
+      rawId: 'kling-video-o1',
+      displayName: 'Kling Video O1',
+      activity: 'video',
+    },
+  ] satisfies Array<{
+    rawId: string
+    displayName: string
+    activity: Activity
+  }>
+).map((model) => ({
+  ...model,
+  modalities: klingModalities(model.activity),
+}))
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   if (!env.KLING_API_KEY) {
@@ -605,4 +635,10 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity }) =>
+    activity === 'image'
+      ? 'v1/images/generations'
+      : activity === 'video'
+        ? 'v1/videos/text2video'
+        : null,
 }

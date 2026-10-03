@@ -4,6 +4,7 @@
  * requires DEEPGRAM_API_KEY. Auth is `Authorization: Token`.
  */
 import type { Activity } from '#/db/schema.ts'
+import { normalizeMediaModalities } from '../media-modalities.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -64,13 +65,23 @@ interface DeepgramModelList {
   tts?: Array<DeepgramListedModel>
 }
 
-function listedModel(entry: DeepgramListedModel): ModelInfo | null {
+function listedModel(
+  entry: DeepgramListedModel,
+  kind: 'stt' | 'tts',
+): ModelInfo | null {
   const rawId = entry.canonical_name ?? entry.name
   if (typeof rawId !== 'string' || rawId.length === 0) return null
+  const stt = kind === 'stt'
   return {
     rawId,
     displayName: entry.name ?? rawId,
     activity: 'audio',
+    modalities: normalizeMediaModalities({
+      activity: 'audio',
+      listingInput: stt ? ['audio'] : ['text'],
+      listingOutput: stt ? ['text'] : ['audio'],
+    }),
+    schemaEndpointId: stt ? 'v1/listen' : 'v1/speak',
   }
 }
 
@@ -84,8 +95,14 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   })) as DeepgramModelList
   const models: Array<ModelInfo> = []
   const seen = new Set<string>()
-  for (const entry of [...(body.stt ?? []), ...(body.tts ?? [])]) {
-    const model = listedModel(entry)
+  for (const entry of body.stt ?? []) {
+    const model = listedModel(entry, 'stt')
+    if (!model || seen.has(model.rawId)) continue
+    seen.add(model.rawId)
+    models.push(model)
+  }
+  for (const entry of body.tts ?? []) {
+    const model = listedModel(entry, 'tts')
     if (!model || seen.has(model.rawId)) continue
     seen.add(model.rawId)
     models.push(model)

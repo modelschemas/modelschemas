@@ -5,6 +5,7 @@
  * Model catalog is GET /v1/engines/list (Bearer).
  */
 import type { Activity } from '#/db/schema.ts'
+import { normalizeMediaModalities } from '../media-modalities.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -51,6 +52,33 @@ interface StabilityEngine {
   type?: string
 }
 
+function stabilityModalities(
+  activity: Activity | null,
+): ReturnType<typeof normalizeMediaModalities> {
+  if (activity === 'image') {
+    return normalizeMediaModalities({
+      activity,
+      listingInput: ['text', 'image'],
+      listingOutput: ['image'],
+    })
+  }
+  if (activity === 'video') {
+    return normalizeMediaModalities({
+      activity,
+      listingInput: ['text', 'image'],
+      listingOutput: ['video'],
+    })
+  }
+  if (activity === 'audio') {
+    return normalizeMediaModalities({
+      activity,
+      listingInput: ['text'],
+      listingOutput: ['audio'],
+    })
+  }
+  return null
+}
+
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const key = env.STABILITY_API_KEY
   if (!key) {
@@ -66,6 +94,9 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         rawId: m.id,
         displayName: m.name ?? null,
         activity: ENGINE_ACTIVITIES[m.type ?? ''] ?? null,
+        modalities: stabilityModalities(
+          ENGINE_ACTIVITIES[m.type ?? ''] ?? null,
+        ),
       })),
   }
 }
@@ -80,4 +111,9 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity }) => {
+    if (activity === 'image') return 'v2beta/stable-image/generate/ultra'
+    if (activity === 'audio') return 'v2beta/audio/stable-audio-2/text-to-audio'
+    return null
+  },
 }
