@@ -252,6 +252,17 @@ interface OpenRouterModelList {
   }>
 }
 
+/**
+ * Tool type ids are router-level. `supported_parameters` includes `tools`
+ * for client function calling and is not a hosted tool id. A listing that
+ * does not name per-model type ids stays null (issue #123).
+ */
+export function openrouterServerTools(_model: {
+  supported_parameters?: Array<string>
+}): null {
+  return null
+}
+
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(OPENROUTER_MODELS_URL)) as OpenRouterModelList
   return {

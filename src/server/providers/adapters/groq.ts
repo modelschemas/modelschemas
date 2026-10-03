@@ -10,6 +10,7 @@ import {
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
 import { groqModelPricing } from '../groq-pricing.ts'
+import { groqModelServerTools } from '../server-tools.ts'
 import { groqGenerationEndpointId, groqModelActivity } from '../model-meta.ts'
 import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import type {
@@ -59,13 +60,26 @@ async function listModels(
     activity: groqModelActivity,
   })
   if (listed.models.length === 0) return listed
-  const pricing = await groqModelPricing(kv)
+  const [pricing, tools] = await Promise.all([
+    groqModelPricing(kv),
+    groqModelServerTools(kv),
+  ])
   return {
     ...listed,
-    models: listed.models.map((model) => ({
-      ...model,
-      ...pricing(model.rawId),
-    })),
+    models: listed.models.map((model) => {
+      const priced = pricing(model.rawId)
+      const hosted = tools(model.rawId)
+      const factSources = {
+        ...priced.factSources,
+        ...hosted.factSources,
+      }
+      return {
+        ...model,
+        ...priced,
+        ...hosted,
+        ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
+      }
+    }),
   }
 }
 

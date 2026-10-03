@@ -29,6 +29,7 @@ import type {
 import { errorMessage } from '#/server/errors.ts'
 
 import { tagDocsFacts } from './fact-sources.ts'
+import { parseByteplusServerTools } from './server-tools.ts'
 import { assertParsed, cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
@@ -856,7 +857,7 @@ export function pricingContent(
   return content
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
+type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'serverTools'>
 
 interface CachedPricing {
   rates: Record<string, ByteplusChatRates>
@@ -864,6 +865,7 @@ interface CachedPricing {
   images: Record<string, number>
   // Absent on entries cached before #102.
   pixelTiers?: Record<string, ByteplusPixelTiers>
+  serverTools?: Record<string, Array<string>>
   hash: string
   extractedAt: string
 }
@@ -932,6 +934,7 @@ export async function byteplusModelPricing(
         video: Object.fromEntries(video),
         images: Object.fromEntries(images),
         pixelTiers: Object.fromEntries(pixelTiers),
+        serverTools: Object.fromEntries(parseByteplusServerTools(html)),
         hash: await sha256Text(content),
         extractedAt: new Date().toISOString(),
       }
@@ -982,10 +985,20 @@ export async function byteplusModelPricing(
   }
   return (rawId) => {
     const pricing = card(rawId)
-    if (!pricing) return {}
+    const tools = doc.serverTools?.[rawId]
+    const pricingFacts = pricing
+      ? tagDocsFacts({ pricing }, BYTEPLUS_PRICING_URL, doc.hash)
+      : {}
+    const toolFacts =
+      tools && tools.length > 0
+        ? tagDocsFacts({ serverTools: tools }, BYTEPLUS_PRICING_URL, doc.hash)
+        : {}
+    const factSources = { ...pricingFacts, ...toolFacts }
+    if (!pricing && !tools) return {}
     return {
-      pricing,
-      factSources: tagDocsFacts({ pricing }, BYTEPLUS_PRICING_URL, doc.hash),
+      ...(pricing ? { pricing } : {}),
+      ...(tools && tools.length > 0 ? { serverTools: tools } : {}),
+      ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
   }
 }
