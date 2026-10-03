@@ -31,6 +31,11 @@ import type {
   SpecSource,
 } from '#/server/providers/types.ts'
 import { hasAsyncApiFlag, withAsyncApiFlag } from './asyncapi.ts'
+import {
+  captureIngestEvents,
+  ingestFailedEvent,
+  noteIngest,
+} from './ingest-signals.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import {
   EXTRACTOR_VERSION,
@@ -517,6 +522,7 @@ export async function syncAllProviders(
           error: message,
         }),
       )
+      noteIngest(ingestFailedEvent('spec-sync', provider.id, message))
       outcomes.push({
         providerId: provider.id,
         endpointsSeen: 0,
@@ -540,7 +546,16 @@ export async function syncAllProviders(
             error: `degraded-status write failed: ${errorMessage(statusError)}`,
           }),
         )
+        noteIngest(
+          ingestFailedEvent(
+            'spec-sync',
+            provider.id,
+            `degraded-status write failed: ${errorMessage(statusError)}`,
+          ),
+        )
       }
+    } finally {
+      await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
     }
   }
   return outcomes

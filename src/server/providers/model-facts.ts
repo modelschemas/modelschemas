@@ -4,6 +4,7 @@
  * capabilities. Docs parses fail closed (zero rows throws). Parsed docs
  * live in KV for six hours so cron isolates do not refetch every tick.
  */
+import { noteIngest, parseRowsEvent } from '#/server/ingest/ingest-signals.ts'
 import { getJson, putJson } from '#/server/kv.ts'
 
 import type { ModelInfo } from './types.ts'
@@ -146,9 +147,14 @@ export async function cachedDocs<T>(
   return value
 }
 
-/** Throw when a docs parse comes back empty — never silently null a catalog. */
+/**
+ * Throw when a docs parse comes back empty — never silently null a catalog.
+ * A non-empty parse records `parse_rows` so a later drop is visible before
+ * it hits zero. The zero-row throw is `ingest_failed` at the job boundary.
+ */
 export function assertParsed<T>(rows: Map<string, T>, source: string): void {
   if (rows.size === 0) throw new Error(`${source}: parsed 0 model rows`)
+  noteIngest(parseRowsEvent(source, rows.size))
 }
 
 /** Bounded-concurrency map, order preserved. */
