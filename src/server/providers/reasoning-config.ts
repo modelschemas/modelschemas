@@ -131,22 +131,13 @@ export function parseMistralReasoning(
   const out = new Map<string, ModelReasoning>()
   const preludeEnd = markdown.search(/handling thinking chunks/i)
   const prelude = preludeEnd < 0 ? markdown : markdown.slice(0, preludeEnd)
-  const globalEfforts: Array<string> = []
-  for (const match of prelude.matchAll(/reasoning_effort\s*=\s*"([a-z]+)"/g)) {
-    const name = match[1]
-    if (name && !globalEfforts.includes(name)) globalEfforts.push(name)
-  }
-  if (globalEfforts.length === 0) return out
   const bullet =
     /`([a-z0-9][a-z0-9.-]*)`:\s*Supports adjustable reasoning via the `reasoning_effort`/g
   for (const match of prelude.matchAll(bullet)) {
     const id = match[1]
     if (!id) continue
-    out.set(id, {
-      mode: 'effort',
-      mandatory: !globalEfforts.includes('none'),
-      efforts: [...globalEfforts],
-    })
+    // Example assignments (`reasoning_effort = "high"`) are not an allowlist.
+    out.set(id, { mode: 'effort', mandatory: true })
   }
   const ownList =
     /`([a-z0-9][a-z0-9.-]*)`:[^\n]{0,240}?Supported values are ([^\n.]+)/g

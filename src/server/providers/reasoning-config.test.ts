@@ -152,8 +152,7 @@ describe('parseMistralReasoning', () => {
     const parsed = parseMistralReasoning(MISTRAL)
     expect(parsed.get('mistral-small-latest')).toEqual({
       mode: 'effort',
-      mandatory: false,
-      efforts: ['high', 'none'],
+      mandatory: true,
     })
     expect(parsed.get('mistral-medium-3-5')?.mode).toBe('effort')
     expect(parsed.get('zai-glm-5-3')).toEqual({
