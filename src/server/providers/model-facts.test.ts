@@ -176,6 +176,14 @@ Reasoning.effort supports: minimal, low, medium, and high.
     })
   })
 
+  it('leaves serverTools null when the page names no tool ids', () => {
+    const bare = page.replace(
+      /## Supported tools[\s\S]*?## Snapshots/,
+      '## Snapshots',
+    )
+    expect(parseModelPage(bare)?.facts.serverTools).toBeNull()
+  })
+
   it('reads every effort phrasing; none makes reasoning optional', () => {
     expect(
       parseReasoningEffort(
