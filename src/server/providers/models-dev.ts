@@ -65,14 +65,21 @@ interface ModelsDevProvider {
 }
 
 let catalogPromise: Promise<Catalog> | null = null
+let catalogLoadedAt = 0
+/** Shared by one registry walk. The next poll refetches. */
+const CATALOG_TTL_MS = 10 * 60 * 1000
 
 /** Test hook. The isolate otherwise reuses one download across providers. */
 export function clearModelsDevCatalogCache(): void {
   catalogPromise = null
+  catalogLoadedAt = 0
 }
 
 async function loadCatalog(): Promise<Catalog> {
-  if (!catalogPromise) {
+  const fresh =
+    catalogPromise !== null && Date.now() - catalogLoadedAt < CATALOG_TTL_MS
+  if (!fresh) {
+    catalogLoadedAt = Date.now()
     catalogPromise = fetchText(MODELS_DEV_API_URL)
       .then(async (text) => {
         const parsed: unknown = JSON.parse(text)
@@ -89,7 +96,9 @@ async function loadCatalog(): Promise<Catalog> {
         throw error
       })
   }
-  return catalogPromise
+  const loaded = catalogPromise
+  if (!loaded) throw new Error('models.dev: catalog fetch failed')
+  return loaded
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
