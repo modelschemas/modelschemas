@@ -14,9 +14,10 @@ describe('jina provider', () => {
 })
 
 describe('jina classify', () => {
-  it('maps embeddings paths and drops rerank/classifier/reader/platform', () => {
+  it('maps embeddings and chat, and drops rerank/classifier/platform', () => {
     expect(provider.classify('/v1/embeddings', {})).toBe('embeddings')
     expect(provider.classify('/embeddings', {})).toBe('embeddings')
+    expect(provider.classify('/v1/chat/completions', {})).toBe('chat')
     expect(provider.classify('/v1/rerank', {})).toBeNull()
     expect(provider.classify('/v1/classify', {})).toBeNull()
     expect(provider.classify('/v1/train', {})).toBeNull()

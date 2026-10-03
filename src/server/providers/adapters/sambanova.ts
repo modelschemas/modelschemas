@@ -3,12 +3,17 @@
  * (hinted docs URL 404s; Stainless .stats.yml has no openapi_spec_url),
  * so schemas are generated from the OpenAI document.
  */
+import { perTokenListingCard } from '../catalog-prices.ts'
 import {
   OPENAI_OPENAPI_URL,
   classifyOpenAiCompat,
   fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
+import {
+  compatGenerationEndpointId,
+  sambanovaModelActivity,
+} from '../model-meta.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -38,6 +43,11 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     url: MODELS_URL,
     env,
     envVar: 'SAMBANOVA_API_KEY',
+    activity: sambanovaModelActivity,
+    extend: async (row) => {
+      const pricing = await perTokenListingCard(row.pricing, MODELS_URL)
+      return pricing ? { pricing } : {}
+    },
   })
 }
 
@@ -51,4 +61,6 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify: classifyOpenAiCompat,
+  generationEndpointId: ({ activity }) =>
+    compatGenerationEndpointId(activity, 'v1/'),
 }

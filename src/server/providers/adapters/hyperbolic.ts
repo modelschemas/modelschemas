@@ -2,11 +2,17 @@
  * Hyperbolic — OpenAI-compatible inference API. No public spec; schemas
  * are generated from the canonical OpenAI document.
  */
+import { hyperbolicListingCard } from '../catalog-prices.ts'
 import {
   classifyOpenAiCompat,
   fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
+import {
+  compatGenerationEndpointId,
+  flaggedChatModalities,
+  hyperbolicModelActivity,
+} from '../model-meta.ts'
 import type {
   ProviderConfig,
   ProviderSecrets,
@@ -44,6 +50,22 @@ export const provider: ProviderConfig = {
       url: HYPERBOLIC_MODELS_URL,
       env,
       envVar: 'HYPERBOLIC_API_KEY',
+      activity: hyperbolicModelActivity,
+      extend: async (row) => {
+        const pricing = await hyperbolicListingCard(
+          row.input_price,
+          row.output_price,
+          HYPERBOLIC_MODELS_URL,
+        )
+        return {
+          ...(row.supports_chat !== undefined
+            ? { modalities: flaggedChatModalities(row) }
+            : {}),
+          ...(pricing ? { pricing } : {}),
+        }
+      },
     }),
   classify: classifyOpenAiCompat,
+  generationEndpointId: ({ activity }) =>
+    compatGenerationEndpointId(activity, 'v1/'),
 }
