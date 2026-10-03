@@ -1,7 +1,9 @@
+import { price } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
 import {
   indexMistralApiIds,
+  mistralRateCard,
   parseMistralApiIds,
   parseMistralPricing,
   parseMistralSamePrice,
@@ -17,6 +19,9 @@ const PAGE = `<h2>Flagship models</h2>
 <p>Prices as marked</p>
 <table>
 <tr><td><a href="/models/ocr-4-1">OCR 4.1</a></td><td>$4 /1000 Pages</td><td>$0.4 /1000 Pages</td><td>—</td></tr>
+<tr><td><a href="/models/voxtral-mini-transcribe-26-02">Voxtral</a></td><td>$0.003 /Min</td><td>—</td><td>—</td></tr>
+<tr><td><a href="/models/voxtral-tts-26-03">TTS</a></td><td>$0 /M Chars</td><td>$0 /M Chars</td><td>$16 /M Chars</td></tr>
+<tr><td><a href="/models/mixed-units">Mixed</a></td><td>$1 /Min</td><td>—</td><td>$2 /M Chars</td></tr>
 <tr><td><a href="/models/leanstral-1-5">Leanstral</a></td><td>Free</td><td>Free</td><td>Free</td></tr>
 </table>
 <h2>Code models</h2>
@@ -26,20 +31,72 @@ const PAGE = `<h2>Flagship models</h2>
 </table>`
 
 describe('mistral pricing page', () => {
-  it('reads per-million tables and skips unit and free rows', () => {
+  it('reads per-million tables and unit rows, and skips free or mixed units', () => {
     const rates = parseMistralPricing(PAGE)
-    expect(rates.get('mistral-large-3-25-12')?.rates).toEqual({
-      input_tokens: 0.5 / 1e6,
-      cache_read_tokens: 0.05 / 1e6,
-      output_tokens: 1.5 / 1e6,
+    expect(rates.get('mistral-large-3-25-12')).toEqual({
+      kind: 'tokens',
+      rates: {
+        input_tokens: 0.5 / 1e6,
+        cache_read_tokens: 0.05 / 1e6,
+        output_tokens: 1.5 / 1e6,
+      },
     })
-    expect(rates.get('codestral-25-08')?.rates.output_tokens).toBe(0.9 / 1e6)
-    expect(rates.get('codestral-embed-25-05')?.rates).toEqual({
-      input_tokens: 0.15 / 1e6,
-      cache_read_tokens: 0.015 / 1e6,
+    const codestral = rates.get('codestral-25-08')
+    expect(codestral?.kind === 'tokens' && codestral.rates.output_tokens).toBe(
+      0.9 / 1e6,
+    )
+    expect(rates.get('codestral-embed-25-05')).toEqual({
+      kind: 'tokens',
+      rates: {
+        input_tokens: 0.15 / 1e6,
+        cache_read_tokens: 0.015 / 1e6,
+      },
     })
-    expect(rates.has('ocr-4-1')).toBe(false)
+    expect(rates.get('ocr-4-1')).toEqual({
+      kind: 'unit',
+      meters: [
+        { param: 'pages', rate: 4 / 1000 },
+        { param: 'cached_pages', rate: 0.4 / 1000, default: 0 },
+      ],
+    })
+    expect(rates.get('voxtral-mini-transcribe-26-02')).toEqual({
+      kind: 'unit',
+      meters: [{ param: 'audio_minutes', rate: 0.003 }],
+    })
+    expect(rates.get('voxtral-tts-26-03')).toEqual({
+      kind: 'unit',
+      meters: [{ param: 'output_characters', rate: 16 / 1e6 }],
+    })
+    expect(rates.has('mixed-units')).toBe(false)
     expect(rates.has('leanstral-1-5')).toBe(false)
+    expect(rates.has('mistral-embed')).toBe(false)
+  })
+
+  it('compiles a unit card from the parsed meters', () => {
+    const row = parseMistralPricing(PAGE).get('ocr-4-1')
+    expect(row?.kind).toBe('unit')
+    if (row?.kind !== 'unit') return
+    const card = mistralRateCard(row, {
+      url: 'https://docs.mistral.ai/inference/pricing',
+      hash: 'a'.repeat(64),
+      extractedAt: '2026-10-03T00:00:00.000Z',
+    })
+    expect(card).not.toBeNull()
+    if (!card) return
+    expect(price(card, {}, { pages: 1000 })).toBeCloseTo(4, 9)
+    expect(price(card, {}, { pages: 1000, cached_pages: 1000 })).toBeCloseTo(
+      4.4,
+      9,
+    )
+    const audio = parseMistralPricing(PAGE).get('voxtral-mini-transcribe-26-02')
+    if (audio?.kind !== 'unit') throw new Error('expected an audio unit row')
+    const audioCard = mistralRateCard(audio, {
+      url: 'https://docs.mistral.ai/inference/pricing',
+      hash: 'b'.repeat(64),
+      extractedAt: '2026-10-03T00:00:00.000Z',
+    })
+    if (!audioCard) throw new Error('expected an audio card')
+    expect(price(audioCard, {}, { audio_minutes: 10 })).toBeCloseTo(0.03, 9)
   })
 
   it('refuses a priced slug whose model page named no API ids', () => {
@@ -53,7 +110,7 @@ describe('mistral pricing page', () => {
         },
       ]),
     ).toThrow(
-      'mistral model pages: no API ids for codestral-embed-25-05, codestral-25-08',
+      'mistral model pages: no API ids for codestral-embed-25-05, ocr-4-1, voxtral-mini-transcribe-26-02, voxtral-tts-26-03, codestral-25-08',
     )
   })
 
@@ -67,6 +124,17 @@ describe('mistral pricing page', () => {
       },
       { slug: 'codestral-embed-25-05', ids: ['codestral-embed'], hash: 'b' },
       { slug: 'codestral-25-08', ids: ['zai-glm-5-3'], hash: 'c' },
+      {
+        slug: 'ocr-4-1',
+        ids: ['mistral-ocr-4-1', 'mistral-ocr-latest'],
+        hash: 'd',
+      },
+      {
+        slug: 'voxtral-mini-transcribe-26-02',
+        ids: ['voxtral-mini-2602'],
+        hash: 'e',
+      },
+      { slug: 'voxtral-tts-26-03', ids: ['voxtral-mini-tts-2603'], hash: 'f' },
     ])
     const changelog = `
       Z.ai GLM 5.2 ( zai-glm-5-2 ) is deprecated and retires on October 31, 2026.
@@ -79,8 +147,12 @@ describe('mistral pricing page', () => {
       if (!row || byId.has(from)) continue
       byId.set(from, row)
     }
-    expect(byId.get('zai-glm-5-2')?.rates.output_tokens).toBe(0.9 / 1e6)
+    const glm = byId.get('zai-glm-5-2')
+    expect(glm?.kind === 'tokens' && glm.rates.output_tokens).toBe(0.9 / 1e6)
+    expect(byId.get('mistral-ocr-latest')?.kind).toBe('unit')
+    expect(byId.get('voxtral-mini-2602')?.kind).toBe('unit')
     expect(byId.has('mistral-ocr-4-0')).toBe(false)
+    expect(byId.has('voxtral-mini-realtime-2602')).toBe(false)
     expect(byId.has('labs-leanstral-1-5')).toBe(false)
     expect(byId.has('magistral-medium-latest')).toBe(false)
   })
