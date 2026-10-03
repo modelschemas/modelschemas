@@ -114,6 +114,7 @@ function toApiModel(
     capabilities: row.capabilities,
     reasoning: row.reasoning,
     serverTools: row.serverTools,
+    requestMap: row.requestMap,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,

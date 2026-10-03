@@ -386,6 +386,9 @@ export const models = sqliteTable(
     // Thinking configuration and provider-hosted tool type ids (issue #77).
     reasoning: text('reasoning', { mode: 'json' }),
     serverTools: text('server_tools', { mode: 'json' }),
+    // Wire map for thinking, token limits, and roles (issue #95). Null until
+    // verified. `reasoning` stays the readable fact.
+    requestMap: text('request_map', { mode: 'json' }),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see

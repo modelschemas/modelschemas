@@ -668,6 +668,76 @@ export const openApiDocument = {
           source: { $ref: '#/components/schemas/RateCardSource' },
         },
       },
+      ChatRequestMap: {
+        type: 'object',
+        description:
+          'Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field.',
+        properties: {
+          thinking: {
+            oneOf: [
+              {
+                type: 'object',
+                required: ['on', 'off', 'levels'],
+                properties: {
+                  on: {
+                    type: 'object',
+                    description: 'Request body for thinking on at effort high.',
+                    additionalProperties: true,
+                  },
+                  off: {
+                    description:
+                      'Request body that turns thinking off, or null when silence is off.',
+                  },
+                  levels: {
+                    description:
+                      'Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.',
+                    oneOf: [
+                      {
+                        type: 'object',
+                        required: [
+                          'off',
+                          'minimal',
+                          'low',
+                          'medium',
+                          'high',
+                          'xhigh',
+                          'max',
+                        ],
+                        properties: {
+                          off: { type: ['string', 'null'] },
+                          minimal: { type: ['string', 'null'] },
+                          low: { type: ['string', 'null'] },
+                          medium: { type: ['string', 'null'] },
+                          high: { type: ['string', 'null'] },
+                          xhigh: { type: ['string', 'null'] },
+                          max: { type: ['string', 'null'] },
+                        },
+                      },
+                      { type: 'null' },
+                    ],
+                  },
+                },
+              },
+              { type: 'null' },
+            ],
+          },
+          maxTokensField: {
+            type: ['string', 'null'],
+            enum: ['max_completion_tokens', 'max_tokens', null],
+          },
+          developerRole: { type: ['boolean', 'null'] },
+          replayReasoningContent: { type: ['boolean', 'null'] },
+          store: { type: ['boolean', 'null'] },
+          strictTools: { type: ['boolean', 'null'] },
+          sessionAffinity: { type: ['boolean', 'null'] },
+          cacheControl: {
+            type: ['string', 'null'],
+            enum: ['anthropic', null],
+          },
+          toolStream: { type: ['boolean', 'null'] },
+          reasoningEffort: { type: ['boolean', 'null'] },
+        },
+      },
       Model: {
         type: 'object',
         properties: {
@@ -714,6 +784,14 @@ export const openApiDocument = {
               "Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.",
             type: ['array', 'null'],
             items: { type: 'string' },
+          },
+          requestMap: {
+            description:
+              "How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).",
+            oneOf: [
+              { $ref: '#/components/schemas/ChatRequestMap' },
+              { type: 'null' },
+            ],
           },
           factSources: {},
           firstSeenAt: { type: 'integer' },

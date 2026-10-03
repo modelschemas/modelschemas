@@ -1,4 +1,5 @@
 import type { Activity } from '#/db/schema.ts'
+import type { ChatRequestMap } from './request-map.ts'
 
 /**
  * Provider registry types — ported from TanStack AI PR #622's
@@ -172,6 +173,11 @@ export interface ModelInfo {
    * (`web_search_20250305`, `google_search`, …). Null when unknown.
    */
   serverTools?: Array<string> | null
+  /**
+   * Chat request wire map (issue #95). The poller fills this from
+   * `chatRequestMap`; listings do not invent it. Null when unverified.
+   */
+  requestMap?: ChatRequestMap | null
   /**
    * Per-field provenance for the facts this listing already filled.
    * The poller defaults untagged listing fields to `derivation: listing`.

@@ -21,6 +21,7 @@ export type SerializableModel = Omit<
   | 'capabilities'
   | 'reasoning'
   | 'serverTools'
+  | 'requestMap'
   | '_links'
 > & {
   modalities: Json
@@ -28,5 +29,6 @@ export type SerializableModel = Omit<
   capabilities: Json
   reasoning: Json
   serverTools: Json
+  requestMap: Json
   _links: Json
 }
