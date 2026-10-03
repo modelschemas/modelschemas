@@ -266,17 +266,22 @@ body {
   font-size: 12.5px;
 }
 
-/* opt-in: each row becomes a labelled card below the sm breakpoint.
+/* opt-in: each row becomes a labelled card once the table would overflow.
    Cells carry their column name in data-label. */
-@media (max-width: 639px) {
+@media (max-width: 899px) {
   .figure:has(> .dtable-cards) {
     background: none;
     border: none;
   }
 
-  .dtable-cards,
-  .dtable-cards tbody {
+  .dtable-cards {
     display: block;
+  }
+
+  .dtable-cards tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
   }
 
   .dtable-cards thead {
@@ -291,10 +296,6 @@ body {
     background: var(--color-paper-raised);
     border: 1px solid var(--color-rule);
     border-radius: 4px;
-  }
-
-  .dtable-cards tr + tr {
-    margin-top: 10px;
   }
 
   .dtable-cards td {

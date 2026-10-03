@@ -242,8 +242,8 @@ function Landing() {
                   <th className="num">schemas</th>
                   <th className="num">price</th>
                   <th className="num">reasoning</th>
-                  <th className="num max-sm:hidden">polled</th>
-                  <th className="num max-sm:hidden">synced</th>
+                  <th className="num">polled</th>
+                  <th className="num">synced</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,7 +287,7 @@ function Landing() {
                     <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt)}
                     </td>
-                    <td className="num text-ink-faint max-sm:hidden">
+                    <td className="num text-ink-faint max-[899px]:hidden">
                       {timeAgo(p.lastSyncedAt)}
                     </td>
                   </tr>
