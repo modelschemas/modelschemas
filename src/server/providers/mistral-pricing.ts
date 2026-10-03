@@ -18,6 +18,8 @@ import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
 export const MISTRAL_PRICING_URL = 'https://docs.mistral.ai/inference/pricing'
+export const MISTRAL_CHANGELOG_URL =
+  'https://docs.mistral.ai/resources/changelogs'
 const MISTRAL_MODEL_PAGE = (slug: string) =>
   `https://docs.mistral.ai/models/${slug}`
 
@@ -181,12 +183,39 @@ export function indexMistralServerTools(
   return out
 }
 
+/**
+ * Deprecated id → successor, when the changelog says the successor is the
+ * same price. OCR and Voxtral stay out of this map (issue #116).
+ */
+export function parseMistralSamePrice(html: string): Map<string, string> {
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+  const out = new Map<string, string>()
+  const pattern =
+    /\(\s*([a-z0-9-]+)\s*\)\s+is deprecated[\s\S]{0,300}?Use[\s\S]{0,200}?\(\s*([a-z0-9-]+)\s*\)\s+instead, at the same price/gi
+  for (const match of text.matchAll(pattern)) {
+    const from = match[1]
+    const to = match[2]
+    if (!from || !to || from === to) continue
+    if (/ocr|voxtral|embed/.test(from) || /ocr|voxtral|embed/.test(to)) {
+      continue
+    }
+    out.set(from, to)
+  }
+  return out
+}
+
 /** Card lookup by API model id. */
 export async function mistralModelPricing(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => PricedFacts> {
   const doc = await cachedDocs(kv, MISTRAL_PRICING_URL, async () => {
-    const html = await fetchText(MISTRAL_PRICING_URL)
+    const [html, changelog] = await Promise.all([
+      fetchText(MISTRAL_PRICING_URL),
+      fetchText(MISTRAL_CHANGELOG_URL),
+    ])
     const bySlug = parseMistralPricing(html)
     assertParsed(bySlug, 'mistral pricing page')
     const pages = await mapConcurrent([...bySlug.keys()], 6, async (slug) => {
@@ -211,10 +240,16 @@ export async function mistralModelPricing(
       }
     })
     const byId = indexMistralApiIds(bySlug, pages)
+    for (const [from, to] of parseMistralSamePrice(changelog)) {
+      const rates = byId.get(to)
+      if (!rates || byId.has(from)) continue
+      byId.set(from, rates)
+    }
     assertParsed(byId, 'mistral model pages')
     const hash = await sha256Text(
       [
         await sha256Text(html),
+        await sha256Text(changelog),
         ...pages.map((page) => `${page.slug} ${page.hash}`).sort(),
       ].join('\n'),
     )

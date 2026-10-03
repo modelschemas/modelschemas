@@ -3,6 +3,7 @@
  * (public). Models list requires COHERE_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { cohereModelPricing } from '../cohere-pricing.ts'
 import { openAiCompatModelFacts } from '../openai-compat.ts'
 import {
   cohereModelReasoning,
@@ -86,7 +87,10 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('cohere', 'COHERE_API_KEY') }
   }
-  const reasoning = await cohereModelReasoning(kv)
+  const [pricing, reasoning] = await Promise.all([
+    cohereModelPricing(kv),
+    cohereModelReasoning(kv),
+  ])
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -111,6 +115,7 @@ async function listModels(
             deprecated: m.is_deprecated ?? false,
             ...facts,
           },
+          pricing(m.name),
           reasoning(m.name, listsReasoning(facts.capabilities)),
         ),
       )

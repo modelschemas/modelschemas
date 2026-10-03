@@ -21,6 +21,7 @@ import {
   parseModelIndex,
   parseModelPage,
   parseModelPricing,
+  parseOpenAiSearchPricing,
   parseReasoningEffort,
 } from './openai-model-docs.ts'
 
@@ -776,6 +777,41 @@ Landscape: 1920x1080 | $0.7 | second |
     ).toBeNull()
     expect(parseModelPricing('# Model\n\nModel ID: `m`\n')).toBeNull()
   })
+
+  it('prices gpt-5-search-api from the specialized table and not a dated twin', () => {
+    const page = `Specialized models
+
+Prices per 1M tokens.
+
+Standard
+
+### Grouped Pricing Table data
+
+| Category | Model | Input | Cached input | Output |
+| --- | --- | --- | --- | --- |
+| Search | gpt-5-search-api | $1.25 | $0.125 | $10.00 |
+| Embedding | text-embedding-3-small | $0.02 | - | - |
+| Moderation | omni-moderation-latest | Free | - | - |
+
+Fast
+
+### Grouped Pricing Table data
+
+| Category | Model | Input | Cached input | Output |
+| --- | --- | --- | --- | --- |
+| Search | gpt-5-search-api | $9.99 | $9.99 | $9.99 |
+`
+    const rates = parseOpenAiSearchPricing(page)
+    expect(rates.get('gpt-5-search-api')).toEqual({
+      input_tokens: 1.25 / 1e6,
+      cache_read_tokens: 0.125 / 1e6,
+      output_tokens: 10 / 1e6,
+    })
+    expect(rates.has('text-embedding-3-small')).toBe(false)
+    expect(rates.has('omni-moderation-latest')).toBe(false)
+    expect(rates.has('gpt-5-search-api-2025-10-14')).toBe(false)
+    expect(rates.has('gpt-3.5-turbo-16k')).toBe(false)
+  })
 })
 
 describe('anthropic pricing page', () => {
@@ -974,6 +1010,21 @@ describe('gemini pricing page', () => {
     expect(rows.get('gemini-3.1-pro-preview-customtools')?.base).toEqual(
       rows.get('gemini-3.1-pro-preview')?.base,
     )
+  })
+
+  it('does not price models the heading does not name', () => {
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-2.5-flash',
+        `<tr><td>Input price</td><td>Free of charge</td><td>$0.30</td></tr>
+         <tr><td>Output price (including thinking tokens)</td><td>Free of charge</td><td>$2.50</td></tr>`,
+      ),
+      NOW,
+    )
+    expect(rows.has('gemini-2.5-flash')).toBe(true)
+    expect(rows.has('aqa')).toBe(false)
+    expect(rows.has('antigravity-preview-09-2026')).toBe(false)
+    expect(rows.has('gemini-flash-latest')).toBe(false)
   })
 
   it('compiles the long-prompt re-quote as a tier', () => {

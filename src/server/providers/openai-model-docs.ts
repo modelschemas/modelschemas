@@ -27,6 +27,8 @@ import type { ModelReasoning } from './types.ts'
 
 export const OPENAI_MODELS_INDEX_URL =
   'https://developers.openai.com/api/docs/models.md'
+export const OPENAI_PRICING_URL =
+  'https://developers.openai.com/api/docs/pricing.md'
 const OPENAI_MODEL_PAGE = (slug: string) =>
   `https://developers.openai.com/api/docs/models/${slug}.md`
 
@@ -193,6 +195,47 @@ function parseUnitSection(block: string): UnitCardSpec | null {
     }),
     rates: sized ? rates : (flat ?? 0),
   }
+}
+
+/**
+ * Search rows on the pricing page's Specialized models Standard table
+ * (issue #111). `gpt-5-search-api` has no model page. Embeddings,
+ * moderation, and other categories are not read here. The Fast table
+ * further down is a different tier, so it is not part of this card.
+ * A dash cached-input cell is an unpublished lever, not $0.
+ */
+export function parseOpenAiSearchPricing(
+  markdown: string,
+): Map<string, Record<string, number>> {
+  const start = markdown.indexOf('Specialized models')
+  const out = new Map<string, Record<string, number>>()
+  if (start < 0) return out
+  const rest = markdown.slice(start)
+  const fastAt = rest.search(/\nFast\b/)
+  const standard = fastAt < 0 ? rest : rest.slice(0, fastAt)
+  for (const [
+    category = '',
+    model = '',
+    input,
+    cached,
+    output,
+  ] of markdownTableRows(standard)) {
+    if (category !== 'Search' || model === '' || out.has(model)) continue
+    const inputUsd = usd(input)
+    const outputUsd = usd(output)
+    if (inputUsd === null || outputUsd === null) continue
+    const rates: Record<string, number> = {
+      input_tokens: inputUsd / 1e6,
+      output_tokens: outputUsd / 1e6,
+    }
+    if (cached !== undefined && cached !== '-' && cached !== '') {
+      const cachedUsd = usd(cached)
+      if (cachedUsd === null) continue
+      rates.cache_read_tokens = cachedUsd / 1e6
+    }
+    out.set(model, rates)
+  }
+  return out
 }
 
 /**
@@ -473,6 +516,16 @@ export async function openaiModelFacts(
         .filter((slug): slug is string => slug !== null),
     ),
   ]
+  const searchDoc = await cachedDocs(kv, OPENAI_PRICING_URL, async () => {
+    const markdown = await fetchText(OPENAI_PRICING_URL)
+    const parsed = parseOpenAiSearchPricing(markdown)
+    assertParsed(parsed, 'openai pricing page search rows')
+    return {
+      rates: Object.fromEntries(parsed),
+      hash: await sha256Text(markdown),
+      extractedAt: new Date().toISOString(),
+    }
+  })
   const pages = await mapConcurrent(needed, 8, async (slug) => {
     try {
       const page = await cachedDocs(kv, OPENAI_MODEL_PAGE(slug), async () => {
@@ -541,12 +594,38 @@ export async function openaiModelFacts(
   if (needed.length > 0) assertParsed(byId, 'openai model pages')
   return (rawId) => {
     const exact = byId.get(rawId)
-    if (exact) return exact
-    const familyId = undatedId(rawId)
-    const family = byId.get(familyId)
-    if (!family || familyId === rawId) return family ?? NO_FACTS
-    const sources = { ...family.factSources }
-    delete sources.pricing
-    return { ...family, pricing: null, factSources: sources }
+    let facts: ModelFacts
+    if (exact) {
+      facts = exact
+    } else {
+      const familyId = undatedId(rawId)
+      const family = byId.get(familyId)
+      if (!family || familyId === rawId) {
+        facts = family ?? NO_FACTS
+      } else {
+        // The family page prices the alias and the default snapshot only.
+        const sources = { ...family.factSources }
+        delete sources.pricing
+        facts = { ...family, pricing: null, factSources: sources }
+      }
+    }
+    if (facts.pricing) return facts
+    // Exact id only. A dated snapshot is not the undated search row.
+    const rates = searchDoc.rates[rawId]
+    if (!rates) return facts
+    const pricing = compileTokenCard(rates, [], {
+      url: OPENAI_PRICING_URL,
+      hash: searchDoc.hash,
+      extractedAt: searchDoc.extractedAt,
+    })
+    if (!pricing) return facts
+    return {
+      ...facts,
+      pricing,
+      factSources: {
+        ...facts.factSources,
+        ...tagDocsFacts({ pricing }, OPENAI_PRICING_URL, searchDoc.hash),
+      },
+    }
   }
 }

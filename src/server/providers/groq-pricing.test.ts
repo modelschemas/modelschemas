@@ -21,6 +21,10 @@ describe('groq models page', () => {
       kind: 'tokens',
       rates: { input_tokens: 0.15e-6, output_tokens: 0.6e-6 },
     })
+    const oss = rates.get('openai/gpt-oss-120b')
+    expect(oss?.kind === 'tokens' ? oss.rates : {}).not.toHaveProperty(
+      'cache_read_tokens',
+    )
     expect(rates.get('qwen/qwen3.8-27b')).toEqual({
       kind: 'tokens',
       rates: { input_tokens: 0.8 / 1e6, output_tokens: 4 / 1e6 },

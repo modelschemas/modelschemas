@@ -3,8 +3,10 @@
  * markdown mirror is one table per lifecycle (production, preview) whose
  * price cell is `$0.15 input$0.60 output`, `$0.111 per hour`, or
  * `$40.00 per 1M characters`. "Contact Sales" publishes no number, so that
- * row gets no card. A price cell in any other shape refuses that model
- * rather than quoting part of it. A page that prices nothing throws.
+ * row gets no card. The models table has no cached-input column, and the
+ * prompt-caching doc names no dollar rate, so `cache_read_tokens` stays
+ * unset. A price cell in any other shape refuses that model rather than
+ * quoting part of it. A page that prices nothing throws.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
 import type { UnitCardSpec } from '@modelschemas/rate-card'
