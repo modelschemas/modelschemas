@@ -232,7 +232,7 @@ function Landing() {
             }
           />
           <div className="figure overflow-x-auto">
-            <table className="dtable">
+            <table className="dtable dtable-cards">
               <thead>
                 <tr>
                   <th>provider</th>
@@ -260,9 +260,13 @@ function Landing() {
                     <td>
                       <StatusDot status={p.status} />
                     </td>
-                    <td className="num">{fmt.format(p.counts.models)}</td>
-                    <td className="num">{fmt.format(p.counts.endpoints)}</td>
-                    <td className="num">
+                    <td className="num" data-label="models">
+                      {fmt.format(p.counts.models)}
+                    </td>
+                    <td className="num" data-label="endpoints">
+                      {fmt.format(p.counts.endpoints)}
+                    </td>
+                    <td className="num" data-label="schemas">
                       {p.counts.schemas > 0 ? (
                         <a
                           className="text-ink hover:text-tok-blue"
@@ -274,13 +278,13 @@ function Landing() {
                         fmt.format(p.counts.schemas)
                       )}
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="price">
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="reasoning">
                       {showPct(pct(p.counts.reasoning, p.counts.chat))}
                     </td>
-                    <td className="num text-ink-faint max-sm:hidden">
+                    <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt)}
                     </td>
                     <td className="num text-ink-faint max-sm:hidden">

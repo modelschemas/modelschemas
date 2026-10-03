@@ -266,6 +266,69 @@ body {
   font-size: 12.5px;
 }
 
+/* opt-in: each row becomes a labelled card below the sm breakpoint.
+   Cells carry their column name in data-label. */
+@media (max-width: 639px) {
+  .figure:has(> .dtable-cards) {
+    background: none;
+    border: none;
+  }
+
+  .dtable-cards,
+  .dtable-cards tbody {
+    display: block;
+  }
+
+  .dtable-cards thead {
+    display: none;
+  }
+
+  .dtable-cards tr {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px 14px;
+    padding: 12px 14px;
+    background: var(--color-paper-raised);
+    border: 1px solid var(--color-rule);
+    border-radius: 4px;
+  }
+
+  .dtable-cards tr + tr {
+    margin-top: 10px;
+  }
+
+  .dtable-cards td {
+    padding: 0;
+    border: none;
+  }
+
+  /* title row: name left, status right */
+  .dtable-cards td:first-child {
+    grid-column: span 2;
+    font-size: 14px;
+  }
+
+  .dtable-cards td:nth-child(2) {
+    text-align: right;
+  }
+
+  .dtable-cards td[data-label] {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+  }
+
+  .dtable-cards td[data-label]::before {
+    content: attr(data-label);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-ink-faint);
+  }
+}
+
 /* request-line method chip */
 .method-chip {
   font-family: var(--font-mono);
