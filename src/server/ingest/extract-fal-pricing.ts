@@ -4,7 +4,7 @@
  * one model to write a RateCard. Own cron / admin route — not the 15-min
  * poll and not FAL's spec-sync shard.
  */
-import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
 import { rateCardSchema, verifyExamples } from '@modelschemas/rate-card'
@@ -13,7 +13,7 @@ import type { RateCard } from '@modelschemas/rate-card'
 import { cacheMeta, changes, models, schemaVersions } from '#/db/schema.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { falLlmsTxtUrl } from '#/server/providers/fal.ts'
-import { compileFalUnitCard, usdAmounts } from './fal-unit-rate.ts'
+import { priceFalNamedSection, usdAmounts } from './fal-unit-rate.ts'
 import { markdownSection } from '#/server/providers/model-facts.ts'
 import { requestSchemaPropertyNames } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
@@ -458,13 +458,7 @@ async function loadCandidates(
       schemaEndpointId: models.schemaEndpointId,
     })
     .from(models)
-    .where(
-      and(
-        eq(models.providerId, providerId),
-        isNotNull(models.activity),
-        isNull(models.deprecatedAt),
-      ),
-    )
+    .where(and(eq(models.providerId, providerId), isNull(models.deprecatedAt)))
   const candidates: Array<Candidate> = []
   for (const row of rows) {
     const boundId = row.schemaEndpointId ?? row.rawId
@@ -658,7 +652,9 @@ export async function extractFalPricing(
       providerId,
       all.map((row) => row.boundId),
     )
-    const candidates = all.filter((row) => properties.has(row.boundId))
+    // A missing input schema still gets a usage-bound unit card. Rows with
+    // no activity (3d, vision, json) are catalog models too (#114).
+    const candidates = all
     outcome.candidates = candidates.length
     if (candidates.length === 0) return outcome
 
@@ -836,7 +832,7 @@ export async function extractFalPricing(
         continue
       }
 
-      const compiled = compileFalUnitCard(
+      const compiled = priceFalNamedSection(
         section,
         requestPropertiesOf(candidate),
         {
