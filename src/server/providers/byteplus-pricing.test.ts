@@ -6,11 +6,13 @@ import {
   byteplusRatesFor,
   compileSeedanceCard,
   compileSeedreamProCard,
+  parseByteplusAliases,
   parseByteplusImages,
   parseByteplusPixelTiers,
   parseByteplusPricing,
   parseByteplusVideo,
   parseSeedanceGeometry,
+  sharePublishedAliases,
 } from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
 
@@ -202,7 +204,10 @@ const IMAGE_TABLE = [
     'First image: Free From the 2nd image: 0.003',
     'Single image generation: ≤ 2.61 million pixels (1.5K or lower): 0.045 > 2.61 million pixels (higher than 1.5K): 0.09 Layer decomposition: ≤ 2.61 million pixels (1.5K or lower): 0.0225 > 2.61 million pixels (higher than 1.5K): 0.045',
   ],
+  ['seedream-5-0-lite-260128', 'Free', '0.035'],
+  ['dola-seedream-5-0-flash-260915', 'Free', '0.018'],
   ['seedream-4-5-251128', 'Free', '0.04'],
+  ['seedream-4-0-250828', 'Free', '0.03'],
 ]
 
 describe('byteplus video and image tables', () => {
@@ -224,8 +229,36 @@ describe('byteplus video and image tables', () => {
     expect(video.has('seedance-9-unknown-261231')).toBe(false)
     expect(video.has('seedance-9-promo-261231')).toBe(false)
     expect(parseByteplusImages(page)).toEqual(
-      new Map([['seedream-4-5-251128', 0.04]]),
+      new Map([
+        ['seedream-5-0-lite-260128', 0.035],
+        ['dola-seedream-5-0-flash-260915', 0.018],
+        ['seedream-4-5-251128', 0.04],
+        ['seedream-4-0-250828', 0.03],
+      ]),
     )
+  })
+
+  it('copies a flat image price onto the model list alias, not onto chat', () => {
+    const images = parseByteplusImages(page)
+    const listed = doc([
+      [
+        'seedream-5-0-260128 (also supports: seedream-5-0-lite-260128)',
+        'seedream-5-0-260128 (also supports: seedream-9-other-260128)',
+      ],
+    ])
+    // Two different aliases for one id: not one price.
+    expect(parseByteplusAliases(listed).size).toBe(0)
+    const once = doc([
+      ['seedream-5-0-260128\n(also supports: seedream-5-0-lite-260128)'],
+    ])
+    const aliases = parseByteplusAliases(once)
+    sharePublishedAliases(images, aliases)
+    expect(images.get('seedream-5-0-260128')).toBe(0.035)
+    expect(images.get('seedream-5-0-lite-260128')).toBe(0.035)
+    // No speech table on this page, and no price for an unlisted snapshot.
+    expect(images.has('seed-asr')).toBe(false)
+    expect(images.has('seed-audio-1.0')).toBe(false)
+    expect(images.has('seedream-4-0-20260415')).toBe(false)
   })
 
   it('prices billed completion_tokens and refuses what it cannot know', () => {

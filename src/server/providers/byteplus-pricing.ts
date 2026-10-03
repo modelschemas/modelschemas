@@ -14,7 +14,10 @@
  *
  * Video (Seedance) and image (Seedream) tables are read too (issue #99):
  * see `parseByteplusVideo` and `parseByteplusImages`. A page missing chat,
- * video, or image rows throws. Seedance estimates also read frame rate and
+ * video, or image rows throws. The model list's "also supports" note copies
+ * a published image, video, or pixel-tier price onto that alias when the
+ * pair is unambiguous (issue #117). This page has no speech table, so Seed
+ * Speech stays unpriced. Seedance estimates also read frame rate and
  * output sizes from the video generation tutorial; if that page fails, the
  * cards publish without an estimate rather than failing the lookup.
  */
@@ -39,6 +42,10 @@ export const BYTEPLUS_PRICING_URL =
 /** Seedance output sizes and frame rates (the token formula's inputs). */
 export const BYTEPLUS_VIDEO_GUIDE_URL =
   'https://docs.byteplus.com/en/docs/modelark/video-generation-tutorial'
+
+/** "also supports" aliases. Not a price source. */
+export const BYTEPLUS_MODEL_LIST_URL =
+  'https://docs.byteplus.com/en/docs/ModelArk/1330310'
 
 /** Header (unit stripped) → request lever. Cache storage is not one. */
 const LEVERS: Record<string, string> = {
@@ -233,6 +240,56 @@ export function byteplusRatesFor<T>(
   if (exact) return exact
   const dated = rawId.match(/^(.+)-\d{6}$/)?.[1]
   return dated === undefined ? undefined : rates.get(dated)
+}
+
+const ALSO_SUPPORTS =
+  /\b([a-z0-9]+(?:-[a-z0-9]+)+)\s*\(also supports:\s*([a-z0-9]+(?:-[a-z0-9]+)+)\s*\)/g
+
+/**
+ * Model-list "also supports" pairs. One id named with two different
+ * partners is dropped; the other pairs stay. Not a price.
+ */
+export function parseByteplusAliases(doc: ByteplusDoc): Map<string, string> {
+  const pairs = new Map<string, string>()
+  const dropped = new Set<string>()
+  const text = Object.values(doc.data).map(zoneText).join('\n')
+  for (const match of text.matchAll(ALSO_SUPPORTS)) {
+    const primary = match[1] ?? ''
+    const alias = match[2] ?? ''
+    if (primary === '' || primary === alias) continue
+    const previous = pairs.get(primary)
+    if (previous !== undefined && previous !== alias) {
+      dropped.add(primary)
+      continue
+    }
+    const claimed = [...pairs.entries()].some(
+      ([other, taken]) => other !== primary && taken === alias,
+    )
+    if (claimed) {
+      dropped.add(primary)
+      continue
+    }
+    pairs.set(primary, alias)
+  }
+  for (const id of dropped) pairs.delete(id)
+  return pairs
+}
+
+/**
+ * Copy a price onto the unpriced side of an alias pair. Both sides priced,
+ * or neither, stays as parsed. Chat rates are not passed here.
+ */
+export function sharePublishedAliases<T>(
+  rates: Map<string, T>,
+  aliases: Map<string, string>,
+): void {
+  for (const [primary, alias] of aliases) {
+    const left = rates.get(primary)
+    const right = rates.get(alias)
+    if (left !== undefined && right === undefined) rates.set(alias, left)
+    else if (right !== undefined && left === undefined)
+      rates.set(primary, right)
+  }
 }
 
 /**
@@ -909,6 +966,26 @@ async function seedanceGuide(kv?: KVNamespace): Promise<CachedGuide | null> {
   }
 }
 
+/**
+ * Model-list document, or none. It only names aliases for prices the
+ * pricing page already published, so a failed fetch still prices those rows.
+ */
+async function modelListContent(): Promise<string | null> {
+  const label = 'byteplus model list'
+  try {
+    return pricingContent(await fetchText(BYTEPLUS_MODEL_LIST_URL), label)
+  } catch (error) {
+    console.warn(
+      JSON.stringify({
+        job: 'byteplus-pricing',
+        skipped: 'model list aliases',
+        error: errorMessage(error),
+      }),
+    )
+    return null
+  }
+}
+
 /** Card lookup by catalog id. Ids no table prices get nothing. */
 export async function byteplusModelPricing(
   kv?: KVNamespace,
@@ -927,12 +1004,21 @@ export async function byteplusModelPricing(
       assertParsed(parsed, 'byteplus pricing page')
       assertParsed(video, 'byteplus pricing page (video)')
       assertParsed(images, 'byteplus pricing page (images)')
+      const listContent = await modelListContent()
+      const aliases = listContent
+        ? parseByteplusAliases(JSON.parse(listContent) as ByteplusDoc)
+        : new Map<string, string>()
+      // Alias notes are not chat prices. A dated snapshot with no row stays
+      // unpriced; only the published "also supports" pair is copied.
+      sharePublishedAliases(video, aliases)
+      sharePublishedAliases(images, aliases)
+      sharePublishedAliases(pixelTiers, aliases)
       return {
         rates: Object.fromEntries(parsed),
         video: Object.fromEntries(video),
         images: Object.fromEntries(images),
         pixelTiers: Object.fromEntries(pixelTiers),
-        hash: await sha256Text(content),
+        hash: await sha256Text(listContent ? content + listContent : content),
         extractedAt: new Date().toISOString(),
       }
     },
