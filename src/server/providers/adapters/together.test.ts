@@ -210,6 +210,7 @@ describe('togetherRateCard', () => {
       hourly: 0,
       input: 0.88,
       output: 0.88,
+      cached_input: 0.2,
       base: 0,
       finetune: 0,
     })
@@ -217,12 +218,26 @@ describe('togetherRateCard', () => {
     expect(
       price(card, {}, { input_tokens: 1e6, output_tokens: 0 }),
     ).toBeCloseTo(0.88, 9)
+    expect(
+      price(
+        card,
+        {},
+        { cache_read_tokens: 1e6, input_tokens: 0, output_tokens: 0 },
+      ),
+    ).toBeCloseTo(0.2, 9)
     expect(card.source.url).toBe('https://api.together.xyz/v1/models')
   })
 
   it('serves no card for an all-zero or absent listing', async () => {
+    // Issue #111 examples Together does not quote per token.
     expect(
-      await togetherRateCard({ hourly: 0, input: 0, output: 0, base: 0 }),
+      await togetherRateCard({
+        hourly: 0,
+        input: 0,
+        output: 0,
+        cached_input: 0,
+        base: 0,
+      }),
     ).toBeNull()
     expect(await togetherRateCard(undefined)).toBeNull()
   })

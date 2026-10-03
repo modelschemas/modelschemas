@@ -34,6 +34,16 @@ describe('cohere listModels', () => {
     const original = globalThis.fetch
     globalThis.fetch = ((url: string) => {
       const href = String(url)
+      if (href === 'https://cohere.com/pricing') {
+        return Promise.resolve(
+          new Response(
+            'Command R+ 08-2024 pricing is $2.50/1M tokens for input and $10.00/1M tokens for output',
+          ),
+        )
+      }
+      if (href.endsWith('aya-expanse.md')) {
+        return Promise.resolve(new Response('no aya id'))
+      }
       if (href.includes('page_token=page-2')) {
         return Promise.resolve(
           Response.json({
