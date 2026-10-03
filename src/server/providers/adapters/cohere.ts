@@ -3,6 +3,7 @@
  * (public). Models list requires COHERE_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { cohereModelPricing } from '../cohere-pricing.ts'
 import { openAiCompatModelFacts } from '../openai-compat.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
@@ -73,11 +74,15 @@ function activityFromEndpoints(
   return null
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.COHERE_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('cohere', 'COHERE_API_KEY') }
   }
+  const pricing = await cohereModelPricing(kv)
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -89,6 +94,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     })) as CohereModelList
     for (const m of body.models ?? []) {
       if (typeof m.name !== 'string' || m.name.length === 0) continue
+      const priced = pricing(m.name)
       models.push({
         rawId: m.name,
         activity: activityFromEndpoints(m.endpoints),
@@ -98,6 +104,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
           context_length: m.context_length,
           features: m.features ?? undefined,
         }),
+        ...priced,
       })
     }
     const next = body.next_page_token

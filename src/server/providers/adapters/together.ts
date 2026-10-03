@@ -81,10 +81,13 @@ function asModels(body: unknown): Array<Record<string, unknown>> {
 
 /**
  * Together prices per million tokens on the listing (`{ input: 0.88,
- * output: 0.88, hourly: 0, base: 0, finetune: 0 }`), and serves an all-zero
- * object for models it does not quote — those are unknown, not free, so
- * they compile to null rather than a $0 card. `hourly`/`base`/`finetune`
- * are dedicated-endpoint and training rates, not per-request levers.
+ * output: 0.88, cached_input: 0.2, hourly: 0, base: 0, finetune: 0 }`).
+ * An all-zero object is a model it does not quote per token (dedicated
+ * endpoints, or no published serverless rate) — unknown, not free, so it
+ * compiles to null rather than a $0 card. `hourly`/`base`/`finetune` are
+ * dedicated-endpoint and training rates, not per-request levers. A zero
+ * `cached_input` is unpublished, not a free cache read. Image, video, and
+ * audio unit prices are not read here (issue #115).
  */
 export async function togetherRateCard(
   pricing: unknown,
@@ -95,8 +98,10 @@ export async function togetherRateCard(
   const rates: Record<string, number> = {}
   const input = perToken('input')
   const output = perToken('output')
+  const cached = perToken('cached_input')
   if (input !== null) rates.input_tokens = input
   if (output !== null) rates.output_tokens = output
+  if (cached !== null && cached > 0) rates.cache_read_tokens = cached
   return compileTokenCard(rates, [], {
     url: TOGETHER_MODELS_URL,
     hash: await sha256Text(JSON.stringify(pricing)),
