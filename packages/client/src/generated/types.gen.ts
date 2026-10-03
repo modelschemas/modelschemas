@@ -195,6 +195,10 @@ export type Model = {
    * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
    */
   requestMap?: ChatRequestMap | null
+  /**
+   * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
+   */
+  aliases?: Array<string> | null
   factSources?: unknown
   firstSeenAt?: number
   lastSeenAt?: number

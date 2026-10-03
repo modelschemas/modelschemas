@@ -17,6 +17,10 @@ import {
   factDiscrepancies,
   openRouterJoinIds,
 } from '#/server/providers/fact-sources.ts'
+import {
+  resolveAlias,
+  storedAliases,
+} from '#/server/providers/provider-aliases.ts'
 import { servePricing } from '#/server/rate-card.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
@@ -115,6 +119,7 @@ function toApiModel(
     reasoning: row.reasoning,
     serverTools: row.serverTools,
     requestMap: row.requestMap,
+    aliases: storedAliases(row.aliases),
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
@@ -222,12 +227,24 @@ export async function getModelDetail(
   providerId: string,
   modelId: string,
 ) {
-  const row = await db.query.models.findFirst({
+  const direct = await db.query.models.findFirst({
     where: and(
       eq(models.providerId, providerId),
       or(eq(models.id, modelId), eq(models.rawId, modelId)),
     ),
   })
+  const aliasHits = direct
+    ? []
+    : await db
+        .select()
+        .from(models)
+        .where(
+          and(
+            eq(models.providerId, providerId),
+            sql`exists (select 1 from json_each(${models.aliases}) where json_each.value = ${modelId})`,
+          ),
+        )
+  const row = direct ?? resolveAlias(modelId, aliasHits)
   if (!row) return null
   const body = toApiModel(row, {
     includeFactSources: true,

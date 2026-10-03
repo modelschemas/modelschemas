@@ -36,6 +36,7 @@ import type {
   ProviderConfig,
 } from '#/server/providers/types.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
+import { storedAliases } from '#/server/providers/provider-aliases.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
 import { ensureProviderRow } from './sync.ts'
@@ -95,6 +96,7 @@ function comparable(
     reasoning: info.reasoning ?? null,
     serverTools: info.serverTools ?? null,
     requestMap: chatRequestMap(providerId, info.rawId, info.activity ?? null),
+    aliases: storedAliases(info.aliases),
     schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
   }
@@ -372,6 +374,7 @@ export async function pollProviderModels(
           info.rawId,
           info.activity ?? null,
         ),
+        aliases: storedAliases(info.aliases),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // Providers that report a release date get it as firstSeenAt, so
@@ -403,6 +406,7 @@ export async function pollProviderModels(
       reasoning: existing.reasoning,
       serverTools: existing.serverTools,
       requestMap: existing.requestMap,
+      aliases: storedAliases(existing.aliases),
       schemaEndpointId: existing.schemaEndpointId,
       deprecated: existing.deprecatedAt !== null,
     }
@@ -449,6 +453,7 @@ export async function pollProviderModels(
           info.rawId,
           info.activity ?? null,
         ),
+        aliases: storedAliases(info.aliases),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // A model that reappears (or upstream re-activates) clears
