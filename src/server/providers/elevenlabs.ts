@@ -5,6 +5,7 @@
 import type { Activity } from '#/db/schema.ts'
 import { ELEVENLABS_RELEASE_DATES, curatedReleasedAt } from './release-dates.ts'
 import { headerApiKeyConnect } from './connect.ts'
+import { elevenLabsSpeechPricing } from './elevenlabs-pricing.ts'
 import { cachedDocs } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
@@ -159,6 +160,7 @@ async function listModels(
     ),
   )
   const speechIds = new Set(body.map((m) => m.model_id))
+  const speechPrice = await elevenLabsSpeechPricing(kv)
   const speech: Array<ModelInfo> = body.map((m) => ({
     rawId: m.model_id,
     displayName: m.name ?? null,
@@ -170,6 +172,8 @@ async function listModels(
       canDoVoiceConversion: m.can_do_voice_conversion,
       languages: m.languages?.map((l) => l.language_id),
     },
+    // Speech-to-speech-only rows are not the Text to Speech product.
+    ...(m.can_do_text_to_speech === false ? {} : speechPrice(m.model_id)),
   }))
   // A speech id that also sits in an enum keeps its speech row.
   const extra: Array<ModelInfo> = enumModels
