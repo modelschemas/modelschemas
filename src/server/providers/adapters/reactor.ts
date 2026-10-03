@@ -18,7 +18,9 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { contentHash } from '#/server/kv.ts'
-import { fetchJson, fetchText } from '../types.ts'
+import { fetchText, sha256Text } from '../types.ts'
+import { reactorPricingFacts } from '../reactor-pricing.ts'
+import type { ReactorRate } from '../reactor-pricing.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -389,10 +391,12 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-interface PricingRate {
-  amount_per_sec?: number
-  unit?: string
-  denomination?: string
+type PricingRate = ReactorRate
+
+interface RateSource {
+  url: string
+  hash: string
+  extractedAt: string
 }
 
 interface PricingModel {
@@ -410,13 +414,21 @@ function parsePricing(body: unknown): Array<PricingModel> {
 
 function modelInfo(
   model: ReactorModel,
-  extras?: { pricing?: unknown; upstreamId?: string },
+  extras?: {
+    rate?: ReactorRate | null
+    upstreamId?: string
+    source?: RateSource
+  },
 ): ModelInfo {
+  const facts =
+    extras?.source && extras.rate
+      ? reactorPricingFacts(extras.rate, extras.source)
+      : {}
   return {
     rawId: model.rawId,
     displayName: model.displayName,
     activity: 'video',
-    pricing: extras?.pricing ?? null,
+    ...facts,
     capabilities: {
       pricingName: model.pricingName,
       ...(extras?.upstreamId ? { upstreamId: extras.upstreamId } : {}),
@@ -428,7 +440,10 @@ function curatedCatalog(): Array<ModelInfo> {
   return REACTOR_MODELS.map((model) => modelInfo(model))
 }
 
-function catalogFromPricing(rows: Array<PricingModel>): Array<ModelInfo> {
+function catalogFromPricing(
+  rows: Array<PricingModel>,
+  source: RateSource,
+): Array<ModelInfo> {
   const seen = new Set<string>()
   const models: Array<ModelInfo> = []
   for (const row of rows) {
@@ -440,7 +455,8 @@ function catalogFromPricing(rows: Array<PricingModel>): Array<ModelInfo> {
     seen.add(model.rawId)
     models.push(
       modelInfo(model, {
-        pricing: row.rate ?? null,
+        rate: row.rate ?? null,
+        source,
         upstreamId: typeof row.id === 'string' ? row.id : undefined,
       }),
     )
@@ -455,10 +471,15 @@ function catalogFromPricing(rows: Array<PricingModel>): Array<ModelInfo> {
 
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
   try {
-    const body = await fetchJson(REACTOR_PRICING_URL)
-    const rows = parsePricing(body)
+    const text = await fetchText(REACTOR_PRICING_URL)
+    const rows = parsePricing(JSON.parse(text) as unknown)
     if (rows.length === 0) return { models: curatedCatalog() }
-    return { models: catalogFromPricing(rows) }
+    const source = {
+      url: REACTOR_PRICING_URL,
+      hash: await sha256Text(text),
+      extractedAt: new Date().toISOString(),
+    }
+    return { models: catalogFromPricing(rows, source) }
   } catch {
     return { models: curatedCatalog() }
   }
