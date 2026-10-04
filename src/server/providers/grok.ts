@@ -64,6 +64,15 @@ export function parseGrokReasoning(markdown: string): ModelReasoning | null {
   return { mode: 'effort', mandatory: !efforts.includes('none'), efforts }
 }
 
+/**
+ * Reasoning is on, but the page names no effort list. The object stays
+ * null; callers record `path: 'silent'` instead of guessing a mode.
+ */
+export function grokReasoningGap(markdown: string): 'silent' | null {
+  if (parseGrokReasoning(markdown)) return null
+  return grokReasons(markdown) ? 'silent' : null
+}
+
 /** `**Reasoning:** Yes` in the Capabilities bullets, efforts or not. */
 export function grokReasons(markdown: string): boolean {
   return /\*\*Reasoning:\*\*\s*Yes/.test(
@@ -329,6 +338,13 @@ async function grokModelFacts(
         sourceUrl: GROK_MODEL_PAGE(m.id),
         sourceHash: page.hash,
         path: 'Capabilities',
+      }
+    } else if (page?.reasons) {
+      sources.reasoning = {
+        derivation: 'docs-derived',
+        sourceUrl: GROK_MODEL_PAGE(m.id),
+        sourceHash: page.hash,
+        path: 'silent',
       }
     }
     if (reasons) {

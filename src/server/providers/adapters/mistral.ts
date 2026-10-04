@@ -9,6 +9,11 @@ import {
   mistralModelActivity,
 } from '../model-meta.ts'
 import { mistralModelPricing } from '../mistral-pricing.ts'
+import {
+  listsReasoning,
+  mistralModelReasoning,
+  overlayModelFacts,
+} from '../reasoning-config.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -70,13 +75,19 @@ export const provider: ProviderConfig = {
       activity: mistralModelActivity,
     })
     if (listed.models.length === 0) return listed
-    const pricing = await mistralModelPricing(kv)
+    const [pricing, reasoning] = await Promise.all([
+      mistralModelPricing(kv),
+      mistralModelReasoning(kv),
+    ])
     return {
       ...listed,
-      models: listed.models.map((model) => ({
-        ...model,
-        ...pricing(model.rawId),
-      })),
+      models: listed.models.map((model) =>
+        overlayModelFacts(
+          model,
+          pricing(model.rawId),
+          reasoning(model.rawId, listsReasoning(model.capabilities)),
+        ),
+      ),
     }
   },
   classify,

@@ -43,6 +43,11 @@ import {
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
 import { byteplusModelPricing } from './byteplus-pricing.ts'
+import {
+  byteplusModelReasoning,
+  listsReasoning,
+  overlayModelFacts,
+} from './reasoning-config.ts'
 import { bearerConnect, headerApiKeyConnect } from './connect.ts'
 import {
   BYTEPLUS_ARK_BASE_URL,
@@ -465,9 +470,18 @@ async function listModels(
   env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  const pricing = await byteplusModelPricing(kv)
+  const [pricing, reasoning] = await Promise.all([
+    byteplusModelPricing(kv),
+    byteplusModelReasoning(kv),
+  ])
   const withPricing = (models: Array<ModelInfo>): Array<ModelInfo> =>
-    models.map((model) => ({ ...model, ...pricing(model.rawId) }))
+    models.map((model) =>
+      overlayModelFacts(
+        model,
+        pricing(model.rawId),
+        reasoning(model.rawId, listsReasoning(model.capabilities)),
+      ),
+    )
   const key = env.ARK_API_KEY
   // No key: the embedded catalog is still a real answer, so serve it rather
   // than reporting the provider skipped.

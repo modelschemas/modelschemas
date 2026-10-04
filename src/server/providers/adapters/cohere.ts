@@ -4,6 +4,11 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { openAiCompatModelFacts } from '../openai-compat.ts'
+import {
+  cohereModelReasoning,
+  listsReasoning,
+  overlayModelFacts,
+} from '../reasoning-config.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -73,11 +78,15 @@ function activityFromEndpoints(
   return null
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.COHERE_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('cohere', 'COHERE_API_KEY') }
   }
+  const reasoning = await cohereModelReasoning(kv)
   const models: ListModelsResult['models'] = []
   let pageToken: string | undefined
   do {
@@ -89,16 +98,22 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     })) as CohereModelList
     for (const m of body.models ?? []) {
       if (typeof m.name !== 'string' || m.name.length === 0) continue
-      models.push({
-        rawId: m.name,
-        activity: activityFromEndpoints(m.endpoints),
-        deprecated: m.is_deprecated ?? false,
-        ...openAiCompatModelFacts({
-          id: m.name,
-          context_length: m.context_length,
-          features: m.features ?? undefined,
-        }),
+      const facts = openAiCompatModelFacts({
+        id: m.name,
+        context_length: m.context_length,
+        features: m.features ?? undefined,
       })
+      models.push(
+        overlayModelFacts(
+          {
+            rawId: m.name,
+            activity: activityFromEndpoints(m.endpoints),
+            deprecated: m.is_deprecated ?? false,
+            ...facts,
+          },
+          reasoning(m.name, listsReasoning(facts.capabilities)),
+        ),
+      )
     }
     const next = body.next_page_token
     pageToken = next && next !== pageToken ? next : undefined

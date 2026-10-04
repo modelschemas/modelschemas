@@ -10,6 +10,11 @@ import {
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
 import { groqModelPricing } from '../groq-pricing.ts'
+import {
+  groqModelReasoning,
+  listsReasoning,
+  overlayModelFacts,
+} from '../reasoning-config.ts'
 import { groqGenerationEndpointId, groqModelActivity } from '../model-meta.ts'
 import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import type {
@@ -59,13 +64,19 @@ async function listModels(
     activity: groqModelActivity,
   })
   if (listed.models.length === 0) return listed
-  const pricing = await groqModelPricing(kv)
+  const [pricing, reasoning] = await Promise.all([
+    groqModelPricing(kv),
+    groqModelReasoning(kv),
+  ])
   return {
     ...listed,
-    models: listed.models.map((model) => ({
-      ...model,
-      ...pricing(model.rawId),
-    })),
+    models: listed.models.map((model) =>
+      overlayModelFacts(
+        model,
+        pricing(model.rawId),
+        reasoning(model.rawId, listsReasoning(model.capabilities)),
+      ),
+    ),
   }
 }
 

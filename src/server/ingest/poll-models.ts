@@ -78,6 +78,13 @@ function usableReleasedAt(info: ModelInfo, before: number): number | null {
   return releasedAt
 }
 
+/** Stable reasoning provenance. A silent docs read must be stored, not dropped. */
+function reasoningSourcePath(sources: unknown): string | null {
+  if (typeof sources !== 'object' || sources === null) return null
+  const path = (sources as ModelFactSources).reasoning?.path
+  return typeof path === 'string' ? path : null
+}
+
 /** The fields whose changes constitute a `model.updated` event. */
 function comparable(info: ModelInfo): Record<string, unknown> {
   return {
@@ -89,6 +96,7 @@ function comparable(info: ModelInfo): Record<string, unknown> {
     pricing: info.pricing ?? null,
     capabilities: info.capabilities ?? null,
     reasoning: info.reasoning ?? null,
+    reasoningSource: reasoningSourcePath(info.factSources),
     serverTools: info.serverTools ?? null,
     schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
@@ -391,6 +399,7 @@ export async function pollProviderModels(
       pricing: existing.pricing,
       capabilities: existing.capabilities,
       reasoning: existing.reasoning,
+      reasoningSource: reasoningSourcePath(existing.factSources),
       serverTools: existing.serverTools,
       schemaEndpointId: existing.schemaEndpointId,
       deprecated: existing.deprecatedAt !== null,

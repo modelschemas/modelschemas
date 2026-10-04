@@ -13,6 +13,7 @@ import {
   BYTEPLUS_VIDEO_GUIDE_URL,
   compileSeedreamProCard,
 } from './byteplus-pricing.ts'
+import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
 
 /**
  * One chat, video, and image row, enough for listModels to attach cards
@@ -38,10 +39,27 @@ function guideFixtureHtml(): string {
   ])
 }
 
+/** The thinking page: one effort list and one supported-models row. */
+function reasoningFixtureMarkdown(): string {
+  return [
+    '## Adjust chain-of-thought length',
+    '',
+    '* `minimal`: Turns off reasoning and answers directly.',
+    '* `high`: Deep analysis.',
+    '',
+    '|Supported models |Default value |',
+    '|---|---|',
+    '|* `seed-2-0-lite-260428` |`high` |',
+    '',
+    '## Pass thinking content back',
+  ].join('\n')
+}
+
 /** Pages the provider fetches besides the Ark listing, by URL. */
 const DOC_FIXTURES: Record<string, () => string> = {
   [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
   [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
+  [BYTEPLUS_REASONING_URL]: reasoningFixtureMarkdown,
 }
 
 const PRICING_TABLES = (() => {

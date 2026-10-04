@@ -191,6 +191,14 @@ export async function geminiModelFeatures(
         sourceHash: thinking.hash,
         path: family,
       }
+    } else if (modelThinks) {
+      // The thinking tables do not name this id. Leave the object null.
+      factSources.reasoning = {
+        derivation: 'docs-derived',
+        sourceUrl: GEMINI_THINKING_URL,
+        sourceHash: thinking.hash,
+        path: 'silent',
+      }
     }
     const slug = familyOf(rawId, Object.keys(tools))
     const page = slug ? tools[slug] : undefined
