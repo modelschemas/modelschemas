@@ -4,8 +4,9 @@
  * A listing is USD-per-unit strings (`{ prompt: "0.0000025", completion:
  * "0.00001", input_cache_read: "0.00000125", … }`). Every priced key becomes
  * a usage lever billed at its own rate; counts are disjoint (`input_tokens`
- * excludes the cached tokens billed at `input_cache_read`). `prompt` and
- * `completion` levers are required; `requests` defaults to 1, the rest to 0.
+ * excludes the cached tokens billed at `input_cache_read`). At least one of
+ * `prompt` or `completion` must be present; a lever that is present is
+ * required. `requests` defaults to 1, the rest to 0.
  *
  * `overrides` entries with `min_prompt_tokens` compile to rate tiers keyed on
  * total prompt tokens (input + cache read + cache writes). A tier applies
@@ -35,7 +36,7 @@ const LEVERS: Record<string, string> = {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
-/** Numeric-string rates of one listing / override; `null` if any is unusable. */
+/** Numeric rates of one listing / override; `null` if any is unusable. */
 function rates(entry: Record<string, unknown>): Record<string, number> | null {
   const out: Record<string, number> = {}
   for (const [key, value] of Object.entries(entry)) {
@@ -47,7 +48,11 @@ function rates(entry: Record<string, unknown>): Record<string, number> | null {
       continue
     if (key === 'discount') continue
     const n =
-      typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string' && value.trim() !== ''
+          ? Number(value)
+          : NaN
     // "-1" is OpenRouter's variable-price router sentinel: not a price.
     if (!Number.isFinite(n) || n < 0) return null
     out[key] = n
@@ -68,7 +73,9 @@ export function compileOpenRouterPricing(
 ): RateCard | null {
   if (!isRecord(listing)) return null
   const base = rates(listing)
-  if (!base || !('prompt' in base) || !('completion' in base)) return null
+  // One side is enough: a non-zero prompt or completion is a price. All-zero
+  // listings (and rows with neither key) still price nothing.
+  if (!base || (!('prompt' in base) && !('completion' in base))) return null
 
   // ponytail: time-window overrides (`utc_days`/`utc_start`/`utc_end`) need a
   // clock the card does not have; they are skipped, so the card quotes the
