@@ -5,7 +5,12 @@
  * published next to it. Models list requires CEREBRAS_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { cerebrasModelFacts } from '../cerebras-pricing.ts'
 import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import {
+  cerebrasModelActivity,
+  compatGenerationEndpointId,
+} from '../model-meta.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -37,13 +42,23 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  return listOpenAiCompatibleModels({
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const listed = await listOpenAiCompatibleModels({
     providerId: 'cerebras',
     url: CEREBRAS_MODELS_URL,
     env,
     envVar: 'CEREBRAS_API_KEY',
+    activity: cerebrasModelActivity,
   })
+  if (listed.models.length === 0) return listed
+  const facts = await cerebrasModelFacts(kv)
+  return {
+    ...listed,
+    models: listed.models.map((model) => ({ ...model, ...facts(model.rawId) })),
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -56,4 +71,6 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity }) =>
+    compatGenerationEndpointId(activity, 'v1/'),
 }

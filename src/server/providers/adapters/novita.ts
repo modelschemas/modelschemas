@@ -5,12 +5,17 @@
  * Official host is api.novita.ai/openai/v1 (the older /v3/openai prefix
  * still appears in some clients).
  */
+import { novitaListingCard } from '../catalog-prices.ts'
 import {
   classifyOpenAiCompat,
   fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
   OPENAI_OPENAPI_URL,
 } from '../openai-compat.ts'
+import {
+  compatGenerationEndpointId,
+  novitaModelActivity,
+} from '../model-meta.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -42,6 +47,15 @@ function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     url: NOVITA_MODELS_URL,
     env,
     envVar: 'NOVITA_API_KEY',
+    activity: novitaModelActivity,
+    extend: async (row) => {
+      const pricing = await novitaListingCard(
+        row.pricing,
+        row.is_tiered_billing,
+        NOVITA_MODELS_URL,
+      )
+      return pricing ? { pricing } : {}
+    },
   })
 }
 
@@ -55,4 +69,8 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify: classifyOpenAiCompat,
+  generationEndpointId: ({ activity }) =>
+    activity === 'chat' || activity === 'image'
+      ? compatGenerationEndpointId(activity)
+      : null,
 }

@@ -6,10 +6,16 @@
  * Generation is POST /v1/chat/completions; files, batches, billing, and
  * token-estimate classify as platform.
  */
+import { moonshotModelPricing } from '../moonshot-pricing.ts'
 import {
   classifyOpenAiCompat,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
+import {
+  compatGenerationEndpointId,
+  flaggedChatModalities,
+  moonshotModelActivity,
+} from '../model-meta.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -30,13 +36,30 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  return listOpenAiCompatibleModels({
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const listed = await listOpenAiCompatibleModels({
     providerId: 'moonshot',
     url: MOONSHOT_MODELS_URL,
     env,
     envVar: 'MOONSHOT_API_KEY',
+    activity: moonshotModelActivity,
+    extend: async (row) =>
+      row.supports_image_in !== undefined || row.supports_video_in !== undefined
+        ? { modalities: flaggedChatModalities(row) }
+        : {},
   })
+  if (listed.models.length === 0) return listed
+  const pricing = await moonshotModelPricing(kv)
+  return {
+    ...listed,
+    models: listed.models.map((model) => ({
+      ...model,
+      ...pricing(model.rawId),
+    })),
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -49,4 +72,6 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify: classifyOpenAiCompat,
+  generationEndpointId: ({ activity }) =>
+    compatGenerationEndpointId(activity, 'v1/'),
 }

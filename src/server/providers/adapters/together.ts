@@ -19,6 +19,7 @@ import type {
 
 const TOGETHER_OPENAPI_URL = 'https://docs.together.ai/openapi.yaml'
 const TOGETHER_MODELS_URL = 'https://api.together.xyz/v1/models'
+const TOGETHER_SUPPORTED_URL = 'https://api.together.ai/v2/supported-models'
 
 const MODEL_TYPE_ACTIVITY: Record<string, Activity> = {
   chat: 'chat',
@@ -34,6 +35,68 @@ const MODEL_TYPE_ACTIVITY: Record<string, Activity> = {
 
 function barePath(path: string): string {
   return path.replace(/^\/v\d+/, '')
+}
+
+const TOGETHER_MODALITY: Record<string, string> = {
+  MODALITY_TEXT: 'text',
+  MODALITY_IMAGE: 'image',
+  MODALITY_AUDIO: 'audio',
+  MODALITY_VIDEO: 'video',
+}
+
+const TOGETHER_FEATURES: Record<string, Array<string>> = {
+  FEATURE_TOOL_CALLING: ['tools'],
+  FEATURE_STRUCTURED_OUTPUT: ['structured_outputs', 'response_format'],
+  FEATURE_REASONING: ['reasoning'],
+}
+
+function togetherModalities(values: Array<string> | undefined): Array<string> {
+  return (values ?? []).flatMap((value) =>
+    TOGETHER_MODALITY[value] ? [TOGETHER_MODALITY[value]] : [],
+  )
+}
+
+interface TogetherSupportedModel {
+  name?: string
+  inputModalities?: Array<string>
+  outputModalities?: Array<string>
+  features?: Array<string>
+}
+
+/** Page through v2 supported-models. `name` matches a v1 catalog id. */
+async function togetherSupportedFacts(
+  key: string,
+): Promise<Map<string, Pick<ModelInfo, 'modalities' | 'capabilities'>>> {
+  const facts = new Map<
+    string,
+    Pick<ModelInfo, 'modalities' | 'capabilities'>
+  >()
+  let after: string | undefined
+  for (let page = 0; page < 20; page += 1) {
+    const url = new URL(TOGETHER_SUPPORTED_URL)
+    url.searchParams.set('limit', '100')
+    if (after) url.searchParams.set('after', after)
+    const body = (await fetchJson(url.toString(), {
+      headers: { Authorization: `Bearer ${key}` },
+    })) as { data?: Array<TogetherSupportedModel>; next_cursor?: string | null }
+    for (const row of body.data ?? []) {
+      if (!row.name) continue
+      const input = togetherModalities(row.inputModalities)
+      const output = togetherModalities(row.outputModalities)
+      const capabilities = (row.features ?? []).flatMap(
+        (feature) => TOGETHER_FEATURES[feature] ?? [],
+      )
+      facts.set(row.name, {
+        ...(input.length > 0 || output.length > 0
+          ? { modalities: { input, output } }
+          : {}),
+        ...(capabilities.length > 0 ? { capabilities } : {}),
+      })
+    }
+    if (!body.next_cursor) break
+    after = body.next_cursor
+  }
+  return facts
 }
 
 function classify(path: string): Activity | null {
@@ -131,7 +194,13 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     if (card) model.pricing = card
     models.push(model)
   }
-  return { models }
+  const supported = await togetherSupportedFacts(key)
+  return {
+    models: models.map((model) => ({
+      ...model,
+      ...supported.get(model.rawId),
+    })),
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -144,4 +213,20 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity }) => {
+    switch (activity) {
+      case 'chat':
+        return 'chat/completions'
+      case 'embeddings':
+        return 'embeddings'
+      case 'image':
+        return 'images/generations'
+      case 'video':
+        return 'videos'
+      case 'audio':
+        return 'audio/speech'
+      default:
+        return null
+    }
+  },
 }

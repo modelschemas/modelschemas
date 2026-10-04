@@ -3,7 +3,9 @@
  * Models endpoint requires JINA_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { perTokenListingCard } from '../catalog-prices.ts'
 import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import { compatGenerationEndpointId, jinaModelActivity } from '../model-meta.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ProviderConfig,
@@ -15,12 +17,13 @@ const JINA_OPENAPI_URL = 'https://api.jina.ai/openapi.json'
 const JINA_MODELS_URL = 'https://api.jina.ai/v1/models'
 
 /**
- * Generation surface is embeddings only. Rerank, classifier, reader,
- * train, and the rest of the Search Foundation API classify to null.
+ * Embeddings and chat completions. Rerank, classifier, train, and the
+ * rest of the Search Foundation API classify to null.
  */
 function classify(path: string): Activity | null {
   const bare = (path.split('?')[0] ?? path).replace(/\/+$/, '')
   if (bare.endsWith('/embeddings')) return 'embeddings'
+  if (bare.endsWith('/chat/completions')) return 'chat'
   return null
 }
 
@@ -47,6 +50,13 @@ export const provider: ProviderConfig = {
       url: JINA_MODELS_URL,
       env,
       envVar: 'JINA_API_KEY',
+      activity: jinaModelActivity,
+      extend: async (row) => {
+        const pricing = await perTokenListingCard(row.pricing, JINA_MODELS_URL)
+        return pricing ? { pricing } : {}
+      },
     }),
   classify,
+  generationEndpointId: ({ activity }) =>
+    compatGenerationEndpointId(activity, 'v1/'),
 }
