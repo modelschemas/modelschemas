@@ -1,68 +1,102 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  MODELS_DEV_API_URL,
-  clearModelsDevCatalogCache,
-} from '../models-dev.ts'
-import { provider } from './zai.ts'
+import { provider, ZAI_OPENAPI_URL, ZAI_PRICING_URL } from './zai.ts'
 
-const FIXTURE = {
-  zai: {
-    id: 'zai',
-    npm: '@ai-sdk/openai-compatible',
-    name: 'Z.AI',
-    models: {
-      'chat-model': {
-        id: 'chat-model',
-        name: 'Chat Model',
-        reasoning: true,
-        reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
-        tool_call: true,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        limit: { context: 128000, output: 4096 },
-        cost: { input: 1.5, output: 3 },
-      },
-      'image-only': {
-        id: 'image-only',
-        modalities: { input: ['text'], output: ['image'] },
-        cost: { input: 1, output: 1 },
-      },
+/** Enum excerpt of https://docs.z.ai/openapi.json (2026-10-04). */
+const SPEC = {
+  openapi: '3.0.1',
+  info: { title: 'Z.AI API', version: '1' },
+  paths: {
+    '/paas/v4/chat/completions': { post: { responses: { '200': {} } } },
+    '/paas/v4/images/generations': { post: {} },
+    '/paas/v4/tokenizer': { post: {} },
+  },
+  components: {
+    schemas: {
+      ChatModel: { enum: ['glm-5.3', 'glm-5.3-flash', 'glm-image'] },
     },
   },
 }
 
+/** Excerpt of https://docs.z.ai/guides/overview/pricing.md (2026-10-04). */
+const PRICING = `
+Prices per 1M tokens.
+
+| Model | Input | Cached Input | Cached Input Storage | Output |
+| :- | :- | :- | :- | :- |
+| GLM-5.3 | $1.4 | $0.26 | Limited-time Free | $4.4 |
+| GLM-5.3-Flash | $0.15 | $0.03 | Limited-time Free | $0.50 |
+| Not-A-Model | $9 | $1 | - | $9 |
+
+### Image Generation Models
+
+Prices per image.
+
+| Model | Price |
+| GLM-Image | $0.015 |
+`
+
+const originalFetch = globalThis.fetch
+
 afterEach(() => {
-  clearModelsDevCatalogCache()
-  globalThis.fetch = fetch
+  globalThis.fetch = originalFetch
 })
 
-describe('zai listModels', () => {
-  it('lists models.dev chat rows with facts, price, and reasoning', async () => {
-    const original = globalThis.fetch
+describe('zai', () => {
+  it('lists OpenAPI model ids and per-1M prices that match those ids', async () => {
+    const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
-      if (String(url) === MODELS_DEV_API_URL) {
-        return Promise.resolve(new Response(JSON.stringify(FIXTURE)))
+      urls.push(String(url))
+      if (String(url) === ZAI_OPENAPI_URL) {
+        return Promise.resolve(new Response(JSON.stringify(SPEC)))
+      }
+      if (String(url) === ZAI_PRICING_URL) {
+        return Promise.resolve(new Response(PRICING))
       }
       return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
     }) as typeof fetch
-    try {
-      const result = await provider.listModels({})
-      expect(result.skipped).toBeUndefined()
-      expect(result.models.map((model) => model.rawId)).toEqual(['chat-model'])
-      expect(result.models[0]).toMatchObject({
-        activity: 'chat',
-        contextWindow: 128000,
-        maxOutput: 4096,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        reasoning: {
-          mode: 'effort',
-          mandatory: true,
-          efforts: ['low', 'high'],
+
+    const listed = await provider.listModels({})
+    const spec = await provider.fetchSpec({})
+    const byId = new Map(listed.models.map((model) => [model.rawId, model]))
+
+    expect(listed.models.map((model) => model.rawId)).toEqual([
+      'glm-5.3',
+      'glm-5.3-flash',
+      'glm-image',
+    ])
+    expect(byId.get('glm-5.3')?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: {
+            input_tokens: 1.4 / 1_000_000,
+            output_tokens: 4.4 / 1_000_000,
+            cache_read_tokens: 0.26 / 1_000_000,
+          },
         },
-      })
-      expect(result.models[0]?.pricing).not.toBeNull()
-    } finally {
-      globalThis.fetch = original
-    }
+      },
+    })
+    expect(byId.get('glm-5.3-flash')?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: {
+            input_tokens: 0.15 / 1_000_000,
+            output_tokens: 0.5 / 1_000_000,
+          },
+        },
+      },
+    })
+    expect(byId.get('glm-image')?.pricing).toBeNull()
+    expect(listed.models.some((model) => model.rawId === 'not-a-model')).toBe(
+      false,
+    )
+    expect(spec.specs).toHaveLength(1)
+    expect(spec.sources[0]?.url).toBe(ZAI_OPENAPI_URL)
+    expect(provider.classify('/paas/v4/chat/completions', {})).toBe('chat')
+    expect(provider.classify('/paas/v4/images/generations', {})).toBe('image')
+    expect(provider.classify('/paas/v4/tokenizer', {})).toBeNull()
+    expect(urls).toEqual([ZAI_OPENAPI_URL, ZAI_PRICING_URL, ZAI_OPENAPI_URL])
+    expect(provider.classify('/paas/v4/videos/generations', {})).toBe('video')
+    expect(provider.classify('/paas/v4/audio/speech', {})).toBe('audio')
   })
 })
