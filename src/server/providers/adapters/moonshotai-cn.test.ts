@@ -1,68 +1,40 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  MODELS_DEV_API_URL,
-  clearModelsDevCatalogCache,
-} from '../models-dev.ts'
-import { provider } from './moonshotai-cn.ts'
+import { MOONSHOT_CN_PRICING_URL, provider } from './moonshotai-cn.ts'
 
-const FIXTURE = {
-  'moonshotai-cn': {
-    id: 'moonshotai-cn',
-    npm: '@ai-sdk/openai-compatible',
-    name: 'Moonshot AI (China)',
-    models: {
-      'chat-model': {
-        id: 'chat-model',
-        name: 'Chat Model',
-        reasoning: true,
-        reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
-        tool_call: true,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        limit: { context: 128000, output: 4096 },
-        cost: { input: 1.5, output: 3 },
-      },
-      'image-only': {
-        id: 'image-only',
-        modalities: { input: ['text'], output: ['image'] },
-        cost: { input: 1, output: 1 },
-      },
-    },
-  },
-}
+/** Excerpt of platform.moonshot.cn/docs/pricing.md (2026-10-04). Prices are yuan. */
+const FIXTURE = `
+rows={[
+["kimi-k3", "1M tokens", "¥20.00", "¥40.00", "¥2.00", "¥20.00", "¥100.00", "1,048,576 tokens"],
+["kimi-k2.6", "1M tokens", "¥1.10", "¥6.50", "¥27.00", "262,144 tokens"],
+]}
+`
+
+const originalFetch = globalThis.fetch
 
 afterEach(() => {
-  clearModelsDevCatalogCache()
-  globalThis.fetch = fetch
+  globalThis.fetch = originalFetch
 })
 
-describe('moonshotai-cn listModels', () => {
-  it('lists models.dev chat rows with facts, price, and reasoning', async () => {
-    const original = globalThis.fetch
+describe('moonshotai-cn', () => {
+  it('lists CN model ids and does not store yuan as USD', async () => {
+    const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
-      if (String(url) === MODELS_DEV_API_URL) {
-        return Promise.resolve(new Response(JSON.stringify(FIXTURE)))
+      urls.push(String(url))
+      if (String(url) === MOONSHOT_CN_PRICING_URL) {
+        return Promise.resolve(new Response(FIXTURE))
       }
       return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
     }) as typeof fetch
-    try {
-      const result = await provider.listModels({})
-      expect(result.skipped).toBeUndefined()
-      expect(result.models.map((model) => model.rawId)).toEqual(['chat-model'])
-      expect(result.models[0]).toMatchObject({
-        activity: 'chat',
-        contextWindow: 128000,
-        maxOutput: 4096,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        reasoning: {
-          mode: 'effort',
-          mandatory: true,
-          efforts: ['low', 'high'],
-        },
-      })
-      expect(result.models[0]?.pricing).not.toBeNull()
-    } finally {
-      globalThis.fetch = original
-    }
+
+    const listed = await provider.listModels({})
+    const spec = await provider.fetchSpec({})
+
+    expect(listed.models).toEqual([
+      { rawId: 'kimi-k3', contextWindow: 1048576, pricing: null },
+      { rawId: 'kimi-k2.6', contextWindow: 262144, pricing: null },
+    ])
+    expect(spec.skipped).toContain('skipped')
+    expect(urls).toEqual([MOONSHOT_CN_PRICING_URL])
   })
 })
