@@ -42,6 +42,11 @@ export function parseModelIndex(markdown: string): Set<string> {
 export interface OpenAiModelPage {
   /** Every id the page speaks for: `Model ID`, default snapshot, snapshots. */
   ids: Array<string>
+  /**
+   * Ids the page's price belongs to: the model id and its default snapshot.
+   * An older dated snapshot keeps the page's other facts but not this price.
+   */
+  pricedIds: Array<string>
   facts: ModelFacts
   /** Token rates and tiers, or null when the page prices otherwise. */
   pricing: DocsPricing | null
@@ -198,9 +203,16 @@ export function parseModelPricing(markdown: string): DocsPricing | null {
   const pricing = markdownSection(markdown, 'Pricing')
   const rates: Record<string, number> = {}
   const blocks = pricing.split('\n### ').slice(1)
+  // o3.md repeats `### Text tokens`: the first table is standard, the second
+  // is the half-price batch/flex table with no heading of its own. A later
+  // copy of a heading already priced is not the base rate, so it is dropped
+  // rather than overwriting it. Prompt-length tiers stay a separate shape.
+  const pricedHeadings = new Set<string>()
   for (const block of blocks) {
     const heading = block.split('\n')[0]?.trim() ?? ''
     if (DERIVED_SECTIONS.has(heading)) continue
+    if (pricedHeadings.has(heading)) continue
+    pricedHeadings.add(heading)
     if (UNIT_SECTIONS.has(heading)) {
       // A model is billed one way: a page mixing token tables with a
       // per-unit one is a shape this parser does not know.
@@ -316,8 +328,12 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
   if (!modelId) return null
   const details = markdownSection(markdown, 'Model details')
   const ids = new Set<string>([modelId])
+  const pricedIds = new Set<string>([modelId])
   const snapshot = details.match(/^- Default snapshot: `([^`]+)`/m)?.[1]
-  if (snapshot) ids.add(snapshot)
+  if (snapshot) {
+    ids.add(snapshot)
+    pricedIds.add(snapshot)
+  }
   for (const m of markdownSection(markdown, 'Snapshots').matchAll(
     /^- `([^`]+)`/gm,
   )) {
@@ -357,6 +373,7 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
 
   return {
     ids: [...ids],
+    pricedIds: [...pricedIds],
     pricing: parseModelPricing(markdown),
     facts: {
       contextWindow,
@@ -412,11 +429,21 @@ export function parseReasoningEffort(markdown: string): ModelReasoning {
   }
 }
 
+/**
+ * Model pages the models index no longer links, which still publish a price.
+ * Dated snapshots resolve to that page; `pricedIds` decides whether the
+ * price applies. A family page is never used for an id that is not that
+ * page's model id or its dated form (`tts-1-1106` is not `tts-1`).
+ */
+const UNINDEXED_MODEL_PAGES = new Set(['sora-2', 'sora-2-pro'])
+
 /** Page slug a listed id resolves to, or null when the docs have no page. */
 export function pageSlugFor(rawId: string, slugs: Set<string>): string | null {
   if (slugs.has(rawId)) return rawId
   const undated = undatedId(rawId)
   if (slugs.has(undated)) return undated
+  if (UNINDEXED_MODEL_PAGES.has(rawId)) return rawId
+  if (UNINDEXED_MODEL_PAGES.has(undated)) return undated
   return null
 }
 
@@ -498,8 +525,28 @@ export async function openaiModelFacts(
       ...withPricing,
       factSources: tagDocsFacts(withPricing, url, loaded.page.hash),
     }
-    for (const id of loaded.page.ids) byId.set(id, facts)
+    const priced = new Set(loaded.page.pricedIds)
+    for (const id of loaded.page.ids) {
+      if (priced.has(id)) {
+        byId.set(id, facts)
+        continue
+      }
+      // The family page prices the alias and the default snapshot only.
+      // An older snapshot (gpt-4o-2024-05-13) is not that price.
+      const sources = { ...facts.factSources }
+      delete sources.pricing
+      byId.set(id, { ...facts, pricing: null, factSources: sources })
+    }
   }
   if (needed.length > 0) assertParsed(byId, 'openai model pages')
-  return (rawId) => byId.get(rawId) ?? byId.get(undatedId(rawId)) ?? NO_FACTS
+  return (rawId) => {
+    const exact = byId.get(rawId)
+    if (exact) return exact
+    const familyId = undatedId(rawId)
+    const family = byId.get(familyId)
+    if (!family || familyId === rawId) return family ?? NO_FACTS
+    const sources = { ...family.factSources }
+    delete sources.pricing
+    return { ...family, pricing: null, factSources: sources }
+  }
 }

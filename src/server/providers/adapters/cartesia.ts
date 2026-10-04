@@ -2,6 +2,12 @@
  * Cartesia — real-time TTS/STT. Official OpenAPI is Stainless-hosted;
  * cartesia-python `.stats.yml` exposes `openapi_spec_url` when present.
  * Voices stand in for models. Requests need a Cartesia-Version header.
+ *
+ * No per-voice USD rate. https://docs.cartesia.ai/pricing meters credits
+ * (about 1 per character, or per second of audio) and
+ * https://cartesia.ai/pricing sells those credits in plan bundles. The
+ * Scale-plan "$0.39 per hour" Ink line is not the rate on every plan, so
+ * every voice stays null (issue #121).
  */
 import type { Activity } from '#/db/schema.ts'
 import { isoToEpochSeconds } from '../release-dates.ts'

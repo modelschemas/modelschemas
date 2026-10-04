@@ -70,8 +70,8 @@ describe('perplexity listModels', () => {
     expect(urls).toEqual(['https://api.perplexity.ai/v1/models'])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
-      { rawId: 'sonar', releasedAt: 1 },
-      { rawId: 'perplexity/sonar', releasedAt: 2 },
+      { rawId: 'sonar', releasedAt: 1, activity: 'chat' },
+      { rawId: 'perplexity/sonar', releasedAt: 2, activity: 'chat' },
     ])
   })
 })

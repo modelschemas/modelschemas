@@ -24,6 +24,24 @@ describe('deepseek listModels', () => {
     const urls: Array<string> = []
     globalThis.fetch = ((url: string, init?: RequestInit) => {
       urls.push(String(url))
+      if (String(url).includes('api-docs.deepseek.com')) {
+        return Promise.resolve(
+          new Response(
+            [
+              'MODEL',
+              'deepseek-other',
+              'PRICING',
+              '$0.1',
+              '$0.2',
+              '$0.3',
+              '$0.4',
+              '$0.5',
+              '$0.6',
+              'Concurrency',
+            ].join('\n'),
+          ),
+        )
+      }
       const headers = new Headers(init?.headers)
       expect(headers.get('Authorization')).toBe('Bearer test-key')
       return Promise.resolve(
@@ -38,10 +56,14 @@ describe('deepseek listModels', () => {
       const result = await provider.listModels({
         DEEPSEEK_API_KEY: 'test-key',
       })
-      expect(urls).toEqual(['https://api.deepseek.com/models'])
+      expect(urls[0]).toBe('https://api.deepseek.com/models')
       expect(result.skipped).toBeUndefined()
       expect(result.models).toEqual([
-        { rawId: 'deepseek-v4-pro', releasedAt: 1_700_000_000 },
+        {
+          rawId: 'deepseek-v4-pro',
+          releasedAt: 1_700_000_000,
+          activity: null,
+        },
       ])
     } finally {
       globalThis.fetch = original

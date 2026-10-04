@@ -4,6 +4,8 @@
  * embeddings. Search, async jobs, files/cancel, and analytics are platform.
  */
 import type { Activity } from '#/db/schema.ts'
+import { perplexityListingCard } from '../catalog-prices.ts'
+import { perplexityGenerationEndpointId } from '../model-meta.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -33,7 +35,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 }
 
 interface PerplexityModelList {
-  data?: Array<{ id: string; created?: number }>
+  data?: Array<{ id: string; created?: number; pricing?: unknown }>
 }
 
 async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
@@ -44,12 +46,20 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(PERPLEXITY_MODELS_URL, {
     headers: { Authorization: `Bearer ${key}` },
   })) as PerplexityModelList
-  return {
-    models: (body.data ?? []).map((m) => ({
+  const models = []
+  for (const m of body.data ?? []) {
+    const pricing = await perplexityListingCard(
+      m.pricing,
+      PERPLEXITY_MODELS_URL,
+    )
+    models.push({
       rawId: m.id,
       releasedAt: m.created ?? null,
-    })),
+      activity: 'chat' as const,
+      ...(pricing ? { pricing } : {}),
+    })
   }
+  return { models }
 }
 
 export const provider: ProviderConfig = {
@@ -62,4 +72,5 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ rawId }) => perplexityGenerationEndpointId(rawId),
 }

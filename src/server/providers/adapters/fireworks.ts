@@ -6,10 +6,16 @@
  * FIREWORKS_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { fireworksModelPricing } from '../fireworks-pricing.ts'
 import {
   classifyOpenAiCompat,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
+import {
+  compatGenerationEndpointId,
+  fireworksModalities,
+  fireworksModelActivity,
+} from '../model-meta.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -47,13 +53,30 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  return listOpenAiCompatibleModels({
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const listed = await listOpenAiCompatibleModels({
     providerId: 'fireworks',
     url: FIREWORKS_MODELS_URL,
     env,
     envVar: 'FIREWORKS_API_KEY',
+    activity: fireworksModelActivity,
+    extend: async (row) => {
+      const modalities = fireworksModalities(row)
+      return modalities ? { modalities } : {}
+    },
   })
+  if (listed.models.length === 0) return listed
+  const pricing = await fireworksModelPricing(kv)
+  return {
+    ...listed,
+    models: listed.models.map((model) => ({
+      ...model,
+      ...pricing(model.rawId),
+    })),
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -66,4 +89,8 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: ({ activity }) =>
+    activity === 'embeddings'
+      ? null
+      : compatGenerationEndpointId(activity, 'v1/'),
 }

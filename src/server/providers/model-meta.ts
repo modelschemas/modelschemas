@@ -312,3 +312,181 @@ export function mistralGenerationEndpointId(
       return null
   }
 }
+
+/**
+ * OpenAI-compat route id. `prefix` is `v1/` when the published spec keeps
+ * the version in the path, and empty when the server URL already includes it.
+ */
+export function compatGenerationEndpointId(
+  activity: Activity,
+  prefix = '',
+  audio: 'speech' | 'transcriptions' = 'speech',
+): string | null {
+  switch (activity) {
+    case 'chat':
+      return `${prefix}chat/completions`
+    case 'embeddings':
+      return `${prefix}embeddings`
+    case 'image':
+      return `${prefix}images/generations`
+    case 'video':
+      return `${prefix}videos`
+    case 'audio':
+      return `${prefix}audio/${audio}`
+    case 'moderation':
+      return `${prefix}moderations`
+    default:
+      return null
+  }
+}
+
+/** Text plus the image/video inputs the row's booleans name. Output is text. */
+export function flaggedChatModalities(m: {
+  supports_image_in?: boolean
+  supports_video_in?: boolean
+  supports_image_input?: boolean
+}): { input: Array<string>; output: Array<string> } {
+  const input = ['text']
+  if (m.supports_image_in || m.supports_image_input) input.push('image')
+  if (m.supports_video_in) input.push('video')
+  return { input, output: ['text'] }
+}
+
+/** DeepSeek rows name output modalities. Text out is chat. */
+export function deepseekModelActivity(m: {
+  output_modalities?: Array<string>
+}): Activity | null {
+  return m.output_modalities?.includes('text') ? 'chat' : null
+}
+
+/** Cerebras' models API is the chat catalog; rows carry no type field. */
+export function cerebrasModelActivity(): Activity {
+  return 'chat'
+}
+
+/** Moonshot rows are chat. Image and video are input flags, not activities. */
+export function moonshotModelActivity(): Activity {
+  return 'chat'
+}
+
+/**
+ * Fireworks `kind` distinguishes embeddings. A reranker id has no
+ * classified route. `supports_chat` is the chat flag.
+ */
+export function fireworksModelActivity(m: {
+  id: string
+  kind?: string
+  supports_chat?: boolean
+}): Activity | null {
+  if (m.kind === 'EMBEDDING_MODEL') return 'embeddings'
+  if (/rerank/i.test(m.id)) return null
+  if (m.supports_chat) return 'chat'
+  return null
+}
+
+export function fireworksModalities(m: {
+  kind?: string
+  supports_image_input?: boolean
+}): { input: Array<string>; output: Array<string> } | null {
+  if (m.kind === undefined && m.supports_image_input === undefined) return null
+  if (m.kind === 'EMBEDDING_MODEL') {
+    return { input: ['text'], output: ['embeddings'] }
+  }
+  return flaggedChatModalities(m)
+}
+
+/** Novita `model_type`. Unknown types stay unbound. */
+export function novitaModelActivity(m: {
+  model_type?: string
+}): Activity | null {
+  switch (m.model_type) {
+    case 'chat':
+      return 'chat'
+    case 'image':
+      return 'image'
+    case 'video':
+      return 'video'
+    case 'audio':
+      return 'audio'
+    case 'embedding':
+    case 'embeddings':
+      return 'embeddings'
+    default:
+      return null
+  }
+}
+
+/** Perplexity's models list is the chat/agent catalog (no type field). */
+export function perplexityModelActivity(): Activity {
+  return 'chat'
+}
+
+export function perplexityGenerationEndpointId(rawId: string): string {
+  return rawId === 'perplexity/sonar' || rawId.endsWith('/sonar')
+    ? 'v1/sonar'
+    : 'v1/agent'
+}
+
+/**
+ * Jina names output modalities. Text out is chat except rerank and
+ * ColBERT, which are not the chat route.
+ */
+export function jinaModelActivity(m: {
+  id: string
+  output_modalities?: Array<string>
+}): Activity | null {
+  const out = m.output_modalities ?? []
+  if (out.includes('embeddings')) return 'embeddings'
+  if (out.includes('text') && !/rerank|colbert/i.test(m.id)) return 'chat'
+  return null
+}
+
+/** SambaNova's models API is chat completions only; rows have no type. */
+export function sambanovaModelActivity(): Activity {
+  return 'chat'
+}
+
+export function hyperbolicModelActivity(m: {
+  supports_chat?: boolean
+}): Activity | null {
+  return m.supports_chat ? 'chat' : null
+}
+
+const DASHSCOPE_CHAT = new Set([
+  'TG',
+  'VU',
+  'Reasoning',
+  'Multimodal-Omni',
+  'Realtime-Omni',
+  'Realtime-Chatting',
+])
+
+const DASHSCOPE_AUDIO = new Set([
+  'ASR',
+  'TTS',
+  'Realtime-ASR',
+  'Realtime-Text-to-Speech',
+  'Realtime-Audio-Translate',
+])
+
+/** DashScope native `capabilities` plus response modality. */
+export function dashscopeModelActivity(m: {
+  capabilities?: Array<string>
+  inference_metadata?: { response_modality?: Array<string> }
+}): Activity | null {
+  const caps = new Set(m.capabilities ?? [])
+  const out = new Set(
+    (m.inference_metadata?.response_modality ?? []).map((value) =>
+      value.toLowerCase(),
+    ),
+  )
+  if (caps.has('IG') || (out.has('image') && !out.has('text'))) return 'image'
+  if (caps.has('VG') || (out.has('video') && !out.has('text'))) return 'video'
+  if (caps.has('TR') || caps.has('ME')) return 'embeddings'
+  if ([...DASHSCOPE_AUDIO].some((cap) => caps.has(cap))) return 'audio'
+  if (out.has('audio') && !out.has('text')) return 'audio'
+  if ([...DASHSCOPE_CHAT].some((cap) => caps.has(cap)) || out.has('text')) {
+    return 'chat'
+  }
+  return null
+}

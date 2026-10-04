@@ -3,13 +3,19 @@
  * schemas are generated from the canonical OpenAI spec. Official host is
  * https://api.deepseek.com (POST /chat/completions, no /v1 prefix).
  */
+import { deepseekModelPricing } from '../deepseek-pricing.ts'
 import {
   classifyOpenAiCompat,
   fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
   OPENAI_OPENAPI_URL,
 } from '../openai-compat.ts'
+import {
+  compatGenerationEndpointId,
+  deepseekModelActivity,
+} from '../model-meta.ts'
 import type {
+  ListModelsResult,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -39,12 +45,28 @@ export const provider: ProviderConfig = {
   modelsEndpoint: DEEPSEEK_MODELS_URL,
   defaultDerivation: 'generated',
   fetchSpec,
-  listModels: (env) =>
-    listOpenAiCompatibleModels({
+  listModels: async (env, kv): Promise<ListModelsResult> => {
+    const listed = await listOpenAiCompatibleModels({
       providerId: 'deepseek',
       url: DEEPSEEK_MODELS_URL,
       env,
       envVar: 'DEEPSEEK_API_KEY',
-    }),
+      activity: deepseekModelActivity,
+      extend: async (row) =>
+        row.effort?.supported_levels?.length
+          ? { capabilities: ['reasoning'] }
+          : {},
+    })
+    if (listed.models.length === 0) return listed
+    const pricing = await deepseekModelPricing(kv)
+    return {
+      ...listed,
+      models: listed.models.map((model) => ({
+        ...model,
+        ...pricing(model.rawId),
+      })),
+    }
+  },
   classify: (path) => classifyOpenAiCompat(path),
+  generationEndpointId: ({ activity }) => compatGenerationEndpointId(activity),
 }

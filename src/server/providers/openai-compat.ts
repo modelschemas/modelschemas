@@ -12,6 +12,7 @@ import { OPENAI_SPEC_URL } from './openai.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   OpenApiDocument,
   ProviderSecrets,
 } from './types.ts'
@@ -130,6 +131,27 @@ export interface OpenAiCompatModelRow {
   supported_sampling_parameters?: Array<string>
   /** mistral: `{ function_calling, reasoning, vision, … }`. */
   capabilities?: Record<string, boolean | undefined>
+  /** fireworks: `HF_BASE_MODEL`, `EMBEDDING_MODEL`, `ROUTER`, `CUSTOM_MODEL`. */
+  kind?: string
+  supports_chat?: boolean
+  supports_image_input?: boolean
+  /** moonshot. */
+  supports_image_in?: boolean
+  supports_video_in?: boolean
+  /** novita: `chat`, `image`, … */
+  model_type?: string
+  is_tiered_billing?: boolean
+  /** hyperbolic: USD per 1M tokens (a per-token reading is not a real rate). */
+  input_price?: number
+  output_price?: number
+  /** deepseek thinking levels, when the row publishes them. */
+  effort?: { supported_levels?: Array<string> }
+  /**
+   * Host-specific price object. Novita nests decimals per million;
+   * Jina and SambaNova quote per-token strings; Perplexity quotes per
+   * million with `unit: usd_per_1m_tokens`.
+   */
+  pricing?: Record<string, unknown>
 }
 
 const positive = (n: number | undefined) =>
@@ -212,6 +234,8 @@ export async function listOpenAiCompatibleModels(opts: {
   authorization?: string
   /** Per-row activity when the listing states it (issue #72). */
   activity?: (m: OpenAiCompatModelRow) => Activity | null
+  /** Extra catalog fields the row itself states (issue #109). */
+  extend?: (m: OpenAiCompatModelRow) => Promise<Partial<ModelInfo>>
 }): Promise<ListModelsResult> {
   const key = opts.env[opts.envVar]
   if (!key) {
@@ -222,14 +246,18 @@ export async function listOpenAiCompatibleModels(opts: {
     ...opts.headers,
   }
   const body = (await fetchJson(opts.url, { headers })) as OpenAiModelList
-  return {
-    models: (body.data ?? [])
-      .filter((m) => typeof m.id === 'string' && m.id.length > 0)
-      .map((m) => ({
-        rawId: m.id,
-        releasedAt: m.created ?? null,
-        ...(opts.activity ? { activity: opts.activity(m) } : {}),
-        ...openAiCompatModelFacts(m),
-      })),
+  const rows = (body.data ?? []).filter(
+    (m) => typeof m.id === 'string' && m.id.length > 0,
+  )
+  const models: Array<ModelInfo> = []
+  for (const m of rows) {
+    models.push({
+      rawId: m.id,
+      releasedAt: m.created ?? null,
+      ...(opts.activity ? { activity: opts.activity(m) } : {}),
+      ...openAiCompatModelFacts(m),
+      ...(await opts.extend?.(m)),
+    })
   }
+  return { models }
 }
