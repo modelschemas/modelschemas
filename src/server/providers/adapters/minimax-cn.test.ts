@@ -18,6 +18,13 @@ const FIXTURE = `
 | [MiniMax H3](/docs/api-reference/video-generation-v2-create) | 新一代开放通用多模态视频模型 |
 | [MiniMax H3 Max](/docs/api-reference/video-generation-v2-create) | 由 [fal.ai](https://fal.ai/) 基于 MiniMax H3 后训练的极速视频生成模型 |
 
+### Audio
+
+| **Models** | **Description** |
+| :- | :- |
+| [speech-2.8-hd](/docs/api-reference/speech-t2a-http) | Ultra-realistic quality featuring sound tags |
+| [speech-2.8-turbo](/docs/api-reference/speech-t2a-http) | Seamless speed meets natural flow |
+
 ### 语音模型
 
 | **模型名称** | **介绍** |
@@ -48,8 +55,15 @@ describe('minimax-cn', () => {
     expect(listed.models).toEqual([
       { rawId: 'MiniMax-M2.7', activity: 'chat', pricing: null },
       { rawId: 'MiniMax-M3', activity: 'chat', pricing: null },
+      { rawId: 'speech-2.8-hd', activity: 'audio', pricing: null },
+      { rawId: 'speech-2.8-turbo', activity: 'audio', pricing: null },
       { rawId: 'Speech-2.8-HD', activity: 'audio', pricing: null },
     ])
+    expect(
+      listed.models
+        .filter((model) => /^speech-/i.test(model.rawId))
+        .every((model) => model.activity === 'audio'),
+    ).toBe(true)
     expect(listed.models.some((model) => model.rawId === 'fal.ai')).toBe(false)
     expect(listed.models.some((model) => model.rawId === 'MiniMax-H3')).toBe(
       false,
