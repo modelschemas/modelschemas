@@ -389,6 +389,8 @@ export const models = sqliteTable(
     // Wire map for thinking, token limits, and roles (issue #95). Null until
     // verified. `reasoning` stays the readable fact.
     requestMap: text('request_map', { mode: 'json' }),
+    // Caller ids that resolve to this dated row (issue #112).
+    aliases: text('aliases', { mode: 'json' }).$type<Array<string> | null>(),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see
