@@ -10,8 +10,10 @@ import {
   grokRateCard,
   grokVideoCard,
   parseGrokContextWindows,
+  parseGrokMaxOutput,
   grokReasons,
   parseGrokVideoPrices,
+  withGrokImageQuality,
 } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
@@ -21,6 +23,7 @@ import {
   parseModelIndex,
   parseModelPage,
   parseModelPricing,
+  parseOpenAiSearchPricing,
   parseReasoningEffort,
 } from './openai-model-docs.ts'
 
@@ -776,6 +779,41 @@ Landscape: 1920x1080 | $0.7 | second |
     ).toBeNull()
     expect(parseModelPricing('# Model\n\nModel ID: `m`\n')).toBeNull()
   })
+
+  it('prices gpt-5-search-api from the specialized table and not a dated twin', () => {
+    const page = `Specialized models
+
+Prices per 1M tokens.
+
+Standard
+
+### Grouped Pricing Table data
+
+| Category | Model | Input | Cached input | Output |
+| --- | --- | --- | --- | --- |
+| Search | gpt-5-search-api | $1.25 | $0.125 | $10.00 |
+| Embedding | text-embedding-3-small | $0.02 | - | - |
+| Moderation | omni-moderation-latest | Free | - | - |
+
+Fast
+
+### Grouped Pricing Table data
+
+| Category | Model | Input | Cached input | Output |
+| --- | --- | --- | --- | --- |
+| Search | gpt-5-search-api | $9.99 | $9.99 | $9.99 |
+`
+    const rates = parseOpenAiSearchPricing(page)
+    expect(rates.get('gpt-5-search-api')).toEqual({
+      input_tokens: 1.25 / 1e6,
+      cache_read_tokens: 0.125 / 1e6,
+      output_tokens: 10 / 1e6,
+    })
+    expect(rates.has('text-embedding-3-small')).toBe(false)
+    expect(rates.has('omni-moderation-latest')).toBe(false)
+    expect(rates.has('gpt-5-search-api-2025-10-14')).toBe(false)
+    expect(rates.has('gpt-3.5-turbo-16k')).toBe(false)
+  })
 })
 
 describe('anthropic pricing page', () => {
@@ -874,7 +912,7 @@ describe('grok model prices', () => {
     expect(await grokRateCard({ id: 'grok-imagine-video' })).toBeNull()
   })
 
-  it('prices images per image, and refuses a quality-dependent table', async () => {
+  it('prices images per image, by the (quality, resolution) matrix when there is one', async () => {
     const card = await grokImageCard({
       id: 'grok-imagine-image',
       image_price: 200_000_000,
@@ -882,13 +920,82 @@ describe('grok model prices', () => {
     if (!card) throw new Error('did not compile')
     expect(price(card, {}, {})).toBeCloseTo(0.02, 9)
     expect(price(card, { n: 4 }, {})).toBeCloseTo(0.08, 9)
-    // `quality` is not a field of /v1/images/generations.
+    // Live 2026-10-04: grok-imagine-image-2.0 prices by quality and
+    // resolution. `quality` is a request field (the guide and xai-sdk-ts;
+    // the OpenAPI document omits it) and defaults to `auto`, which serves
+    // `low` for generation. The pricing page's $0.04 is the low/1k cell.
+    const matrix = await grokImageCard({
+      id: 'grok-imagine-image-2.0',
+      image_price: 600_000_000,
+      pricing: [
+        { quality: 'low', resolution: '1k', price_per_image: 4e8 },
+        { quality: 'low', resolution: '2k', price_per_image: 6e8 },
+        { quality: 'medium', resolution: '1k', price_per_image: 6e8 },
+        { quality: 'medium', resolution: '2k', price_per_image: 8e8 },
+      ],
+    })
+    if (!matrix) throw new Error('did not compile')
+    expect(price(matrix, {}, {})).toBeCloseTo(0.04, 9)
+    expect(price(matrix, { quality: 'auto' }, {})).toBeCloseTo(0.04, 9)
+    expect(
+      price(matrix, { quality: 'medium', resolution: '2k' }, {}),
+    ).toBeCloseTo(0.08, 9)
+    expect(
+      price(matrix, { quality: 'low', resolution: '2k', n: 2 }, {}),
+    ).toBeCloseTo(0.12, 9)
+    expect(matrix.inputs.quality).toMatchObject({
+      bound: 'request',
+      default: 'auto',
+    })
+    // A dimension the request cannot state has no card, flat price or not.
     expect(
       await grokImageCard({
-        id: 'grok-imagine-image-2.0',
-        image_price: 600_000_000,
-        pricing: [{ quality: 'low', resolution: '1k', price_per_image: 4e8 }],
+        id: 'grok-imagine-image',
+        image_price: 200_000_000,
+        pricing: [{ tier: 'pro', price_per_image: 7e8 }],
       }),
+    ).toBeNull()
+  })
+
+  it('adds the documented quality field the OpenAPI document omits', () => {
+    const spec = withGrokImageQuality({
+      components: {
+        schemas: {
+          GenerateImageRequest: { properties: { prompt: { type: 'string' } } },
+          EditImageRequest: { properties: { prompt: { type: 'string' } } },
+          GenerateVideoRequest: { properties: { prompt: { type: 'string' } } },
+        },
+      },
+    })
+    const schemas = spec.components?.schemas as Record<
+      string,
+      { properties: Record<string, unknown> }
+    >
+    expect(schemas.GenerateImageRequest?.properties.quality).toMatchObject({
+      enum: ['low', 'medium', 'auto'],
+    })
+    expect(schemas.EditImageRequest?.properties.quality).toBeDefined()
+    expect(schemas.GenerateVideoRequest?.properties.quality).toBeUndefined()
+  })
+
+  it('reads a stated output cap and ignores "no limit" and price rows', () => {
+    const page = `# Grok 3
+
+## At a glance
+
+- **Context window:** 131,072 tokens
+- **Output limit:** 8,192 tokens
+`
+    expect(parseGrokMaxOutput(page)).toBe(8_192)
+    expect(
+      parseGrokMaxOutput(
+        '| Property | Value |\n| --- | --- |\n| Output limit | No text output limit |\n',
+      ),
+    ).toBeNull()
+    expect(
+      parseGrokMaxOutput(
+        '| Type | Price |\n| --- | --- |\n| Output | $6.00 |\n',
+      ),
     ).toBeNull()
   })
 
@@ -974,6 +1081,21 @@ describe('gemini pricing page', () => {
     expect(rows.get('gemini-3.1-pro-preview-customtools')?.base).toEqual(
       rows.get('gemini-3.1-pro-preview')?.base,
     )
+  })
+
+  it('does not price models the heading does not name', () => {
+    const rows = parseGeminiPricing(
+      section(
+        'gemini-2.5-flash',
+        `<tr><td>Input price</td><td>Free of charge</td><td>$0.30</td></tr>
+         <tr><td>Output price (including thinking tokens)</td><td>Free of charge</td><td>$2.50</td></tr>`,
+      ),
+      NOW,
+    )
+    expect(rows.has('gemini-2.5-flash')).toBe(true)
+    expect(rows.has('aqa')).toBe(false)
+    expect(rows.has('antigravity-preview-09-2026')).toBe(false)
+    expect(rows.has('gemini-flash-latest')).toBe(false)
   })
 
   it('compiles the long-prompt re-quote as a tier', () => {

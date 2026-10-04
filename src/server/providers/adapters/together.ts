@@ -7,6 +7,7 @@
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
+import { togetherMediaPricing } from '../together-pricing.ts'
 import { fetchJson, fetchOpenApi, sha256Text, skippedResult } from '../types.ts'
 import type { RateCard } from '@modelschemas/rate-card'
 import type {
@@ -144,10 +145,13 @@ function asModels(body: unknown): Array<Record<string, unknown>> {
 
 /**
  * Together prices per million tokens on the listing (`{ input: 0.88,
- * output: 0.88, hourly: 0, base: 0, finetune: 0 }`), and serves an all-zero
- * object for models it does not quote — those are unknown, not free, so
- * they compile to null rather than a $0 card. `hourly`/`base`/`finetune`
- * are dedicated-endpoint and training rates, not per-request levers.
+ * output: 0.88, cached_input: 0.2, hourly: 0, base: 0, finetune: 0 }`).
+ * An all-zero object is a model it does not quote per token (dedicated
+ * endpoints, or no published serverless rate) — unknown, not free, so it
+ * compiles to null rather than a $0 card. `hourly`/`base`/`finetune` are
+ * dedicated-endpoint and training rates, not per-request levers. A zero
+ * `cached_input` is unpublished, not a free cache read. Image, video, and
+ * audio prices come from the serverless catalog, not this token object.
  */
 export async function togetherRateCard(
   pricing: unknown,
@@ -158,8 +162,10 @@ export async function togetherRateCard(
   const rates: Record<string, number> = {}
   const input = perToken('input')
   const output = perToken('output')
+  const cached = perToken('cached_input')
   if (input !== null) rates.input_tokens = input
   if (output !== null) rates.output_tokens = output
+  if (cached !== null && cached > 0) rates.cache_read_tokens = cached
   return compileTokenCard(rates, [], {
     url: TOGETHER_MODELS_URL,
     hash: await sha256Text(JSON.stringify(pricing)),
@@ -167,7 +173,12 @@ export async function togetherRateCard(
   })
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+const MEDIA_ACTIVITIES = new Set(['image', 'video', 'audio'])
+
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.TOGETHER_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('together', 'TOGETHER_API_KEY') }
@@ -175,14 +186,22 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const body = await fetchJson(TOGETHER_MODELS_URL, {
     headers: { Authorization: `Bearer ${key}` },
   })
-  const models: Array<ModelInfo> = []
-  for (const item of asModels(body)) {
-    if (typeof item.id !== 'string' || item.id.length === 0) continue
+  const rows = asModels(body).flatMap((item) => {
+    if (typeof item.id !== 'string' || item.id.length === 0) return []
     const type = item.type
     const activity =
       typeof type === 'string' ? (MODEL_TYPE_ACTIVITY[type] ?? null) : null
+    return [{ item, activity }]
+  })
+  const media = rows.some((row) =>
+    row.activity ? MEDIA_ACTIVITIES.has(row.activity) : false,
+  )
+    ? await togetherMediaPricing(kv)
+    : null
+  const models: Array<ModelInfo> = []
+  for (const { item, activity } of rows) {
     const model: ModelInfo = {
-      rawId: item.id,
+      rawId: item.id as string,
       displayName:
         typeof item.display_name === 'string' ? item.display_name : null,
       activity,
@@ -190,8 +209,12 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         typeof item.context_length === 'number' ? item.context_length : null,
       releasedAt: typeof item.created === 'number' ? item.created : null,
     }
-    const card = await togetherRateCard(item.pricing)
-    if (card) model.pricing = card
+    if (media && activity && MEDIA_ACTIVITIES.has(activity)) {
+      Object.assign(model, media(item.id as string, activity))
+    } else {
+      const card = await togetherRateCard(item.pricing)
+      if (card) model.pricing = card
+    }
     models.push(model)
   }
   const supported = await togetherSupportedFacts(key)

@@ -9,6 +9,7 @@ import {
   byteplusProvider,
 } from './byteplus.ts'
 import {
+  BYTEPLUS_MODEL_LIST_URL,
   BYTEPLUS_PRICING_URL,
   BYTEPLUS_VIDEO_GUIDE_URL,
   compileSeedreamProCard,
@@ -55,11 +56,30 @@ function reasoningFixtureMarkdown(): string {
   ].join('\n')
 }
 
+/** Model list alias for the lite Seedream row the pricing fixture names. */
+function modelListFixtureHtml(): string {
+  const data = {
+    '0': {
+      ops: [
+        {
+          insert:
+            'seedream-5-0-260128\n(also supports: seedream-5-0-lite-260128)\n',
+        },
+      ],
+    },
+  }
+  const router = {
+    loaderData: { page: { curDoc: { Content: JSON.stringify({ data }) } } },
+  }
+  return `<script>window._ROUTER_DATA = ${JSON.stringify(router)}</script>`
+}
+
 /** Pages the provider fetches besides the Ark listing, by URL. */
 const DOC_FIXTURES: Record<string, () => string> = {
   [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
   [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
   [BYTEPLUS_REASONING_URL]: reasoningFixtureMarkdown,
+  [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
 }
 
 const PRICING_TABLES = (() => {
@@ -92,7 +112,9 @@ const PRICING_TABLES = (() => {
         'Input image price (USD / image)',
         'Output image price (USD / image)',
       ],
+      ['seedream-5-0-lite-260128', 'Free', '0.035'],
       ['seedream-4-5-251128', 'Free', '0.04'],
+      ['seedream-4-0-250828', 'Free', '0.03'],
     ],
   ]
   return tables
@@ -407,6 +429,7 @@ describe('byteplus pricing pages failing', () => {
     const { models } = await listWith({
       [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
       [BYTEPLUS_VIDEO_GUIDE_URL]: null,
+      [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
     })
     const seedance = models.find((m) => m.rawId === 'seedance-1-0-pro-250528')
     expect(seedance?.pricing).toMatchObject({
@@ -431,6 +454,7 @@ describe('byteplus pricing pages failing', () => {
       listWith({
         [BYTEPLUS_PRICING_URL]: withoutVideo,
         [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
+        [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
       }),
     ).rejects.toThrow(/video\): parsed 0/)
   })
@@ -484,6 +508,13 @@ describe('byteplus curated models (no ARK_API_KEY)', () => {
     expect(priced('seedream-4-5-251128')).toMatchObject({
       inputs: { generated_images: { bound: 'usage' } },
     })
+    // Model list: seedream-5-0-260128 also supports the priced lite row.
+    expect(priced('seedream-5-0-260128')).toMatchObject({
+      inputs: { generated_images: { bound: 'usage' } },
+    })
+    // No speech table on the ModelArk pricing page.
+    expect(priced('seed-asr')).toBeUndefined()
+    expect(priced('seed-audio-1.0')).toBeUndefined()
     // Undated Seed Speech ids keep their poll-time firstSeenAt.
     const asr = models.find((m) => m.rawId === 'seed-asr')
     expect(asr?.releasedAt).toBeNull()

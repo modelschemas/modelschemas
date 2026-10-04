@@ -128,7 +128,11 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v8: Grok model-page cache includes maxOutput (#119).
 // v9: BytePlus and Mistral cached docs include serverTools. A v8 entry
 // would keep the old card and leave tools null for six hours.
-const DOCS_CACHE_VERSION = 'v9'
+// v10: BytePlus image and video cards copy published alias ids. A v9 entry
+// would leave those aliases unpriced for six hours.
+// v11: Grok maxOutput (#119) lands after v10 shipped; a v10 entry has no
+// maxOutput on Grok pages for six hours.
+const DOCS_CACHE_VERSION = 'v11'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
