@@ -6,17 +6,23 @@ import { MINIMAX_MODELS_URL, provider } from './minimax.ts'
 const FIXTURE = `
 ### Language
 
-| Models | Description |
-| [MiniMax-M2.7](/docs/api-reference/text-anthropic-api) | coding model |
-| <a href="/docs/api-reference/text-anthropic-api">MiniMax-M3</a> | frontier |
+| **Models** | **Description** |
+| :- | :- |
+| [MiniMax-M2.7](/docs/api-reference/text-anthropic-api) | Beginning the journey |
+| <a href="/docs/api-reference/text-anthropic-api">MiniMax-M3</a> | Frontier |
 
 ### Video
 
-| [MiniMax H3](/docs/api-reference/video-generation-v2-create) | display name with a space |
+| **Models** | **Description** |
+| :- | :- |
+| [MiniMax H3](/docs/api-reference/video-generation-v2-create) | Next-gen open general-purpose multimodal video model |
+| [MiniMax H3 Max](/docs/api-reference/video-generation-v2-create) | High-speed video model post-trained by [fal.ai](https://fal.ai/) on MiniMax H3 |
 
-### Speech
+### Audio
 
-| [Speech-2.8-HD](/docs/api-reference/speech-t2a-http) | speech |
+| **Models** | **Description** |
+| :- | :- |
+| [speech-2.8-hd](/docs/api-reference/speech-t2a-http) | Ultra-realistic quality featuring sound tags |
 `
 
 const originalFetch = globalThis.fetch
@@ -42,8 +48,15 @@ describe('minimax', () => {
     expect(listed.models).toEqual([
       { rawId: 'MiniMax-M2.7', activity: 'chat', pricing: null },
       { rawId: 'MiniMax-M3', activity: 'chat', pricing: null },
-      { rawId: 'Speech-2.8-HD', activity: 'audio', pricing: null },
+      { rawId: 'speech-2.8-hd', activity: 'audio', pricing: null },
     ])
+    expect(listed.models.some((model) => model.rawId === 'fal.ai')).toBe(false)
+    expect(listed.models.some((model) => model.rawId === 'MiniMax-H3')).toBe(
+      false,
+    )
+    expect(listed.models.some((model) => model.rawId === 'MiniMax H3')).toBe(
+      false,
+    )
     expect(spec.skipped).toContain('skipped')
     expect(urls).toEqual([MINIMAX_MODELS_URL])
   })

@@ -21,13 +21,23 @@ const SPEC_SKIP = 'minimax: no first-party OpenAPI document — skipped'
 const SECTION_ACTIVITY: Array<[RegExp, Activity | null]> = [
   [/^Language|^语言模型/, 'chat'],
   [/^Video|^视频/, 'video'],
-  [/^Speech|^语音/, 'audio'],
+  [/^Speech|^Audio|^语音/, 'audio'],
   [/^Image|^图片/, 'image'],
   [/^Music|^音乐/, null],
 ]
 
-const ID_IN_LINK =
-  /\[([A-Za-z0-9][A-Za-z0-9._-]*)\]\([^)]+\)|<a\b[^>]*>\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*<\/a>/g
+const WIRE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+/** First-column link whose label is a wire id. Spaced display names stay out. */
+function modelColumnId(line: string): string | null {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('|') || /^\|\s*:?-+/.test(trimmed)) return null
+  const first = trimmed.split('|')[1]?.trim() ?? ''
+  const markdown = first.match(/^\[([^\]]+)\]\([^)]+\)$/)
+  const anchor = first.match(/^<a\b[^>]*>\s*([^<]+?)\s*<\/a>$/)
+  const label = (markdown?.[1] ?? anchor?.[1] ?? '').trim()
+  return WIRE_ID.test(label) ? label : null
+}
 
 export function parseMinimaxModels(markdown: string): Array<ModelInfo> {
   const models: Array<ModelInfo> = []
@@ -37,8 +47,8 @@ export function parseMinimaxModels(markdown: string): Array<ModelInfo> {
     const title = newline === -1 ? chunk : chunk.slice(0, newline)
     const known = SECTION_ACTIVITY.find(([pattern]) => pattern.test(title))
     const activity = known ? known[1] : null
-    for (const match of chunk.matchAll(ID_IN_LINK)) {
-      const rawId = match[1] ?? match[2]
+    for (const line of chunk.split('\n')) {
+      const rawId = modelColumnId(line)
       if (!rawId || seen.has(rawId)) continue
       seen.add(rawId)
       models.push({ rawId, activity, pricing: null })
