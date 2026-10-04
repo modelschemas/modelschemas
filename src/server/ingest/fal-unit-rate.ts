@@ -28,9 +28,10 @@ export function usdAmounts(section: string): Array<number> {
   return found
 }
 
-/** `$X per [N] <unit>` or `$X/<unit>`, the money in any of the three spellings. */
+/** `$X per [N] <unit>` or `$X/<unit>`, the money in any of the three spellings.
+ * Up to four words so "per output video second" still finds a known unit. */
 const UNIT_RATE = new RegExp(
-  `${MONEY}[ \\t]*(?:per[ \\t]+|/)\\*{0,2}[ \\t]*([0-9][0-9,]*)?[ \\t]*\\*{0,2}[ \\t]*([A-Za-z]+(?:[ \\t]+[A-Za-z]+)?)`,
+  `${MONEY}[ \\t]*(?:per[ \\t]+|/)\\*{0,2}[ \\t]*([0-9][0-9,]*)?[ \\t]*\\*{0,2}[ \\t]*([A-Za-z]+(?:[ \\t]+[A-Za-z]+){0,3})`,
   'gi',
 )
 
@@ -98,15 +99,25 @@ function lineAt(section: string, index: number): string {
 }
 
 function paramFor(unit: string): string | undefined {
-  const normalized = unit
+  const words = unit
     .toLowerCase()
     .replace(/[ \t]+/g, ' ')
     .trim()
-  const words = normalized.split(' ')
-  return (
-    UNIT_PARAMS[normalized] ??
-    (words.length > 1 ? UNIT_PARAMS[words[0] ?? ''] : undefined)
-  )
+    .split(' ')
+    .filter((word) => word.length > 0)
+  let best: string | undefined
+  let bestLen = 0
+  for (let i = 0; i < words.length; i++) {
+    const room = words.length - i
+    for (let len = 1; len <= room && len <= 4; len++) {
+      const param = UNIT_PARAMS[words.slice(i, i + len).join(' ')]
+      if (param !== undefined && len > bestLen) {
+        best = param
+        bestLen = len
+      }
+    }
+  }
+  return best
 }
 
 /**
@@ -188,4 +199,19 @@ export function compileFalUnitCard(
       },
     ],
   }
+}
+
+/**
+ * Unit-rate card when the Pricing section names a positive dollar amount
+ * in a single known unit (issue #114). Empty text, all zeros, and
+ * "see pricing page" name no amount, so they stay null. A named price the
+ * unit-rate path cannot stand behind also stays null — no invented card.
+ */
+export function priceFalNamedSection(
+  section: string,
+  requestProperties: ReadonlySet<string>,
+  source: RateCard['source'],
+): RateCard | null {
+  if (usdAmounts(section).length === 0) return null
+  return compileFalUnitCard(section, requestProperties, source)
 }
