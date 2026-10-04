@@ -35,6 +35,9 @@ const CARD_LEVEL_LEVERS = new Set([
   'audio_cache_tokens',
   'web_searches',
   'requests',
+  // Seedance reference-video seconds. Not a generation-schema property;
+  // refusing it nulled the whole stored card.
+  'input_video_duration',
 ])
 
 /**
