@@ -13,6 +13,7 @@ import { compileTokenCard } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
+import { parseMistralPageTools } from './server-tools.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
@@ -117,6 +118,7 @@ export interface MistralModelPage {
   slug: string
   ids: Array<string>
   hash: string
+  serverTools?: Array<string>
 }
 
 /**
@@ -153,7 +155,31 @@ export function indexMistralApiIds(
   return byId
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
+type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'serverTools'>
+
+interface MistralHostedTools {
+  tools: Array<string>
+  url: string
+  hash: string
+}
+
+/** API id → tool ids named on a model page. Pages that name none are absent. */
+export function indexMistralServerTools(
+  pages: Array<MistralModelPage>,
+): Map<string, MistralHostedTools> {
+  const out = new Map<string, MistralHostedTools>()
+  for (const page of pages) {
+    const named = page.serverTools ?? []
+    if (named.length === 0) continue
+    const url = MISTRAL_MODEL_PAGE(page.slug)
+    for (const id of page.ids) {
+      const prior = out.get(id)
+      const tools = [...new Set([...(prior?.tools ?? []), ...named])].sort()
+      out.set(id, { tools, url, hash: page.hash })
+    }
+  }
+  return out
+}
 
 /** Card lookup by API model id. */
 export async function mistralModelPricing(
@@ -171,9 +197,18 @@ export async function mistralModelPricing(
         if (ids.length === 0) {
           throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
         }
-        return { ids, hash: await sha256Text(body) }
+        return {
+          ids,
+          hash: await sha256Text(body),
+          serverTools: parseMistralPageTools(body),
+        }
       })
-      return { slug, ids: page.ids, hash: page.hash }
+      return {
+        slug,
+        ids: page.ids,
+        hash: page.hash,
+        serverTools: page.serverTools,
+      }
     })
     const byId = indexMistralApiIds(bySlug, pages)
     assertParsed(byId, 'mistral model pages')
@@ -183,8 +218,10 @@ export async function mistralModelPricing(
         ...pages.map((page) => `${page.slug} ${page.hash}`).sort(),
       ].join('\n'),
     )
+    const tools = indexMistralServerTools(pages)
     return {
       rates: Object.fromEntries(byId),
+      tools: Object.fromEntries(tools),
       hash,
       extractedAt: new Date().toISOString(),
     }
@@ -198,10 +235,19 @@ export async function mistralModelPricing(
           extractedAt: doc.extractedAt,
         })
       : null
-    if (!pricing) return {}
+    const hosted = doc.tools[rawId]
+    const pricingFacts = pricing
+      ? tagDocsFacts({ pricing }, MISTRAL_PRICING_URL, doc.hash)
+      : {}
+    const toolFacts = hosted
+      ? tagDocsFacts({ serverTools: hosted.tools }, hosted.url, hosted.hash)
+      : {}
+    const factSources = { ...pricingFacts, ...toolFacts }
+    if (!pricing && !hosted) return {}
     return {
-      pricing,
-      factSources: tagDocsFacts({ pricing }, MISTRAL_PRICING_URL, doc.hash),
+      ...(pricing ? { pricing } : {}),
+      ...(hosted ? { serverTools: hosted.tools } : {}),
+      ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
   }
 }

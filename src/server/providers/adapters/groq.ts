@@ -15,6 +15,7 @@ import {
   listsReasoning,
   overlayModelFacts,
 } from '../reasoning-config.ts'
+import { groqModelServerTools } from '../server-tools.ts'
 import { groqGenerationEndpointId, groqModelActivity } from '../model-meta.ts'
 import { fetchText, parseGzippedOpenApi } from '../types.ts'
 import type {
@@ -64,9 +65,10 @@ async function listModels(
     activity: groqModelActivity,
   })
   if (listed.models.length === 0) return listed
-  const [pricing, reasoning] = await Promise.all([
+  const [pricing, reasoning, tools] = await Promise.all([
     groqModelPricing(kv),
     groqModelReasoning(kv),
+    groqModelServerTools(kv),
   ])
   return {
     ...listed,
@@ -75,6 +77,7 @@ async function listModels(
         model,
         pricing(model.rawId),
         reasoning(model.rawId, listsReasoning(model.capabilities)),
+        tools(model.rawId),
       ),
     ),
   }

@@ -137,6 +137,12 @@ describe('gemini features (issue #77)', () => {
       'googleSearch',
     ])
   })
+
+  it('leaves tools empty when the page marks none supported', () => {
+    const row =
+      '| Capabilities | **[Code execution](u)** Not supported **[Search grounding](u)** Not supported |'
+    expect(parsePageTools(`x\n${row}\n`)).toEqual([])
+  })
 })
 
 describe('grok reasoning (issue #77)', () => {

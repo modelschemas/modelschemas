@@ -125,7 +125,10 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
  */
 // v7: OpenAI model pages price the first token table and only the default
 // snapshot. A v6 entry would keep o3's batch table and gpt-4o's old snapshot.
-const DOCS_CACHE_VERSION = 'v7'
+// v8: Grok model-page cache includes maxOutput (#119).
+// v9: BytePlus and Mistral cached docs include serverTools. A v8 entry
+// would keep the old card and leave tools null for six hours.
+const DOCS_CACHE_VERSION = 'v9'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

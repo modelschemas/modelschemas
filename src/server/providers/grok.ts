@@ -81,6 +81,14 @@ export function grokReasons(markdown: string): boolean {
 }
 
 /**
+ * xAI publishes no per-model tool type list (issue #123). A capabilities
+ * page that mentions search still does not name `tools[].type` ids.
+ */
+export function grokServerTools(_markdown: string): null {
+  return null
+}
+
+/**
  * xAI tags every operation `v1`, so classify by path. The text-generation
  * surface spans the OpenAI-compatible endpoints (chat/completions,
  * completions, responses) and the Anthropic-compatible ones (messages,
