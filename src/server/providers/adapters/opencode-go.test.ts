@@ -1,68 +1,44 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  MODELS_DEV_API_URL,
-  clearModelsDevCatalogCache,
-} from '../models-dev.ts'
-import { provider } from './opencode-go.ts'
+import { OPENCODE_GO_MODELS_URL, provider } from './opencode-go.ts'
 
+/** Excerpt of https://opencode.ai/zen/go/v1/models (2026-10-04). */
 const FIXTURE = {
-  'opencode-go': {
-    id: 'opencode-go',
-    npm: '@ai-sdk/openai-compatible',
-    name: 'OpenCode Go',
-    models: {
-      'chat-model': {
-        id: 'chat-model',
-        name: 'Chat Model',
-        reasoning: true,
-        reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
-        tool_call: true,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        limit: { context: 128000, output: 4096 },
-        cost: { input: 1.5, output: 3 },
-      },
-      'image-only': {
-        id: 'image-only',
-        modalities: { input: ['text'], output: ['image'] },
-        cost: { input: 1, output: 1 },
-      },
+  object: 'list',
+  data: [
+    {
+      id: 'minimax-m3',
+      object: 'model',
+      created: 1791102623,
+      owned_by: 'opencode-go',
     },
-  },
+  ],
 }
 
+const originalFetch = globalThis.fetch
+
 afterEach(() => {
-  clearModelsDevCatalogCache()
-  globalThis.fetch = fetch
+  globalThis.fetch = originalFetch
 })
 
-describe('opencode-go listModels', () => {
-  it('lists models.dev chat rows with facts, price, and reasoning', async () => {
-    const original = globalThis.fetch
+describe('opencode-go', () => {
+  it('lists published ids and leaves prices null', async () => {
+    const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
-      if (String(url) === MODELS_DEV_API_URL) {
+      urls.push(String(url))
+      if (String(url) === OPENCODE_GO_MODELS_URL) {
         return Promise.resolve(new Response(JSON.stringify(FIXTURE)))
       }
       return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
     }) as typeof fetch
-    try {
-      const result = await provider.listModels({})
-      expect(result.skipped).toBeUndefined()
-      expect(result.models.map((model) => model.rawId)).toEqual(['chat-model'])
-      expect(result.models[0]).toMatchObject({
-        activity: 'chat',
-        contextWindow: 128000,
-        maxOutput: 4096,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        reasoning: {
-          mode: 'effort',
-          mandatory: true,
-          efforts: ['low', 'high'],
-        },
-      })
-      expect(result.models[0]?.pricing).not.toBeNull()
-    } finally {
-      globalThis.fetch = original
-    }
+
+    const listed = await provider.listModels({})
+    const spec = await provider.fetchSpec({})
+
+    expect(listed.models).toEqual([
+      { rawId: 'minimax-m3', releasedAt: 1791102623, pricing: null },
+    ])
+    expect(spec.skipped).toContain('skipped')
+    expect(urls).toEqual([OPENCODE_GO_MODELS_URL])
   })
 })
