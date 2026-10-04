@@ -1,12 +1,76 @@
 /**
- * MiniMax — chat models from the public models.dev catalog (`minimax`).
- * listModels does not call the provider.
+ * MiniMax — model ids from the public models overview (platform.minimax.io).
+ * This models page does not name token prices, so prices stay null.
  */
-import { modelsDevChatProvider } from '../models-dev.ts'
+import type { Activity } from '#/db/schema.ts'
 
-export const provider = modelsDevChatProvider({
+import { fetchText } from '../types.ts'
+import type {
+  ListModelsResult,
+  ModelInfo,
+  ProviderConfig,
+  ProviderSecrets,
+  SpecFetchResult,
+} from '../types.ts'
+
+export const MINIMAX_MODELS_URL =
+  'https://platform.minimax.io/docs/guides/models-intro.md'
+
+const SPEC_SKIP = 'minimax: no first-party OpenAPI document — skipped'
+
+const SECTION_ACTIVITY: Array<[RegExp, Activity | null]> = [
+  [/^Language|^语言模型/, 'chat'],
+  [/^Video|^视频/, 'video'],
+  [/^Speech|^语音/, 'audio'],
+  [/^Image|^图片/, 'image'],
+  [/^Music|^音乐/, null],
+]
+
+const ID_IN_LINK =
+  /\[([A-Za-z0-9][A-Za-z0-9._-]*)\]\([^)]+\)|<a\b[^>]*>\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*<\/a>/g
+
+export function parseMinimaxModels(markdown: string): Array<ModelInfo> {
+  const models: Array<ModelInfo> = []
+  const seen = new Set<string>()
+  for (const chunk of markdown.split(/^### /m).slice(1)) {
+    const newline = chunk.indexOf('\n')
+    const title = newline === -1 ? chunk : chunk.slice(0, newline)
+    const known = SECTION_ACTIVITY.find(([pattern]) => pattern.test(title))
+    const activity = known ? known[1] : null
+    for (const match of chunk.matchAll(ID_IN_LINK)) {
+      const rawId = match[1] ?? match[2]
+      if (!rawId || seen.has(rawId)) continue
+      seen.add(rawId)
+      models.push({ rawId, activity, pricing: null })
+    }
+  }
+  if (models.length === 0) {
+    throw new Error('minimax: models page listed no ids')
+  }
+  return models
+}
+
+async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
+  const markdown = await fetchText(MINIMAX_MODELS_URL)
+  return { models: parseMinimaxModels(markdown) }
+}
+
+function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  return Promise.resolve({
+    specs: [],
+    sources: [],
+    outputStrategy: 'post-200',
+    skipped: SPEC_SKIP,
+  })
+}
+
+export const provider: ProviderConfig = {
   id: 'minimax',
   displayName: 'MiniMax',
-  serverUrl: 'https://api.minimax.io/anthropic/v1',
-  docUrl: 'https://platform.minimax.io/docs/guides/quickstart',
-})
+  specSourceUrl: 'https://platform.minimax.io/docs/guides/quickstart',
+  modelsEndpoint: MINIMAX_MODELS_URL,
+  defaultDerivation: 'docs-derived',
+  fetchSpec,
+  listModels,
+  classify: () => null,
+}
