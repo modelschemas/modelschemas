@@ -110,7 +110,15 @@ describe('reactor listModels', () => {
                 name: 'helios',
                 rate: { amount_per_sec: 17, unit: 'credits' },
               },
-              { name: 'x2', rate: { amount_per_sec: 17, unit: 'credits' } },
+              {
+                name: 'x2',
+                rate: {
+                  amount_per_sec: 17,
+                  amount_per_sec_usd: '0.0017',
+                  currency_code: 'USD',
+                  unit: 'credits',
+                },
+              },
               { name: 'happy-oyster' },
             ],
           }),
@@ -130,7 +138,12 @@ describe('reactor listModels', () => {
       expect(result.models.every((m) => m.activity === 'video')).toBe(true)
       expect(
         result.models.find((m) => m.rawId === 'reactor/helios')?.pricing,
-      ).toEqual({ amount_per_sec: 17, unit: 'credits' })
+      ).toBeUndefined()
+      expect(
+        result.models.find((m) => m.rawId === 'x2')?.pricing,
+      ).toMatchObject({
+        price: { '*': [{ var: 'video_seconds' }, 0.0017] },
+      })
     } finally {
       globalThis.fetch = original
     }

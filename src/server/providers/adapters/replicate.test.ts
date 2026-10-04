@@ -116,6 +116,7 @@ describe('replicate listModels', () => {
       expect(calls.map((c) => c.url)).toEqual([
         'https://api.replicate.com/v1/models',
         'https://api.replicate.com/v1/models?cursor=p2',
+        'https://replicate.com/black-forest-labs/flux-schnell',
       ])
       expect(calls[0]?.auth).toBe('Bearer tok-test')
       expect(result.skipped).toBeUndefined()

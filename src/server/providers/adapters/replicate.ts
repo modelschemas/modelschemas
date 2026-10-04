@@ -4,8 +4,20 @@
  * listModels walks the paginated public catalog; requires REPLICATE_API_TOKEN.
  */
 import type { Activity } from '#/db/schema.ts'
+import { cachedDocs, mapConcurrent } from '../model-facts.ts'
 import { isoToEpochSeconds } from '../release-dates.ts'
-import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
+import {
+  fetchJson,
+  fetchOpenApi,
+  fetchText,
+  sha256Text,
+  skippedResult,
+} from '../types.ts'
+import {
+  compileReplicateBilling,
+  replicateBillingFromHtml,
+} from '../replicate-pricing.ts'
+import type { ReplicateBilling } from '../replicate-pricing.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -92,6 +104,9 @@ interface ReplicateModel {
   created_at?: string
   is_official?: boolean
   latest_version?: { created_at?: string }
+  /** Present when the models API includes the prediction price. */
+  billing_config?: ReplicateBilling | null
+  billingConfig?: ReplicateBilling | null
 }
 
 interface ReplicateModelPage {
@@ -109,6 +124,87 @@ function isSafeModelsUrl(url: string): boolean {
     )
   } catch {
     return false
+  }
+}
+
+function modelPageUrl(owner: string, name: string): string {
+  return `https://replicate.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+}
+
+function inlineBilling(model: ReplicateModel): ReplicateBilling | null {
+  const raw = model.billing_config ?? model.billingConfig
+  if (!raw || typeof raw !== 'object') return null
+  return raw
+}
+
+/**
+ * Official models publish a prediction price on the model page (the models
+ * list often omits it). A page with no billing config, or a fetch failure,
+ * leaves the row unpriced. Community models are not fetched.
+ */
+async function withPredictionPrice(
+  model: ReplicateModel,
+  info: ModelInfo,
+  kv?: KVNamespace,
+): Promise<ModelInfo> {
+  const owner = model.owner
+  const name = model.name
+  if (!owner || !name) return info
+  const pageUrl = modelPageUrl(owner, name)
+  const inline = inlineBilling(model)
+  if (inline) {
+    const extractedAt = new Date().toISOString()
+    const source = {
+      url: pageUrl,
+      hash: await sha256Text(JSON.stringify(inline)),
+      extractedAt,
+    }
+    const pricing = compileReplicateBilling(inline, source)
+    if (!pricing) return info
+    return {
+      ...info,
+      pricing,
+      factSources: {
+        pricing: {
+          derivation: 'docs-derived',
+          sourceUrl: pageUrl,
+          sourceHash: source.hash,
+          path: 'billing_config',
+        },
+      },
+    }
+  }
+  if (model.is_official !== true) return info
+  try {
+    const doc = await cachedDocs(kv, pageUrl, async () => {
+      const html = await fetchText(pageUrl)
+      return {
+        billing: replicateBillingFromHtml(html),
+        hash: await sha256Text(html),
+        extractedAt: new Date().toISOString(),
+      }
+    })
+    const source = {
+      url: pageUrl,
+      hash: doc.hash,
+      extractedAt: doc.extractedAt,
+    }
+    const pricing = compileReplicateBilling(doc.billing, source)
+    if (!pricing) return info
+    return {
+      ...info,
+      pricing,
+      factSources: {
+        pricing: {
+          derivation: 'docs-derived',
+          sourceUrl: pageUrl,
+          sourceHash: doc.hash,
+          path: 'billingConfig',
+        },
+      },
+    }
+  } catch {
+    return info
   }
 }
 
@@ -132,13 +228,16 @@ function toModelInfo(model: ReplicateModel): ModelInfo | null {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.REPLICATE_API_TOKEN
   if (!key) {
     return { models: [], ...skippedResult('replicate', 'REPLICATE_API_TOKEN') }
   }
   const headers = { Authorization: `Bearer ${key}` }
-  const models: Array<ModelInfo> = []
+  const listed: Array<{ info: ModelInfo; model: ReplicateModel }> = []
   const seen = new Set<string>()
   let url: string | null = REPLICATE_MODELS_URL
   for (let page = 0; url && page < MAX_MODEL_PAGES; page++) {
@@ -148,12 +247,16 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
       const info = toModelInfo(row)
       if (!info || seen.has(info.rawId)) continue
       seen.add(info.rawId)
-      models.push(info)
+      listed.push({ info, model: row })
     }
     url =
       typeof body.next === 'string' && body.next.length > 0 ? body.next : null
   }
-  return { models }
+  return {
+    models: await mapConcurrent(listed, 8, ({ info, model }) =>
+      withPredictionPrice(model, info, kv),
+    ),
+  }
 }
 
 export const provider: ProviderConfig = {
