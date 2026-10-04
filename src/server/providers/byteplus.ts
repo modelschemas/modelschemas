@@ -74,7 +74,12 @@ const ARK_MODELS_URL = 'https://ark.ap-southeast.bytepluses.com/api/v3/models'
 function classify(path: string): Activity | null {
   if (path === '/chat/completions') return 'chat'
   if (path === '/images/generations') return 'image'
-  if (path === '/contents/generations/tasks') return 'video'
+  if (
+    path === '/contents/generations/tasks' ||
+    path === '/contents/generations/tasks/{id}'
+  ) {
+    return 'video'
+  }
   if (path === '/tts/create' || path === '/auc/bigmodel/recognize/flash') {
     return 'audio'
   }
@@ -502,6 +507,7 @@ export const byteplusProvider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  classifyGets: true,
   generationEndpointId: ({ rawId, activity }) =>
     byteplusGenerationEndpointId(rawId, activity),
 }

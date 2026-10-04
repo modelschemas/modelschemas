@@ -120,7 +120,10 @@ const getModelDetail = createServerFn({ method: 'GET' })
     // Prefer the bound generation route; aggregator providers (FAL) match
     // on rawId. Fall back to the provider's first 40 endpoints.
     const matching = boundId
-      ? all.filter((e) => e.endpointId === boundId)
+      ? all.filter(
+          (e) =>
+            e.endpointId === boundId || e.endpointId.startsWith(`${boundId}/`),
+        )
       : all.filter((e) => e.endpointId.includes(model.rawId))
     const endpointsFiltered =
       matching.length > 0 && matching.length < all.length

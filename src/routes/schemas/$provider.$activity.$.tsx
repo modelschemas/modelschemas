@@ -305,6 +305,21 @@ function SchemaDetail() {
           />
         ) : (
           <>
+            {result.provider === 'byteplus' &&
+            result.endpointId === 'contents/generations/tasks' ? (
+              <p className="mb-4 max-w-[46em] font-mono text-[13px] text-ink-soft">
+                This call returns a task id. The video is on{' '}
+                <a
+                  className="press-link"
+                  href={`/schemas/byteplus/video/${endpointPath('contents/generations/tasks/{id}')}?kind=output`}
+                >
+                  GET /contents/generations/tasks/{'{id}'}
+                </a>
+                . Poll until <code>status</code> is <code>succeeded</code>, then
+                download <code>content.video_url</code> (valid 24 hours).
+              </p>
+            ) : null}
+
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pb-3">
               <h2 className="m-0 font-mono text-xs font-semibold tracking-[0.14em] text-ink uppercase">
                 {result.kind === 'input' ? 'Request body' : 'Response body'}

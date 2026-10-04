@@ -163,6 +163,42 @@ interface MediaContent {
 interface OperationShape {
   requestBody?: { content?: Record<string, MediaContent> }
   responses?: Record<string, { content?: Record<string, MediaContent> }>
+  parameters?: Array<{
+    name?: string
+    in?: string
+    required?: boolean
+    description?: string
+    schema?: JsonValue
+  }>
+}
+
+/** Path parameters as an object schema, for GETs that have no body. */
+function pathParameterSchema(
+  operation: OperationShape,
+): Record<string, JsonValue> | undefined {
+  const params = (operation.parameters ?? []).filter(
+    (param) => param.in === 'path' && typeof param.name === 'string',
+  )
+  if (params.length === 0) return undefined
+  const properties: Record<string, JsonValue> = {}
+  const required: Array<string> = []
+  for (const param of params) {
+    const name = param.name
+    if (typeof name !== 'string') continue
+    const schema: Record<string, JsonValue> = isObject(param.schema)
+      ? { ...param.schema }
+      : { type: 'string' }
+    if (typeof param.description === 'string') {
+      schema.description = param.description
+    }
+    properties[name] = schema
+    if (param.required === true) required.push(name)
+  }
+  return {
+    type: 'object',
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+  }
 }
 
 function schemaComponents(spec: OpenApiDocument): Record<string, JsonValue> {
@@ -214,11 +250,15 @@ export function extractEndpointSchemas(
   spec: OpenApiDocument,
   pathKey: string,
   strategy: OutputStrategy = 'post-200',
+  method: 'post' | 'get' = 'post',
 ): ExtractedEndpointSchemas {
   const warnings: Array<string> = []
   const components = schemaComponents(spec)
-  const post = spec.paths?.[pathKey]?.post as OperationShape | undefined
-  if (!post) return { warnings }
+  const operation = spec.paths?.[pathKey]?.[method] as
+    | OperationShape
+    | undefined
+  if (!operation) return { warnings }
+  const post = operation
 
   let input: Record<string, JsonValue> | undefined
   const requestContent = post.requestBody?.content
@@ -238,6 +278,8 @@ export function extractEndpointSchemas(
     )
     input = bundled.schema
     warnings.push(...bundled.warnings)
+  } else if (method === 'get') {
+    input = pathParameterSchema(operation)
   }
 
   let outputContent: MediaContent | undefined

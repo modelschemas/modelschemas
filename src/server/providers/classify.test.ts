@@ -554,7 +554,7 @@ describe('byteplus classify', () => {
     expect(byteplusProvider.classify('/models', {})).toBeNull()
     expect(
       byteplusProvider.classify('/contents/generations/tasks/{id}', {}),
-    ).toBeNull()
+    ).toBe('video')
   })
 })
 

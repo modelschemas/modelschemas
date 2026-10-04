@@ -63,9 +63,12 @@ export const ARK_GO_SOURCE_URL = `https://github.com/${GO_SDK_REPO}/tree/${GO_SD
 
 interface ArkEndpoint {
   path: string
+  method?: 'post' | 'get'
   operationId: string
   summary: string
-  requestType: string
+  /** Body schema. GETs use `pathParam` instead. */
+  requestType?: string
+  pathParam?: { name: string; description: string }
   responseType: string
   responseDescription: string
 }
@@ -101,6 +104,21 @@ const ARK_ENDPOINTS: Array<ArkEndpoint> = [
     requestType: 'CreateContentGenerationTaskRequest',
     responseType: 'CreateContentGenerationTaskResponse',
     responseDescription: 'Task acknowledgment',
+  },
+  {
+    path: '/contents/generations/tasks/{id}',
+    method: 'get',
+    operationId: 'getContentsGenerationsTask',
+    summary:
+      'Retrieve a Seedance video task. Poll until status is succeeded, then download content.video_url (valid 24 hours; the task record is kept 7 days).',
+    pathParam: {
+      name: 'id',
+      description:
+        'Task id from POST /contents/generations/tasks. You can query records from the past 7 days.',
+    },
+    responseType: 'GetContentGenerationTaskResponse',
+    responseDescription:
+      'Task record. content.video_url is the file once status is succeeded.',
   },
 ]
 
@@ -223,7 +241,20 @@ const ARK_CURATED_DESCRIPTIONS: Record<string, Record<string, string>> = {
       'URL that receives a POST with the task payload on each status change.',
   },
   CreateContentGenerationTaskResponse: {
-    id: 'Task id, e.g. cgt-batch-20260731174311-zmz5s — the -batch infix appears on flex-tier routing. Poll GET /contents/generations/tasks/{id} until the status is terminal; the video URL arrives with the succeeded status and expires 24 hours later (the task record itself is kept for 7 days).',
+    id: 'Task id, e.g. cgt-batch-20260731174311-zmz5s — the -batch infix appears on flex-tier routing. The video is not in this body. Poll GET /contents/generations/tasks/{id} until status is succeeded; content.video_url expires 24 hours later (the task record itself is kept for 7 days).',
+  },
+  GetContentGenerationTaskResponse: {
+    id: 'Task id returned by the create call.',
+    status:
+      'queued, running, succeeded, failed, or cancelled. The video URL is present once this is succeeded. A task can also be marked expired when execution_expires_after elapses.',
+    content:
+      'Output of a completed task. video_url is the file; last_frame_url is set when the create call passed return_last_frame: true. Both URLs are valid for 24 hours.',
+  },
+  Content: {
+    video_url:
+      'URL of the generated video. Present when status is succeeded. Valid for 24 hours; a Dreamina Seedance 2.5 URL can be downloaded up to 100 times. Download or copy it before it expires.',
+    last_frame_url:
+      'URL of the last frame. Returned when the create call set return_last_frame: true. Valid for 24 hours.',
   },
 }
 
@@ -259,7 +290,9 @@ export interface ArkSpecBuild {
  * embedded document.
  */
 export function buildArkSpecFromGo(files: Array<GoSourceFile>): ArkSpecBuild {
-  const roots = ARK_ENDPOINTS.flatMap((e) => [e.requestType, e.responseType])
+  const roots = ARK_ENDPOINTS.flatMap((e) =>
+    [e.requestType, e.responseType].filter((name) => name !== undefined),
+  )
   const { schemas, warnings } = parseGoSchemas(files, roots)
 
   const missing = roots.filter((r) => !(r in schemas))
@@ -276,35 +309,48 @@ export function buildArkSpecFromGo(files: Array<GoSourceFile>): ArkSpecBuild {
 
   const paths: NonNullable<OpenApiDocument['paths']> = {}
   for (const endpoint of ARK_ENDPOINTS) {
-    paths[endpoint.path] = {
-      post: {
-        // Re-derived from the SDK every sync, so it self-heals: no
-        // verifiedAt, because freshness is the sync timestamp.
-        [PROVENANCE_MARKER]: { derivation: 'generated' },
-        operationId: endpoint.operationId,
-        summary: endpoint.summary,
-        requestBody: {
-          required: true,
+    const method = endpoint.method ?? 'post'
+    const operation: Record<string, unknown> = {
+      // Re-derived from the SDK every sync, so it self-heals: no
+      // verifiedAt, because freshness is the sync timestamp.
+      [PROVENANCE_MARKER]: { derivation: 'generated' },
+      operationId: endpoint.operationId,
+      summary: endpoint.summary,
+      responses: {
+        '200': {
+          description: endpoint.responseDescription,
           content: {
             'application/json': {
-              schema: { $ref: `#/components/schemas/${endpoint.requestType}` },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: endpoint.responseDescription,
-            content: {
-              'application/json': {
-                schema: {
-                  $ref: `#/components/schemas/${endpoint.responseType}`,
-                },
+              schema: {
+                $ref: `#/components/schemas/${endpoint.responseType}`,
               },
             },
           },
         },
       },
     }
+    if (endpoint.requestType !== undefined) {
+      operation.requestBody = {
+        required: true,
+        content: {
+          'application/json': {
+            schema: { $ref: `#/components/schemas/${endpoint.requestType}` },
+          },
+        },
+      }
+    }
+    if (endpoint.pathParam !== undefined) {
+      operation.parameters = [
+        {
+          name: endpoint.pathParam.name,
+          in: 'path',
+          required: true,
+          description: endpoint.pathParam.description,
+          schema: { type: 'string' },
+        },
+      ]
+    }
+    paths[endpoint.path] = { [method]: operation }
   }
 
   return {

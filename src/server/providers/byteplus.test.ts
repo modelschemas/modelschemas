@@ -175,6 +175,14 @@ type CreateContentGenerationTaskRequest struct {
 type CreateContentGenerationTaskResponse struct {
 	ID string \`json:"id"\`
 }
+type GetContentGenerationTaskResponse struct {
+	ID      string  \`json:"id"\`
+	Status  string  \`json:"status"\`
+	Content Content \`json:"content"\`
+}
+type Content struct {
+	VideoURL string \`json:"video_url"\`
+}
 `,
   'common.go': `
 type Usage struct {
@@ -210,7 +218,7 @@ async function withGoSdk<T>(
 }
 
 describe('byteplus spec generated from the Go SDK', () => {
-  it('classifies and bundles the five endpoints without warnings', async () => {
+  it('classifies and bundles the generation endpoints without warnings', async () => {
     const { result: fetched, urls } = await withGoSdk('ok', () =>
       byteplusProvider.fetchSpec({}),
     )
@@ -238,6 +246,7 @@ describe('byteplus spec generated from the Go SDK', () => {
       ['byteplus/auc/bigmodel/recognize/flash', 'audio'],
       ['byteplus/chat/completions', 'chat'],
       ['byteplus/contents/generations/tasks', 'video'],
+      ['byteplus/contents/generations/tasks/{id}', 'video'],
       ['byteplus/images/generations', 'image'],
       ['byteplus/tts/create', 'audio'],
     ])
@@ -255,6 +264,17 @@ describe('byteplus spec generated from the Go SDK', () => {
       (e) => e.dbId === 'byteplus/contents/generations/tasks',
     )
     expect(video?.input?.required).toEqual(['model', 'content'])
+    const task = endpoints.find(
+      (e) => e.dbId === 'byteplus/contents/generations/tasks/{id}',
+    )
+    expect(task?.method).toBe('GET')
+    expect(task?.input?.required).toEqual(['id'])
+    const defs = task?.output?.$defs as
+      | Record<string, { properties?: Record<string, unknown> }>
+      | undefined
+    expect(defs?.Content?.properties?.video_url).toMatchObject({
+      type: 'string',
+    })
   })
 
   it('re-applies curated fields and descriptions the SDK omits', async () => {
@@ -299,7 +319,7 @@ describe('byteplus spec generated from the Go SDK', () => {
     // Degraded freshness, not a degraded service: all five endpoints survive.
     const { endpoints, warnings } = classifyAndBundle(byteplusProvider, fetched)
     expect(warnings).toEqual([])
-    expect(endpoints).toHaveLength(5)
+    expect(endpoints).toHaveLength(6)
   })
 
   it.each(['ok', 'unreachable'] as const)(
