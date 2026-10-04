@@ -24,6 +24,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 function seedField(input: CardInput, example: unknown): FieldValue {
   switch (input.kind) {
     case 'number': {
+      // A published estimate runs only when this value is omitted.
+      if (input.estimate && example === undefined) return ''
       const value =
         typeof example === 'number' || typeof example === 'string'
           ? example
@@ -36,6 +38,14 @@ function seedField(input: CardInput, example: unknown): FieldValue {
     case 'boolean':
       return typeof example === 'boolean' ? example : (input.default ?? false)
     case 'enum':
+      if (
+        example === undefined &&
+        input.param === 'resolution' &&
+        input.default === undefined &&
+        input.values.includes('720p')
+      ) {
+        return '720p'
+      }
       return typeof example === 'string' && input.values.includes(example)
         ? example
         : (input.default ?? input.values[0] ?? '')
@@ -54,6 +64,49 @@ function seedField(input: CardInput, example: unknown): FieldValue {
   }
 }
 
+/**
+ * Worked video examples on provider pages are 16:9 and 5 seconds. Those
+ * are form seeds only; omitting them on the API still refuses.
+ */
+function seedEstimateField(input: CardInput, example: unknown): FieldValue {
+  if (example === undefined && input.kind === 'enum') {
+    if (input.values.includes('16:9')) return '16:9'
+  }
+  if (
+    example === undefined &&
+    input.kind === 'number' &&
+    input.param === 'duration' &&
+    input.default === undefined
+  ) {
+    return '5'
+  }
+  return seedField(input, example)
+}
+
+export interface FormField {
+  name: string
+  input: CardInput
+  /** This field feeds an estimate of `estimates`, and is not itself billed. */
+  estimates?: string
+}
+
+/**
+ * Fields the calculator draws. Estimate inputs (duration, ratio) sit in
+ * front of the number they fill.
+ */
+export function formFields(inputs: RateCard['inputs']): FormField[] {
+  const fields: FormField[] = []
+  for (const [name, input] of Object.entries(inputs)) {
+    if (input.kind === 'number' && input.estimate) {
+      for (const [ename, einput] of Object.entries(input.estimate.inputs)) {
+        fields.push({ name: ename, input: einput, estimates: input.param })
+      }
+    }
+    fields.push({ name, input })
+  }
+  return fields
+}
+
 /** Seed every input from the example that sets the most of them. */
 export function seedValues(
   card: Pick<RateCard, 'inputs' | 'examples'>,
@@ -66,12 +119,19 @@ export function seedValues(
       top === undefined || covered(example) > covered(top) ? example : top,
     undefined,
   )
-  return Object.fromEntries(
+  const values: Record<string, FieldValue> = Object.fromEntries(
     Object.entries(card.inputs).map(([name, input]) => [
       name,
       seedField(input, best?.params[input.param]),
     ]),
   )
+  for (const input of Object.values(card.inputs)) {
+    if (input.kind !== 'number' || !input.estimate) continue
+    for (const [name, einput] of Object.entries(input.estimate.inputs)) {
+      values[name] = seedEstimateField(einput, best?.params[einput.param])
+    }
+  }
+  return values
 }
 
 // ponytail: lists past this are sent raw and refused, not built in memory.
@@ -88,6 +148,16 @@ function countList(value: FieldValue): unknown {
   return length <= MAX_COUNT ? Array.from({ length }, () => '') : value
 }
 
+function assign(
+  slot: Record<string, unknown>,
+  input: CardInput,
+  value: FieldValue,
+): void {
+  // Blank means omitted, so a published estimate can run.
+  if (input.kind === 'number' && value === '') return
+  slot[input.param] = input.kind === 'count' ? countList(value) : value
+}
+
 /** Split field values into the estimate body's request/usage slots. */
 export function toEstimateParts(
   inputs: RateCard['inputs'],
@@ -97,9 +167,15 @@ export function toEstimateParts(
   const usage: Record<string, unknown> = {}
   for (const [name, input] of Object.entries(inputs)) {
     const value = values[name]
-    if (value === undefined) continue
-    const slot = input.bound === 'usage' ? usage : request
-    slot[input.param] = input.kind === 'count' ? countList(value) : value
+    if (value !== undefined) {
+      assign(input.bound === 'usage' ? usage : request, input, value)
+    }
+    if (input.kind !== 'number' || !input.estimate) continue
+    for (const [ename, einput] of Object.entries(input.estimate.inputs)) {
+      const estimated = values[ename]
+      if (estimated === undefined) continue
+      assign(einput.bound === 'usage' ? usage : request, einput, estimated)
+    }
   }
   return { request, usage }
 }

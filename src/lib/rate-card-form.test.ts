@@ -1,8 +1,9 @@
-import { compileTokenCard, price } from '@modelschemas/rate-card'
+import { compileTokenCard, price, priceDetailed } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
 import { FIXTURE_CARDS } from '../../packages/rate-card/src/fixtures/index.ts'
-import { seedValues, toEstimateParts } from './rate-card-form.ts'
+import { compileSeedanceCard } from '../server/providers/byteplus-pricing.ts'
+import { formFields, seedValues, toEstimateParts } from './rate-card-form.ts'
 
 const quote = (
   card: (typeof FIXTURE_CARDS)[string],
@@ -70,6 +71,59 @@ describe('rate card form', () => {
     expect(() => price(card, { image_urls: sent('') })).toThrow(
       /expected a list/,
     )
+  })
+
+  it('leaves completion_tokens blank and prices 720p 5s from duration', () => {
+    const card = compileSeedanceCard(
+      {
+        default: {
+          '720p': { no_video: 10.7, video: 6.4 },
+          '1080p': { no_video: 11.7, video: 7 },
+        },
+      },
+      {
+        url: 'https://example.test/pricing',
+        hash: 'a'.repeat(64),
+        extractedAt: '2026-10-04T00:00:00.000Z',
+      },
+      {
+        model: {
+          fps: 24,
+          dims: {
+            '720p': { '16:9': { w: 1280, h: 720 } },
+            '1080p': { '16:9': { w: 1920, h: 1080 } },
+          },
+        },
+        url: 'https://example.test/guide',
+        hash: 'b'.repeat(64),
+      },
+    )
+    if (!card) throw new Error('no card')
+    const values = seedValues(card)
+    expect(values.completion_tokens).toBe('')
+    expect(values.duration).toBe('5')
+    expect(values.ratio).toBe('16:9')
+    expect(values.resolution).toBe('720p')
+    expect(formFields(card.inputs).map((field) => field.input.param)).toEqual([
+      'service_tier',
+      'draft',
+      'ratio',
+      'duration',
+      'completion_tokens',
+      'resolution',
+      'input_video',
+    ])
+    const { request, usage } = toEstimateParts(card.inputs, values)
+    expect(usage).toEqual({ input_video: false })
+    expect(request).toMatchObject({
+      resolution: '720p',
+      ratio: '16:9',
+      duration: '5',
+    })
+    expect(request).not.toHaveProperty('completion_tokens')
+    const result = priceDetailed(card, request, usage)
+    expect(result.estimated).toEqual(['completion_tokens'])
+    expect(result.usd).toBeCloseTo(1.156, 2)
   })
 
   it('seeds a preset-name example to that preset size', () => {

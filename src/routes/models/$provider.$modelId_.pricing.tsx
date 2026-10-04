@@ -4,10 +4,12 @@ import { createServerFn } from '@tanstack/react-start'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { MetaStrip, ReqLine, SiteFooter, SiteNav } from '#/components/site.tsx'
-import { formatUsd, toEstimateParts } from '#/lib/rate-card-form.ts'
+import { formFields, formatUsd, toEstimateParts } from '#/lib/rate-card-form.ts'
 import type { FieldValue } from '#/lib/rate-card-form.ts'
 
-type Quote = { ok: true; usd: number } | { ok: false; message: string }
+type Quote =
+  | { ok: true; usd: number; estimated: string[] }
+  | { ok: false; message: string }
 
 interface CalculatorData {
   provider: string
@@ -50,7 +52,11 @@ async function runQuote(raw: unknown): Promise<Quote> {
   try {
     const outcome = await estimateCost(getDb(env), body)
     return outcome.ok
-      ? { ok: true, usd: outcome.result.usd }
+      ? {
+          ok: true,
+          usd: outcome.result.usd,
+          estimated: outcome.result.estimated,
+        }
       : { ok: false, message: outcome.message }
   } catch (cause) {
     console.error('rate card quote failed', body.provider, body.model, cause)
@@ -117,13 +123,15 @@ function describe(
   inputs: RateCard['inputs'],
   values: Record<string, FieldValue>,
 ): string {
-  return Object.entries(inputs)
-    .map(([name, input]) => {
+  return formFields(inputs)
+    .map(({ name, input }) => {
       const value = values[name]
       const shown =
-        typeof value === 'object'
-          ? `${value.width}×${value.height}`
-          : String(value)
+        value === ''
+          ? 'estimated'
+          : typeof value === 'object'
+            ? `${value.width}×${value.height}`
+            : String(value)
       return `${input.param} ${shown}`
     })
     .join(' · ')
@@ -132,8 +140,12 @@ function describe(
 function RateCardCalculator() {
   const data = Route.useLoaderData()
   const { inputs, compact } = data
+  const fields = formFields(inputs)
   const [values, setValues] = useState(data.values)
   const [usd, setUsd] = useState(data.quote.ok ? data.quote.usd : null)
+  const [estimated, setEstimated] = useState(
+    data.quote.ok ? data.quote.estimated : [],
+  )
   const [quoted, setQuoted] = useState(describe(inputs, data.values))
   const [error, setError] = useState(data.quote.ok ? null : data.quote.message)
   const [loading, setLoading] = useState(false)
@@ -151,6 +163,7 @@ function RateCardCalculator() {
         setLoading(false)
         if (quote.ok) {
           setUsd(quote.usd)
+          setEstimated(quote.estimated)
           setQuoted(describe(inputs, values))
           setError(null)
         } else {
@@ -209,8 +222,13 @@ function RateCardCalculator() {
             ['priced per', compact.per],
             [
               'source',
-              <a key="s" className="press-link" href={data.sourceUrl}>
-                {new URL(data.sourceUrl).hostname}
+              <a
+                key="s"
+                className="press-link"
+                href={data.sourceUrl}
+                title={data.sourceUrl}
+              >
+                pricing page ↗
               </a>,
             ],
           ]}
@@ -219,7 +237,7 @@ function RateCardCalculator() {
         <div className="figure overflow-x-auto">
           <table className="dtable">
             <tbody>
-              {Object.entries(inputs).map(([name, input]) => {
+              {fields.map(({ name, input, estimates: estimatesParam }) => {
                 const value = values[name]
                 const id = `rc-${name}`
                 const rate = perMillion[input.param]
@@ -229,6 +247,7 @@ function RateCardCalculator() {
                       <label htmlFor={id}>{input.param}</label>
                       <div className="text-[11px]">
                         {input.kind} · {input.bound ?? 'request'}
+                        {estimatesParam ? ` · estimates ${estimatesParam}` : ''}
                       </div>
                     </td>
                     <td className="font-mono text-[12.5px]">
@@ -256,6 +275,11 @@ function RateCardCalculator() {
                   {usd === null ? null : (
                     <span className="text-ink-soft"> — {quoted}</span>
                   )}
+                  {estimated.length > 0 ? (
+                    <div className="text-ink-faint">
+                      estimated {estimated.join(', ')}, not a billed usage count
+                    </div>
+                  ) : null}
                   {loading ? (
                     <span className="ml-2 text-ink-faint">re-quoting…</span>
                   ) : null}
@@ -286,6 +310,13 @@ function RateCardCalculator() {
             </tbody>
           </table>
         </div>
+        {inputs.input_video ? (
+          <p className="mt-2.5 font-mono text-xs text-ink-faint">
+            Input video uses a lower token rate. With tokens left blank, a short
+            input is billed at the published minimum input length for that
+            output duration. A length the table does not list refuses.
+          </p>
+        ) : null}
         <p className="mt-2.5 font-mono text-xs text-ink-faint">
           <a className="press-link" href={modelHref}>
             ← back to {data.rawId}
@@ -393,6 +424,9 @@ function Field({
       min={0}
       step={input.kind === 'count' ? 1 : 'any'}
       value={value ?? ''}
+      placeholder={
+        input.kind === 'number' && input.estimate ? 'estimated' : undefined
+      }
       onChange={(e) => onChange(e.target.value)}
     />
   )

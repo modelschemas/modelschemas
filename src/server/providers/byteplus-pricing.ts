@@ -668,21 +668,42 @@ export function compileSeedreamProCard(
  * With `geometry`, an omitted `completion_tokens` is estimated by the
  * page's own formula over the tutorial's published sizes, and the estimate
  * endpoint labels it as such. The estimate refuses where the published
- * method does not hold: video input (a minimum-token floor applies, in a
- * table the cron cannot read), draft renders, `ratio: adaptive`, and any
+ * method does not hold: draft renders, `ratio: adaptive`, and any
  * resolution × ratio the tutorial does not list.
+ *
+ * When `videoMinimums` is set, an input video uses
+ * `max(input seconds, minimum input for that output length) + output`.
+ * The minimum input seconds are the Lark table's (output 4–15 for 2.0,
+ * 4–30 for 2.5): `output - floor((output - 3) / 3) - 1`. Every pasted
+ * minimum-token cell equals that length times the row's width, height,
+ * and 24 fps, divided by 1024 and rounded. The cron still cannot read
+ * the Lark base, so a duration the table does not list refuses.
  *
  * Draft refuses outright on resolution-priced models: the page bills a draft
  * at a different resolution than the request names. Video input is not a
  * request field Ark exposes as one value (it rides in `content`), so the
  * caller states it as `usage.input_video`. Only models whose rates split on
- * video input take it (the tutorial lists no video reference for 1.x), so
- * the others' estimate has no video input to refuse.
+ * video input take it.
  */
+/**
+ * Minimum input seconds for one output duration, from the Seedance 2.0 and
+ * 2.5 Lark tables. Same series on both: 3s in for 4s out, 4s in for 5s out,
+ * 20s in for 30s out.
+ */
+export function seedanceMinInputSeconds(output: number): number {
+  return output - Math.floor((output - 3) / 3) - 1
+}
+
 export function compileSeedanceCard(
   rates: ByteplusVideoRates,
   source: RateCard['source'],
-  geometry?: { model: SeedanceGeometry; url: string; hash: string },
+  geometry?: {
+    model: SeedanceGeometry
+    url: string
+    hash: string
+    /** Last output duration the Lark minimum-token table publishes. */
+    videoMinimumsThrough?: number
+  },
 ): RateCard | null {
   const online = rates.default
   if (!online) return null
@@ -750,9 +771,26 @@ export function compileSeedanceCard(
         )
       : geometry.model.dims
     const ratios = [...new Set(Object.values(dims).flatMap(Object.keys))]
+    const through = geometry.videoMinimumsThrough
+    const minInput =
+      through === undefined || !variants.includes('video')
+        ? undefined
+        : Object.fromEntries(
+            Array.from({ length: through - 3 }, (_, i) => {
+              const output = i + 4
+              return [String(output), seedanceMinInputSeconds(output)]
+            }),
+          )
     const estimateInputs: RateCardEstimate['inputs'] = {
       ratio: { param: 'ratio', kind: 'enum', values: ratios },
       duration: { param: 'duration', kind: 'number' },
+    }
+    if (minInput) {
+      estimateInputs.input_video_duration = {
+        param: 'input_video_duration',
+        kind: 'number',
+        default: 0,
+      }
     }
     if (!inputs.resolution) {
       estimateInputs.resolution = {
@@ -768,8 +806,35 @@ export function compileSeedanceCard(
       },
     })
     tables.pixels = dims
+    if (minInput) tables.min_input_seconds = minInput
     // Shapes the published method covers; any other key refuses.
-    tables.estimate_supported = { no_input_video: { not_draft: 1 } }
+    tables.estimate_supported = minInput
+      ? { no_input_video: { not_draft: 1 }, input_video: { not_draft: 1 } }
+      : { no_input_video: { not_draft: 1 } }
+    const seconds: Expr = minInput
+      ? {
+          if: [
+            { var: 'input_video' },
+            {
+              '+': [
+                {
+                  max: [
+                    { var: 'input_video_duration' },
+                    {
+                      lookup: {
+                        table: 'min_input_seconds',
+                        keys: [{ var: 'duration' }],
+                      },
+                    },
+                  ],
+                },
+                { var: 'duration' },
+              ],
+            },
+            { var: 'duration' },
+          ],
+        }
+      : { var: 'duration' }
     inputs.completion_tokens.estimate = {
       inputs: estimateInputs,
       value: {
@@ -786,12 +851,7 @@ export function compileSeedanceCard(
           {
             '/': [
               {
-                '*': [
-                  { var: 'duration' },
-                  side('w'),
-                  side('h'),
-                  geometry.model.fps,
-                ],
+                '*': [seconds, side('w'), side('h'), geometry.model.fps],
               },
               1024,
             ],
@@ -962,7 +1022,18 @@ export async function byteplusModelPricing(
         seedance,
         source,
         model && guide
-          ? { model, url: BYTEPLUS_VIDEO_GUIDE_URL, hash: guide.hash }
+          ? {
+              model,
+              url: BYTEPLUS_VIDEO_GUIDE_URL,
+              hash: guide.hash,
+              // Lark minimum-token table: 2.5 publishes outputs 4–30,
+              // 2.0 publishes 4–15. Other video models have no table.
+              videoMinimumsThrough: rawId.includes('seedance-2-5')
+                ? 30
+                : rawId.includes('seedance-2-0')
+                  ? 15
+                  : undefined,
+            }
           : undefined,
       )
     }

@@ -396,10 +396,52 @@ describe('byteplus video generation tutorial', () => {
     const result = priceDetailed(card, request, { input_video: false })
     expect(result.estimated).toEqual(['completion_tokens'])
     expect(result.usd.toFixed(2)).toBe('0.60')
-    // Video input carries a minimum-token floor the method does not cover.
+    // Video input carries a minimum-token floor the method does not cover
+    // unless the Lark range was supplied.
     expect(() => priceDetailed(card, request, { input_video: true })).toThrow(
       /estimate_supported/,
     )
+  })
+
+  it('bills a short input video at the Lark minimum for that output', () => {
+    const card = compileSeedanceCard(
+      {
+        default: {
+          '480p': { no_video: 10.7, video: 6.4 },
+          '720p': { no_video: 10.7, video: 6.4 },
+          '1080p': { no_video: 11.7, video: 7 },
+        },
+      },
+      SOURCE,
+      {
+        model: {
+          fps: 24,
+          dims: {
+            '480p': { '16:9': { w: 854, h: 480 } },
+            '720p': { '16:9': { w: 1280, h: 720 } },
+            '1080p': { '16:9': { w: 1920, h: 1080 } },
+          },
+        },
+        url: 'https://example.test/guide',
+        hash: 'b'.repeat(64),
+        videoMinimumsThrough: 30,
+      },
+    )
+    if (!card) throw new Error('no card')
+    const video = (duration: number, input = 0, resolution = '720p') =>
+      priceDetailed(
+        card,
+        { resolution, ratio: '16:9', duration, input_video_duration: input },
+        { input_video: true },
+      )
+    // Page: 720p 16:9, 5s out, 2–4s in → $1.244. 480p → $0.553.
+    expect(video(5, 2).usd.toFixed(3)).toBe('1.244')
+    expect(video(5, 2, '480p').usd.toFixed(3)).toBe('0.553')
+    // 30s out floors a 2s input at 20s in: 480,375 tokens × $6.40.
+    expect(video(30, 2, '480p').usd).toBeCloseTo((480_375 * 6.4) / 1e6, 6)
+    // Past the minimum, the real input length wins.
+    expect(video(30, 30, '480p').usd).toBeCloseTo((576_450 * 6.4) / 1e6, 6)
+    expect(() => video(31, 2)).toThrow(/min_input_seconds/)
   })
 })
 
