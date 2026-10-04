@@ -4,7 +4,7 @@
  * though xAI titles the spec "xAI's REST API".
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
-import type { RateCard } from '@modelschemas/rate-card'
+import type { RateCard, UnitCardSpec } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 import { bearerConnect } from './connect.ts'
@@ -156,7 +156,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const text = await fetchText(GROK_OPENAPI_URL)
   const spec = JSON.parse(text) as OpenApiDocument
   return {
-    specs: [spec],
+    specs: [withGrokImageQuality(spec)],
     sources: [{ url: GROK_OPENAPI_URL, hash: await sha256Text(text) }],
     outputStrategy: 'post-200',
   }
@@ -201,65 +201,129 @@ function grokRates(m: GrokExtrasModel, suffix = ''): Record<string, number> {
 }
 
 /**
- * Image-card levers that are real `/v1/images/generations` fields.
- * `quality` is published on the price matrix and is not one of them.
+ * `quality` is a documented `/v1/images/generations` field that
+ * docs.x.ai/openapi.json omits: the image generation guide names `low`,
+ * `medium`, and `auto`, and xai-sdk-ts adds it to `ImageGenerateParams`
+ * by hand (src/types.ts `ImageRequestFields`). Add it so the bound schema
+ * admits what the API accepts and the image card's lever is a request
+ * field.
  */
-const GROK_IMAGE_REQUEST_FIELDS = new Set(['n', 'resolution'])
-
-/**
- * The price dimension that blocks a card, when the listing's matrix
- * depends on a field the image request does not accept. `null` when every
- * dimension is a request field (or there is no matrix).
- */
-function recordKeys(value: unknown): Array<string> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return []
-  }
-  return Object.keys(value)
+const GROK_IMAGE_QUALITY = {
+  type: ['string', 'null'],
+  enum: ['low', 'medium', 'auto'],
+  description:
+    'Generation quality. Defaults to `auto`, which serves `low` for generation and `medium` for editing; images are billed at the quality served. Only supported by grok-imagine-image-2.0. Documented in the image generation guide and the official TypeScript SDK, absent from docs.x.ai/openapi.json.',
 }
 
-export function grokImageUnpricedField(m: GrokExtrasModel): string | null {
-  const matrix: unknown = m.pricing
-  if (!Array.isArray(matrix)) return null
-  const blocked = new Set<string>()
-  let varies = false
-  for (const tier of matrix) {
-    for (const key of recordKeys(tier)) {
-      if (key === 'price_per_image') continue
-      varies = true
-      if (!GROK_IMAGE_REQUEST_FIELDS.has(key)) blocked.add(key)
+export function withGrokImageQuality(spec: OpenApiDocument): OpenApiDocument {
+  for (const name of ['GenerateImageRequest', 'EditImageRequest']) {
+    const schema = spec.components?.schemas?.[name] as
+      | { properties?: Record<string, unknown> }
+      | undefined
+    const properties = schema?.properties
+    if (properties && !('quality' in properties)) {
+      properties.quality = GROK_IMAGE_QUALITY
     }
   }
-  // A tier key other than price_per_image means image_price is one cell,
-  // not the rate for every request. Do not compile that flat number.
-  if (!varies) return null
-  if (blocked.has('quality')) return 'quality'
-  return [...blocked][0] ?? 'resolution'
+  return spec
 }
 
 /**
- * Per-image card from the model metadata. A model whose `pricing` table
- * varies the price by `quality` has no card: `quality` is not a field of
- * `/v1/images/generations`, so the rate could only be guessed at. A flat
- * `image_price` is used only when that matrix is absent.
+ * Image-card levers, outermost first, with the request default. `auto` is
+ * the `quality` default; the guide says it serves `low` for generation,
+ * and the pricing page's $0.04 for grok-imagine-image-2.0 is the low/1k
+ * cell. Images are billed at the quality served.
+ */
+const GROK_IMAGE_KEYS = [
+  { param: 'quality', default: 'auto' },
+  { param: 'resolution', default: '1k' },
+]
+
+type GrokImageTier = { price_per_image: number } & Record<string, unknown>
+
+/**
+ * The listing's (quality, resolution) matrix. `undefined` when there is
+ * none; `null` when a tier names a dimension the request cannot state, in
+ * which case the flat `image_price` is one cell, not a rate.
+ */
+function grokImageTiers(
+  m: GrokExtrasModel,
+): Array<GrokImageTier> | null | undefined {
+  const matrix: unknown = m.pricing
+  if (!Array.isArray(matrix)) return undefined
+  const tiers: Array<GrokImageTier> = []
+  for (const tier of matrix) {
+    if (typeof tier !== 'object' || tier === null || Array.isArray(tier)) {
+      return null
+    }
+    const { price_per_image, ...dims } = tier as Record<string, unknown>
+    if (typeof price_per_image !== 'number') return null
+    for (const dim of Object.keys(dims)) {
+      if (!GROK_IMAGE_KEYS.some((key) => key.param === dim)) return null
+    }
+    tiers.push({ price_per_image, ...dims })
+  }
+  return tiers
+}
+
+/**
+ * Per-image card from the model metadata: the (quality, resolution) matrix
+ * when the listing publishes one, else the flat `image_price`.
  */
 export async function grokImageCard(
   m: GrokExtrasModel,
 ): Promise<RateCard | null> {
-  if (grokImageUnpricedField(m) !== null) return null
-  const flat = m.image_price
-  if (typeof flat !== 'number') return null
+  // `n` defaults to 1 on the request, as it does here.
+  const quantity = { param: 'n', bound: 'request' as const, default: 1 }
+  const source = async (payload: unknown) => ({
+    url: GROK_IMAGE_MODELS_URL,
+    hash: await sha256Text(JSON.stringify(payload)),
+    extractedAt: new Date().toISOString(),
+  })
+  const tiers = grokImageTiers(m)
+  if (tiers === null) return null
+  if (tiers === undefined) {
+    const flat = m.image_price
+    if (typeof flat !== 'number') return null
+    return compileUnitCard(
+      { quantity, rates: flat * XAI_PRICE_UNIT },
+      await source({ image_price: flat }),
+    )
+  }
+  const dims = GROK_IMAGE_KEYS.filter((key) =>
+    tiers.some((tier) => key.param in tier),
+  )
+  const rates: Record<string, unknown> = {}
+  for (const tier of tiers) {
+    let node = rates
+    for (const [i, dim] of dims.entries()) {
+      const value = tier[dim.param]
+      if (typeof value !== 'string') return null
+      if (i === dims.length - 1) {
+        node[value] = tier.price_per_image * XAI_PRICE_UNIT
+      } else {
+        node = (node[value] ??= {}) as Record<string, unknown>
+      }
+    }
+  }
+  if (dims[0]?.param === 'quality' && rates.low !== undefined) {
+    rates.auto ??= rates.low
+  }
+  const keys = dims.map((dim) => {
+    const values = [
+      ...new Set(tiers.map((tier) => String(tier[dim.param]))),
+      ...(dim.param === 'quality' && rates.auto !== undefined ? ['auto'] : []),
+    ]
+    return {
+      param: dim.param,
+      bound: 'request' as const,
+      values,
+      ...(values.includes(dim.default) && { default: dim.default }),
+    }
+  })
   return compileUnitCard(
-    {
-      // `n` defaults to 1 on the request, as it does here.
-      quantity: { param: 'n', bound: 'request', default: 1 },
-      rates: flat * XAI_PRICE_UNIT,
-    },
-    {
-      url: GROK_IMAGE_MODELS_URL,
-      hash: await sha256Text(JSON.stringify({ image_price: flat })),
-      extractedAt: new Date().toISOString(),
-    },
+    { quantity, keys, rates: rates as UnitCardSpec['rates'] },
+    await source({ pricing: tiers }),
   )
 }
 

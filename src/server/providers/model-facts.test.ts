@@ -7,13 +7,13 @@ import { parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
 import {
   grokImageCard,
-  grokImageUnpricedField,
   grokRateCard,
   grokVideoCard,
   parseGrokContextWindows,
   parseGrokMaxOutput,
   grokReasons,
   parseGrokVideoPrices,
+  withGrokImageQuality,
 } from './grok.ts'
 import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
@@ -912,7 +912,7 @@ describe('grok model prices', () => {
     expect(await grokRateCard({ id: 'grok-imagine-video' })).toBeNull()
   })
 
-  it('prices images per image, and refuses a quality-dependent table', async () => {
+  it('prices images per image, by the (quality, resolution) matrix when there is one', async () => {
     const card = await grokImageCard({
       id: 'grok-imagine-image',
       image_price: 200_000_000,
@@ -920,29 +920,62 @@ describe('grok model prices', () => {
     if (!card) throw new Error('did not compile')
     expect(price(card, {}, {})).toBeCloseTo(0.02, 9)
     expect(price(card, { n: 4 }, {})).toBeCloseTo(0.08, 9)
-    // The live matrix prices grok-imagine-image-2.0 by quality. `quality`
-    // is not a field of /v1/images/generations, so the card stays null
-    // even though image_price and the model page quote one tier.
-    const imagine2 = {
+    // Live 2026-10-04: grok-imagine-image-2.0 prices by quality and
+    // resolution. `quality` is a request field (the guide and xai-sdk-ts;
+    // the OpenAPI document omits it) and defaults to `auto`, which serves
+    // `low` for generation. The pricing page's $0.04 is the low/1k cell.
+    const matrix = await grokImageCard({
       id: 'grok-imagine-image-2.0',
       image_price: 600_000_000,
       pricing: [
         { quality: 'low', resolution: '1k', price_per_image: 4e8 },
+        { quality: 'low', resolution: '2k', price_per_image: 6e8 },
         { quality: 'medium', resolution: '1k', price_per_image: 6e8 },
+        { quality: 'medium', resolution: '2k', price_per_image: 8e8 },
       ],
-    }
-    expect(grokImageUnpricedField(imagine2)).toBe('quality')
-    expect(await grokImageCard(imagine2)).toBeNull()
-    const byResolution = {
-      id: 'grok-imagine-image',
-      image_price: 200_000_000,
-      pricing: [
-        { resolution: '1k', price_per_image: 2e8 },
-        { resolution: '2k', price_per_image: 7e8 },
-      ],
-    }
-    expect(grokImageUnpricedField(byResolution)).toBe('resolution')
-    expect(await grokImageCard(byResolution)).toBeNull()
+    })
+    if (!matrix) throw new Error('did not compile')
+    expect(price(matrix, {}, {})).toBeCloseTo(0.04, 9)
+    expect(price(matrix, { quality: 'auto' }, {})).toBeCloseTo(0.04, 9)
+    expect(
+      price(matrix, { quality: 'medium', resolution: '2k' }, {}),
+    ).toBeCloseTo(0.08, 9)
+    expect(
+      price(matrix, { quality: 'low', resolution: '2k', n: 2 }, {}),
+    ).toBeCloseTo(0.12, 9)
+    expect(matrix.inputs.quality).toMatchObject({
+      bound: 'request',
+      default: 'auto',
+    })
+    // A dimension the request cannot state has no card, flat price or not.
+    expect(
+      await grokImageCard({
+        id: 'grok-imagine-image',
+        image_price: 200_000_000,
+        pricing: [{ tier: 'pro', price_per_image: 7e8 }],
+      }),
+    ).toBeNull()
+  })
+
+  it('adds the documented quality field the OpenAPI document omits', () => {
+    const spec = withGrokImageQuality({
+      components: {
+        schemas: {
+          GenerateImageRequest: { properties: { prompt: { type: 'string' } } },
+          EditImageRequest: { properties: { prompt: { type: 'string' } } },
+          GenerateVideoRequest: { properties: { prompt: { type: 'string' } } },
+        },
+      },
+    })
+    const schemas = spec.components?.schemas as Record<
+      string,
+      { properties: Record<string, unknown> }
+    >
+    expect(schemas.GenerateImageRequest?.properties.quality).toMatchObject({
+      enum: ['low', 'medium', 'auto'],
+    })
+    expect(schemas.EditImageRequest?.properties.quality).toBeDefined()
+    expect(schemas.GenerateVideoRequest?.properties.quality).toBeUndefined()
   })
 
   it('reads a stated output cap and ignores "no limit" and price rows', () => {
