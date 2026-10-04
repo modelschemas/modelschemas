@@ -1,68 +1,98 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  MODELS_DEV_API_URL,
-  clearModelsDevCatalogCache,
-} from '../models-dev.ts'
-import { provider } from './vercel.ts'
+import { provider, VERCEL_MODELS_URL } from './vercel.ts'
 
+/**
+ * Excerpt of https://ai-gateway.vercel.sh/v1/models (2026-10-04).
+ * `pricing` values are the gateway's USD-per-token strings.
+ */
 const FIXTURE = {
-  vercel: {
-    id: 'vercel',
-    npm: '@ai-sdk/gateway',
-    name: 'Vercel AI Gateway',
-    models: {
-      'chat-model': {
-        id: 'chat-model',
-        name: 'Chat Model',
-        reasoning: true,
-        reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
-        tool_call: true,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        limit: { context: 128000, output: 4096 },
-        cost: { input: 1.5, output: 3 },
-      },
-      'image-only': {
-        id: 'image-only',
-        modalities: { input: ['text'], output: ['image'] },
-        cost: { input: 1, output: 1 },
-      },
+  object: 'list',
+  data: [
+    {
+      id: 'alibaba/qwen-3-14b',
+      name: 'Qwen3-14B',
+      type: 'language',
+      context_window: 40960,
+      max_tokens: 16384,
+      modalities: { input: ['text'], output: ['text'] },
+      reasoning_options: [{ type: 'toggle' }],
+      pricing: { input: '0.00000012', output: '0.00000024' },
+      released: 1745798400,
     },
-  },
+    {
+      id: 'alibaba/qwen-3-235b',
+      name: 'Qwen3-235B',
+      type: 'language',
+      modalities: { input: ['text'], output: ['text'] },
+      reasoning_options: [
+        { type: 'toggle' },
+        { type: 'effort', values: ['none', 'low', 'medium', 'high'] },
+      ],
+      pricing: { input: '0.00000018' },
+    },
+    {
+      id: 'google/imagen',
+      type: 'image',
+      modalities: { input: ['text'], output: ['image'] },
+    },
+  ],
 }
 
+const originalFetch = globalThis.fetch
+
 afterEach(() => {
-  clearModelsDevCatalogCache()
-  globalThis.fetch = fetch
+  globalThis.fetch = originalFetch
 })
 
-describe('vercel listModels', () => {
-  it('lists models.dev chat rows with facts, price, and reasoning', async () => {
-    const original = globalThis.fetch
+describe('vercel', () => {
+  it('lists gateway models from the Vercel payload and skips the spec', async () => {
+    const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
-      if (String(url) === MODELS_DEV_API_URL) {
+      urls.push(String(url))
+      if (String(url) === VERCEL_MODELS_URL) {
         return Promise.resolve(new Response(JSON.stringify(FIXTURE)))
       }
       return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
     }) as typeof fetch
-    try {
-      const result = await provider.listModels({})
-      expect(result.skipped).toBeUndefined()
-      expect(result.models.map((model) => model.rawId)).toEqual(['chat-model'])
-      expect(result.models[0]).toMatchObject({
-        activity: 'chat',
-        contextWindow: 128000,
-        maxOutput: 4096,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        reasoning: {
-          mode: 'effort',
-          mandatory: true,
-          efforts: ['low', 'high'],
+
+    const listed = await provider.listModels({})
+    const spec = await provider.fetchSpec({})
+
+    expect(listed.skipped).toBeUndefined()
+    expect(listed.models.map((model) => model.rawId)).toEqual([
+      'alibaba/qwen-3-14b',
+      'alibaba/qwen-3-235b',
+      'google/imagen',
+    ])
+    expect(listed.models[0]).toMatchObject({
+      displayName: 'Qwen3-14B',
+      activity: 'chat',
+      contextWindow: 40960,
+      maxOutput: 16384,
+      modalities: { input: ['text'], output: ['text'] },
+      reasoning: null,
+      releasedAt: 1745798400,
+    })
+    expect(listed.models[0]?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: { input_tokens: 0.00000012, output_tokens: 0.00000024 },
         },
-      })
-      expect(result.models[0]?.pricing).not.toBeNull()
-    } finally {
-      globalThis.fetch = original
-    }
+      },
+    })
+    expect(listed.models[1]?.pricing).toBeNull()
+    expect(listed.models[1]?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high'],
+    })
+    expect(listed.models[2]).toMatchObject({
+      activity: 'image',
+      pricing: null,
+    })
+    expect(spec.skipped).toContain('skipped')
+    expect(spec.specs).toEqual([])
+    expect(urls).toEqual([VERCEL_MODELS_URL])
   })
 })
