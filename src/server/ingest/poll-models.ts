@@ -23,6 +23,7 @@ import {
   walkRequestSchema,
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
+import { chatRequestMap } from '#/server/providers/request-map.ts'
 import {
   parseStoredRateCard,
   reconcilePricingSource,
@@ -98,7 +99,10 @@ function reasoningSourcePath(sources: unknown): string | null {
 }
 
 /** The fields whose changes constitute a `model.updated` event. */
-function comparable(info: ModelInfo): Record<string, unknown> {
+function comparable(
+  providerId: string,
+  info: ModelInfo,
+): Record<string, unknown> {
   return {
     displayName: info.displayName ?? null,
     activity: info.activity ?? null,
@@ -110,6 +114,7 @@ function comparable(info: ModelInfo): Record<string, unknown> {
     reasoning: info.reasoning ?? null,
     reasoningSource: reasoningSourcePath(info.factSources),
     serverTools: info.serverTools ?? null,
+    requestMap: chatRequestMap(providerId, info.rawId, info.activity ?? null),
     schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
   }
@@ -390,6 +395,11 @@ export async function pollProviderModels(
         capabilities: info.capabilities ?? null,
         reasoning: info.reasoning ?? null,
         serverTools: info.serverTools ?? null,
+        requestMap: chatRequestMap(
+          provider.id,
+          info.rawId,
+          info.activity ?? null,
+        ),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // Providers that report a release date get it as firstSeenAt, so
@@ -421,10 +431,11 @@ export async function pollProviderModels(
       reasoning: existing.reasoning,
       reasoningSource: reasoningSourcePath(existing.factSources),
       serverTools: existing.serverTools,
+      requestMap: existing.requestMap,
       schemaEndpointId: existing.schemaEndpointId,
       deprecated: existing.deprecatedAt !== null,
     }
-    const after = comparable({
+    const after = comparable(provider.id, {
       ...info,
       capabilities: preserveAsyncApiFlag(
         existing.capabilities,
@@ -462,6 +473,11 @@ export async function pollProviderModels(
         capabilities: after.capabilities ?? null,
         reasoning: info.reasoning ?? null,
         serverTools: info.serverTools ?? null,
+        requestMap: chatRequestMap(
+          provider.id,
+          info.rawId,
+          info.activity ?? null,
+        ),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // A model that reappears (or upstream re-activates) clears

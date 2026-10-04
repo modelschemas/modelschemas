@@ -166,6 +166,7 @@ function ModelDetail() {
     ['maxOutput', model.maxOutput],
     ['modalities', model.modalities],
     ['capabilities', model.capabilities],
+    ['requestMap', model.requestMap],
   ]
   const published = richness.filter(([, v]) => v !== null && v !== undefined)
   const unpublished = richness.filter(([, v]) => v === null || v === undefined)

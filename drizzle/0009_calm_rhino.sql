@@ -1,0 +1,1 @@
+ALTER TABLE `models` ADD `request_map` text;
