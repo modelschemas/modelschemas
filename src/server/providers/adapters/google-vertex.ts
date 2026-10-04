@@ -1,12 +1,37 @@
 /**
- * Google Vertex AI — chat models from the public models.dev catalog (`google-vertex`).
- * listModels does not call the provider.
+ * Google Vertex AI — listModels and fetchSpec skip.
+ * fetched Vertex docs do not include publisher model ids, and the list API requires a service account.
+ * An empty model list would mark stored rows removed, so this returns skipped.
  */
-import { modelsDevChatProvider } from '../models-dev.ts'
+import type {
+  ListModelsResult,
+  ProviderConfig,
+  ProviderSecrets,
+  SpecFetchResult,
+} from '../types.ts'
 
-export const provider = modelsDevChatProvider({
+export const SKIP_REASON =
+  'google-vertex: fetched Vertex docs do not include publisher model ids, and the list API requires a service account — skipped'
+
+function skippedSpec(): SpecFetchResult {
+  return {
+    specs: [],
+    sources: [],
+    outputStrategy: 'post-200',
+    skipped: SKIP_REASON,
+  }
+}
+
+function skippedModels(): ListModelsResult {
+  return { models: [], skipped: SKIP_REASON }
+}
+
+export const provider: ProviderConfig = {
   id: 'google-vertex',
   displayName: 'Google Vertex AI',
-  serverUrl: 'https://aiplatform.googleapis.com/v1',
-  docUrl: 'https://cloud.google.com/vertex-ai/generative-ai/docs/models',
-})
+  specSourceUrl: 'https://cloud.google.com/vertex-ai/generative-ai/docs/models',
+  defaultDerivation: 'docs-derived',
+  fetchSpec: (_env: ProviderSecrets) => Promise.resolve(skippedSpec()),
+  listModels: (_env: ProviderSecrets) => Promise.resolve(skippedModels()),
+  classify: () => null,
+}
