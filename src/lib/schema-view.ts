@@ -18,11 +18,18 @@ export interface PropRow {
   name: string
   required: boolean
   typeLabel: string
+  /** `$defs` names that appear intact in `typeLabel`, longest first. */
+  typeRefs: Array<string>
   typeClass: TypeClass
   constraints: Array<string>
   deprecated: boolean
   description: string | null
   children: Array<PropRow>
+}
+
+/** DOM id for a bundled `$defs` entry. Names are stable within one schema. */
+export function defDomId(name: string): string {
+  return `schema-def-${name.replaceAll(/[^A-Za-z0-9_-]/g, '_')}`
 }
 
 type SchemaNode = Record<string, unknown>
@@ -219,7 +226,6 @@ function buildRow(
         .map((v) => shortLabel(resolveRef(v, defs), defs))
         .join(' | ')
       if (real.length > 3) typeLabel += ' | …'
-      if (typeLabel.length > 40) typeLabel = `${typeLabel.slice(0, 40)}…`
       typeClass = 'union'
     }
     if (nullable) constraints.push('nullable')
@@ -261,12 +267,42 @@ function buildRow(
     name,
     required,
     typeLabel,
+    typeRefs: refsInLabel(typeLabel, defs),
     typeClass,
     constraints,
     deprecated,
     description: description === null ? null : firstParagraph(description),
     children,
   }
+}
+
+/** `$defs` keys that occur as whole substrings, longest first so shorter names do not steal a prefix. */
+function refsInLabel(label: string, defs: SchemaNode): Array<string> {
+  const names = Object.keys(defs)
+    .filter((name) => name.length > 0 && label.includes(name))
+    .sort((a, b) => b.length - a.length || a.localeCompare(b))
+  const used: Array<string> = []
+  let rest = label
+  while (rest.length > 0) {
+    let at = -1
+    let hit = ''
+    for (const name of names) {
+      const index = rest.indexOf(name)
+      if (index === -1) continue
+      if (
+        at === -1 ||
+        index < at ||
+        (index === at && name.length > hit.length)
+      ) {
+        at = index
+        hit = name
+      }
+    }
+    if (at === -1 || hit === '') break
+    used.push(hit)
+    rest = rest.slice(at + hit.length)
+  }
+  return used
 }
 
 function propertyRows(
@@ -285,6 +321,8 @@ function propertyRows(
 export interface SchemaRows {
   /** Required properties first, in schema order; then optional. */
   rows: Array<PropRow>
+  /** One row per `$defs` entry, so a type name can link to its shape. */
+  definitions: Array<PropRow>
   requiredCount: number
   propertyCount: number
   defsCount: number
@@ -297,6 +335,7 @@ export function schemaToRows(schema: unknown): SchemaRows {
   if (!isObject(schema) || !isObject(schema.properties)) {
     return {
       rows: [],
+      definitions: [],
       requiredCount: 0,
       propertyCount: 0,
       defsCount: 0,
@@ -312,11 +351,15 @@ export function schemaToRows(schema: unknown): SchemaRows {
     ...all.filter((r) => r.required),
     ...all.filter((r) => !r.required),
   ]
+  const definitions = Object.keys(defs)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => buildRow(name, defs[name], false, defs, 0, new Set()))
   return {
     rows,
+    definitions,
     requiredCount: required.length,
     propertyCount: all.length,
-    defsCount: Object.keys(defs).length,
+    defsCount: definitions.length,
     fallback: false,
   }
 }

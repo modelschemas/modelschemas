@@ -14,7 +14,7 @@ import {
   ViewToggle,
 } from '#/components/site.tsx'
 import type { ResourceView } from '#/components/site.tsx'
-import { schemaToRows } from '#/lib/schema-view.ts'
+import { defDomId, schemaToRows } from '#/lib/schema-view.ts'
 import type { PropRow } from '#/lib/schema-view.ts'
 import type { Json } from '#/lib/json.ts'
 import { shortDate } from '#/lib/time.ts'
@@ -89,6 +89,37 @@ export const Route = createFileRoute('/schemas/$provider/$activity/$')({
   component: SchemaDetail,
 })
 
+/** Slash-preserving path segment. `encodeURIComponent` on the whole id shows `%2F`. */
+function endpointPath(endpointId: string): string {
+  return endpointId.split('/').map(encodeURIComponent).join('/')
+}
+
+function TypeLabel({ row }: { row: PropRow }) {
+  if (row.typeRefs.length === 0) return <>{row.typeLabel}</>
+  const nodes: Array<React.ReactNode> = []
+  let rest = row.typeLabel
+  let key = 0
+  for (const name of row.typeRefs) {
+    const index = rest.indexOf(name)
+    if (index === -1) continue
+    if (index > 0) nodes.push(rest.slice(0, index))
+    nodes.push(
+      <a
+        key={`${name}-${String(key)}`}
+        className="underline decoration-rule-strong underline-offset-2 hover:text-tok-blue"
+        href={`#${defDomId(name)}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {name}
+      </a>,
+    )
+    key += 1
+    rest = rest.slice(index + name.length)
+  }
+  if (rest.length > 0) nodes.push(rest)
+  return <>{nodes}</>
+}
+
 function PropRows({
   rows,
   depth,
@@ -136,7 +167,7 @@ function PropRows({
               </td>
               <td>
                 <span className={`ptype t-${row.typeClass}`}>
-                  {row.typeLabel}
+                  <TypeLabel row={row} />
                 </span>
               </td>
               <td className="max-w-[46em] text-[13px] text-ink-soft">
@@ -167,9 +198,9 @@ function SchemaDetail() {
   const navigate = useNavigate({ from: Route.fullPath })
   const [view, setView] = useState<ResourceView>('readable')
 
-  const encodedId = encodeURIComponent(result.endpointId)
+  const pathId = endpointPath(result.endpointId)
   const kindQuery = search.kind === 'output' ? '?kind=output' : ''
-  const apiPath = `/v1/schemas/${result.provider}/${result.activity}/${encodedId}${kindQuery}`
+  const apiPath = `/v1/schemas/${result.provider}/${result.activity}/${pathId}${kindQuery}`
   const jsonBody = useMemo(() => JSON.stringify(result, null, 2), [result])
   const table = useMemo(() => schemaToRows(result.schema), [result.schema])
 
@@ -185,7 +216,7 @@ function SchemaDetail() {
           path={
             <>
               /v1/schemas/{result.provider}/{result.activity}/
-              <span className="text-tok-blue">{encodedId}</span>
+              <span className="text-tok-blue">{result.endpointId}</span>
               {kindQuery === '' ? null : (
                 <span className="text-ink-faint">{kindQuery}</span>
               )}
@@ -274,6 +305,21 @@ function SchemaDetail() {
           />
         ) : (
           <>
+            {result.provider === 'byteplus' &&
+            result.endpointId === 'contents/generations/tasks' ? (
+              <p className="mb-4 max-w-[46em] font-mono text-[13px] text-ink-soft">
+                This call returns a task id. The video is on{' '}
+                <a
+                  className="press-link"
+                  href={`/schemas/byteplus/video/${endpointPath('contents/generations/tasks/{id}')}?kind=output`}
+                >
+                  GET /contents/generations/tasks/{'{id}'}
+                </a>
+                . Poll until <code>status</code> is <code>succeeded</code>, then
+                download <code>content.video_url</code> (valid 24 hours).
+              </p>
+            ) : null}
+
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pb-3">
               <h2 className="m-0 font-mono text-xs font-semibold tracking-[0.14em] text-ink uppercase">
                 {result.kind === 'input' ? 'Request body' : 'Response body'}
@@ -312,6 +358,54 @@ function SchemaDetail() {
                 </table>
               </div>
             )}
+
+            {table.definitions.length > 0 ? (
+              <>
+                <SectionHead
+                  title="Types"
+                  aside={`${String(table.definitions.length)} $defs`}
+                />
+                <div className="space-y-8">
+                  {table.definitions.map((def) => (
+                    <section key={def.name} id={defDomId(def.name)}>
+                      <h3 className="mb-2 font-mono text-[13px] font-medium text-ink">
+                        <a
+                          className="hover:text-tok-blue"
+                          href={`#${defDomId(def.name)}`}
+                        >
+                          {def.name}
+                        </a>
+                        <span className={`ptype t-${def.typeClass} ml-2`}>
+                          <TypeLabel row={def} />
+                        </span>
+                      </h3>
+                      {def.description !== null ? (
+                        <p className="mb-2 max-w-[46em] text-[13px] text-ink-soft">
+                          {def.description}
+                        </p>
+                      ) : null}
+                      {def.children.length > 0 ? (
+                        <div className="figure overflow-x-auto">
+                          <table className="dtable">
+                            <tbody>
+                              <PropRows
+                                rows={def.children}
+                                depth={0}
+                                parentKey={def.name}
+                              />
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : def.constraints.length > 0 ? (
+                        <p className="font-mono text-[11px] text-ink-faint">
+                          {def.constraints.join(' · ')}
+                        </p>
+                      ) : null}
+                    </section>
+                  ))}
+                </div>
+              </>
+            ) : null}
 
             <SectionHead
               title="Validate a payload"

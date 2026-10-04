@@ -807,10 +807,69 @@ const videoSchemas: Record<string, Schema> = {
   VideoTaskCreateResponse: {
     type: 'object',
     description:
-      'Task acknowledgment (live-verified: the body is just the task id, e.g. cgt-batch-20260731174311-zmz5s — the -batch infix appears on flex-tier routing). Poll GET /contents/generations/tasks/{id} until status is terminal; the video URL arrives with the succeeded status and expires 24 hours later (the task record itself is kept for 7 days).',
+      'Task acknowledgment (live-verified: the body is just the task id, e.g. cgt-batch-20260731174311-zmz5s — the -batch infix appears on flex-tier routing). The video is not in this body. Poll GET /contents/generations/tasks/{id} until status is succeeded; content.video_url expires 24 hours later (the task record itself is kept for 7 days).',
+    properties: {
+      id: {
+        type: 'string',
+        description:
+          'Task id. Retrieve the video with GET /contents/generations/tasks/{id}.',
+      },
+    },
+  },
+  VideoTask: {
+    type: 'object',
+    description:
+      'Retrieved task. content.video_url is the file once status is succeeded. URLs are valid for 24 hours; task records can be queried for 7 days.',
     properties: {
       id: { type: 'string' },
+      model: { type: 'string' },
+      status: {
+        type: 'string',
+        description:
+          'queued, running, succeeded, failed, or cancelled. content.video_url is present once this is succeeded.',
+      },
+      error: {
+        type: 'object',
+        properties: {
+          code: { type: 'string' },
+          message: { type: 'string' },
+        },
+      },
+      content: {
+        type: 'object',
+        description: 'Output of a completed task.',
+        properties: {
+          video_url: {
+            type: 'string',
+            description:
+              'URL of the generated video. Valid for 24 hours. A Dreamina Seedance 2.5 URL can be downloaded up to 100 times.',
+          },
+          last_frame_url: {
+            type: 'string',
+            description:
+              'URL of the last frame, when the create call set return_last_frame: true. Valid for 24 hours.',
+          },
+        },
+      },
+      usage: {
+        type: 'object',
+        properties: {
+          completion_tokens: { type: 'integer' },
+          total_tokens: { type: 'integer' },
+        },
+      },
+      resolution: { type: 'string' },
+      ratio: { type: 'string' },
+      duration: { type: 'integer' },
+      framespersecond: { type: 'integer' },
+      seed: { type: 'integer' },
+      created_at: { type: 'integer' },
+      updated_at: { type: 'integer' },
+      service_tier: { type: 'string' },
+      generate_audio: { type: 'boolean' },
+      draft: { type: 'boolean' },
     },
+    required: ['id', 'status'],
   },
 }
 
@@ -914,6 +973,38 @@ export function bytePlusArkSpec(): OpenApiDocument {
                   schema: {
                     $ref: '#/components/schemas/VideoTaskCreateResponse',
                   },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/contents/generations/tasks/{id}': {
+        get: {
+          [PROVENANCE_MARKER]: {
+            derivation: 'probe-verified',
+            verifiedAt: '2026-07-31',
+          },
+          operationId: 'getContentsGenerationsTask',
+          summary:
+            'Retrieve a Seedance video task. Poll until status is succeeded, then download content.video_url (valid 24 hours).',
+          parameters: [
+            {
+              name: 'id',
+              in: 'path',
+              required: true,
+              description:
+                'Task id from POST /contents/generations/tasks. Records from the past 7 days can be queried.',
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description:
+                'Task record. content.video_url is the file once status is succeeded.',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/VideoTask' },
                 },
               },
             },

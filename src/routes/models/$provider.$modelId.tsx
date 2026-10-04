@@ -29,6 +29,34 @@ function endpointPath(endpointId: string): string {
   return endpointId.split('/').map(encodeURIComponent).join('/')
 }
 
+function SchemaEndpointLinks({
+  provider,
+  activity,
+  endpointId,
+}: {
+  provider: string
+  activity: string
+  endpointId: string
+}) {
+  const inputHref = `/schemas/${provider}/${activity}/${endpointPath(endpointId)}`
+  return (
+    <>
+      <a className="font-medium text-ink hover:text-tok-blue" href={inputHref}>
+        {endpointId}
+      </a>
+      <div className="mt-1 text-xs">
+        <a className="press-link" href={inputHref}>
+          input
+        </a>
+        <span className="text-ink-faint"> · </span>
+        <a className="press-link" href={`${inputHref}?kind=output`}>
+          output
+        </a>
+      </div>
+    </>
+  )
+}
+
 interface PricingView {
   compact: {
     per: string
@@ -92,7 +120,10 @@ const getModelDetail = createServerFn({ method: 'GET' })
     // Prefer the bound generation route; aggregator providers (FAL) match
     // on rawId. Fall back to the provider's first 40 endpoints.
     const matching = boundId
-      ? all.filter((e) => e.endpointId === boundId)
+      ? all.filter(
+          (e) =>
+            e.endpointId === boundId || e.endpointId.startsWith(`${boundId}/`),
+        )
       : all.filter((e) => e.endpointId.includes(model.rawId))
     const endpointsFiltered =
       matching.length > 0 && matching.length < all.length
@@ -127,7 +158,7 @@ function ModelDetail() {
   const jsonBody = JSON.stringify(model, null, 2)
   const firstEndpoint = endpoints.at(0)
   const schemaCurl = firstEndpoint
-    ? `curl https://modelschemas.com/v1/schemas/${model.provider}/${firstEndpoint.activity}/${encodeURIComponent(firstEndpoint.endpointId)}`
+    ? `curl https://modelschemas.com/v1/schemas/${model.provider}/${firstEndpoint.activity}/${endpointPath(firstEndpoint.endpointId)}`
     : `curl https://modelschemas.com/v1/schemas/${model.provider}`
 
   const richness: Array<[string, unknown]> = [
@@ -235,10 +266,19 @@ function ModelDetail() {
                       schemaEndpointId
                     </td>
                     <td className="font-mono text-[12.5px]">
-                      {model.schemaEndpointId ?? (
-                        <span className="text-ink-faint">
-                          no bound generation route
-                        </span>
+                      {typeof model.schemaEndpointId === 'string' &&
+                      typeof model.activity === 'string' ? (
+                        <SchemaEndpointLinks
+                          provider={model.provider}
+                          activity={model.activity}
+                          endpointId={model.schemaEndpointId}
+                        />
+                      ) : (
+                        (model.schemaEndpointId ?? (
+                          <span className="text-ink-faint">
+                            no bound generation route
+                          </span>
+                        ))
                       )}
                     </td>
                   </tr>
@@ -369,35 +409,25 @@ function ModelDetail() {
                       <tr>
                         <th>endpoint</th>
                         <th>activity</th>
-                        <th>schemas</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {endpoints.map((e) => (
-                        <tr key={`${e.activity}:${e.endpointId}`}>
-                          <td className="font-mono text-[12.5px]">
-                            {e.endpointId}
-                          </td>
-                          <td className="font-mono text-xs text-ink-soft">
-                            {e.activity}
-                          </td>
-                          <td className="font-mono text-xs">
-                            <a
-                              className="press-link"
-                              href={`/schemas/${model.provider}/${e.activity}/${endpointPath(e.endpointId)}`}
-                            >
-                              request<span className="kindtag in">input</span>
-                            </a>{' '}
-                            <a
-                              className="press-link ml-2"
-                              href={`/schemas/${model.provider}/${e.activity}/${endpointPath(e.endpointId)}?kind=output`}
-                            >
-                              response
-                              <span className="kindtag out">output</span>
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
+                      {endpoints.map((e) => {
+                        return (
+                          <tr key={`${e.activity}:${e.endpointId}`}>
+                            <td className="font-mono text-[12.5px]">
+                              <SchemaEndpointLinks
+                                provider={model.provider}
+                                activity={e.activity}
+                                endpointId={e.endpointId}
+                              />
+                            </td>
+                            <td className="font-mono text-xs text-ink-soft">
+                              {e.activity}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

@@ -347,6 +347,13 @@ export interface ProviderConfig {
    */
   classify: (path: string, op: OpenApiOperation) => Activity | null
   /**
+   * Also classify GET operations. Off by default: many specs publish
+   * GETs on generation paths that are not the generation call. BytePlus
+   * video needs GET /contents/generations/tasks/{id}, which is where the
+   * video URL comes back.
+   */
+  classifyGets?: boolean
+  /**
    * Canonical generation route (public endpoint id) for a listed model.
    * Grain=provider catalogs use this so a client can go model id → input
    * schema without hardcoding `v1/images/generations`. Omitted providers

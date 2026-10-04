@@ -62,6 +62,8 @@ export interface ClassifiedEndpoint {
   /** Globally unique db id: `${providerId}/${pathId}`. */
   dbId: string
   path: string
+  /** HTTP method. GET is the BytePlus video-task retrieve call. */
+  method: 'POST' | 'GET'
   activity: Activity
   description: string | null
   /** Provenance of the spec document this endpoint came from. */
@@ -124,47 +126,53 @@ export function classifyAndBundle(
   for (const [specIndex, spec] of fetched.specs.entries()) {
     const source = fetched.sources[specIndex] ?? null
     for (const [pathKey, operations] of Object.entries(spec.paths ?? {})) {
-      const post = operations.post
-      if (!post) continue
-      const activity = provider.classify(pathKey, post)
-      if (activity === null) continue
+      const methods = ['post', 'get'] as const
+      for (const method of methods) {
+        const operation = operations[method]
+        if (!operation) continue
+        if (method === 'get' && provider.classifyGets !== true) continue
+        const activity = provider.classify(pathKey, operation)
+        if (activity === null) continue
 
-      const extracted = extractEndpointSchemas(
-        spec,
-        pathKey,
-        fetched.outputStrategy,
-      )
-      warnings.push(...extracted.warnings)
-      for (const [kind, schema] of [
-        ['input', extracted.input],
-        ['output', extracted.output],
-      ] as const) {
-        if (schema && findDanglingRefs(schema).length > 0) {
-          warnings.push(
-            `${provider.id}${pathKey}: bundled ${kind} schema has dangling refs`,
-          )
+        const extracted = extractEndpointSchemas(
+          spec,
+          pathKey,
+          fetched.outputStrategy,
+          method,
+        )
+        warnings.push(...extracted.warnings)
+        for (const [kind, schema] of [
+          ['input', extracted.input],
+          ['output', extracted.output],
+        ] as const) {
+          if (schema && findDanglingRefs(schema).length > 0) {
+            warnings.push(
+              `${provider.id}${pathKey}: bundled ${kind} schema has dangling refs`,
+            )
+          }
         }
-      }
-      if (!extracted.input && !extracted.output) continue
+        if (!extracted.input && !extracted.output) continue
 
-      const description =
-        typeof post.summary === 'string'
-          ? post.summary
-          : typeof post.description === 'string'
-            ? post.description
-            : null
-      const { derivation, verifiedAt } = readProvenance(post, provider)
-      classified.push({
-        dbId: `${provider.id}/${endpointIdFromPath(pathKey)}`,
-        path: pathKey,
-        activity,
-        description,
-        source,
-        derivation,
-        verifiedAt,
-        input: extracted.input,
-        output: extracted.output,
-      })
+        const description =
+          typeof operation.summary === 'string'
+            ? operation.summary
+            : typeof operation.description === 'string'
+              ? operation.description
+              : null
+        const { derivation, verifiedAt } = readProvenance(operation, provider)
+        classified.push({
+          dbId: `${provider.id}/${endpointIdFromPath(pathKey)}`,
+          path: pathKey,
+          method: method === 'get' ? 'GET' : 'POST',
+          activity,
+          description,
+          source,
+          derivation,
+          verifiedAt,
+          input: extracted.input,
+          output: extracted.output,
+        })
+      }
     }
   }
   for (const extra of fetched.bundledEndpoints ?? []) {
@@ -201,6 +209,7 @@ function classifiedFromBundled(
   return {
     dbId: `${providerId}/${endpointIdFromPath(pathKey)}`,
     path: pathKey,
+    method: 'POST',
     activity: extra.activity,
     description: extra.description,
     source: extra.source,
@@ -334,7 +343,7 @@ export async function syncProvider(
         id: endpoint.dbId,
         providerId: provider.id,
         activity: endpoint.activity,
-        method: 'POST',
+        method: endpoint.method,
         path: endpoint.path,
         description: endpoint.description,
       })
