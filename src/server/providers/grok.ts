@@ -81,6 +81,47 @@ export function grokReasons(markdown: string): boolean {
 }
 
 /**
+ * A numeric generation cap from the model page. "No text output limit"
+ * and price rows ("Output | $6.00") are not caps.
+ */
+export function parseGrokMaxOutput(markdown: string): number | null {
+  const labeled = markdown.match(
+    /\*\*(?:Max(?:imum)? output(?: tokens)?|Output limit):\*\*\s*([^\n]+)/i,
+  )?.[1]
+  if (labeled) return grokOutputLimit(labeled)
+  for (const row of markdownTableRows(markdown)) {
+    const label = row[0]?.trim() ?? ''
+    const value = row[1]?.trim() ?? ''
+    if (/^(?:max(?:imum)? output(?: tokens)?|output limit)$/i.test(label)) {
+      return grokOutputLimit(value)
+    }
+  }
+  return null
+}
+
+function grokOutputLimit(text: string): number | null {
+  if (!/\d/.test(text) || /\bno\b/i.test(text) || text.includes('$')) {
+    return null
+  }
+  return tokenCount(text)
+}
+
+/** Listing fields that state an output cap. Absent on the live table. */
+function listingMaxOutput(m: GrokExtrasModel): number | null {
+  for (const key of [
+    'max_output_tokens',
+    'max_completion_tokens',
+    'max_output',
+  ]) {
+    const value = m[key]
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value
+    }
+  }
+  return null
+}
+
+/**
  * xAI publishes no per-model tool type list (issue #123). A capabilities
  * page that mentions search still does not name `tools[].type` ids.
  */
@@ -160,14 +201,52 @@ function grokRates(m: GrokExtrasModel, suffix = ''): Record<string, number> {
 }
 
 /**
+ * Image-card levers that are real `/v1/images/generations` fields.
+ * `quality` is published on the price matrix and is not one of them.
+ */
+const GROK_IMAGE_REQUEST_FIELDS = new Set(['n', 'resolution'])
+
+/**
+ * The price dimension that blocks a card, when the listing's matrix
+ * depends on a field the image request does not accept. `null` when every
+ * dimension is a request field (or there is no matrix).
+ */
+function recordKeys(value: unknown): Array<string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return []
+  }
+  return Object.keys(value)
+}
+
+export function grokImageUnpricedField(m: GrokExtrasModel): string | null {
+  const matrix: unknown = m.pricing
+  if (!Array.isArray(matrix)) return null
+  const blocked = new Set<string>()
+  let varies = false
+  for (const tier of matrix) {
+    for (const key of recordKeys(tier)) {
+      if (key === 'price_per_image') continue
+      varies = true
+      if (!GROK_IMAGE_REQUEST_FIELDS.has(key)) blocked.add(key)
+    }
+  }
+  // A tier key other than price_per_image means image_price is one cell,
+  // not the rate for every request. Do not compile that flat number.
+  if (!varies) return null
+  if (blocked.has('quality')) return 'quality'
+  return [...blocked][0] ?? 'resolution'
+}
+
+/**
  * Per-image card from the model metadata. A model whose `pricing` table
  * varies the price by `quality` has no card: `quality` is not a field of
- * `/v1/images/generations`, so the rate could only be guessed at.
+ * `/v1/images/generations`, so the rate could only be guessed at. A flat
+ * `image_price` is used only when that matrix is absent.
  */
 export async function grokImageCard(
   m: GrokExtrasModel,
 ): Promise<RateCard | null> {
-  if (Array.isArray(m.pricing)) return null
+  if (grokImageUnpricedField(m) !== null) return null
   const flat = m.image_price
   if (typeof flat !== 'number') return null
   return compileUnitCard(
@@ -279,9 +358,14 @@ async function grokModelFacts(
   ]) {
     for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
   }
-  const reasoning = new Map<
+  const pages = new Map<
     string,
-    { value: ModelReasoning | null; reasons?: boolean; hash: string }
+    {
+      value: ModelReasoning | null
+      reasons?: boolean
+      maxOutput: number | null
+      hash: string
+    }
   >()
   await mapConcurrent(language.models ?? [], 8, async (m) => {
     try {
@@ -290,13 +374,14 @@ async function grokModelFacts(
         return {
           value: parseGrokReasoning(markdown),
           reasons: grokReasons(markdown),
+          maxOutput: parseGrokMaxOutput(markdown),
           hash: await sha256Text(markdown),
         }
       })
-      if (!page.value && !page.reasons) return
-      for (const id of [m.id, ...(m.aliases ?? [])]) reasoning.set(id, page)
+      if (!page.value && !page.reasons && page.maxOutput == null) return
+      for (const id of [m.id, ...(m.aliases ?? [])]) pages.set(id, page)
     } catch {
-      // A missing page leaves reasoning unknown, never a guess.
+      // A missing page leaves reasoning and maxOutput unknown, never a guess.
     }
   })
   const cards = new Map<string, RateCard | null>()
@@ -319,17 +404,20 @@ async function grokModelFacts(
     const modalities = m.input_modalities
       ? { input: m.input_modalities, output: m.output_modalities ?? [] }
       : null
-    const reasons = reasoning.get(rawId)?.reasons === true
+    const page = pages.get(rawId)
+    const reasons = page?.reasons === true
+    const listedMax = listingMaxOutput(m)
     const facts: ModelFacts = {
       contextWindow,
-      // xAI publishes no output cap (the spec states only a 128k default).
-      maxOutput: null,
+      // The spec's 128k figure is a default, not a cap. Only a number the
+      // listing or the model page states is an output limit.
+      maxOutput: listedMax ?? page?.maxOutput ?? null,
       modalities,
       // Request-feature flags come from the bound schema; the per-model
       // docs page adds `reasoning`, which no request property names.
       capabilities: reasons ? ['reasoning'] : null,
       pricing: cards.get(rawId) ?? null,
-      reasoning: reasoning.get(rawId)?.value ?? null,
+      reasoning: page?.value ?? null,
     }
     const sources: ModelFacts['factSources'] = {}
     if (contextWindow != null) {
@@ -339,7 +427,16 @@ async function grokModelFacts(
         path: 'contextWindow',
       }
     }
-    const page = reasoning.get(rawId)
+    if (listedMax != null) {
+      sources.maxOutput = { derivation: 'listing', path: 'maxOutput' }
+    } else if (page?.maxOutput != null) {
+      sources.maxOutput = {
+        derivation: 'docs-derived',
+        sourceUrl: GROK_MODEL_PAGE(m.id),
+        sourceHash: page.hash,
+        path: 'maxOutput',
+      }
+    }
     if (page?.value) {
       sources.reasoning = {
         derivation: 'docs-derived',
@@ -360,7 +457,7 @@ async function grokModelFacts(
         reasoning: {
           derivation: 'docs-derived',
           sourceUrl: GROK_MODEL_PAGE(m.id),
-          sourceHash: page?.hash,
+          sourceHash: page.hash,
           path: 'Capabilities.Reasoning',
         },
       }
