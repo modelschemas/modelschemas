@@ -25,6 +25,12 @@ import {
   storeListedPricing,
 } from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
+import {
+  captureIngestEvents,
+  ingestFailedEvent,
+  noteIngest,
+  runIngestScope,
+} from './ingest-signals.ts'
 import type { SyncDeps } from './sync.ts'
 
 /**
@@ -402,6 +408,10 @@ function logRefusal(
       reason,
     }),
   )
+  noteIngest({
+    event: 'rate_card_refused',
+    properties: { providerId, rawId, reason },
+  })
 }
 
 /** Cursor and held rawId live in `cache_meta.lastError` under their own keys. */
@@ -617,6 +627,12 @@ interface LeftoverGroup {
 }
 
 export async function extractFalPricing(
+  deps: FalPricingExtractDeps,
+): Promise<FalPricingExtractOutcome> {
+  return runIngestScope(() => extractFalPricingScoped(deps))
+}
+
+async function extractFalPricingScoped(
   deps: FalPricingExtractDeps,
 ): Promise<FalPricingExtractOutcome> {
   const providerId = deps.providerId ?? 'fal'
@@ -939,6 +955,13 @@ export async function extractFalPricing(
     // page cannot stall the walk.
     let last = walked.last
     if (failed.size > 0) {
+      noteIngest(
+        ingestFailedEvent(
+          'fal-pricing-extract',
+          providerId,
+          `leftover retry: ${failed.size}`,
+        ),
+      )
       const held = await loadCursor(deps.db, heldKey)
       const retry = [...cursorBefore.keys()].find(
         (rawId) => failed.has(rawId) && rawId !== held,
@@ -966,6 +989,11 @@ export async function extractFalPricing(
         error: outcome.error,
       }),
     )
+    noteIngest(
+      ingestFailedEvent('fal-pricing-extract', providerId, outcome.error),
+    )
     return outcome
+  } finally {
+    await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
   }
 }

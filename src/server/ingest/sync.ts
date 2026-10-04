@@ -31,6 +31,12 @@ import type {
   SpecSource,
 } from '#/server/providers/types.ts'
 import { hasAsyncApiFlag, withAsyncApiFlag } from './asyncapi.ts'
+import {
+  captureIngestEvents,
+  ingestFailedEvent,
+  noteIngest,
+  runIngestScope,
+} from './ingest-signals.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import {
   EXTRACTOR_VERSION,
@@ -513,44 +519,56 @@ export async function syncAllProviders(
 ): Promise<Array<SyncOutcome>> {
   const outcomes: Array<SyncOutcome> = []
   for (const provider of providersToSync) {
-    try {
-      outcomes.push(await syncProvider(deps, provider))
-    } catch (error) {
-      const message = errorMessage(error)
-      // Own log line per failure: the aggregate outcomes blob can exceed
-      // what Workers Logs stores, which silently loses these errors.
-      console.error(
-        JSON.stringify({
-          job: 'spec-sync',
-          providerId: provider.id,
-          error: message,
-        }),
-      )
-      outcomes.push({
-        providerId: provider.id,
-        endpointsSeen: 0,
-        versionsAdded: 0,
-        changesWritten: 0,
-        error: message,
-        warnings: [],
-      })
+    await runIngestScope(async () => {
       try {
-        await deps.db
-          .update(providers)
-          .set({ status: 'degraded' })
-          .where(eq(providers.id, provider.id))
-      } catch (statusError) {
-        // Best-effort: if the failure was resource exhaustion (subrequest
-        // budget), this write fails too — don't let it sink the run.
+        outcomes.push(await syncProvider(deps, provider))
+      } catch (error) {
+        const message = errorMessage(error)
+        // Own log line per failure: the aggregate outcomes blob can exceed
+        // what Workers Logs stores, which silently loses these errors.
         console.error(
           JSON.stringify({
             job: 'spec-sync',
             providerId: provider.id,
-            error: `degraded-status write failed: ${errorMessage(statusError)}`,
+            error: message,
           }),
         )
+        noteIngest(ingestFailedEvent('spec-sync', provider.id, message))
+        outcomes.push({
+          providerId: provider.id,
+          endpointsSeen: 0,
+          versionsAdded: 0,
+          changesWritten: 0,
+          error: message,
+          warnings: [],
+        })
+        try {
+          await deps.db
+            .update(providers)
+            .set({ status: 'degraded' })
+            .where(eq(providers.id, provider.id))
+        } catch (statusError) {
+          // Best-effort: if the failure was resource exhaustion (subrequest
+          // budget), this write fails too — don't let it sink the run.
+          console.error(
+            JSON.stringify({
+              job: 'spec-sync',
+              providerId: provider.id,
+              error: `degraded-status write failed: ${errorMessage(statusError)}`,
+            }),
+          )
+          noteIngest(
+            ingestFailedEvent(
+              'spec-sync',
+              provider.id,
+              `degraded-status write failed: ${errorMessage(statusError)}`,
+            ),
+          )
+        }
+      } finally {
+        await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
       }
-    }
+    })
   }
   return outcomes
 }

@@ -109,6 +109,11 @@ export interface ProviderSecrets {
    * `Reactor-API-Key` header for `POST /tokens` and live sessions.
    */
   REACTOR_API_KEY?: string
+  /**
+   * PostHog project token (phc_…) for ingest failure events. Optional:
+   * absent means capture is a no-op. US cloud, project 643425.
+   */
+  POSTHOG_PROJECT_KEY?: string
 }
 
 /**

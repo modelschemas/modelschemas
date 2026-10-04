@@ -37,6 +37,13 @@ import type {
 import { providerRegistry } from '#/server/providers/index.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
+import {
+  captureIngestEvents,
+  runIngestScope,
+  ingestFailedEvent,
+  noteIngest,
+  observePricingWrite,
+} from './ingest-signals.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -48,6 +55,11 @@ export interface PollOutcome {
   updated: number
   /** Rows whose firstSeenAt moved back to the upstream release date. */
   backdated: number
+  /**
+   * Per-row pricing misses and write-gate refusals. A thrown poll is 1
+   * here as well as `error` — not only the whole-provider failure.
+   */
+  failures: number
   skipped?: string
   error?: string
 }
@@ -218,14 +230,14 @@ function pricingDerivation(sources: unknown): string | null {
   return pricing?.derivation ?? null
 }
 
-function restoreDocsExtractedPricing(
+function restorePriorPricing(
   next: ModelFactSources | null,
   previous: unknown,
 ): ModelFactSources | null {
-  if (pricingDerivation(previous) !== 'docs-extracted') return next
-  const prior = previous as ModelFactSources
-  if (!prior.pricing) return next
-  return { ...(next ?? {}), pricing: prior.pricing }
+  if (typeof previous !== 'object' || previous === null) return next
+  const prior = (previous as ModelFactSources).pricing
+  if (!prior) return next
+  return { ...(next ?? {}), pricing: prior }
 }
 
 function listingSourceUrl(provider: ProviderConfig): string {
@@ -274,6 +286,7 @@ export async function pollProviderModels(
     removed: 0,
     updated: 0,
     backdated: 0,
+    failures: 0,
   }
   await ensureProviderRow(db, provider)
 
@@ -319,34 +332,41 @@ export async function pollProviderModels(
     })
     const existing = existingById.get(id)
     const existingPricing = existing?.pricing
+    const hadStoredCard = parseStoredRateCard(existingPricing) !== null
     const keepExtracted =
       raw.pricing == null &&
       pricingDerivation(existing?.factSources) === 'docs-extracted'
-    const stored = keepExtracted
-      ? { card: parseStoredRateCard(existingPricing) }
-      : await storeListedPricing(enriched.pricing, {
-          existing: existingPricing,
-          requestProperties: bound
-            ? (properties.get(bound) ?? new Set())
-            : undefined,
-          sourceUrl: listingSourceUrl(provider),
-          now,
-        })
+    const incomingNull = enriched.pricing == null
+    const stored =
+      keepExtracted || (incomingNull && hadStoredCard)
+        ? { card: parseStoredRateCard(existingPricing) }
+        : await storeListedPricing(enriched.pricing, {
+            existing: existingPricing,
+            requestProperties: bound
+              ? (properties.get(bound) ?? new Set())
+              : undefined,
+            sourceUrl: listingSourceUrl(provider),
+            now,
+          })
+    const decision = observePricingWrite({
+      providerId: provider.id,
+      rawId: enriched.rawId,
+      incomingNull,
+      hadStoredCard,
+      keepExtracted,
+      refused: stored.refused,
+    })
+    for (const event of decision.events) noteIngest(event)
+    outcome.failures += decision.failure
     if (!keepExtracted && stored.refused) {
-      logRefusedCard(
-        provider.id,
-        enriched.rawId,
-        stored.refused,
-        parseStoredRateCard(existingPricing) !== null,
-      )
+      logRefusedCard(provider.id, enriched.rawId, stored.refused, hadStoredCard)
     }
-    const card = stored.card
+    const card = decision.keepPrior
+      ? parseStoredRateCard(existingPricing)
+      : stored.card
     let factSources = reconcilePricingSource(enriched.factSources, card)
-    if (keepExtracted) {
-      factSources = restoreDocsExtractedPricing(
-        factSources,
-        existing?.factSources,
-      )
+    if (decision.keepPrior) {
+      factSources = restorePriorPricing(factSources, existing?.factSources)
     }
     const info: ModelInfo = {
       ...enriched,
@@ -527,29 +547,35 @@ export async function pollAllProviders(
 ): Promise<Array<PollOutcome>> {
   const outcomes: Array<PollOutcome> = []
   for (const provider of providerRegistry) {
-    try {
-      outcomes.push(await pollProviderModels(deps, provider))
-    } catch (error) {
-      const message = errorMessage(error)
-      // Own log line per failure: the aggregate outcomes blob can exceed
-      // what Workers Logs stores, which silently loses these errors.
-      console.error(
-        JSON.stringify({
-          job: 'models-poll',
+    await runIngestScope(async () => {
+      try {
+        outcomes.push(await pollProviderModels(deps, provider))
+      } catch (error) {
+        const message = errorMessage(error)
+        // Own log line per failure: the aggregate outcomes blob can exceed
+        // what Workers Logs stores, which silently loses these errors.
+        console.error(
+          JSON.stringify({
+            job: 'models-poll',
+            providerId: provider.id,
+            error: message,
+          }),
+        )
+        noteIngest(ingestFailedEvent('models-poll', provider.id, message))
+        outcomes.push({
           providerId: provider.id,
+          modelsSeen: 0,
+          added: 0,
+          removed: 0,
+          updated: 0,
+          backdated: 0,
+          failures: 1,
           error: message,
-        }),
-      )
-      outcomes.push({
-        providerId: provider.id,
-        modelsSeen: 0,
-        added: 0,
-        removed: 0,
-        updated: 0,
-        backdated: 0,
-        error: message,
-      })
-    }
+        })
+      } finally {
+        await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
+      }
+    })
   }
   return outcomes
 }
