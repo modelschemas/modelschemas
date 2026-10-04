@@ -23,6 +23,7 @@ const FIXTURE = `
 | **Models** | **Description** |
 | :- | :- |
 | [speech-2.8-hd](/docs/api-reference/speech-t2a-http) | Ultra-realistic quality featuring sound tags |
+| [speech-2.8-turbo](/docs/api-reference/speech-t2a-http) | Seamless speed meets natural flow |
 `
 
 const originalFetch = globalThis.fetch
@@ -49,7 +50,13 @@ describe('minimax', () => {
       { rawId: 'MiniMax-M2.7', activity: 'chat', pricing: null },
       { rawId: 'MiniMax-M3', activity: 'chat', pricing: null },
       { rawId: 'speech-2.8-hd', activity: 'audio', pricing: null },
+      { rawId: 'speech-2.8-turbo', activity: 'audio', pricing: null },
     ])
+    expect(
+      listed.models
+        .filter((model) => model.rawId.startsWith('speech-'))
+        .every((model) => model.activity === 'audio'),
+    ).toBe(true)
     expect(listed.models.some((model) => model.rawId === 'fal.ai')).toBe(false)
     expect(listed.models.some((model) => model.rawId === 'MiniMax-H3')).toBe(
       false,
