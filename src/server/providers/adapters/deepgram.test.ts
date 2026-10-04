@@ -86,7 +86,9 @@ describe('deepgram listModels', () => {
     const result = await provider.listModels({ DEEPGRAM_API_KEY: 'test-key' })
     expect(result.skipped).toBeUndefined()
     expect(
-      result.models.map(({ pricing: _pricing, ...model }) => model),
+      result.models.map(
+        ({ pricing: _pricing, factSources: _sources, ...model }) => model,
+      ),
     ).toEqual([
       {
         rawId: 'nova-3',
