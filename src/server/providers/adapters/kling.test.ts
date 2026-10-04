@@ -4,6 +4,7 @@ import { findDanglingRefs } from '#/server/ingest/bundle.ts'
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
 
 import { provider } from './kling.ts'
+import { KLING_PRICING_URL } from '../kling-pricing.ts'
 
 describe('kling classify', () => {
   it('maps generation create paths and drops platform/query paths', () => {
@@ -25,7 +26,40 @@ describe('kling listModels', () => {
   })
 
   it('returns the docs-derived catalog when a bearer is present', async () => {
-    const result = await provider.listModels({ KLING_API_KEY: 'kling-test' })
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      expect(String(url)).toBe(KLING_PRICING_URL)
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            en: {
+              newImageApi: {
+                main: {
+                  list: [
+                    {
+                      table: {
+                        data: [
+                          {
+                            model: 'Kling Image O1',
+                            price: '8 Units ($0.028) / image',
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          }),
+        ),
+      )
+    }) as typeof fetch
+    let result: Awaited<ReturnType<typeof provider.listModels>>
+    try {
+      result = await provider.listModels({ KLING_API_KEY: 'kling-test' })
+    } finally {
+      globalThis.fetch = original
+    }
     expect(result.skipped).toBeUndefined()
     expect(result.models.length).toBeGreaterThan(0)
     expect(new Set(result.models.map((m) => m.rawId)).size).toBe(

@@ -10,6 +10,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { contentHash } from '#/server/kv.ts'
+import { klingModelPricing } from '../kling-pricing.ts'
 import { skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -586,13 +587,22 @@ const CURATED_MODELS: Array<ModelInfo> = [
   { rawId: 'kling-video-o1', displayName: 'Kling Video O1', activity: 'video' },
 ]
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   if (!env.KLING_API_KEY) {
     return { models: [], ...skippedResult('kling', 'KLING_API_KEY') }
   }
   // Presence of the key enables the catalog. There is no models endpoint to
   // call — POST /v1/videos/text2video creates a generation task.
-  return { models: CURATED_MODELS }
+  const pricing = await klingModelPricing(kv)
+  return {
+    models: CURATED_MODELS.map((model) => ({
+      ...model,
+      ...pricing(model.rawId),
+    })),
+  }
 }
 
 export const provider: ProviderConfig = {
