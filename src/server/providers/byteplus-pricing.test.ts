@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import { price, priceDetailed } from '@modelschemas/rate-card'
 
+import { storeListedPricing } from '../rate-card.ts'
+
 import {
   byteplusRatesFor,
   compileSeedanceCard,
@@ -436,7 +438,7 @@ describe('byteplus video generation tutorial', () => {
     )
   })
 
-  it('bills a short input video at the Lark minimum for that output', () => {
+  it('bills a short input video at the Lark minimum for that output', async () => {
     const card = compileSeedanceCard(
       {
         default: {
@@ -475,6 +477,23 @@ describe('byteplus video generation tutorial', () => {
     // Past the minimum, the real input length wins.
     expect(video(30, 30, '480p').usd).toBeCloseTo((576_450 * 6.4) / 1e6, 6)
     expect(() => video(31, 2)).toThrow(/min_input_seconds/)
+    // The generation schema has duration and ratio, not input seconds.
+    // That lever must still store; refusing it used to null the card.
+    const stored = await storeListedPricing(card, {
+      sourceUrl: 'https://docs.byteplus.com/en/docs/ModelArk/1544106',
+      now: 1_790_000_000,
+      requestProperties: new Set([
+        'service_tier',
+        'draft',
+        'resolution',
+        'duration',
+        'ratio',
+      ]),
+    })
+    expect(stored.refused).toBeUndefined()
+    expect(stored.card?.inputs.completion_tokens).toMatchObject({
+      kind: 'number',
+    })
   })
 })
 
