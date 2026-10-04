@@ -1,68 +1,66 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  MODELS_DEV_API_URL,
-  clearModelsDevCatalogCache,
-} from '../models-dev.ts'
-import { provider } from './cloudflare-workers-ai.ts'
+import { provider, WORKERS_AI_MODELS_URL } from './cloudflare-workers-ai.ts'
 
-const FIXTURE = {
-  'cloudflare-workers-ai': {
-    id: 'cloudflare-workers-ai',
-    npm: '@ai-sdk/openai-compatible',
-    name: 'Cloudflare Workers AI',
-    models: {
-      'chat-model': {
-        id: 'chat-model',
-        name: 'Chat Model',
-        reasoning: true,
-        reasoning_options: [{ type: 'effort', values: ['low', 'high'] }],
-        tool_call: true,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        limit: { context: 128000, output: 4096 },
-        cost: { input: 1.5, output: 3 },
-      },
-      'image-only': {
-        id: 'image-only',
-        modalities: { input: ['text'], output: ['image'] },
-        cost: { input: 1, output: 1 },
-      },
-    },
-  },
-}
+/** Excerpt of developers.cloudflare.com/workers-ai/models/ (2026-10-04). */
+const FIXTURE = `
+<div data-model-id="@cf/zai-org/glm-5.3" data-model-label="glm-5.3" data-model-task="Text Generation" data-model-context="1048576" data-model-pricing="Input (per 1M tokens): $1.40
+Output (per 1M tokens): $4.40
+Cached input (per 1M tokens): $0.26"></div>
+<div data-model-id="@cf/deepgram/aura-1" data-model-label="aura-1" data-model-task="Text-to-Speech" data-model-pricing="per 1k characters: $0.015"></div>
+<div data-model-id="@cf/black-forest-labs/flux-1-schnell" data-model-label="flux-1-schnell" data-model-task="Text-to-Image"></div>
+`
+
+const originalFetch = globalThis.fetch
 
 afterEach(() => {
-  clearModelsDevCatalogCache()
-  globalThis.fetch = fetch
+  globalThis.fetch = originalFetch
 })
 
-describe('cloudflare-workers-ai listModels', () => {
-  it('lists models.dev chat rows with facts, price, and reasoning', async () => {
-    const original = globalThis.fetch
+describe('cloudflare-workers-ai', () => {
+  it('lists catalog cards and prices only per-1M input and output', async () => {
+    const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
-      if (String(url) === MODELS_DEV_API_URL) {
-        return Promise.resolve(new Response(JSON.stringify(FIXTURE)))
+      urls.push(String(url))
+      if (String(url) === WORKERS_AI_MODELS_URL) {
+        return Promise.resolve(new Response(FIXTURE))
       }
       return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
     }) as typeof fetch
-    try {
-      const result = await provider.listModels({})
-      expect(result.skipped).toBeUndefined()
-      expect(result.models.map((model) => model.rawId)).toEqual(['chat-model'])
-      expect(result.models[0]).toMatchObject({
-        activity: 'chat',
-        contextWindow: 128000,
-        maxOutput: 4096,
-        modalities: { input: ['text', 'image'], output: ['text'] },
-        reasoning: {
-          mode: 'effort',
-          mandatory: true,
-          efforts: ['low', 'high'],
+
+    const listed = await provider.listModels({})
+    const spec = await provider.fetchSpec({})
+    const glm = listed.models.find(
+      (model) => model.rawId === '@cf/zai-org/glm-5.3',
+    )
+    const aura = listed.models.find(
+      (model) => model.rawId === '@cf/deepgram/aura-1',
+    )
+
+    expect(listed.models.map((model) => model.rawId)).toEqual([
+      '@cf/zai-org/glm-5.3',
+      '@cf/deepgram/aura-1',
+      '@cf/black-forest-labs/flux-1-schnell',
+    ])
+    expect(glm).toMatchObject({
+      activity: 'chat',
+      contextWindow: 1048576,
+      displayName: 'glm-5.3',
+    })
+    expect(glm?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: {
+            input_tokens: 1.4 / 1_000_000,
+            output_tokens: 4.4 / 1_000_000,
+            cache_read_tokens: 0.26 / 1_000_000,
+          },
         },
-      })
-      expect(result.models[0]?.pricing).not.toBeNull()
-    } finally {
-      globalThis.fetch = original
-    }
+      },
+    })
+    expect(aura).toMatchObject({ activity: 'audio', pricing: null })
+    expect(listed.models[2]).toMatchObject({ activity: 'image', pricing: null })
+    expect(spec.skipped).toContain('skipped')
+    expect(urls).toEqual([WORKERS_AI_MODELS_URL])
   })
 })
