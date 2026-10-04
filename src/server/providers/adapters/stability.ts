@@ -86,4 +86,8 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  // Engine ids from /v1/engines/list are not the v2beta operation paths.
+  // Binding every PICTURE engine to generate/ultra stored image input the
+  // ultra body does not have. Leave the link unset.
+  generationEndpointId: () => null,
 }

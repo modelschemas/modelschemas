@@ -10,6 +10,7 @@
  * every voice stays null (issue #121).
  */
 import type { Activity } from '#/db/schema.ts'
+import { normalizeMediaModalities } from '../media-modalities.ts'
 import { isoToEpochSeconds } from '../release-dates.ts'
 import { fetchJson, fetchOpenApi, fetchText, skippedResult } from '../types.ts'
 import type {
@@ -121,6 +122,12 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         rawId: voice.id,
         displayName: voice.name ?? null,
         activity: 'audio',
+        // Voices are the TTS catalog. STT uses a separate model id.
+        modalities: normalizeMediaModalities({
+          activity: 'audio',
+          listingInput: ['text'],
+          listingOutput: ['audio'],
+        }),
         releasedAt: isoToEpochSeconds(voice.created_at),
       })
     }
@@ -139,4 +146,5 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  generationEndpointId: () => 'tts/bytes',
 }
