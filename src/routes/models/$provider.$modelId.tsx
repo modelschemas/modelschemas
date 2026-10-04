@@ -127,7 +127,7 @@ function ModelDetail() {
   const jsonBody = JSON.stringify(model, null, 2)
   const firstEndpoint = endpoints.at(0)
   const schemaCurl = firstEndpoint
-    ? `curl https://modelschemas.com/v1/schemas/${model.provider}/${firstEndpoint.activity}/${encodeURIComponent(firstEndpoint.endpointId)}`
+    ? `curl https://modelschemas.com/v1/schemas/${model.provider}/${firstEndpoint.activity}/${endpointPath(firstEndpoint.endpointId)}`
     : `curl https://modelschemas.com/v1/schemas/${model.provider}`
 
   const richness: Array<[string, unknown]> = [
@@ -369,35 +369,39 @@ function ModelDetail() {
                       <tr>
                         <th>endpoint</th>
                         <th>activity</th>
-                        <th>schemas</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {endpoints.map((e) => (
-                        <tr key={`${e.activity}:${e.endpointId}`}>
-                          <td className="font-mono text-[12.5px]">
-                            {e.endpointId}
-                          </td>
-                          <td className="font-mono text-xs text-ink-soft">
-                            {e.activity}
-                          </td>
-                          <td className="font-mono text-xs">
-                            <a
-                              className="press-link"
-                              href={`/schemas/${model.provider}/${e.activity}/${endpointPath(e.endpointId)}`}
-                            >
-                              request<span className="kindtag in">input</span>
-                            </a>{' '}
-                            <a
-                              className="press-link ml-2"
-                              href={`/schemas/${model.provider}/${e.activity}/${endpointPath(e.endpointId)}?kind=output`}
-                            >
-                              response
-                              <span className="kindtag out">output</span>
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
+                      {endpoints.map((e) => {
+                        const inputHref = `/schemas/${model.provider}/${e.activity}/${endpointPath(e.endpointId)}`
+                        return (
+                          <tr key={`${e.activity}:${e.endpointId}`}>
+                            <td className="font-mono text-[12.5px]">
+                              <a
+                                className="font-medium text-ink hover:text-tok-blue"
+                                href={inputHref}
+                              >
+                                {e.endpointId}
+                              </a>
+                              <div className="mt-1 text-xs">
+                                <a className="press-link" href={inputHref}>
+                                  input
+                                </a>
+                                <span className="text-ink-faint"> · </span>
+                                <a
+                                  className="press-link"
+                                  href={`${inputHref}?kind=output`}
+                                >
+                                  output
+                                </a>
+                              </div>
+                            </td>
+                            <td className="font-mono text-xs text-ink-soft">
+                              {e.activity}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

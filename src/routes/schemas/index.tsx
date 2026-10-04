@@ -78,8 +78,12 @@ function flatten(providers: Array<ProviderSchemaGroup>): Array<EndpointRow> {
   return rows
 }
 
+function endpointPath(endpointId: string): string {
+  return endpointId.split('/').map(encodeURIComponent).join('/')
+}
+
 function schemaHref(row: EndpointRow, kind?: 'output'): string {
-  const base = `/schemas/${row.provider}/${row.activity}/${encodeURIComponent(row.endpointId)}`
+  const base = `/schemas/${row.provider}/${row.activity}/${endpointPath(row.endpointId)}`
   return kind === 'output' ? `${base}?kind=output` : base
 }
 
@@ -218,13 +222,12 @@ function SchemaIndex() {
                     <th>endpoint</th>
                     <th className="max-sm:hidden">provider</th>
                     <th>activity</th>
-                    <th aria-label="schema links" />
                   </tr>
                 </thead>
                 <tbody>
                   {shown.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="text-ink-faint">
+                      <td colSpan={3} className="text-ink-faint">
                         No endpoints match these filters — clear a filter or
                         broaden <code>q</code>.
                       </td>
@@ -239,6 +242,18 @@ function SchemaIndex() {
                           >
                             {row.endpointId}
                           </a>
+                          <div className="mt-1 text-xs">
+                            <a className="press-link" href={schemaHref(row)}>
+                              input
+                            </a>
+                            <span className="text-ink-faint"> · </span>
+                            <a
+                              className="press-link"
+                              href={schemaHref(row, 'output')}
+                            >
+                              output
+                            </a>
+                          </div>
                         </td>
                         <td className="font-mono text-xs text-ink-soft max-sm:hidden">
                           <a
@@ -250,17 +265,6 @@ function SchemaIndex() {
                         </td>
                         <td className="font-mono text-xs text-ink-soft">
                           {row.activity}
-                        </td>
-                        <td className="font-mono text-xs whitespace-nowrap">
-                          <a className="press-link" href={schemaHref(row)}>
-                            input →
-                          </a>{' '}
-                          <a
-                            className="press-link"
-                            href={schemaHref(row, 'output')}
-                          >
-                            output →
-                          </a>
                         </td>
                       </tr>
                     ))
