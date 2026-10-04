@@ -29,6 +29,34 @@ function endpointPath(endpointId: string): string {
   return endpointId.split('/').map(encodeURIComponent).join('/')
 }
 
+function SchemaEndpointLinks({
+  provider,
+  activity,
+  endpointId,
+}: {
+  provider: string
+  activity: string
+  endpointId: string
+}) {
+  const inputHref = `/schemas/${provider}/${activity}/${endpointPath(endpointId)}`
+  return (
+    <>
+      <a className="font-medium text-ink hover:text-tok-blue" href={inputHref}>
+        {endpointId}
+      </a>
+      <div className="mt-1 text-xs">
+        <a className="press-link" href={inputHref}>
+          input
+        </a>
+        <span className="text-ink-faint"> · </span>
+        <a className="press-link" href={`${inputHref}?kind=output`}>
+          output
+        </a>
+      </div>
+    </>
+  )
+}
+
 interface PricingView {
   compact: {
     per: string
@@ -235,10 +263,19 @@ function ModelDetail() {
                       schemaEndpointId
                     </td>
                     <td className="font-mono text-[12.5px]">
-                      {model.schemaEndpointId ?? (
-                        <span className="text-ink-faint">
-                          no bound generation route
-                        </span>
+                      {typeof model.schemaEndpointId === 'string' &&
+                      typeof model.activity === 'string' ? (
+                        <SchemaEndpointLinks
+                          provider={model.provider}
+                          activity={model.activity}
+                          endpointId={model.schemaEndpointId}
+                        />
+                      ) : (
+                        (model.schemaEndpointId ?? (
+                          <span className="text-ink-faint">
+                            no bound generation route
+                          </span>
+                        ))
                       )}
                     </td>
                   </tr>
@@ -373,28 +410,14 @@ function ModelDetail() {
                     </thead>
                     <tbody>
                       {endpoints.map((e) => {
-                        const inputHref = `/schemas/${model.provider}/${e.activity}/${endpointPath(e.endpointId)}`
                         return (
                           <tr key={`${e.activity}:${e.endpointId}`}>
                             <td className="font-mono text-[12.5px]">
-                              <a
-                                className="font-medium text-ink hover:text-tok-blue"
-                                href={inputHref}
-                              >
-                                {e.endpointId}
-                              </a>
-                              <div className="mt-1 text-xs">
-                                <a className="press-link" href={inputHref}>
-                                  input
-                                </a>
-                                <span className="text-ink-faint"> · </span>
-                                <a
-                                  className="press-link"
-                                  href={`${inputHref}?kind=output`}
-                                >
-                                  output
-                                </a>
-                              </div>
+                              <SchemaEndpointLinks
+                                provider={model.provider}
+                                activity={e.activity}
+                                endpointId={e.endpointId}
+                              />
                             </td>
                             <td className="font-mono text-xs text-ink-soft">
                               {e.activity}
