@@ -1,19 +1,19 @@
 /**
- * Baseten Model APIs. Slugs, context, and vision come from the overview.
- * Efforts come from the reasoning page. Token prices come from baseten.co/pricing
- * (USD per 1M tokens). Schemas are Baseten's published OpenAPI documents.
- * A model with no dollar amount on the pricing page stays unpriced.
+ * Baseten Model APIs. The catalog is `GET /v1/models` on the inference host.
+ * That list publishes id, context, modalities, and per-token prices. It
+ * requires `BASETEN_API_KEY`; a missing key skips so stored rows stay.
+ * Effort values come from the public reasoning page, joined by display name.
+ * A zero price string is not a rate. Schemas are the published OpenAPI files.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 
-import { fetchOpenApi, fetchText, sha256Text } from '../types.ts'
+import { fetchOpenApi, fetchText, sha256Text, skippedResult } from '../types.ts'
 import type {
   FactSource,
   ListModelsResult,
-  ModelFactSources,
   ModelInfo,
   ModelReasoning,
   ProviderConfig,
@@ -21,13 +21,9 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-export const BASETEN_OVERVIEW_URL =
-  'https://docs.baseten.co/inference/model-apis/overview.md'
+export const BASETEN_MODELS_URL = 'https://inference.baseten.co/v1/models'
 export const BASETEN_REASONING_URL =
   'https://docs.baseten.co/inference/model-apis/reasoning.md'
-export const BASETEN_VISION_URL =
-  'https://docs.baseten.co/inference/model-apis/vision.md'
-export const BASETEN_PRICING_URL = 'https://www.baseten.co/pricing'
 export const BASETEN_CHAT_OPENAPI_URL =
   'https://docs.baseten.co/reference/inference-api/llm-openapi-spec.json'
 export const BASETEN_MESSAGES_OPENAPI_URL =
@@ -35,29 +31,14 @@ export const BASETEN_MESSAGES_OPENAPI_URL =
 
 const CHAT_ENDPOINT = 'v1/chat/completions'
 
-interface ListedModel {
-  name: string
-  slug: string
-  context: number
-  maxOutput: number
-  vision: boolean
-}
-
 interface TokenQuote {
   input: number
-  cache: number | null
   output: number
+  cache: number | null
 }
 
-export interface BasetenPages {
-  overview: string
-  reasoning: string
-  vision: string
-  pricingHtml: string
-  pricingSource: RateCard['source']
-  overviewHash: string
-  reasoningHash: string
-  visionHash: string
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function cells(line: string): Array<string> | null {
@@ -71,55 +52,26 @@ function cells(line: string): Array<string> | null {
   return row
 }
 
-function docsSource(url: string, hash: string, path: string): FactSource {
-  return {
-    derivation: 'docs-derived',
-    sourceUrl: url,
-    sourceHash: hash,
-    path,
-  }
+function positiveRate(value: unknown): number | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
-function parseOverview(markdown: string): Array<ListedModel> {
-  if (
-    !markdown.includes('{row.context}k') ||
-    !markdown.includes('{row.maxOutput}k')
-  ) {
-    throw new Error('baseten: overview context is not labeled in thousands')
+function stringList(value: unknown): Array<string> | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const out: Array<string> = []
+  for (const item of value) {
+    if (typeof item !== 'string' || item.length === 0) return null
+    out.push(item)
   }
-  const models: Array<ListedModel> = []
-  const seen = new Set<string>()
-  const row =
-    /model:\s*"([^"]+)",\s*slug:\s*"([^"]+)",\s*context:\s*(\d+),\s*maxOutput:\s*(\d+)/g
-  for (const match of markdown.matchAll(row)) {
-    const slug = match[2] ?? ''
-    if (slug.length === 0 || seen.has(slug)) continue
-    seen.add(slug)
-    models.push({
-      name: match[1] ?? '',
-      slug,
-      context: Number(match[3]) * 1000,
-      maxOutput: Number(match[4]) * 1000,
-      vision: false,
-    })
-  }
-  if (models.length === 0) {
-    throw new Error('baseten: overview listed no model slugs')
-  }
-  const features =
-    /model:\s*"([^"]+)",\s*reasoning:\s*"([^"]+)",\s*vision:\s*"([^"]+)"/g
-  const vision = new Map<string, boolean>()
-  for (const match of markdown.matchAll(features)) {
-    const mark = match[3] ?? ''
-    vision.set(match[1] ?? '', mark.includes('✓') || /^yes$/i.test(mark))
-  }
-  if (vision.size === 0) {
-    throw new Error('baseten: overview listed no feature rows')
-  }
-  return models.map((model) => ({
-    ...model,
-    vision: vision.get(model.name) ?? false,
-  }))
+  return out
+}
+
+function positiveInt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : null
 }
 
 function parseEfforts(markdown: string): Map<string, Array<string>> {
@@ -156,80 +108,6 @@ function alwaysOnPrefixes(markdown: string): Array<string> {
   return prefix ? [prefix] : []
 }
 
-function videoNames(markdown: string): Set<string> {
-  let header: Array<string> | null = null
-  for (const line of markdown.split('\n')) {
-    const row = cells(line)
-    if (!row) continue
-    if (row[0] === 'Limit') {
-      header = row
-      continue
-    }
-    if (!header || !/^max videos per request$/i.test(row[0] ?? '')) continue
-    const names = new Set<string>()
-    for (let index = 1; index < header.length; index += 1) {
-      const name = header[index]
-      if (name && /^\d/.test(row[index] ?? '')) names.add(name)
-    }
-    return names
-  }
-  return new Set()
-}
-
-function dollars(slice: string): Array<number> {
-  const amounts = [...slice.matchAll(/\$([0-9]+(?:\.[0-9]+)?)/g)].map((match) =>
-    Number(match[1]),
-  )
-  const collapsed: Array<number> = []
-  for (const amount of amounts) {
-    if (collapsed.at(-1) !== amount) collapsed.push(amount)
-  }
-  return collapsed
-}
-
-function parsePrices(html: string): {
-  bySlug: Map<string, TokenQuote>
-  byName: Map<string, TokenQuote>
-} {
-  if (!/1M tokens/i.test(html)) {
-    throw new Error('baseten: pricing page has no per-1M-token section')
-  }
-  const bySlug = new Map<string, TokenQuote>()
-  const byName = new Map<string, TokenQuote>()
-  const links = [
-    ...html.matchAll(/href="https:\/\/app\.baseten\.co\/model-apis\/([^"]+)"/g),
-  ]
-  const seen = new Set<string>()
-  for (let index = 0; index < links.length; index += 1) {
-    const link = links[index]
-    const path = link?.[1]
-    if (!link || !path || seen.has(path)) continue
-    seen.add(path)
-    const start = Math.max(links[index - 1]?.index ?? 0, link.index - 4000)
-    const before = html.slice(start, link.index)
-    const name = [...before.matchAll(/<p[^>]*>([^<]+)<\/p>/g)].at(-1)
-    const amounts = dollars(before.slice(name?.index ?? 0))
-    if (amounts.length !== 2 && amounts.length !== 3) {
-      throw new Error(`baseten: pricing row ${path} has no input and output`)
-    }
-    if (amounts.some((amount) => !Number.isFinite(amount) || amount <= 0)) {
-      throw new Error(`baseten: pricing row ${path} has a non-positive amount`)
-    }
-    const quote: TokenQuote = {
-      input: amounts[0] ?? 0,
-      cache: amounts.length === 3 ? (amounts[1] ?? null) : null,
-      output: amounts.at(-1) ?? 0,
-    }
-    const label = name?.[1]?.trim()
-    if (path.includes('/')) bySlug.set(path, quote)
-    if (label) byName.set(label, quote)
-  }
-  if (bySlug.size === 0 && byName.size === 0) {
-    throw new Error('baseten: pricing page listed no model prices')
-  }
-  return { bySlug, byName }
-}
-
 function reasoningFor(
   name: string,
   efforts: Map<string, Array<string>>,
@@ -247,113 +125,109 @@ function reasoningFor(
   }
 }
 
-function perToken(dollarsPerMillion: number): number {
-  return dollarsPerMillion / 1_000_000
+function quoteFor(pricing: unknown): TokenQuote | null {
+  if (!isRecord(pricing)) return null
+  const input = positiveRate(pricing.prompt)
+  const output = positiveRate(pricing.completion)
+  if (input === null || output === null) return null
+  return { input, output, cache: positiveRate(pricing.input_cache_read) }
 }
 
-/** Catalog rows from Baseten's own docs. Prices stay null when unnamed. */
-export function parseBasetenCatalog(pages: BasetenPages): Array<ModelInfo> {
-  const listed = parseOverview(pages.overview)
-  const efforts = parseEfforts(pages.reasoning)
-  const families = alwaysOnPrefixes(pages.reasoning)
-  const video = videoNames(pages.vision)
-  const prices = parsePrices(pages.pricingHtml)
-  return listed.map((model) => {
-    const quote =
-      prices.bySlug.get(model.slug) ?? prices.byName.get(model.name) ?? null
+function activityFor(output: Array<string> | null): Activity | null {
+  if (!output) return null
+  if (output.includes('text')) return 'chat'
+  if (output.includes('image')) return 'image'
+  if (output.includes('audio')) return 'audio'
+  return null
+}
+
+/** Rows from `GET /v1/models`. Efforts join by the row's display name. */
+export function parseBasetenModels(
+  payload: unknown,
+  reasoningMarkdown: string,
+  source: RateCard['source'],
+  reasoningHash: string,
+): Array<ModelInfo> {
+  if (!isRecord(payload) || !Array.isArray(payload.data)) {
+    throw new Error('baseten: models payload has no data array')
+  }
+  const efforts = parseEfforts(reasoningMarkdown)
+  const families = alwaysOnPrefixes(reasoningMarkdown)
+  const models: Array<ModelInfo> = []
+  for (const row of payload.data) {
+    if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
+      continue
+    }
+    const name = typeof row.name === 'string' ? row.name : null
+    const quote = quoteFor(row.pricing)
     const pricing = quote
       ? compileTokenCard(
           {
-            input_tokens: perToken(quote.input),
-            output_tokens: perToken(quote.output),
-            ...(quote.cache !== null
-              ? { cache_read_tokens: perToken(quote.cache) }
-              : {}),
+            input_tokens: quote.input,
+            output_tokens: quote.output,
+            ...(quote.cache !== null ? { cache_read_tokens: quote.cache } : {}),
           },
           [],
-          pages.pricingSource,
+          source,
         )
       : null
-    const reasoning = reasoningFor(model.name, efforts, families)
-    const input = ['text']
-    if (model.vision) input.push('image')
-    if (video.has(model.name)) input.push('video')
-    const modalityUrl = video.has(model.name)
-      ? BASETEN_VISION_URL
-      : BASETEN_OVERVIEW_URL
-    const modalityHash = video.has(model.name)
-      ? pages.visionHash
-      : pages.overviewHash
-    const factSources: ModelFactSources = {
-      contextWindow: docsSource(
-        BASETEN_OVERVIEW_URL,
-        pages.overviewHash,
-        'SupportedModelsTable',
-      ),
-      maxOutput: docsSource(
-        BASETEN_OVERVIEW_URL,
-        pages.overviewHash,
-        'SupportedModelsTable',
-      ),
-      modalities: docsSource(modalityUrl, modalityHash, 'modalities'),
-    }
-    if (pricing) {
-      factSources.pricing = docsSource(
-        BASETEN_PRICING_URL,
-        pages.pricingSource.hash,
-        'Model APIs',
-      )
-    }
-    if (reasoning) {
-      factSources.reasoning = docsSource(
-        BASETEN_REASONING_URL,
-        pages.reasoningHash,
-        'reasoning_effort',
-      )
-    }
-    return {
-      rawId: model.slug,
-      displayName: model.name,
-      activity: 'chat' as const,
-      contextWindow: model.context,
-      maxOutput: model.maxOutput,
-      modalities: { input, output: ['text'] },
+    const reasoning = name ? reasoningFor(name, efforts, families) : null
+    const input = stringList(row.input_modalities)
+    const output = stringList(row.output_modalities)
+    const reasoningSource: FactSource | undefined = reasoning
+      ? {
+          derivation: 'docs-derived',
+          sourceUrl: BASETEN_REASONING_URL,
+          sourceHash: reasoningHash,
+          path: 'reasoning_effort',
+        }
+      : undefined
+    models.push({
+      rawId: row.id,
+      displayName: name,
+      activity: activityFor(output),
+      contextWindow: positiveInt(row.context_length),
+      maxOutput: positiveInt(row.max_completion_tokens),
+      modalities: input && output ? { input, output } : null,
       pricing,
       reasoning,
-      factSources,
-    }
-  })
+      releasedAt: positiveInt(row.created),
+      ...(reasoningSource
+        ? { factSources: { reasoning: reasoningSource } }
+        : {}),
+    })
+  }
+  if (models.length === 0) {
+    throw new Error('baseten: models payload listed no ids')
+  }
+  return models
 }
 
-async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
-  const [overview, reasoning, vision, pricingHtml] = await Promise.all([
-    fetchText(BASETEN_OVERVIEW_URL),
+async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+  const key = env.BASETEN_API_KEY
+  if (!key)
+    return { models: [], ...skippedResult('baseten', 'BASETEN_API_KEY') }
+  const [modelsText, reasoning] = await Promise.all([
+    fetchText(BASETEN_MODELS_URL, {
+      headers: { Authorization: `Bearer ${key}` },
+    }),
     fetchText(BASETEN_REASONING_URL),
-    fetchText(BASETEN_VISION_URL),
-    fetchText(BASETEN_PRICING_URL),
   ])
-  const [overviewHash, reasoningHash, visionHash, pricingHash] =
-    await Promise.all([
-      sha256Text(overview),
-      sha256Text(reasoning),
-      sha256Text(vision),
-      sha256Text(pricingHtml),
-    ])
+  const [modelsHash, reasoningHash] = await Promise.all([
+    sha256Text(modelsText),
+    sha256Text(reasoning),
+  ])
   return {
-    models: parseBasetenCatalog({
-      overview,
+    models: parseBasetenModels(
+      JSON.parse(modelsText) as unknown,
       reasoning,
-      vision,
-      pricingHtml,
-      overviewHash,
-      reasoningHash,
-      visionHash,
-      pricingSource: {
-        url: BASETEN_PRICING_URL,
-        hash: pricingHash,
+      {
+        url: BASETEN_MODELS_URL,
+        hash: modelsHash,
         extractedAt: new Date().toISOString(),
       },
-    }),
+      reasoningHash,
+    ),
   }
 }
 
@@ -382,8 +256,9 @@ export function classifyBasetenPath(path: string): Activity | null {
 export const provider: ProviderConfig = {
   id: 'baseten',
   displayName: 'Baseten',
+  authEnvVar: 'BASETEN_API_KEY',
   specSourceUrl: BASETEN_CHAT_OPENAPI_URL,
-  modelsEndpoint: BASETEN_OVERVIEW_URL,
+  modelsEndpoint: BASETEN_MODELS_URL,
   defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,

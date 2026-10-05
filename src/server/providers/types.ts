@@ -105,6 +105,11 @@ export interface ProviderSecrets {
   HYPERBOLIC_API_KEY?: string
   NOVITA_API_KEY?: string
   /**
+   * Baseten Model APIs. `GET https://inference.baseten.co/v1/models` is
+   * the catalog; it requires this key. Absent → listModels skips.
+   */
+  BASETEN_API_KEY?: string
+  /**
    * Reactor (reactor.inc). Optional for sync/poll: `GET /pricing` is public
    * and the spec is embedded. The key (`rk_...`) is the data-plane
    * `Reactor-API-Key` header for `POST /tokens` and live sessions.
