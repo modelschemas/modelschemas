@@ -89,13 +89,13 @@ embedded, ported from `@tanstack/ai-byteplus`.)
 These wrap APIs we already catalog. They matter for Azure / Vertex / Bedrock
 _request_ schemas, not for the models themselves.
 
-| Done | Secret(s)                                                          | Provider               | Why it's harder                                                              |
-| ---- | ------------------------------------------------------------------ | ---------------------- | ---------------------------------------------------------------------------- |
-| [x]  | `ARK_API_KEY` (optional; upgrades the embedded catalog)            | BytePlus / ByteDance   | Graduated — see note above.                                                  |
-| [ ]  | AWS creds (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + region) | AWS Bedrock            | SigV4 / IAM. Spec is Smithy models, not one OpenAPI URL.                     |
-| [ ]  | service-account JSON                                               | Google Vertex AI       | OAuth service account, per-project routing.                                  |
-| [ ]  | `AZURE_OPENAI_API_KEY` + endpoint                                  | Azure OpenAI           | Key + resource endpoint + `api-version`; deployment-name routing.            |
-| [ ]  | AWS creds + Anthropic-on-AWS host                                  | Claude Platform on AWS | Anthropic models on AWS; same catalog as `anthropic`, different auth / host. |
+| Done | Secret(s)                                               | Provider               | Why it's harder                                                              |
+| ---- | ------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| [x]  | `ARK_API_KEY` (optional; upgrades the embedded catalog) | BytePlus / ByteDance   | Graduated — see note above.                                                  |
+| [x]  | none (model cards + SDK service model are public)       | AWS Bedrock            | Keyless: docs model cards list ids; Converse is generated from botocore.     |
+| [ ]  | service-account JSON                                    | Google Vertex AI       | OAuth service account, per-project routing.                                  |
+| [ ]  | `AZURE_OPENAI_API_KEY` + endpoint                       | Azure OpenAI           | Key + resource endpoint + `api-version`; deployment-name routing.            |
+| [ ]  | AWS creds + Anthropic-on-AWS host                       | Claude Platform on AWS | Anthropic models on AWS; same catalog as `anthropic`, different auth / host. |
 
 ## Not a vendor — skip
 
