@@ -12,6 +12,7 @@ import {
 } from '../../db/schema.ts'
 import type { ModelInfo, ProviderConfig } from '../providers/types.ts'
 import { modelDbId, pollProviderModels } from './poll-models.ts'
+import { MODELS_DEV_API_URL } from './retire-models-dev.ts'
 import type { SyncDeps } from './sync.ts'
 
 function stubProvider(id: string, list: Array<ModelInfo>): ProviderConfig {
@@ -757,6 +758,190 @@ describe('pollProviderModels', () => {
       (after?.factSources as { pricing?: { derivation: string } }).pricing
         ?.derivation,
     ).toBe('listing')
+  })
+
+  it('drops a models.dev card and keeps a provider card', async () => {
+    const id = 'poll-models-dev-card'
+    const deps = await freshDeps(id)
+    const listed = stubProvider(id, [
+      { rawId: 'codex-mini' },
+      { rawId: 'gpt-4o' },
+    ])
+    await pollProviderModels(deps, listed)
+    const devCard = {
+      inputs: {
+        num_images: { param: 'num_images', kind: 'number', default: 1 },
+      },
+      tables: {},
+      price: { '*': [{ var: 'num_images' }, 0.08] },
+      examples: [],
+      source: {
+        url: MODELS_DEV_API_URL,
+        hash: 'b'.repeat(64),
+        extractedAt: '2026-10-04T09:33:23.902Z',
+      },
+    }
+    const openaiCard = {
+      ...devCard,
+      source: {
+        ...devCard.source,
+        url: 'https://developers.openai.com/api/docs/pricing',
+      },
+    }
+    await deps.db
+      .update(models)
+      .set({
+        pricing: devCard,
+        factSources: {
+          contextWindow: { derivation: 'listing' },
+          pricing: { derivation: 'listing' },
+        },
+      })
+      .where(eq(models.id, modelDbId(id, 'codex-mini')))
+    await deps.db
+      .update(models)
+      .set({
+        pricing: openaiCard,
+        factSources: {
+          pricing: {
+            derivation: 'listing',
+            sourceUrl: openaiCard.source.url,
+          },
+        },
+      })
+      .where(eq(models.id, modelDbId(id, 'gpt-4o')))
+
+    expect(await pollProviderModels(deps, listed)).toMatchObject({
+      added: 0,
+      removed: 0,
+    })
+    const dropped = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'codex-mini')),
+    })
+    expect(dropped?.pricing).toBeNull()
+    expect(dropped?.deprecatedAt).toBeNull()
+    expect(dropped?.factSources).toEqual({
+      contextWindow: { derivation: 'listing' },
+    })
+    const kept = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'gpt-4o')),
+    })
+    expect(kept?.pricing).toMatchObject({
+      source: { url: 'https://developers.openai.com/api/docs/pricing' },
+    })
+  })
+})
+
+describe('models.dev residue on skip (issue #197)', () => {
+  function skipping(id: string): ProviderConfig {
+    return {
+      ...stubProvider(id, []),
+      listModels: () =>
+        Promise.resolve({
+          models: [],
+          skipped: `${id}: no first-party source yet — skipped`,
+        }),
+    }
+  }
+
+  it('deprecates a frozen models.dev catalog once, then leaves a later row', async () => {
+    const id = 'poll-models-dev-skip'
+    const deps = await freshDeps(id)
+    const devCard = {
+      inputs: {
+        num_images: { param: 'num_images', kind: 'number', default: 1 },
+      },
+      tables: {},
+      price: { '*': [{ var: 'num_images' }, 0.08] },
+      examples: [],
+      source: {
+        url: MODELS_DEV_API_URL,
+        hash: 'c'.repeat(64),
+        extractedAt: '2026-10-04T09:38:05.665Z',
+      },
+    }
+    await deps.db.insert(models).values([
+      {
+        id: modelDbId(id, 'muse-spark-1.1'),
+        providerId: id,
+        rawId: 'muse-spark-1.1',
+        activity: 'chat',
+        displayName: 'Muse Spark 1.1',
+        pricing: devCard,
+        factSources: { pricing: { derivation: 'listing' } },
+        firstSeenAt: 1,
+        lastSeenAt: 1,
+      },
+      {
+        id: modelDbId(id, 'muse-unpriced'),
+        providerId: id,
+        rawId: 'muse-unpriced',
+        activity: 'chat',
+        firstSeenAt: 1,
+        lastSeenAt: 1,
+      },
+    ])
+    await deps.db.insert(endpoints).values({
+      id: `${id}/responses`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/responses',
+    })
+    await deps.db.insert(schemaVersions).values([
+      {
+        id: `${id}/responses:dev`,
+        endpointId: `${id}/responses`,
+        kind: 'input',
+        contentHash: 'd'.repeat(64),
+        schema: JSON.stringify({ type: 'object' }),
+        sourceUrl: MODELS_DEV_API_URL,
+        createdAt: 1,
+      },
+      {
+        id: `${id}/responses:docs`,
+        endpointId: `${id}/responses`,
+        kind: 'output',
+        contentHash: 'e'.repeat(64),
+        schema: JSON.stringify({ type: 'object' }),
+        sourceUrl: 'https://example.com/docs',
+        createdAt: 1,
+      },
+    ])
+
+    const first = await pollProviderModels(deps, skipping(id))
+    expect(first.skipped).toContain(id)
+    expect(first.removed).toBe(2)
+    const priced = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'muse-spark-1.1')),
+    })
+    expect(priced?.pricing).toBeNull()
+    expect(priced?.deprecatedAt).not.toBeNull()
+    const unpriced = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'muse-unpriced')),
+    })
+    expect(unpriced?.deprecatedAt).not.toBeNull()
+    const versions = await deps.db
+      .select()
+      .from(schemaVersions)
+      .where(eq(schemaVersions.endpointId, `${id}/responses`))
+    expect(versions.map((row) => row.sourceUrl)).toEqual([
+      'https://example.com/docs',
+    ])
+
+    await deps.db.insert(models).values({
+      id: modelDbId(id, 'later-first-party'),
+      providerId: id,
+      rawId: 'later-first-party',
+      firstSeenAt: 2,
+      lastSeenAt: 2,
+    })
+    const second = await pollProviderModels(deps, skipping(id))
+    expect(second.removed).toBe(0)
+    const later = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'later-first-party')),
+    })
+    expect(later?.deprecatedAt).toBeNull()
   })
 })
 

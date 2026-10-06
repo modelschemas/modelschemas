@@ -45,6 +45,7 @@ import {
   findDanglingRefs,
 } from './bundle.ts'
 import type { JsonValue } from './bundle.ts'
+import { dropModelsDevSchemaVersions } from './retire-models-dev.ts'
 
 export interface SyncDeps {
   db: Db
@@ -296,6 +297,7 @@ export async function syncProvider(
     warnings: [],
   }
   await ensureProviderRow(db, provider)
+  await dropModelsDevSchemaVersions(db, provider.id)
 
   const fetched = await provider.fetchSpec(secrets)
   if (fetched.warnings) outcome.warnings.push(...fetched.warnings)
