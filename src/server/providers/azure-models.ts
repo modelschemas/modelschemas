@@ -13,6 +13,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 
+import { MODALITIES_SOURCE_SILENT } from './fact-sources.ts'
 import { markdownTableRows, tokenCount } from './model-facts.ts'
 import type { FactSource, ModelFactSources, ModelInfo } from './types.ts'
 
@@ -34,6 +35,12 @@ const SKIPPED_SECTION = /^(Fine-tuning|Assistants|Model retirement)/i
 
 export interface AzureModelRow {
   rawId: string
+  /**
+   * False for an id the article names only in running text. Such a row
+   * carries no facts, and the caller lists it only when the price list
+   * meters it: `o3-deep-research` is served, `gpt-5.6` is a family name.
+   */
+  tabulated: boolean
   /** `YYYY-MM-DD` of the row's model version, when the row dates it. */
   version: string | null
   retired: boolean
@@ -86,13 +93,36 @@ function descriptionCapabilities(text: string): Array<string> {
   return caps
 }
 
+/**
+ * The `Context Window` cell: `400,000Input: 272,000Output: 128,000` is
+ * 400,000. A cell that lists a limit per deployment type gives the
+ * `standard deployments` one, the tier prices are read for. Any other
+ * mix of limits is not guessed at.
+ */
+export function azureContextWindow(cell: string): number | null {
+  const limits = [
+    ...(cell.split(/Input:/i)[0] ?? '').matchAll(
+      /([\d,]*\d)\s*(?:\(([^)]*)\))?/g,
+    ),
+  ]
+  const only = limits.length === 1 ? limits[0] : undefined
+  if (only && only[2] === undefined) return tokenCount(only[1])
+  const standard = limits.filter((limit) =>
+    /^standard deployments$/i.test(limit[2]?.trim() ?? ''),
+  )
+  return standard.length === 1 ? tokenCount(standard[0]?.[1]) : null
+}
+
 /** Newest non-retired row wins; a model with only retired rows keeps one. */
 function better(next: AzureModelRow, current: AzureModelRow): boolean {
   if (next.retired !== current.retired) return !next.retired
   return (next.version ?? '') > (current.version ?? '')
 }
 
-/** Every model the Azure OpenAI pivot tabulates, by id. */
+/**
+ * Every model the Azure OpenAI pivot tabulates, by id, then the ids it names
+ * only in running text.
+ */
 export function parseAzureModels(markdown: string): Map<string, AzureModelRow> {
   // Learn serves the twin with CRLF line ends in places.
   const text = markdown.replace(/\r/g, '')
@@ -136,12 +166,16 @@ export function parseAzureModels(markdown: string): Map<string, AzureModelRow> {
         if (!rawId) continue
         const row: AzureModelRow = {
           rawId,
+          tabulated: true,
           version: match[2]?.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
           retired,
           activity,
-          contextWindow: tokenCount(
-            window ?? input ?? (/^[\d,]+$/.test(request ?? '') ? request : ''),
-          ),
+          contextWindow:
+            window != null
+              ? azureContextWindow(window)
+              : tokenCount(
+                  input ?? (/^[\d,]+$/.test(request ?? '') ? request : ''),
+                ),
           maxOutput: tokenCount(
             cell('max output tokens') ??
               request?.match(/Output:\s*([\d,]+)/)?.[1],
@@ -155,6 +189,29 @@ export function parseAzureModels(markdown: string): Map<string, AzureModelRow> {
         if (!current || better(row, current)) out.set(rawId, row)
       }
     }
+  }
+  if (out.size === 0) return out
+
+  const prose = zone
+    .split('\n')
+    .filter((line) => !line.startsWith('|'))
+    .join('\n')
+  for (const match of prose.matchAll(/`([a-z][a-z0-9.-]*)`/g)) {
+    const rawId = match[1]
+    if (!rawId || out.has(rawId)) continue
+    out.set(rawId, {
+      rawId,
+      tabulated: false,
+      version: null,
+      retired: false,
+      activity: null,
+      contextWindow: null,
+      maxOutput: null,
+      modalities: null,
+      capabilities: [],
+      chatCompletions: false,
+      responses: false,
+    })
   }
   return out
 }
@@ -240,8 +297,8 @@ function docsSource(sourceUrl: string, sourceHash: string) {
 }
 
 /**
- * One catalog row. The matrix column, where the model has one, overrides
- * the models article for capabilities, modalities, and the API it serves.
+ * One catalog row. Where the model has a matrix column, it wins over the
+ * models article for capabilities, stated modalities, and the API served.
  */
 export function azureModelInfo(
   row: AzureModelRow,
@@ -255,10 +312,14 @@ export function azureModelInfo(
   const capabilities = chat
     ? [...new Set([...(column?.capabilities ?? []), ...row.capabilities])]
     : []
-  const modalities =
-    column?.modalities && column.modalities.input.length > 0
-      ? column.modalities
-      : row.modalities
+  // Each side from whichever source states it: the GPT-5 matrix has an
+  // image-input row and no output row.
+  const fromMatrix = (column?.modalities?.input.length ?? 0) > 0
+  const input = fromMatrix ? column?.modalities?.input : row.modalities?.input
+  const output = column?.modalities?.output.length
+    ? column.modalities.output
+    : (row.modalities?.output ?? [])
+  const modalities = input ? { input, output } : null
   const chatCompletions = column?.chatCompletions ?? row.chatCompletions
   const responses = column?.responses ?? row.responses
 
@@ -268,9 +329,9 @@ export function azureModelInfo(
   }
   if (row.maxOutput != null) factSources.maxOutput = models('maxOutput')
   if (modalities) {
-    factSources.modalities = (modalities === row.modalities ? models : matrix)(
-      'modalities',
-    )
+    factSources.modalities = (fromMatrix ? matrix : models)('modalities')
+  } else if (chat) {
+    factSources.modalities = models(MODALITIES_SOURCE_SILENT)
   }
   if (capabilities.length > 0) {
     factSources.capabilities = Object.fromEntries(

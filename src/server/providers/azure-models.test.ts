@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AZURE_MODELS_URL,
   AZURE_REASONING_URL,
+  azureContextWindow,
   azureModelInfo,
   parseAzureFeatureMatrix,
   parseAzureModels,
@@ -47,7 +48,17 @@ const MODELS_PAGE = [
   '| --- | --- | --- | --- | --- |',
   '| `gpt-4.1` (2025-04-14) | - Text and image input  - Text output  - Chat completions API - Responses API  - Streaming  - Function calling  - Structured outputs (chat completions) | - 1,047,576  - 300,000 (standard deployments)  - 128,000 (provisioned managed and batch deployments) | 32,768 | May 31, 2024 |',
   '',
+  '## GPT-5',
+  '',
+  '| Model ID | Description | Context Window | Max Output Tokens | Training Data (up to) |',
+  '| --- | --- | --- | --- | --- |',
+  '| `gpt-5-codex` (2025-09-11) | - [Responses API](../../openai/how-to/responses) only.  - **Input**: Text/Image  - **Output**: Text only  - Structured outputs. - Functions, tools, and parallel tool calling. | 400,000Input: 272,000Output: 128,000 | 128,000 | - |',
+  '',
+  'Keep the following in mind when you call the `gpt-5.6` models and set `max_output_tokens`.',
+  '',
   '## O-Series models',
+  '',
+  '`o3-deep-research` is currently only available with Foundry Agent Service.',
   '',
   '| Model ID | Description | Max request (tokens) | Training data (up to) |',
   '| --- | --- | --- | --- |',
@@ -115,14 +126,14 @@ const REASONING_PAGE = `## API and feature support
 | **Reasoning effort** (including \`none\`) | ✅ |
 
 # [GPT-5 reasoning models](#tab/gpt-5)
-| **Feature** | **gpt-5.4-pro** | **gpt-5.2-codex**,**2026-01-14** |
-| --- | --- | --- |
-| **[Structured Outputs](structured-outputs)** | ✅ | ✅ |
-| **Reasoning effort**^7^ | ✅ | ✅ |
-| **[Image input](gpt-with-vision)** | ✅ | ✅ |
-| Chat Completions API | - | - |
-| Responses API | ✅ | ✅ |
-| Functions/Tools | ✅^9^ | ✅ |
+| **Feature** | **gpt-5.4-pro** | **gpt-5.2-codex**,**2026-01-14** | **gpt-5-codex**,**2025-09-011** |
+| --- | --- | --- | --- |
+| **[Structured Outputs](structured-outputs)** | ✅ | ✅ | ✅ |
+| **Reasoning effort**^7^ | ✅ | ✅ | ✅ |
+| **[Image input](gpt-with-vision)** | ✅ | ✅ | ✅ |
+| Chat Completions API | - | - | - |
+| Responses API | ✅ | ✅ | ✅ |
+| Functions/Tools | ✅^9^ | ✅ | ✅ |
 
 ### GPT-5 and GPT-6 reasoning features
 
@@ -152,6 +163,7 @@ describe('azure models article', () => {
       'gpt-5.2-chat',
       'gpt-oss-120b',
       'gpt-4.1',
+      'gpt-5-codex',
       'o3-mini',
       'o1-mini',
       'gpt-4o',
@@ -159,7 +171,37 @@ describe('azure models article', () => {
       'gpt-image-2',
       'gpt-audio',
       'gpt-audio-mini',
+      // Named only in running text; the adapter keeps the metered ones.
+      'gpt-5.6',
+      'o3-deep-research',
     ])
+    expect(rows.get('o3-deep-research')).toMatchObject({
+      tabulated: false,
+      activity: null,
+    })
+    expect(rows.get('gpt-4.1')?.tabulated).toBe(true)
+  })
+
+  it('reads the standard-deployments limit from a per-deployment cell', () => {
+    expect(
+      azureContextWindow(
+        '- 1,047,576  - 300,000 (standard deployments)  - 128,000 (provisioned managed and batch deployments)',
+      ),
+    ).toBe(300_000)
+    expect(azureContextWindow('400,000Input: 272,000Output: 128,000')).toBe(
+      400_000,
+    )
+    expect(azureContextWindow('1,050,000 Input: 922,000Output: 128,000')).toBe(
+      1_050_000,
+    )
+    expect(azureContextWindow('131,072')).toBe(131_072)
+    // Qualifiers this does not know, or limits with none, are not guessed at.
+    expect(
+      azureContextWindow('- 1,047,576  - 300,000 (regional deployments)'),
+    ).toBeNull()
+    expect(azureContextWindow('1,047,576 300,000')).toBeNull()
+    expect(azureContextWindow('300,000 (batch deployments)')).toBeNull()
+    expect(azureContextWindow('')).toBeNull()
   })
 
   it('reads activity from the section and the token columns', () => {
@@ -175,7 +217,7 @@ describe('azure models article', () => {
       maxOutput: 128_000,
     })
     expect(rows.get('gpt-4.1')).toMatchObject({
-      contextWindow: 1_047_576,
+      contextWindow: 300_000,
       maxOutput: 32_768,
     })
     expect(rows.get('o3-mini')).toMatchObject({
@@ -237,6 +279,7 @@ describe('azure reasoning feature matrix', () => {
       'gpt-6-sol',
       'gpt-5.4-pro',
       'gpt-5.2-codex',
+      'gpt-5-codex',
       'o3-mini',
     ])
     expect(matrix.get('gpt-6-sol')).toEqual({
@@ -297,6 +340,24 @@ describe('azure catalog row', () => {
       deprecated: false,
     })
     expect(model.factSources?.modalities?.sourceUrl).toBe(AZURE_MODELS_URL)
+  })
+
+  it('keeps an output the row states when the matrix has no output row', () => {
+    const codex = info('gpt-5-codex')
+    expect(codex.modalities).toEqual({
+      input: ['text', 'image'],
+      output: ['text'],
+    })
+    expect(codex.factSources?.modalities?.sourceUrl).toBe(AZURE_REASONING_URL)
+  })
+
+  it('marks a chat row silent when neither source states modalities', () => {
+    expect(info('o1-mini').factSources?.modalities).toMatchObject({
+      sourceUrl: AZURE_MODELS_URL,
+      path: 'silent',
+    })
+    expect(info('gpt-5.2-chat').factSources?.modalities?.path).toBe('silent')
+    expect(info('gpt-image-2').factSources?.modalities).toBeUndefined()
   })
 
   it('leaves unstated facts null', () => {

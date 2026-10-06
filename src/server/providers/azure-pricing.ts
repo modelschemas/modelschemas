@@ -10,13 +10,14 @@
  * fine-tuning, audio) keeps that word in its name and so matches no model.
  * Only Global Standard meters are read.
  *
- * A model with long-context meters gets no card: the API prices the two
- * bands and does not say where the long band starts.
+ * The API prices a short and a long context band for some models and does
+ * not say where the long band starts. The pricing page's row labels do for
+ * a few (`GPT-5.4 (<272k context length)`); those get a tiered card. A model
+ * with long-context meters and no published threshold gets no card.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
-import { tagDocsFacts } from './fact-sources.ts'
-import { fetchJson, sha256Text } from './types.ts'
+import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
 /**
@@ -26,6 +27,10 @@ import type { ModelInfo } from './types.ts'
 const FILTER =
   "serviceName eq 'Foundry Models' and armRegionName eq 'eastus2' and priceType eq 'Consumption' and startswith(productName,'Azure OpenAI')"
 export const AZURE_PRICES_URL = `https://prices.azure.com/api/retail/prices?$filter=${encodeURIComponent(FILTER)}`
+
+/** Read only for the context-length labels on its rows. */
+export const AZURE_PRICING_PAGE_URL =
+  'https://azure.microsoft.com/en-us/pricing/details/azure-openai/'
 
 const MAX_PAGES = 10
 
@@ -109,33 +114,20 @@ export function parseAzureMeters(items: Array<RetailItem>): Array<AzureMeter> {
     const tokens = UNIT_TOKENS[item.unitOfMeasure ?? '']
     const sku = parseAzureSku(item.skuName ?? '')
     if (!tokens || !sku || typeof item.retailPrice !== 'number') continue
-    // 0.015 / 1000 is one bit short of 1.5e-5; round the division's noise.
-    const rate = Number((item.retailPrice / tokens).toPrecision(12))
-    out.push({ ...sku, rate })
+    // Stored as a per-million figure over 1e6, like every other provider,
+    // so the served per-million price is the meter's. The product itself
+    // carries float noise (0.00003 * 1000), hence the rounding.
+    const perMillion = Number(
+      (item.retailPrice * (1e6 / tokens)).toPrecision(12),
+    )
+    out.push({ ...sku, rate: perMillion / 1e6 })
   }
   return out
 }
 
-/**
- * Rates for one model version. `null` when no meter names the model, when
- * its meters are for other versions, when they price a long-context band,
- * when two meters disagree, or when input or output is missing.
- */
-export function azureModelRates(
-  meters: Array<AzureMeter>,
-  rawId: string,
-  version: string | null,
-): Record<string, number> | null {
-  const id = rawId.toLowerCase().replace(/[^a-z0-9]/g, '')
-  const mine = meters.filter((m) => m.name === id || `gpt${m.name}` === id)
-  // `2024-11-20` → `1120`
-  const dated = version ? version.slice(5).replace('-', '') : null
-  const exact = mine.filter((m) => m.version !== null && m.version === dated)
-  const picked = exact.length > 0 ? exact : mine.filter((m) => !m.version)
-  if (picked.length === 0 || picked.some((m) => m.long)) return null
-
+function ratesOf(meters: Array<AzureMeter>): Record<string, number> | null {
   const rates: Record<string, number> = {}
-  for (const meter of picked) {
+  for (const meter of meters) {
     const known = rates[meter.lever]
     if (known !== undefined && known !== meter.rate) return null
     rates[meter.lever] = meter.rate
@@ -145,14 +137,97 @@ export function azureModelRates(
     : null
 }
 
+function names(meter: AzureMeter, rawId: string): boolean {
+  const id = rawId.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return meter.name === id || `gpt${meter.name}` === id
+}
+
+/**
+ * Whether a Global Standard token meter names this id and none of `taken`.
+ * `chat-latest` is OpenAI's name for `gpt-chat-latest`; its meter belongs to
+ * the tabulated model, so the bare name is not a second one.
+ */
+export function azureMetered(
+  meters: Array<AzureMeter>,
+  rawId: string,
+  taken: Array<string> = [],
+): boolean {
+  return meters.some(
+    (meter) =>
+      names(meter, rawId) && !taken.some((other) => names(meter, other)),
+  )
+}
+
+export interface AzureRates {
+  base: Record<string, number>
+  /** The long-context band, when the model's meters price one. */
+  long: Record<string, number> | null
+}
+
+/**
+ * Rates for one model version. `null` when no meter names the model, when
+ * its meters are for other versions, when two meters disagree, or when a
+ * band lacks input or output.
+ */
+export function azureModelRates(
+  meters: Array<AzureMeter>,
+  rawId: string,
+  version: string | null,
+): AzureRates | null {
+  const mine = meters.filter((meter) => names(meter, rawId))
+  // `2024-11-20` → `1120`
+  const dated = version ? version.slice(5).replace('-', '') : null
+  const exact = mine.filter((m) => m.version !== null && m.version === dated)
+  const picked = exact.length > 0 ? exact : mine.filter((m) => !m.version)
+
+  const base = ratesOf(picked.filter((m) => !m.long))
+  const longMeters = picked.filter((m) => m.long)
+  const long = longMeters.length > 0 ? ratesOf(longMeters) : null
+  if (!base || (longMeters.length > 0 && !long)) return null
+  return { base, long }
+}
+
+/**
+ * Where the long-context band starts, from the pricing page's row labels:
+ * `GPT-5.4 Pro (<272k context length)` and its `>272k` twin give
+ * `gpt-5.4-pro` → 272000. A model with one label, or with labels that
+ * disagree, is left out. Rows labelled only "short context" state nothing.
+ */
+export function parseAzureContextThresholds(html: string): Map<string, number> {
+  const seen = new Map<string, { lt: Set<number>; gt: Set<number> }>()
+  for (const match of html.matchAll(
+    /GPT-(\d[\d.]*(?: [A-Za-z]+)*) \((?:&(lt|gt);|([<>]))(\d+)k context length\)/g,
+  )) {
+    const id = `gpt-${(match[1] ?? '').toLowerCase().replace(/ /g, '-')}`
+    const entry = seen.get(id) ?? { lt: new Set(), gt: new Set() }
+    const below = match[2] === 'lt' || match[3] === '<'
+    entry[below ? 'lt' : 'gt'].add(Number(match[4]) * 1000)
+    seen.set(id, entry)
+  }
+  const out = new Map<string, number>()
+  for (const [id, { lt, gt }] of seen) {
+    const [tokens] = lt
+    if (
+      tokens !== undefined &&
+      lt.size === 1 &&
+      gt.size === 1 &&
+      gt.has(tokens)
+    ) {
+      out.set(id, tokens)
+    }
+  }
+  return out
+}
+
 export interface AzurePriceDoc {
   meters: Array<AzureMeter>
+  /** Model id → prompt tokens above which the long band applies. */
+  thresholds: Record<string, number>
   hash: string
   extractedAt: string
 }
 
-/** Every page of the price list. Throws when no token meter parses. */
-export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
+async function fetchMeters(): Promise<Array<AzureMeter>> {
   const items: Array<RetailItem> = []
   let url: string | null = AZURE_PRICES_URL
   for (let page = 0; url; page++) {
@@ -170,10 +245,28 @@ export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
   if (meters.length === 0) {
     throw new Error('azure: price list held no Global Standard token meters')
   }
+  return meters
+}
+
+/**
+ * Every page of the price list plus the pricing page's thresholds. Throws
+ * when either parses nothing.
+ */
+export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
+  const [meters, html] = await Promise.all([
+    fetchMeters(),
+    fetchText(AZURE_PRICING_PAGE_URL),
+  ])
+  const thresholds = parseAzureContextThresholds(html)
+  if (thresholds.size === 0) {
+    throw new Error('azure: pricing page labels no context-length threshold')
+  }
   // Page order is not stable; hash the meters, sorted.
   const lines = meters.map((m) => JSON.stringify(m)).sort()
+  lines.push(JSON.stringify([...thresholds].sort()))
   return {
     meters,
+    thresholds: Object.fromEntries(thresholds),
     hash: await sha256Text(lines.join('\n')),
     extractedAt: new Date().toISOString(),
   }
@@ -185,16 +278,29 @@ export function azureModelPricing(
   version: string | null,
 ): Pick<ModelInfo, 'pricing' | 'factSources'> {
   const rates = azureModelRates(doc.meters, rawId, version)
-  const pricing =
-    rates &&
-    compileTokenCard(rates, [], {
-      url: AZURE_PRICES_URL,
-      hash: doc.hash,
-      extractedAt: doc.extractedAt,
-    })
+  if (!rates) return {}
+  const threshold = doc.thresholds[rawId]
+  // Never the short band alone for a model that also has a long one.
+  if (rates.long && threshold === undefined) return {}
+  const pricing = compileTokenCard(
+    rates.base,
+    rates.long && threshold !== undefined
+      ? [{ minPromptTokens: threshold, rates: rates.long }]
+      : [],
+    { url: AZURE_PRICES_URL, hash: doc.hash, extractedAt: doc.extractedAt },
+  )
   if (!pricing) return {}
   return {
     pricing,
-    factSources: tagDocsFacts({ pricing }, AZURE_PRICES_URL, doc.hash),
+    factSources: {
+      pricing: {
+        derivation: 'docs-derived',
+        sourceUrl: AZURE_PRICES_URL,
+        sourceHash: doc.hash,
+        path: rates.long
+          ? `Pricing; long-context threshold: ${AZURE_PRICING_PAGE_URL}`
+          : 'Pricing',
+      },
+    },
   }
 }

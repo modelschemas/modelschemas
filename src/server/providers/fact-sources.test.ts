@@ -4,6 +4,7 @@ import {
   factDiscrepancies,
   listingSources,
   mergeListingAndSchema,
+  MODALITIES_SOURCE_SILENT,
   openRouterJoinIds,
   schemaRung,
   tagDocsFacts,
@@ -104,6 +105,26 @@ describe('walkRequestSchema', () => {
 })
 
 describe('mergeListingAndSchema', () => {
+  it('leaves modalities null when the listing read its docs and found none', () => {
+    const walk = walkRequestSchema(chatSchema, {
+      derivation: 'upstream-spec',
+      endpointId: 'chat/completions',
+    })
+    expect(walk?.modalities?.input).toContain('image')
+    const silent = {
+      derivation: 'docs-derived' as const,
+      path: MODALITIES_SOURCE_SILENT,
+    }
+    const merged = mergeListingAndSchema(
+      { rawId: 'gpt-chat-latest', factSources: { modalities: silent } },
+      walk,
+    )
+    expect(merged.modalities).toBeNull()
+    expect(merged.factSources?.modalities).toEqual(silent)
+    // Capability flags still come from the schema.
+    expect(merged.capabilities).toContain('tools')
+  })
+
   it('keeps listing flags and fills the rest from the schema', () => {
     const walk = walkRequestSchema(chatSchema, {
       derivation: 'upstream-spec',

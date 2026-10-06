@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
+import type { RateCard } from '@modelschemas/rate-card'
+
+import { projectTokenPricing } from '#/server/rate-card.ts'
+
 import {
+  azureMetered,
   azureModelPricing,
   azureModelRates,
   AZURE_PRICES_URL,
+  AZURE_PRICING_PAGE_URL,
+  parseAzureContextThresholds,
   parseAzureMeters,
   parseAzureSku,
 } from './azure-pricing.ts'
@@ -27,6 +34,21 @@ const PRICE_ITEMS = [
   item('5.4 opt Gl', '1M', 15),
   item('5.4 longco inp Gl', '1M', 5),
   item('5.4 longco opt Gl', '1M', 22.5),
+  item('5.4 longco cd inp Gl', '1M', 0.5),
+  item('5.4 cd inp Gl', '1M', 0.25),
+  item('5.5 inp Gl', '1M', 5),
+  item('5.5 opt Gl', '1M', 30),
+  item('5.5 LongCo inp Gl', '1M', 10),
+  item('5.5 LongCo opt Gl', '1M', 45),
+  item('gpt 4.1 mini Inp glbl', '1K', 0.0004),
+  item('gpt 4.1 mini Outp glbl', '1K', 0.0016),
+  item('gpt 4.1 nano Inp glbl', '1K', 0.0001),
+  item('gpt 4.1 nano Outp glbl', '1K', 0.0004),
+  item('5 nano inp Gl', '1K', 0.00005),
+  item('5 nano opt Gl', '1K', 0.0004),
+  item('5.4 nano Inp Gl', '1K', 0.0002),
+  item('5.4 nano Opt Gl', '1K', 0.00125),
+  item('o3-deep research 0626-inp-glbl', '1M', 10),
   item('6-sol ShortCo Inp Std Gl', '1M', 2),
   item('6-sol ShortCo Cd Inp Std Gl', '1M', 0.2),
   item('6-sol ShortCo Cd Wr Std Gl', '1M', 2.5),
@@ -90,20 +112,47 @@ describe('azure SKU names', () => {
   })
 })
 
+/** Row labels cut from the pricing page's static HTML (2026-10-06). */
+const PRICING_PAGE = `
+<td>GPT-5.4 (&lt;272k context length) Global</td>
+<td>GPT-5.4 (&lt;272k context length) Data Zone</td>
+<td>GPT-5.4 (&gt;272k context length) Global</td>
+<td>GPT-5.4 Pro (&lt;272k context length) Global</td>
+<td>GPT-5.4 Pro (&gt;272k context length) Global</td>
+<td>GPT-5.5 Long Context Global</td>
+<td>GPT-6 Sol (short context) Global</td>
+<td>GPT-7 (&lt;200k context length) Global</td>
+<td>GPT-8 (&lt;200k context length) Global</td>
+<td>GPT-8 (&gt;400k context length) Global</td>
+`
+
+describe('azure context thresholds', () => {
+  it('reads a threshold only from a matching pair of labels', () => {
+    expect(
+      Object.fromEntries(parseAzureContextThresholds(PRICING_PAGE)),
+    ).toEqual({ 'gpt-5.4': 272_000, 'gpt-5.4-pro': 272_000 })
+    expect(parseAzureContextThresholds('<td>GPT-5.5 Global</td>').size).toBe(0)
+  })
+})
+
 describe('azure model rates', () => {
   const meters = parseAzureMeters(PRICE_ITEMS)
-  const perMillion = (id: string, version: string | null) => {
-    const rates = azureModelRates(meters, id, version)
-    return (
-      rates &&
-      Object.fromEntries(
-        Object.entries(rates).map(([lever, rate]) => [
-          lever,
-          Number((rate * 1e6).toFixed(6)),
-        ]),
-      )
-    )
+  const doc = {
+    meters,
+    thresholds: Object.fromEntries(parseAzureContextThresholds(PRICING_PAGE)),
+    hash: 'h',
+    extractedAt: '2026-10-06T00:00:00.000Z',
   }
+  const million = (rates: Record<string, number> | null | undefined) =>
+    rates &&
+    Object.fromEntries(
+      Object.entries(rates).map(([lever, rate]) => [
+        lever,
+        Number((rate * 1e6).toFixed(6)),
+      ]),
+    )
+  const perMillion = (id: string, version: string | null) =>
+    million(azureModelRates(meters, id, version)?.base) ?? null
 
   it('prices the Global Standard tier per token', () => {
     expect(perMillion('gpt-5.4-mini', '2026-03-17')).toEqual({
@@ -135,10 +184,6 @@ describe('azure model rates', () => {
     expect(perMillion('o3', null)).toBeNull()
   })
 
-  it('refuses a model with a long-context band', () => {
-    expect(perMillion('gpt-5.4', '2026-03-05')).toBeNull()
-  })
-
   it('reads cache writes and ignores priority meters', () => {
     expect(perMillion('gpt-6-sol', '2026-09-22')).toEqual({
       input_tokens: 2,
@@ -150,7 +195,6 @@ describe('azure model rates', () => {
 
   it('refuses a model with no output meter or disagreeing meters', () => {
     expect(perMillion('gpt-oss-120b', null)).toBeNull()
-    expect(perMillion('gpt-5.5', '2026-04-24')).toBeNull()
     const split = parseAzureMeters([
       item('o3 Inp glbl', '1K', 0.002),
       item('o3 input global', '1K', 0.003),
@@ -159,17 +203,66 @@ describe('azure model rates', () => {
     expect(azureModelRates(split, 'o3', null)).toBeNull()
   })
 
+  it('serves the per-million figure the meter states', () => {
+    const served = (id: string) => {
+      const pricing = azureModelPricing(doc, id, null).pricing as
+        | RateCard
+        | undefined
+      if (!pricing) throw new Error(`fixture does not price ${id}`)
+      const { inputPerMillion, outputPerMillion } = projectTokenPricing(pricing)
+      return [inputPerMillion, outputPerMillion]
+    }
+    expect(served('gpt-4.1-mini')).toEqual([0.4, 1.6])
+    expect(served('gpt-4.1-nano')).toEqual([0.1, 0.4])
+    expect(served('gpt-5-nano')).toEqual([0.05, 0.4])
+    expect(served('gpt-5.4-nano')).toEqual([0.2, 1.25])
+  })
+
   it('compiles a card that carries its source', () => {
-    const doc = { meters, hash: 'h', extractedAt: '2026-10-06T00:00:00.000Z' }
     const priced = azureModelPricing(doc, 'o3', '2025-04-16')
     expect(priced.pricing).toMatchObject({
       source: { url: AZURE_PRICES_URL, hash: 'h' },
     })
-    expect(priced.factSources?.pricing).toMatchObject({
+    expect(priced.factSources?.pricing).toEqual({
       derivation: 'docs-derived',
       sourceUrl: AZURE_PRICES_URL,
       sourceHash: 'h',
+      path: 'Pricing',
     })
-    expect(azureModelPricing(doc, 'gpt-5.4', '2026-03-05')).toEqual({})
+  })
+
+  it('tiers a long-context model at the threshold the pricing page labels', () => {
+    const rates = azureModelRates(meters, 'gpt-5.4', '2026-03-05')
+    expect(million(rates?.long)).toEqual({
+      input_tokens: 5,
+      cache_read_tokens: 0.5,
+      output_tokens: 22.5,
+    })
+    const priced = azureModelPricing(doc, 'gpt-5.4', '2026-03-05')
+    expect(priced.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: { input_tokens: 2.5e-6, output_tokens: 15e-6 },
+          '272000': { input_tokens: 5e-6, output_tokens: 22.5e-6 },
+        },
+      },
+    })
+    expect(priced.factSources?.pricing?.path).toBe(
+      `Pricing; long-context threshold: ${AZURE_PRICING_PAGE_URL}`,
+    )
+  })
+
+  it('never prices only the short band of a long-context model', () => {
+    expect(
+      azureModelRates(meters, 'gpt-5.5', '2026-04-24')?.long,
+    ).not.toBeNull()
+    expect(azureModelPricing(doc, 'gpt-5.5', '2026-04-24')).toEqual({})
+  })
+
+  it('says whether the price list meters an id', () => {
+    expect(azureMetered(meters, 'o3-deep-research')).toBe(true)
+    expect(azureMetered(meters, 'gpt-5.6')).toBe(false)
+    expect(azureMetered(meters, 'chat-latest')).toBe(true)
+    expect(azureMetered(meters, 'chat-latest', ['gpt-chat-latest'])).toBe(false)
   })
 })

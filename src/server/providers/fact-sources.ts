@@ -50,6 +50,13 @@ const NESTED_CONTAINERS = new Set([
   'reasoning',
 ])
 
+/**
+ * `factSources.modalities.path` for a row whose own docs were read and state
+ * no modalities. The schema rung then leaves the field null: a shared
+ * request schema says what the route accepts, not what this model does.
+ */
+export const MODALITIES_SOURCE_SILENT = 'silent'
+
 const INPUT_MODALITY: Record<string, string> = {
   image: 'image',
   image_url: 'image',
@@ -337,11 +344,15 @@ export function mergeListingAndSchema(
     capabilities = have.size > 0 ? [...have] : null
   }
 
+  const walked =
+    listed.modalities?.path === MODALITIES_SOURCE_SILENT ? null : walk
   const modalities =
-    listing.modalities != null ? listing.modalities : (walk?.modalities ?? null)
+    listing.modalities != null
+      ? listing.modalities
+      : (walked?.modalities ?? null)
   const sources: ModelFactSources = { ...listed }
-  if (listing.modalities == null && walk?.sources.modalities) {
-    sources.modalities = walk.sources.modalities
+  if (listing.modalities == null && walked?.sources.modalities) {
+    sources.modalities = walked.sources.modalities
   }
   if (Object.keys(capSources).length > 0 && !capabilitiesIsObject) {
     sources.capabilities = capSources

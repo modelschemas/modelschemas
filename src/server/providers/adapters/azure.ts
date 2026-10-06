@@ -13,6 +13,7 @@ import {
 } from '../azure-models.ts'
 import {
   AZURE_PRICES_URL,
+  azureMetered,
   azureModelPricing,
   fetchAzurePrices,
 } from '../azure-pricing.ts'
@@ -55,17 +56,25 @@ async function listModels(
     cachedDocs(kv, AZURE_PRICES_URL, fetchAzurePrices),
   ])
   const hashes = { models: models.hash, reasoning: matrix.hash }
+  const tabulated = Object.values(models.rows)
+    .filter((row) => row.tabulated)
+    .map((row) => row.rawId)
   return {
-    models: Object.values(models.rows).map((row) => {
-      const info = azureModelInfo(row, matrix.rows[row.rawId], hashes)
-      if (row.activity !== 'chat') return info
-      const priced = azureModelPricing(prices, row.rawId, row.version)
-      return {
-        ...info,
-        ...priced,
-        factSources: { ...info.factSources, ...priced.factSources },
-      }
-    }),
+    models: Object.values(models.rows)
+      .filter(
+        (row) =>
+          row.tabulated || azureMetered(prices.meters, row.rawId, tabulated),
+      )
+      .map((row) => {
+        const info = azureModelInfo(row, matrix.rows[row.rawId], hashes)
+        if (row.activity !== 'chat') return info
+        const priced = azureModelPricing(prices, row.rawId, row.version)
+        return {
+          ...info,
+          ...priced,
+          factSources: { ...info.factSources, ...priced.factSources },
+        }
+      }),
   }
 }
 
