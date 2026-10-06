@@ -1,0 +1,702 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Moonshot AI API",
+    "version": "1.0.0",
+    "description": "Moonshot AI / Kimi 大语言模型服务 API"
+  },
+  "servers": [
+    {
+      "url": "https://api.moonshot.cn",
+      "description": "生产环境"
+    }
+  ],
+  "paths": {
+    "/v1/chat/completions": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/KimiK3ChatRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KimiK27CodeChatRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KimiK26ChatRequest"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "model",
+                  "mapping": {
+                    "kimi-k3": "#/components/schemas/KimiK3ChatRequest",
+                    "kimi-k2.7-code": "#/components/schemas/KimiK27CodeChatRequest",
+                    "kimi-k2.7-code-highspeed": "#/components/schemas/KimiK27CodeChatRequest",
+                    "kimi-k2.6": "#/components/schemas/KimiK26ChatRequest"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "KimiK3ChatRequest": {
+        "title": "kimi-k3",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatRequestCommon"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "模型 ID",
+                "enum": ["kimi-k3"],
+                "default": "kimi-k3"
+              },
+              "messages": {
+                "type": "array",
+                "description": "Kimi K3 对话消息列表。除标准消息外，还可在任意对话位置插入 {\"role\": \"system\", \"tools\": [...]} 消息动态加载工具；该动态工具消息不包含 content 字段，并且只影响后续对话。",
+                "items": {
+                  "$ref": "#/components/schemas/KimiK3Message"
+                }
+              },
+              "reasoning_effort": {
+                "type": "string",
+                "enum": ["low", "high", "max"],
+                "default": "max",
+                "description": "Kimi K3 始终启用思考，并开启 Preserved Thinking。推理强度支持 low、high 和 max，默认为 max。"
+              }
+            },
+            "required": ["model", "messages"]
+          }
+        ]
+      },
+      "KimiK27CodeChatRequest": {
+        "title": "kimi-k2.7-code",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatRequestBase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "模型 ID。可选 `kimi-k2.7-code` 或其高速版 `kimi-k2.7-code-highspeed`；两者为同一模型、参数完全一致，高速版输出速度约 180 Tokens/s（短上下文场景可达 260 Tokens/s）。",
+                "enum": ["kimi-k2.7-code", "kimi-k2.7-code-highspeed"],
+                "default": "kimi-k2.7-code"
+              },
+              "thinking": {
+                "type": "object",
+                "description": "控制 kimi-k2.7-code 模型是否启用思考能力，以及是否完整保留多轮对话中的 reasoning_content。可选参数，默认值为 {\"type\": \"enabled\", \"keep\": \"all\"}。\n\n与 kimi-k2.6 的差异：\n- `type` 仅支持 `\"enabled\"`。与 kimi-k2.6 不同，不支持 `\"disabled\"` — 传入会报错。该模型始终开启思考。\n- `keep` 仅接受合法值 `\"all\"`；不传或传 `\"all\"` 时服务端均按 `\"all\"` 处理，传入其他非法值会报错。因此该模型始终启用 Preserved Thinking。",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["enabled"],
+                    "description": "启用思考能力。对 kimi-k2.7-code 仅接受 `\"enabled\"`；传入 `\"disabled\"` 会报错。这与同时支持 `\"disabled\"` 的 kimi-k2.6 不同。"
+                  },
+                  "keep": {
+                    "type": ["string", "null"],
+                    "enum": ["all", null],
+                    "description": "控制是否保留历史对话轮次（previous turns）的 reasoning_content，从而启用 Preserved Thinking。\n\n- 对 kimi-k2.7-code，该参数仅接受合法值 `\"all\"`：传 `\"all\"`、传 `null` 或不传表现完全一致，服务端均按 `\"all\"` 处理 — 始终保留历史轮次的 reasoning_content；传入其他非法值会报错。这与 kimi-k2.6 不同，k2.6 默认为 `null`（除非显式设为 `\"all\"`，否则不保留历史思考）。\n- 由于 Preserved Thinking 始终开启，请把每一轮历史 assistant 消息中的 reasoning_content 原样保留在 messages 中。\n- 注意：该参数只影响历史轮次的 reasoning_content；不改变模型在当前 turn 内是否产生/输出思考内容（由 `type` 控制）。关于使用方式的最佳实践，详见 [Preserved Thinking](/guide/use-thinking-models#preserved-thinking)。"
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["model"]
+          }
+        ]
+      },
+      "KimiK26ChatRequest": {
+        "title": "kimi-k2.6",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChatRequestBase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "description": "模型 ID",
+                "enum": ["kimi-k2.6"],
+                "default": "kimi-k2.6"
+              },
+              "thinking": {
+                "type": "object",
+                "description": "控制 kimi-k2.6 模型是否启用思考能力，以及是否完整保留多轮对话中的 reasoning_content。可选参数，默认值为 {\"type\": \"enabled\"}。",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["enabled", "disabled"],
+                    "description": "启用或禁用思考能力"
+                  },
+                  "keep": {
+                    "type": ["string", "null"],
+                    "enum": ["all", null],
+                    "description": "控制是否保留历史对话轮次（previous turns）的 reasoning_content，从而启用 Preserved Thinking。默认为 `null`，即不保留历史轮次的思考内容。\n\n- `null`（默认）或不传：服务端会忽略历史 turns 的 reasoning_content。\n- `\"all\"`：保留历史 turns 的 reasoning_content 并随上下文一同提供给模型，启用 Preserved Thinking。使用时需把每一轮历史 assistant 消息中的 reasoning_content 原样保留在 messages 中。推荐与 `type: \"enabled\"` 搭配使用。\n- 注意：该参数只影响历史轮次的 reasoning_content；不改变模型在当前 turn 内是否产生/输出思考内容（由 `type` 控制）。关于使用方式的最佳实践，详见 [Preserved Thinking](/guide/use-thinking-models#preserved-thinking)。"
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["model"]
+          }
+        ]
+      },
+      "ChatRequestBase": {
+        "type": "object",
+        "properties": {
+          "logprobs": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否返回输出 Token 的对数概率。设置为 true 时，在响应 message 的 logprobs 字段中返回每个输出 Token 的对数概率信息"
+          },
+          "top_logprobs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "指定在每个 Token 位置返回概率最高的候选 Token 数量（0-20），各候选 Token 附带对数概率。使用此参数时必须将 logprobs 设置为 true"
+          },
+          "prediction": {
+            "type": "object",
+            "description": "Predicted Output 配置。当模型响应的大部分内容可以提前预知时（例如重新生成仅有少量修改的文件），可显著降低响应延迟",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["content"],
+                "description": "预测内容类型，当前仅支持 content"
+              },
+              "content": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                ],
+                "description": "需要模型匹配的静态预测内容，例如正在重新生成的文本文件内容。可以是 string，也可以是 array[object]（数组元素仅支持 type 为 text 的文本内容）"
+              }
+            }
+          },
+          "messages": {
+            "type": "array",
+            "description": "包含迄今为止对话的消息列表。每个元素格式为 {\"role\": \"user\", \"content\": \"你好\"}。role 支持 system、user、assistant、tool 其一，content 不得为空。content 字段可以是 string，也可以是 array[object]（用于多模态输入）",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "max_tokens": {
+            "type": "integer",
+            "deprecated": true,
+            "description": "已弃用，请使用 max_completion_tokens"
+          },
+          "max_completion_tokens": {
+            "type": "integer",
+            "description": "聊天补全生成的最大 Token 数量。默认值因模型而异：Kimi K3 默认为 131072，最大可设置为 1048576。如果结果达到最大 Token 数而未结束，finish reason 将为 \"length\"；否则为 \"stop\"。此值为期望返回的 Token 长度，而非输入加输出的总长度。如果输入加 max_completion_tokens 超出模型上下文窗口，将返回 invalid_request_error。"
+          },
+          "response_format": {
+            "type": "object",
+            "description": "控制模型输出格式。默认值为 {\"type\": \"text\"}，即纯文本输出。设置为 {\"type\": \"json_object\"} 可启用 JSON 模式，确保输出为合法 JSON 对象（需在 prompt 中引导模型输出 JSON 并指定格式）。设置为 {\"type\": \"json_schema\"} 可启用 Structured Output，按指定的 JSON Schema 约束输出结构（推荐，需配合 json_schema 字段使用）。如果您在使用 JSON Schema 时遇到校验问题，欢迎到 walle GitHub Issues (https://github.com/MoonshotAI/walle/issues) 提交反馈。",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["text", "json_object", "json_schema"],
+                "description": "输出格式类型。text：默认，纯文本输出；json_object：保证输出为合法 JSON 对象；json_schema：按指定 JSON Schema 约束输出（推荐，需配合 json_schema 字段使用）"
+              },
+              "json_schema": {
+                "type": "object",
+                "description": "当 type 为 json_schema 时使用，定义输出应遵循的 JSON Schema",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Schema 名称，用于标识"
+                  },
+                  "strict": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "是否严格按 schema 约束输出。默认为 true。为 true 时 schema 需符合 MFJS 规范，不符合会返回错误或 warning；为 false 时仅保证输出为合法 JSON 对象，不强制约束内部结构。"
+                  },
+                  "schema": {
+                    "type": "object",
+                    "description": "JSON Schema 对象，定义输出应遵循的结构。需符合 MFJS（Moonshot Flavored JSON Schema）规范。可使用 walle CLI 工具自检：go install github.com/moonshotai/walle/cmd/walle@latest && walle -schema '你的schema' -level strict",
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["name", "schema"]
+              }
+            }
+          },
+          "stop": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5
+              }
+            ],
+            "default": null,
+            "description": "停用词，完全匹配时将停止输出。匹配到的词本身不会被输出。最多允许 5 个字符串，每个不超过 32 字节"
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否以流式方式返回响应，默认 false"
+          },
+          "stream_options": {
+            "type": "object",
+            "description": "流式响应选项",
+            "properties": {
+              "include_usage": {
+                "type": "boolean",
+                "default": false,
+                "description": "如果设置，将在 data: [DONE] 消息之前额外发送一个 chunk。该 chunk 的 usage 字段显示整个请求的 Token 使用统计，choices 字段为空数组。其他所有 chunk 也会包含 usage 字段，但值为 null。注意：如果流中断，可能无法收到包含总 Token 用量的最终 chunk"
+              }
+            }
+          },
+          "tools": {
+            "type": "array",
+            "description": "模型可调用的工具列表",
+            "items": {
+              "$ref": "#/components/schemas/ToolDefinition"
+            }
+          },
+          "prompt_cache_key": {
+            "type": "string",
+            "default": null,
+            "description": "用于缓存相似请求的响应以优化缓存命中率。对于 Coding Agent，通常是代表单个会话的 session id 或 task id；退出并恢复会话时应保持不变。对于 Kimi Code Plan，此字段为必填以提高缓存命中率。对于其他多轮对话 Agent，也建议使用此字段"
+          },
+          "prompt_cache_options": {
+            "type": "object",
+            "description": "上下文缓存写入选项。不传时默认开启缓存写入（5m 档）：系统自动将请求前缀写入 5m 档缓存",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["implicit"],
+                "default": "implicit",
+                "description": "缓存写入模式，仅支持 implicit：自动将请求前缀写入缓存"
+              },
+              "ttl": {
+                "type": "string",
+                "enum": ["5m", "1h"],
+                "default": "5m",
+                "description": "缓存写入的有效期，5m 与 1h 两档缓存相互独立。相同前缀的请求在有效期内命中后，缓存有效期按原 TTL 刷新"
+              }
+            }
+          },
+          "safety_identifier": {
+            "type": "string",
+            "description": "用于检测可能违反使用政策的用户的稳定标识符。应为唯一标识每个用户的字符串。建议对用户名或邮箱进行哈希处理以避免发送可识别信息"
+          },
+          "tool_choice": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": ["auto", "none", "required"],
+                "description": "auto：模型自行决定是否调用工具；none：不调用工具；required：强制调用工具"
+              },
+              {
+                "type": "object",
+                "description": "强制调用指定工具",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["function"]
+                  },
+                  "function": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "要调用的函数名称"
+                      }
+                    },
+                    "required": ["name"]
+                  }
+                },
+                "required": ["type", "function"]
+              }
+            ],
+            "description": "控制模型是否调用工具。`auto`（默认）：模型自行决定是否调用工具；`none`：不调用工具；`required`：强制调用工具；也可传入特定函数对象强制调用指定工具。"
+          }
+        },
+        "required": ["messages"]
+      },
+      "ChatRequestCommon": {
+        "type": "object",
+        "properties": {
+          "logprobs": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否返回输出 Token 的对数概率。设置为 true 时，在响应 message 的 logprobs 字段中返回每个输出 Token 的对数概率信息"
+          },
+          "top_logprobs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20,
+            "description": "指定在每个 Token 位置返回概率最高的候选 Token 数量（0-20），各候选 Token 附带对数概率。使用此参数时必须将 logprobs 设置为 true"
+          },
+          "prediction": {
+            "type": "object",
+            "description": "Predicted Output 配置。当模型响应的大部分内容可以提前预知时（例如重新生成仅有少量修改的文件），可显著降低响应延迟",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["content"],
+                "description": "预测内容类型，当前仅支持 content"
+              },
+              "content": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                ],
+                "description": "需要模型匹配的静态预测内容，例如正在重新生成的文本文件内容。可以是 string，也可以是 array[object]（数组元素仅支持 type 为 text 的文本内容）"
+              }
+            }
+          },
+          "max_tokens": {
+            "type": "integer",
+            "deprecated": true,
+            "description": "已弃用，请使用 max_completion_tokens"
+          },
+          "max_completion_tokens": {
+            "type": "integer",
+            "description": "聊天补全生成的最大 Token 数量。默认值因模型而异：Kimi K3 默认为 131072，最大可设置为 1048576。如果结果达到最大 Token 数而未结束，finish reason 将为 \"length\"；否则为 \"stop\"。此值为期望返回的 Token 长度，而非输入加输出的总长度。如果输入加 max_completion_tokens 超出模型上下文窗口，将返回 invalid_request_error。"
+          },
+          "response_format": {
+            "type": "object",
+            "description": "控制模型输出格式。默认值为 {\"type\": \"text\"}，即纯文本输出。设置为 {\"type\": \"json_object\"} 可启用 JSON 模式，确保输出为合法 JSON 对象（需在 prompt 中引导模型输出 JSON 并指定格式）。设置为 {\"type\": \"json_schema\"} 可启用 Structured Output，按指定的 JSON Schema 约束输出结构（推荐，需配合 json_schema 字段使用）。如果您在使用 JSON Schema 时遇到校验问题，欢迎到 walle GitHub Issues (https://github.com/MoonshotAI/walle/issues) 提交反馈。",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["text", "json_object", "json_schema"],
+                "description": "输出格式类型。text：默认，纯文本输出；json_object：保证输出为合法 JSON 对象；json_schema：按指定 JSON Schema 约束输出（推荐，需配合 json_schema 字段使用）"
+              },
+              "json_schema": {
+                "type": "object",
+                "description": "当 type 为 json_schema 时使用，定义输出应遵循的 JSON Schema",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Schema 名称，用于标识"
+                  },
+                  "strict": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "是否严格按 schema 约束输出。默认为 true。为 true 时 schema 需符合 MFJS 规范，不符合会返回错误或 warning；为 false 时仅保证输出为合法 JSON 对象，不强制约束内部结构。"
+                  },
+                  "schema": {
+                    "type": "object",
+                    "description": "JSON Schema 对象，定义输出应遵循的结构。需符合 MFJS（Moonshot Flavored JSON Schema）规范。可使用 walle CLI 工具自检：go install github.com/moonshotai/walle/cmd/walle@latest && walle -schema '你的schema' -level strict",
+                    "additionalProperties": true
+                  }
+                },
+                "required": ["name", "schema"]
+              }
+            }
+          },
+          "stop": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 5
+              }
+            ],
+            "default": null,
+            "description": "停用词，完全匹配时将停止输出。匹配到的词本身不会被输出。最多允许 5 个字符串，每个不超过 32 字节"
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false,
+            "description": "是否以流式方式返回响应，默认 false"
+          },
+          "stream_options": {
+            "type": "object",
+            "description": "流式响应选项",
+            "properties": {
+              "include_usage": {
+                "type": "boolean",
+                "default": false,
+                "description": "如果设置，将在 data: [DONE] 消息之前额外发送一个 chunk。该 chunk 的 usage 字段显示整个请求的 Token 使用统计，choices 字段为空数组。其他所有 chunk 也会包含 usage 字段，但值为 null。注意：如果流中断，可能无法收到包含总 Token 用量的最终 chunk"
+              }
+            }
+          },
+          "tools": {
+            "type": "array",
+            "description": "模型可调用的工具列表",
+            "items": {
+              "$ref": "#/components/schemas/ToolDefinition"
+            }
+          },
+          "prompt_cache_key": {
+            "type": "string",
+            "default": null,
+            "description": "用于缓存相似请求的响应以优化缓存命中率。对于 Coding Agent，通常是代表单个会话的 session id 或 task id；退出并恢复会话时应保持不变。对于 Kimi Code Plan，此字段为必填以提高缓存命中率。对于其他多轮对话 Agent，也建议使用此字段"
+          },
+          "prompt_cache_options": {
+            "type": "object",
+            "description": "上下文缓存写入选项。不传时默认开启缓存写入（5m 档）：系统自动将请求前缀写入 5m 档缓存",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["implicit"],
+                "default": "implicit",
+                "description": "缓存写入模式，仅支持 implicit：自动将请求前缀写入缓存"
+              },
+              "ttl": {
+                "type": "string",
+                "enum": ["5m", "1h"],
+                "default": "5m",
+                "description": "缓存写入的有效期，5m 与 1h 两档缓存相互独立。相同前缀的请求在有效期内命中后，缓存有效期按原 TTL 刷新"
+              }
+            }
+          },
+          "safety_identifier": {
+            "type": "string",
+            "description": "用于检测可能违反使用政策的用户的稳定标识符。应为唯一标识每个用户的字符串。建议对用户名或邮箱进行哈希处理以避免发送可识别信息"
+          },
+          "tool_choice": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": ["auto", "none", "required"],
+                "description": "auto：模型自行决定是否调用工具；none：不调用工具；required：强制调用工具"
+              },
+              {
+                "type": "object",
+                "description": "强制调用指定工具",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["function"]
+                  },
+                  "function": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "要调用的函数名称"
+                      }
+                    },
+                    "required": ["name"]
+                  }
+                },
+                "required": ["type", "function"]
+              }
+            ],
+            "description": "控制模型是否调用工具。`auto`（默认）：模型自行决定是否调用工具；`none`：不调用工具；`required`：强制调用工具；也可传入特定函数对象强制调用指定工具。"
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["system", "user", "assistant", "tool"],
+            "example": "user",
+            "description": "消息发送者的角色，支持 system、user、assistant、tool"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "title": "text",
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["text"]
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["type", "text"]
+                    },
+                    {
+                      "title": "image_url",
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["image_url"]
+                        },
+                        "image_url": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["url"]
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["type", "image_url"]
+                    },
+                    {
+                      "title": "video_url",
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": ["video_url"]
+                        },
+                        "video_url": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["url"]
+                            },
+                            {
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "required": ["type", "video_url"]
+                    }
+                  ]
+                }
+              }
+            ],
+            "example": "你好",
+            "description": "消息内容。可以是纯文本字符串，也可以是包含 text/image_url/video_url 类型的对象数组（用于多模态输入）"
+          },
+          "name": {
+            "type": "string",
+            "default": null,
+            "description": "消息发送者的名称（可选）"
+          },
+          "partial": {
+            "type": "boolean",
+            "default": false,
+            "description": "在最后一条 assistant 消息中设置为 true 以启用 Partial Mode"
+          }
+        },
+        "required": ["role", "content"]
+      },
+      "KimiK3Message": {
+        "oneOf": [
+          {
+            "title": "标准消息",
+            "$ref": "#/components/schemas/Message"
+          },
+          {
+            "title": "动态工具消息",
+            "$ref": "#/components/schemas/KimiK3DynamicToolMessage"
+          }
+        ],
+        "description": "Kimi K3 对话消息。既支持标准消息，也支持不含 content、通过 tools 声明动态工具的 system 消息。"
+      },
+      "KimiK3DynamicToolMessage": {
+        "type": "object",
+        "description": "Kimi K3 动态加载工具消息。该消息只能使用 system 角色，通过 tools 字段在当前对话位置声明后续对话可用的工具，且不包含 content 字段。",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": ["system"],
+            "description": "动态加载工具消息的角色，固定为 system"
+          },
+          "tools": {
+            "type": "array",
+            "description": "从该消息位置开始可供模型调用的工具列表",
+            "items": {
+              "$ref": "#/components/schemas/ToolDefinition"
+            }
+          }
+        },
+        "required": ["role", "tools"],
+        "additionalProperties": false
+      },
+      "ToolDefinition": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["function"]
+          },
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "函数名称。必须符合正则表达式：^[a-zA-Z_][a-zA-Z0-9-_]{0,127}$",
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9-_]{0,127}$"
+              },
+              "description": {
+                "type": "string",
+                "description": "函数功能描述"
+              },
+              "parameters": {
+                "type": "object",
+                "description": "函数参数，JSON Schema 格式。需符合 [MFJS（Moonshot Flavored JSON Schema）规范](https://github.com/MoonshotAI/walle/blob/main/docs/mfjs-spec.zh.md)。",
+                "additionalProperties": true
+              },
+              "strict": {
+                "type": "boolean",
+                "default": true,
+                "description": "是否严格按 parameters schema 约束工具调用参数的输出。默认为 true。设为 false 时仅保证输出为合法 JSON 对象，不强制约束内部结构。"
+              }
+            },
+            "required": ["name", "parameters"]
+          }
+        },
+        "required": ["type", "function"]
+      }
+    }
+  }
+}
