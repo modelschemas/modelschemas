@@ -65,16 +65,20 @@ function dedent(text: string): string {
  *
  * - "Kimi K3 accepts `minimal`, … and `max` reasoning effort." gives
  *   `reasoning` and `reasoning_effort` to the row whose link text is the
- *   name. The page does not say whether reasoning can be turned off, so no
- *   `reasoning` object is built from the list.
+ *   name, and its list is the row's `efforts`. The page does not say
+ *   whether reasoning can be turned off, so the row's `mandatory` is null.
  * - A card that ends "… reasoning model(s)." gives `reasoning` to every row
  *   of its tab, and only when it names as many models as the tab lists.
  *
  * Any other wording of either statement throws, as does an effort sentence
  * outside the tabs or a second one for the same model.
  */
-export function parsePerplexityModelsPage(markdown: string): StatedFlags {
+export function parsePerplexityModelsPage(markdown: string): {
+  flags: StatedFlags
+  efforts: Map<string, Array<string>>
+} {
   const stated: StatedFlags = new Map()
+  const levels = new Map<string, Array<string>>()
   const unread = (what: string) =>
     new Error(`perplexity: models page states ${what} in an unread shape`)
   let rows = 0
@@ -104,12 +108,12 @@ export function parsePerplexityModelsPage(markdown: string): StatedFlags {
 
     const efforts = [
       ...tab.matchAll(
-        /^(\S.*?) accepts (?:`[a-z]+`(?:, and |, | and )?)+ reasoning effort\./gm,
+        /^(\S.*?) accepts ((?:`[a-z]+`(?:, and |, | and )?)+) reasoning effort\./gm,
       ),
     ]
     sentences += efforts.length
     const seen = new Set<string>()
-    for (const [, name] of efforts) {
+    for (const [, name, list] of efforts) {
       const named = table.filter((cells) =>
         cells.at(-1)?.startsWith(`[${name ?? ''}](`),
       )
@@ -117,13 +121,14 @@ export function parsePerplexityModelsPage(markdown: string): StatedFlags {
       if (!id || seen.has(id)) throw unread('reasoning effort')
       seen.add(id)
       addFlags(stated, id, ['reasoning', 'reasoning_effort'])
+      levels.set(id, (list ?? '').match(/(?<=`)[a-z]+(?=`)/g) ?? [])
     }
   }
   if (rows === 0) throw new Error('perplexity: models page lists no models')
   if (sentences !== (markdown.match(/reasoning effort/gi) ?? []).length) {
     throw unread('reasoning effort')
   }
-  return stated
+  return { flags: stated, efforts: levels }
 }
 
 /**
@@ -173,28 +178,56 @@ export function parsePerplexityPresets(markdown: string): StatedFlags {
 interface StatedDoc {
   hash: string
   flags: Array<[string, Array<string>]>
+  /** Absent on the presets page, and on an entry cached before efforts were kept. */
+  efforts?: Array<[string, Array<string>]>
 }
 
 function statedDoc(
   kv: KVNamespace | undefined,
   url: string,
-  parse: (markdown: string) => StatedFlags,
+  parse: (markdown: string) => {
+    flags: StatedFlags
+    efforts?: Map<string, Array<string>>
+  },
 ): Promise<StatedDoc> {
   return cachedDocs(kv, url, async () => {
     const text = await fetchText(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
-    return { hash: await sha256Text(text), flags: [...parse(text)] }
+    const { flags, efforts } = parse(text)
+    return {
+      hash: await sha256Text(text),
+      flags: [...flags],
+      ...(efforts ? { efforts: [...efforts] } : {}),
+    }
   })
 }
 
-/** The flags both pages state for one model, each with its page. */
+/**
+ * The flags both pages state for one model, each with its page, and the
+ * effort list the models page states for it.
+ */
 function statedFacts(
   id: string,
   docs: Array<{ url: string; doc: StatedDoc }>,
-): Pick<ModelInfo, 'capabilities' | 'factSources'> {
+): Pick<ModelInfo, 'capabilities' | 'reasoning' | 'factSources'> {
   const sources: Record<string, FactSource> = {}
+  let reasoning: Pick<ModelInfo, 'reasoning' | 'factSources'> = {}
   for (const { url, doc } of docs) {
+    const efforts = new Map(doc.efforts).get(id)
+    if (efforts) {
+      reasoning = {
+        reasoning: { mode: 'effort', mandatory: null, efforts },
+        factSources: {
+          reasoning: {
+            derivation: 'docs-derived',
+            sourceUrl: url,
+            sourceHash: doc.hash,
+            path: 'reasoning_effort',
+          },
+        },
+      }
+    }
     for (const flag of new Map(doc.flags).get(id) ?? []) {
       sources[flag] ??= {
         derivation: 'docs-derived',
@@ -206,7 +239,11 @@ function statedFacts(
   }
   const capabilities = Object.keys(sources)
   if (capabilities.length === 0) return {}
-  return { capabilities, factSources: { capabilities: sources } }
+  return {
+    capabilities,
+    ...reasoning,
+    factSources: { ...reasoning.factSources, capabilities: sources },
+  }
 }
 
 interface PerplexityModelList {
@@ -227,7 +264,9 @@ async function listModels(
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     }) as Promise<PerplexityModelList>,
     statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
-    statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, parsePerplexityPresets),
+    statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, (text) => ({
+      flags: parsePerplexityPresets(text),
+    })),
   ])
   const docs = [
     { url: PERPLEXITY_MODELS_DOC_URL, doc: modelsPage },

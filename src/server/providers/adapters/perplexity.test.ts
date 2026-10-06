@@ -81,19 +81,26 @@ const KIMI_SENTENCE =
 
 describe('parsePerplexityModelsPage', () => {
   it('reads the effort sentence and the reasoning-model cards', () => {
-    expect([...parsePerplexityModelsPage(MODELS_DOC)]).toEqual([
+    const page = parsePerplexityModelsPage(MODELS_DOC)
+    expect([...page.flags]).toEqual([
       ['perplexity/glm-5.3', ['reasoning']],
       ['perplexity/glm-5.3-flash', ['reasoning']],
       ['perplexity/kimi-k3', ['reasoning', 'reasoning_effort']],
       ['perplexity/nemotron-3-ultra-550b-a55b', ['reasoning']],
     ])
+    expect([...page.efforts]).toEqual([
+      [
+        'perplexity/kimi-k3',
+        ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      ],
+    ])
   })
 
   it('leaves the effort flag off when no tab states an effort', () => {
     const silent = MODELS_DOC.replace(/ {4}<Info>[^]*?<\/Info>\n/, '')
-    expect(parsePerplexityModelsPage(silent).get('perplexity/kimi-k3')).toEqual(
-      ['reasoning'],
-    )
+    const page = parsePerplexityModelsPage(silent)
+    expect(page.flags.get('perplexity/kimi-k3')).toEqual(['reasoning'])
+    expect(page.efforts.size).toBe(0)
   })
 
   it.each([
@@ -319,7 +326,14 @@ describe('perplexity listModels', () => {
         releasedAt: 1,
         activity: 'chat',
         capabilities: ['reasoning', 'reasoning_effort'],
+        // The page publishes the levels and is silent on turning it off.
+        reasoning: {
+          mode: 'effort',
+          mandatory: null,
+          efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        },
         factSources: {
+          reasoning: source(DOC_URL, 'reasoning_effort'),
           capabilities: {
             reasoning: source(DOC_URL, 'reasoning'),
             reasoning_effort: source(DOC_URL, 'reasoning_effort'),
@@ -342,7 +356,10 @@ describe('perplexity listModels', () => {
       },
       { rawId: 'xai/grok-4.20-non-reasoning', releasedAt: 4, activity: 'chat' },
     ])
-    expect(result.models.every((model) => model.reasoning == null)).toBe(true)
+    // Only the row whose effort list the models page states gets `reasoning`.
+    expect(result.models.filter((model) => model.reasoning != null)).toEqual([
+      expect.objectContaining({ rawId: 'perplexity/kimi-k3' }),
+    ])
     expect(
       provider.generationEndpointId?.({
         rawId: 'perplexity/sonar',

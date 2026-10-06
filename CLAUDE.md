@@ -124,7 +124,9 @@ ones).
   hash and are copied onto every row sharing it. A priced leftover must
   become a card (one repair turn, same model); a failed one rewinds the
   cursor so the next shard retries it once.
-  `models.reasoning` (`{ mode, mandatory, efforts? }`) and
+  `models.reasoning` (`{ mode, mandatory, efforts? }`; mode is
+  adaptive/budget/effort/toggle, `mandatory: null` means the source does
+  not say — semantics on `ModelReasoning` in `providers/types.ts`) and
   `models.serverTools` (provider tool type ids) come from docs: OpenAI and
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
   Models API + thinking table; Anthropic tools are a hand-written table

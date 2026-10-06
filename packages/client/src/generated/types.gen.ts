@@ -187,11 +187,11 @@ export type Model = {
   pricing?: RateCard | CompactPricing | null
   capabilities?: unknown
   /**
-   * How thinking is configured, or null when unknown. mode: adaptive (the model decides; Anthropic thinking.type adaptive), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget) or effort (a level: reasoning_effort, Gemini thinkingLevel). mandatory: reasoning cannot be turned off. efforts: accepted effort values, when stated.
+   * How thinking is configured, or null when the model does not reason or its source names no control. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (a plain on/off switch with no level and no budget: thinking.type enabled|disabled, enable_thinking). mandatory: true when the source says thinking cannot be turned off (on a toggle: the off value is not accepted, so send on or omit the field), false when the source names a way to turn it off, null when the source does not say. null is unstated, never false: do not offer an off option from it. efforts: accepted effort values, when stated; never present on toggle.
    */
   reasoning?: {
-    mode: 'adaptive' | 'budget' | 'effort'
-    mandatory: boolean
+    mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+    mandatory: boolean | null
     efforts?: Array<string>
   } | null
   /**

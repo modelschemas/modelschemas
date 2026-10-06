@@ -167,15 +167,37 @@ export interface UpstreamModelIdentity {
 }
 
 /**
- * How a model's thinking is configured (issue #77). `adaptive`: the model
- * decides (Anthropic `thinking.type: adaptive`); `budget`: a token budget
- * (`thinking.budget_tokens`, Gemini 2.5 `thinkingBudget`); `effort`: a level
- * (`reasoning_effort`, Gemini 3 `thinkingLevel`). `mandatory`: reasoning
- * cannot be turned off. `efforts`: accepted effort values, when stated.
+ * How a model's thinking is configured (issue #77). Null on a row means the
+ * model does not reason or its source names no control.
+ *
+ * `mode` names the one control the request exposes:
+ * - `adaptive`: the model decides (Anthropic `thinking.type: adaptive`).
+ * - `budget`: a token budget (`thinking.budget_tokens`, Gemini 2.5
+ *   `thinkingBudget`).
+ * - `effort`: a level (`reasoning_effort`, Gemini 3 `thinkingLevel`).
+ * - `toggle`: a plain on/off switch and nothing else, no level and no
+ *   budget (`thinking.type: enabled | disabled`, `enable_thinking`,
+ *   `reasoning_mode: think | no_think`). A model that takes a switch and a
+ *   level is `effort`, not `toggle`.
+ *
+ * `mandatory` says whether thinking can be turned off:
+ * - `false`: the source names a way to turn it off.
+ * - `true`: the source says it cannot be turned off. On a `toggle` this
+ *   reads the same as on any other mode: the switch field is the model's
+ *   control, and its off value is not accepted. Send "on" or omit the field.
+ * - `null`: the source does not say. This is "unstated", never "false". Do
+ *   not offer an off option from it, and do not claim thinking is forced.
+ *   Store it when a source publishes the control and is silent on turning
+ *   thinking off, rather than guessing `true` or `false`.
+ *
+ * `efforts`: accepted effort values, when stated. Never present on `toggle`.
+ *
+ * A model that always thinks and takes no parameter at all has no mode: its
+ * `reasoning` stays null and the `reasoning` capability flag carries the fact.
  */
 export interface ModelReasoning {
-  mode: 'adaptive' | 'budget' | 'effort'
-  mandatory: boolean
+  mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+  mandatory: boolean | null
   efforts?: Array<string>
 }
 

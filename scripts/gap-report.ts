@@ -41,7 +41,11 @@ export type ModelRow = {
     source?: { url?: string }
   } | null
   capabilities?: unknown
-  reasoning?: { mode?: string; efforts?: Array<string> } | null
+  reasoning?: {
+    mode?: string
+    mandatory?: boolean | null
+    efforts?: Array<string>
+  } | null
   requestMap?: unknown
   schemaEndpointId?: string | null
 }
@@ -140,11 +144,16 @@ const FACTS: Record<
     have: (row) => hasRate(row, 'cache_read_tokens', 'input_cache_read'),
   },
   capabilities: { have: (row) => Array.isArray(row.capabilities) },
+  // Filled by any stored object, whatever its `mandatory`: null there means
+  // the source is silent on turning thinking off, which is a stored fact.
   reasoning: {
     need: (row) =>
       row.reasoning != null || capabilityList(row).includes('reasoning'),
     have: (row) => row.reasoning != null,
   },
+  // Only `effort` and `adaptive` rows need effort names; a `toggle` or
+  // `budget` row needs none. `mandatory` plays no part: efforts with
+  // `mandatory: null` is filled.
   efforts: {
     need: (row) =>
       row.reasoning?.mode === 'effort' || row.reasoning?.mode === 'adaptive',
