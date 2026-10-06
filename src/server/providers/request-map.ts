@@ -370,6 +370,17 @@ export function chatRequestMap(
         developerRole: false,
         reasoningEffort: false,
       })
+    // Cohere's `/v2/chat` spec: the output cap is `max_tokens`, the message
+    // roles are user, assistant, system and tool, and the body has no
+    // `reasoning_effort` (the API answers 422 to it and to `developer`).
+    // `thinking` is null: only reasoning models take it, and this map is
+    // not per capability.
+    case 'cohere':
+      return blank({
+        maxTokensField: 'max_tokens',
+        developerRole: false,
+        reasoningEffort: false,
+      })
     default:
       return null
   }

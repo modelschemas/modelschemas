@@ -1,13 +1,22 @@
 /**
- * Cohere token prices from cohere.com/pricing (issue #111). The generative
- * tab does not publish per-token rates. The legacy FAQ does, for dated
- * Command R rows (`Command R+ 08-2024 pricing is $2.50/1M …`). Undated
- * "Command" and "Command-light" do not name an API id, so they get no card.
- * Aya Expanse states one rate for 8B and 32B; only backtick ids on the Aya
- * model page receive it. Trial-only models (Command A+) publish no number.
+ * Cohere token prices from cohere.com/pricing (issue #111). The legacy FAQ
+ * prices dated Command R rows (`Command R+ 08-2024 pricing is $2.50/1M …`).
+ * Undated "Command" and "Command-light" do not name an API id, so they get
+ * no card. Aya Expanse states one rate for 8B and 32B; only backtick ids on
+ * the Aya model page receive it.
+ *
+ * The generative tab is not in the rendered HTML, only in the page's data
+ * payload, as cards named by product ("Command R7B", per "1M tokens"). A
+ * card prices the one `Live` id the models overview dates under that name
+ * (`command-r7b-12-2024`); none or several means no card. The "Free" cards
+ * (Command A+, North Mini Code) state no token price.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
+import {
+  COHERE_MODELS_DOC_URL,
+  parseCohereModelTable,
+} from './cohere-model-docs.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
@@ -22,14 +31,40 @@ const DATED_COMMAND =
 const AYA_RATE =
   /Aya Expanse models \(8B and 32B\) on the API are charged at \$([\d.]+)\/1M tokens for input and \$([\d.]+)\/1M tokens for output/
 
+const CARD = /"modelName":"([A-Za-z0-9 ]+)","per":"1M tokens"/g
+
+const CARD_PRICE =
+  /"pricings":\[\{"_key":"[^"]*","_type":"pricing","inputLabel":"Input","inputPrice":(\d+(?:\.\d+)?),"outputLabel":"Output","outputPrice":(\d+(?:\.\d+)?)\}\]/
+
 function perMillion(amount: string): number {
-  return Number(amount) / 1e6
+  return Number((Number(amount) / 1e6).toPrecision(12))
 }
 
-/** API id → per-token rates. `ayaMarkdown` is the Aya Expanse model page. */
+/** Product name, input and output dollars per 1M, from the data payload. */
+function pricingCards(pricingHtml: string): Array<[string, string, string]> {
+  const payload = pricingHtml.replace(/\\"/g, '"')
+  const cards: Array<[string, string, string]> = []
+  for (const match of payload.matchAll(CARD)) {
+    const start = match.index + match[0].length
+    const next = payload.indexOf('"modelName":"', start)
+    const price = CARD_PRICE.exec(
+      payload.slice(start, next < 0 ? undefined : next),
+    )
+    if (match[1] && price?.[1] && price[2]) {
+      cards.push([match[1], price[1], price[2]])
+    }
+  }
+  return cards
+}
+
+/**
+ * API id → per-token rates. `ayaMarkdown` is the Aya Expanse model page,
+ * `liveIds` the ids the models overview marks `Live`.
+ */
 export function parseCoherePricing(
   pricingHtml: string,
   ayaMarkdown: string,
+  liveIds: Array<string> = [],
 ): Map<string, Record<string, number>> {
   const text = pricingHtml
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -63,6 +98,20 @@ export function parseCoherePricing(
       if (id && !out.has(id)) out.set(id, rates)
     }
   }
+  for (const [name, input, output] of pricingCards(pricingHtml)) {
+    const dated = new RegExp(
+      `^${name.toLowerCase().replace(/ /g, '-')}-\\d{2}-\\d{4}$`,
+    )
+    const ids = liveIds.filter((id) => dated.test(id))
+    const id = ids.length === 1 ? ids[0] : undefined
+    if (!id || out.has(id) || Number(input) <= 0 || Number(output) <= 0) {
+      continue
+    }
+    out.set(id, {
+      input_tokens: perMillion(input),
+      output_tokens: perMillion(output),
+    })
+  }
   return out
 }
 
@@ -73,11 +122,17 @@ export async function cohereModelPricing(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => PricedFacts> {
   const doc = await cachedDocs(kv, COHERE_PRICING_URL, async () => {
-    const [pricingHtml, ayaMarkdown] = await Promise.all([
-      fetchText(COHERE_PRICING_URL),
-      fetchText(COHERE_AYA_URL),
+    const page = (url: string) =>
+      fetchText(url, { signal: AbortSignal.timeout(30_000) })
+    const [pricingHtml, ayaMarkdown, modelsMarkdown] = await Promise.all([
+      page(COHERE_PRICING_URL),
+      page(COHERE_AYA_URL),
+      page(COHERE_MODELS_DOC_URL),
     ])
-    const parsed = parseCoherePricing(pricingHtml, ayaMarkdown)
+    const liveIds = [...parseCohereModelTable(modelsMarkdown)]
+      .filter(([, row]) => row.live)
+      .map(([id]) => id)
+    const parsed = parseCoherePricing(pricingHtml, ayaMarkdown, liveIds)
     assertParsed(parsed, 'cohere pricing page')
     const ayaNamed = /Aya Expanse models \(8B and 32B\)/.test(
       pricingHtml.replace(/<[^>]+>/g, ' '),
@@ -88,7 +143,9 @@ export async function cohereModelPricing(
     }
     return {
       rates: Object.fromEntries(parsed),
-      hash: await sha256Text(`${pricingHtml}\n${ayaMarkdown}`),
+      hash: await sha256Text(
+        `${pricingHtml}\n${ayaMarkdown}\n${modelsMarkdown}`,
+      ),
       extractedAt: new Date().toISOString(),
     }
   })

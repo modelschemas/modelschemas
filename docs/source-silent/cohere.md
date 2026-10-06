@@ -1,0 +1,1 @@
+- cohere: cacheRead — Cohere bills input and output tokens only (`billed_units` has no cached unit, the pricing cards list Input and Output); no cached-input price is published, https://docs.cohere.com/docs/how-does-cohere-pricing-work and https://cohere.com/pricing, checked 2026-10-07
