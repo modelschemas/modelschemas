@@ -28,6 +28,7 @@ import type {
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 
 const PERPLEXITY_OPENAPI_URL = 'https://docs.perplexity.ai/openapi.json'
 const PERPLEXITY_MODELS_URL = 'https://api.perplexity.ai/v1/models'
@@ -344,6 +345,19 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'perplexity',
+  // The listing names the maker in the id's namespace, and `owned_by`
+  // repeats it on every row. A `perplexity/…` id is hosted by Perplexity
+  // and the listing names no maker for it. The models page does, as the
+  // title of the tab the row sits in (`Z.AI`, `Moonshot AI`, `NVIDIA`):
+  // that is not readable from an id, so those rows carry no evidence.
+  upstreamModelIdentity: (rawId) =>
+    rawId.startsWith('perplexity/')
+      ? null
+      : namespacedUpstreamIdentity(rawId, {
+          derivation: 'listing',
+          sourceUrl: PERPLEXITY_MODELS_URL,
+          path: 'data[].id',
+        }),
   displayName: 'Perplexity',
   authEnvVar: 'PERPLEXITY_API_KEY',
   specSourceUrl: PERPLEXITY_OPENAPI_URL,

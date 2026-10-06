@@ -6,3 +6,5 @@
 - opencode-go: capabilities — neither the models list nor the Go docs page states tool, vision, or structured-output support, https://opencode.ai/docs/go, checked 2026-10-07
 - opencode-go: requestMap — the Go docs page names each model's route and AI SDK package and documents no request-body fields, https://opencode.ai/docs/go, checked 2026-10-07
 - opencode-go: endpoint — OpenCode publishes no OpenAPI document (`/zen/go/v1/openapi.json` is 404), so no schema exists to bind; the docs name each model's route only, https://opencode.ai/zen/go/v1/openapi.json, checked 2026-10-07
+
+No row has a `sameAs` link to a maker's row for these facts: OpenCode names no maker. `owned_by` is `opencode` on every row, and the Endpoints table's AI SDK package names the wire protocol (`@ai-sdk/anthropic` also serves the MiniMax and Qwen rows, `@ai-sdk/openai` the Grok and Muse Spark rows), checked 2026-10-07.

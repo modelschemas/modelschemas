@@ -265,6 +265,18 @@ describe('perplexity provider', () => {
     )
     expect(provider.modelsEndpoint).toBe('https://api.perplexity.ai/v1/models')
   })
+
+  it('names the maker the id is namespaced under, and none for hosted ids', () => {
+    expect(
+      provider.upstreamModelIdentity?.('xai/grok-4.20-non-reasoning'),
+    ).toMatchObject({
+      providerNamespace: 'xai',
+      rawId: 'grok-4.20-non-reasoning',
+      source: { derivation: 'listing', path: 'data[].id' },
+    })
+    expect(provider.upstreamModelIdentity?.('perplexity/kimi-k3')).toBeNull()
+    expect(provider.upstreamModelIdentity?.('sonar')).toBeNull()
+  })
 })
 
 describe('perplexity classify', () => {

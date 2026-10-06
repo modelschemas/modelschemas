@@ -296,6 +296,11 @@ function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   })
 }
 
+// No `upstreamModelIdentity`, here or for OpenCode Go: OpenCode names no
+// maker. `owned_by` is `opencode` on every row, and the Endpoints table's
+// AI SDK package names the wire protocol: `@ai-sdk/anthropic` also serves
+// the Qwen and (on Go) MiniMax rows, `@ai-sdk/openai` the Grok and Muse
+// Spark rows.
 export const provider: ProviderConfig = {
   id: 'opencode',
   displayName: 'OpenCode Zen',
