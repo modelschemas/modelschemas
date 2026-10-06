@@ -184,25 +184,41 @@ describe('cloudflare-workers-ai listing', () => {
     )
   })
 
-  it('fails the poll when one catalog file cannot be read', async () => {
-    stubFetch({ [WORKERS_AI_MODELS_URL]: FIXTURE, [GLM_URL]: GLM })
-    await expect(provider.listModels({})).rejects.toThrow(/apertus.*404/)
-
-    // A 200 that is an HTML page, and a 200 that is another model's file.
-    stubFetch({
-      [WORKERS_AI_MODELS_URL]: FIXTURE,
-      [GLM_URL]: GLM,
-      [APERTUS_URL]: '<!doctype html><title>Sign in</title>',
-    })
-    await expect(provider.listModels({})).rejects.toThrow(/is not JSON/)
-    stubFetch({
-      [WORKERS_AI_MODELS_URL]: FIXTURE,
-      [GLM_URL]: GLM,
-      [APERTUS_URL]: GLM,
-    })
-    await expect(provider.listModels({})).rejects.toThrow(
-      /is not the catalog file for @cf\/swiss-ai\/apertus-v1.5-8b/,
-    )
+  it('withholds only that model’s catalog facts when one file cannot be read', async () => {
+    // A 404, a 200 that is an HTML page, and a 200 that is another model's file.
+    const unreadable: Array<[string | undefined, RegExp]> = [
+      [undefined, /apertus.*404/],
+      ['<!doctype html><title>Sign in</title>', /is not JSON/],
+      [GLM, /is not the catalog file for @cf\/swiss-ai\/apertus-v1.5-8b/],
+    ]
+    for (const [apertus, error] of unreadable) {
+      stubFetch({
+        [WORKERS_AI_MODELS_URL]: FIXTURE,
+        [GLM_URL]: GLM,
+        ...(apertus === undefined ? {} : { [APERTUS_URL]: apertus }),
+      })
+      const listed = await provider.listModels({})
+      expect(listed.docsFailures).toMatchObject([
+        { source: APERTUS_URL, error: expect.stringMatching(error) as string },
+      ])
+      const [glm, failed] = listed.models
+      // The listing page's own facts and the other model's file still land.
+      expect(glm).toMatchObject({ capabilities: ['tools', 'reasoning'] })
+      expect(glm?.absent).toBeUndefined()
+      expect(glm?.pricing).not.toBeNull()
+      expect(failed).toMatchObject({
+        rawId: '@cf/swiss-ai/apertus-v1.5-8b',
+        activity: 'chat',
+        absent: {
+          modalities: 'unavailable',
+          capabilities: 'unavailable',
+          reasoning: 'unavailable',
+          requestMap: 'unavailable',
+          schemaEndpointId: 'unavailable',
+        },
+      })
+      expect(failed).not.toHaveProperty('capabilities')
+    }
   })
 
   it('fails when a text-generation card links no model page', async () => {

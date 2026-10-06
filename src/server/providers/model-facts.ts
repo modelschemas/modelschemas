@@ -4,10 +4,11 @@
  * capabilities. Docs parses fail closed (zero rows throws). Parsed docs
  * live in KV for six hours so cron isolates do not refetch every tick.
  */
+import { errorMessage } from '#/server/errors.ts'
 import { noteIngest, parseRowsEvent } from '#/server/ingest/ingest-signals.ts'
 import { getJson, putJson } from '#/server/kv.ts'
 
-import type { ModelInfo } from './types.ts'
+import type { DocsFailure, ModelFact, ModelInfo } from './types.ts'
 
 export type ModelFacts = Pick<
   ModelInfo,
@@ -156,6 +157,51 @@ export async function cachedDocs<T>(
     await putJson(kv, key, value, { expirationTtl: DOCS_TTL_SECONDS })
   }
   return value
+}
+
+/**
+ * Once failed loads have cost this long in one poll, the rest are not
+ * attempted: a docs host that hangs would otherwise spend a timeout per
+ * document (an NVIDIA card allows 60 s) and stall every provider polled
+ * after it. Pages that fail fast (a 404, a changed shape) never get here,
+ * so a few broken pages do not stop the healthy ones from loading.
+ */
+const DOCS_FAILURE_BUDGET_MS = 15_000
+
+/**
+ * Load and parse one docs source for `listModels`. A throw is recorded in
+ * `failures` and returns null, so the listing and the other sources still
+ * poll. The caller gives the rows that source feeds `unavailable(...)` and
+ * returns `failures` as `docsFailures`. Parsers stay strict: they throw,
+ * and only this catches. Never wrap the listing itself.
+ */
+export async function tryDocs<T>(
+  failures: Array<DocsFailure>,
+  source: string,
+  load: () => Promise<T>,
+): Promise<T | null> {
+  const spent = failures.reduce((sum, failure) => sum + failure.elapsedMs, 0)
+  if (spent >= DOCS_FAILURE_BUDGET_MS) return null
+  const started = Date.now()
+  try {
+    return await load()
+  } catch (error) {
+    failures.push({
+      source,
+      error: errorMessage(error),
+      elapsedMs: Date.now() - started,
+    })
+    return null
+  }
+}
+
+/** Row patch: the source of these facts failed, keep what is stored. */
+export function unavailable(
+  ...facts: Array<ModelFact>
+): Pick<ModelInfo, 'absent'> {
+  return {
+    absent: Object.fromEntries(facts.map((fact) => [fact, 'unavailable'])),
+  }
 }
 
 /**

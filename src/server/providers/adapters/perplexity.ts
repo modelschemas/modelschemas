@@ -5,7 +5,12 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { perplexityListingCard } from '../catalog-prices.ts'
-import { cachedDocs, markdownTableRows } from '../model-facts.ts'
+import {
+  cachedDocs,
+  markdownTableRows,
+  tryDocs,
+  unavailable,
+} from '../model-facts.ts'
 import {
   fetchJson,
   fetchOpenApi,
@@ -14,6 +19,7 @@ import {
   skippedResult,
 } from '../types.ts'
 import type {
+  DocsFailure,
   FactSource,
   ListModelsResult,
   ModelInfo,
@@ -221,18 +227,27 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('perplexity', 'PERPLEXITY_API_KEY') }
   }
+  const docsFailures: Array<DocsFailure> = []
   const [body, modelsPage, presets] = await Promise.all([
     fetchJson(PERPLEXITY_MODELS_URL, {
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     }) as Promise<PerplexityModelList>,
-    statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
-    statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, parsePerplexityPresets),
+    tryDocs(docsFailures, PERPLEXITY_MODELS_DOC_URL, () =>
+      statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
+    ),
+    tryDocs(docsFailures, PERPLEXITY_PRESETS_DOC_URL, () =>
+      statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, parsePerplexityPresets),
+    ),
   ])
-  const docs = [
-    { url: PERPLEXITY_MODELS_DOC_URL, doc: modelsPage },
-    { url: PERPLEXITY_PRESETS_DOC_URL, doc: presets },
-  ]
+  // Both pages or neither: one page's flags alone would drop the other's.
+  const docs =
+    modelsPage && presets
+      ? [
+          { url: PERPLEXITY_MODELS_DOC_URL, doc: modelsPage },
+          { url: PERPLEXITY_PRESETS_DOC_URL, doc: presets },
+        ]
+      : null
   const models: Array<ModelInfo> = []
   for (const m of body.data ?? []) {
     const pricing = await perplexityListingCard(
@@ -244,10 +259,10 @@ async function listModels(
       releasedAt: m.created ?? null,
       activity: 'chat' as const,
       ...(pricing ? { pricing } : {}),
-      ...statedFacts(m.id, docs),
+      ...(docs ? statedFacts(m.id, docs) : unavailable('capabilities')),
     })
   }
-  return { models }
+  return { models, docsFailures }
 }
 
 export const provider: ProviderConfig = {

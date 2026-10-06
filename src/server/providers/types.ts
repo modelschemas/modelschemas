@@ -179,6 +179,46 @@ export interface ModelReasoning {
   efforts?: Array<string>
 }
 
+/** The stored model columns a listing fills; each can be marked absent. */
+export type ModelFact =
+  | 'displayName'
+  | 'activity'
+  | 'contextWindow'
+  | 'maxOutput'
+  | 'modalities'
+  | 'pricing'
+  | 'capabilities'
+  | 'reasoning'
+  | 'serverTools'
+  | 'requestMap'
+  | 'aliases'
+  | 'schemaEndpointId'
+  | 'deprecated'
+
+/**
+ * Why a listing carries no value for a fact, when the adapter knows why.
+ * The poller's whole contract for one fact:
+ *
+ * | listing            | poller writes               | signal                  |
+ * | ------------------ | --------------------------- | ----------------------- |
+ * | a value            | the value                   | none                    |
+ * | nothing, no reason | pricing: the stored card;   | pricing: `pricing_lost` |
+ * |                    | any other fact: null        | and 1 failure; else none |
+ * | `cleared`          | null                        | none                    |
+ * | `unavailable`      | the stored value and source | the docs failure        |
+ *
+ * - `cleared`: the source was read and has no value now (router hosts that
+ *   stopped agreeing, a price moved to a subscription).
+ * - `unavailable`: the source could not be read this poll (`tryDocs`). A
+ *   new row has nothing stored, so the fact is null.
+ *
+ * Only pricing keeps its stored value on a bare omission: a parser that
+ * misses one row must not null a good price. `factSources.<fact>.path:
+ * 'silent'` is not this. It is stored provenance for a null whose page was
+ * read, and the fact is written null like any omission.
+ */
+export type FactAbsence = 'cleared' | 'unavailable'
+
 /** Normalised model entry (maps onto the `models` table shape). */
 export interface ModelInfo {
   rawId: string
@@ -215,6 +255,8 @@ export interface ModelInfo {
    * The poller defaults untagged listing fields to `derivation: listing`.
    */
   factSources?: ModelFactSources
+  /** Facts with no value this poll for a known reason; wins over a value. */
+  absent?: Partial<Record<ModelFact, FactAbsence>>
   /**
    * Generation route (public endpoint id) when it depends on listing data
    * the read path cannot see — Gemini's `supportedGenerationMethods`.
@@ -299,8 +341,23 @@ export interface SpecFetchResult {
   asyncApiRawIds?: Array<string>
 }
 
+/** One docs source `listModels` could not read this poll. */
+export interface DocsFailure {
+  /** The document's URL. */
+  source: string
+  error: string
+  /** How long the failed load took; a timeout shows as one. */
+  elapsedMs: number
+}
+
 export interface ListModelsResult {
   models: Array<ModelInfo>
+  /**
+   * Docs sources that failed while the listing itself loaded (`tryDocs`).
+   * The poll goes on; rows mark the facts those sources supply
+   * `unavailable`. A failed listing still throws.
+   */
+  docsFailures?: Array<DocsFailure>
   /** Set when the provider was skipped (e.g. missing secret); models will be empty. */
   skipped?: string
 }

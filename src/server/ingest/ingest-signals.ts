@@ -6,6 +6,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { errorMessage } from '#/server/errors.ts'
+import type { FactAbsence } from '#/server/providers/types.ts'
 
 export const POSTHOG_CAPTURE_URL = 'https://us.i.posthog.com/batch/'
 const DISTINCT_ID = 'modelschemas'
@@ -19,7 +20,13 @@ export type IngestJob =
 export type IngestEvent =
   | {
       event: 'ingest_failed'
-      properties: { job: IngestJob; providerId: string; error: string }
+      properties: {
+        job: IngestJob
+        providerId: string
+        error: string
+        /** The docs source that failed; absent when the whole job failed. */
+        source?: string
+      }
     }
   | {
       event: 'pricing_lost'
@@ -65,8 +72,12 @@ export function ingestFailedEvent(
   job: IngestJob,
   providerId: string,
   error: string,
+  source?: string,
 ): IngestEvent {
-  return { event: 'ingest_failed', properties: { job, providerId, error } }
+  return {
+    event: 'ingest_failed',
+    properties: { job, providerId, error, ...(source ? { source } : {}) },
+  }
 }
 
 export function parseRowsEvent(source: string, rows: number): IngestEvent {
@@ -81,6 +92,8 @@ export interface PricingWriteInput {
   hadStoredCard: boolean
   /** FAL keeps a `docs-extracted` card the listing never carries. */
   keepExtracted: boolean
+  /** The adapter's stated reason for no price (`ModelInfo.absent.pricing`). */
+  absent?: FactAbsence
   refused?: string
 }
 
@@ -98,10 +111,21 @@ export interface PricingWriteDecision {
  * and emit `pricing_lost`. A write-gate refusal still nulls the card and
  * emits `rate_card_refused`. Uncompilable listings with no stored card
  * stay quiet — that is the normal OpenRouter zero-price case.
+ *
+ * A stated reason wins and is quiet: `cleared` nulls the card (the source
+ * says there is no price), `unavailable` keeps it (the docs failure is
+ * reported once for the provider, not per row).
  */
 export function observePricingWrite(
   input: PricingWriteInput,
 ): PricingWriteDecision {
+  if (input.absent) {
+    return {
+      keepPrior: input.absent === 'unavailable',
+      events: [],
+      failure: 0,
+    }
+  }
   if (input.keepExtracted) {
     return { keepPrior: true, events: [], failure: 0 }
   }

@@ -116,7 +116,15 @@ ones).
   at write (`src/server/rate-card.ts`), and OpenAI/Anthropic/Gemini prices
   are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
   — every parser fail-closed, a page that parses nothing throws rather than
-  nulling stored cards. BytePlus chat, Seedance, and Seedream cards come
+  nulling stored cards. A listing that omits a price keeps the stored card
+  and logs `pricing_lost`; any other omitted fact is written null. An
+  adapter that knows why says so in `ModelInfo.absent` (`FactAbsence` in
+  `types.ts` has the table): `cleared` writes null quietly (Hugging Face
+  hosts that stopped agreeing on a price), `unavailable` keeps the stored
+  value. Wrap a docs load in `tryDocs` (`model-facts.ts`) so its throw marks
+  rows `unavailable(...)` and is reported as `docsFailures` instead of
+  failing the provider's poll; the listing itself is never wrapped.
+  BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:
   `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no

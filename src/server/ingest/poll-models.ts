@@ -17,6 +17,7 @@ import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
+  emptySources,
   mergeListingAndSchema,
   modelBranchSchemas,
   requestSchemaPropertyNames,
@@ -32,6 +33,8 @@ import {
 } from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
 import type {
+  DocsFailure,
+  ModelFact,
   ModelFactSources,
   ModelInfo,
   ProviderConfig,
@@ -77,6 +80,8 @@ export interface PollOutcome {
    * here as well as `error` — not only the whole-provider failure.
    */
   failures: number
+  /** Docs sources that failed this poll; their rows kept stored facts. */
+  docsFailures?: Array<DocsFailure>
   skipped?: string
   error?: string
 }
@@ -327,6 +332,73 @@ function enrichListed(
   }
 }
 
+type StoredFact = Exclude<ModelFact, 'pricing'>
+
+/** A stored row as listing facts; no row is every fact empty. */
+function storedFacts(
+  row: typeof models.$inferSelect | undefined,
+): Record<StoredFact, unknown> {
+  return {
+    displayName: row?.displayName ?? null,
+    activity: row?.activity ?? null,
+    contextWindow: row?.contextWindow ?? null,
+    maxOutput: row?.maxOutput ?? null,
+    modalities: row?.modalities ?? null,
+    capabilities: row?.capabilities ?? null,
+    reasoning: row?.reasoning ?? null,
+    serverTools: row?.serverTools ?? null,
+    requestMap: row?.requestMap ?? null,
+    aliases: row?.aliases ?? null,
+    schemaEndpointId: row?.schemaEndpointId ?? null,
+    deprecated: row ? row.deprecatedAt !== null : false,
+  }
+}
+
+const SOURCED_FACTS = [
+  'contextWindow',
+  'maxOutput',
+  'modalities',
+  'capabilities',
+  'reasoning',
+  'serverTools',
+] as const
+
+/**
+ * Apply `info.absent` (see `FactAbsence`) to every fact but pricing, which
+ * the card path owns: `unavailable` takes the stored value and its source,
+ * `cleared` takes none. Runs after the schema walk, so the bound schema
+ * does not refill a kept or cleared fact.
+ */
+function resolveAbsent(
+  info: ModelInfo,
+  existing: typeof models.$inferSelect | undefined,
+): ModelInfo {
+  const absent = info.absent
+  if (!absent) return info
+  const stored = storedFacts(existing)
+  const none = storedFacts(undefined)
+  const next: ModelInfo = { ...info }
+  for (const fact of Object.keys(none) as Array<StoredFact>) {
+    const why = absent[fact]
+    if (!why) continue
+    Object.assign(next, {
+      [fact]: (why === 'unavailable' ? stored : none)[fact],
+    })
+  }
+  const sources: ModelFactSources = { ...info.factSources }
+  const prior = (existing?.factSources ?? {}) as ModelFactSources
+  for (const fact of SOURCED_FACTS) {
+    const why = absent[fact]
+    if (!why) continue
+    delete sources[fact]
+    if (why === 'unavailable' && prior[fact]) {
+      Object.assign(sources, { [fact]: prior[fact] })
+    }
+  }
+  next.factSources = emptySources(sources) ? undefined : sources
+  return next
+}
+
 export async function pollProviderModels(
   deps: SyncDeps,
   provider: ProviderConfig,
@@ -359,6 +431,24 @@ export async function pollProviderModels(
     return outcome
   }
   outcome.modelsSeen = listed.models.length
+  // A docs source that failed does not fail the poll: its rows carry
+  // `absent: unavailable` and keep what is stored. Every failing poll says
+  // so again, here and in the outcome, so an outage never goes quiet.
+  if (listed.docsFailures && listed.docsFailures.length > 0) {
+    outcome.docsFailures = listed.docsFailures
+    outcome.failures += listed.docsFailures.length
+    for (const { source, error } of listed.docsFailures) {
+      console.error(
+        JSON.stringify({
+          job: 'models-poll',
+          providerId: provider.id,
+          docs: source,
+          error,
+        }),
+      )
+      noteIngest(ingestFailedEvent('models-poll', provider.id, error, source))
+    }
+  }
 
   const { walks, properties } = await loadInputWalks(
     db,
@@ -391,8 +481,9 @@ export async function pollProviderModels(
       !properties.has(listedModel.schemaEndpointId)
         ? { ...listedModel, schemaEndpointId: null }
         : listedModel
-    const enriched = enrichListed(provider, raw, walks)
-    const id = modelDbId(provider.id, enriched.rawId)
+    const id = modelDbId(provider.id, raw.rawId)
+    const existing = existingById.get(id)
+    const enriched = resolveAbsent(enrichListed(provider, raw, walks), existing)
     const bound = resolveSchemaEndpointId({
       providerId: provider.id,
       rawId: enriched.rawId,
@@ -400,7 +491,6 @@ export async function pollProviderModels(
       capabilities: enriched.capabilities,
       schemaEndpointId: enriched.schemaEndpointId,
     })
-    const existing = existingById.get(id)
     const existingPricing = existing?.pricing
     // A models.dev card is not a prior. A docs-extracted card, and any
     // other provider source, still is.
@@ -409,12 +499,16 @@ export async function pollProviderModels(
       raw.pricing == null &&
       pricingDerivation(existing?.factSources) === 'docs-extracted' &&
       !isModelsDevRateCard(existingPricing)
-    const incomingPricing = isModelsDevRateCard(enriched.pricing)
-      ? null
-      : enriched.pricing
+    const absentPricing = raw.absent?.pricing
+    const incomingPricing =
+      absentPricing || isModelsDevRateCard(enriched.pricing)
+        ? null
+        : enriched.pricing
     const incomingNull = incomingPricing == null
     const stored =
-      keepExtracted || (incomingNull && hadStoredCard)
+      absentPricing === 'unavailable' ||
+      (absentPricing !== 'cleared' &&
+        (keepExtracted || (incomingNull && hadStoredCard)))
         ? { card: parseStoredRateCard(existingPricing) }
         : await storeListedPricing(incomingPricing, {
             existing: existingPricing,
@@ -430,6 +524,7 @@ export async function pollProviderModels(
       incomingNull,
       hadStoredCard,
       keepExtracted,
+      absent: absentPricing,
       refused: stored.refused,
     })
     for (const event of decision.events) noteIngest(event)

@@ -15,7 +15,12 @@ import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 
-import { cachedDocs, mapConcurrent } from '../model-facts.ts'
+import {
+  cachedDocs,
+  mapConcurrent,
+  tryDocs,
+  unavailable,
+} from '../model-facts.ts'
 import { REASONING_SOURCE_SILENT } from '../reasoning-config.ts'
 import { SHARED_EFFORT_LEVELS } from '../request-map.ts'
 import type {
@@ -25,8 +30,10 @@ import type {
 } from '../request-map.ts'
 import { fetchText, sha256Text } from '../types.ts'
 import type {
+  DocsFailure,
   FactSource,
   ListModelsResult,
+  ModelFact,
   ModelInfo,
   OpenApiDocument,
   ProviderConfig,
@@ -345,6 +352,15 @@ export function catalogFacts(
   }
 }
 
+/** Every stored fact `catalogFacts` supplies. */
+const CATALOG_FACTS: Array<ModelFact> = [
+  'modalities',
+  'capabilities',
+  'reasoning',
+  'requestMap',
+  'schemaEndpointId',
+]
+
 /** A chat card must link its page: the catalog file is named after it. */
 function requireCatalogUrl(listed: ListedModel): string {
   if (listed.catalogUrl) return listed.catalogUrl
@@ -358,8 +374,9 @@ async function listModels(
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const listed = await fetchListing()
-  // One unreadable file fails the poll: stored rows stay as they are and
-  // the next poll retries, instead of nulling that model's facts.
+  // One unreadable file is that model's alone: its row keeps the stored
+  // catalog facts and the next poll retries. The page's prices still land.
+  const docsFailures: Array<DocsFailure> = []
   const models = await mapConcurrent(
     listed,
     CATALOG_CONCURRENCY,
@@ -367,20 +384,23 @@ async function listModels(
       const { model } = card
       if (model.activity !== 'chat') return model
       const url = requireCatalogUrl(card)
-      const doc = await cachedDocs(kv, url, async (): Promise<CatalogDoc> => {
-        const text = await fetchPage(url)
-        const parsed = parseCatalogModel(text, model.rawId, url)
-        return {
-          properties: parsed.properties,
-          chatFields: chatBodyFields(parsed.input),
-          hasRequestSchema: parsed.input !== null,
-          hash: await sha256Text(text),
-        }
+      const facts = await tryDocs(docsFailures, url, async () => {
+        const doc = await cachedDocs(kv, url, async (): Promise<CatalogDoc> => {
+          const text = await fetchPage(url)
+          const parsed = parseCatalogModel(text, model.rawId, url)
+          return {
+            properties: parsed.properties,
+            chatFields: chatBodyFields(parsed.input),
+            hasRequestSchema: parsed.input !== null,
+            hash: await sha256Text(text),
+          }
+        })
+        return catalogFacts(doc, model.rawId, url)
       })
-      return { ...model, ...catalogFacts(doc, model.rawId, url) }
+      return { ...model, ...(facts ?? unavailable(...CATALOG_FACTS)) }
     },
   )
-  return { models }
+  return { models, docsFailures }
 }
 
 /** One document per text-generation model that publishes a request schema. */

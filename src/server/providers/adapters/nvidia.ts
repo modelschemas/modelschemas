@@ -18,9 +18,12 @@ import {
   mapConcurrent,
   markdownSection,
   tokenCount,
+  tryDocs,
+  unavailable,
 } from '../model-facts.ts'
 import { fetchJson, sha256Text } from '../types.ts'
 import type {
+  DocsFailure,
   ListModelsResult,
   ModelInfo,
   ProviderConfig,
@@ -73,6 +76,13 @@ type CardFacts = Pick<
   ModelInfo,
   'activity' | 'contextWindow' | 'modalities' | 'capabilities'
 >
+
+const CARD_FACTS: Array<keyof CardFacts> = [
+  'activity',
+  'contextWindow',
+  'modalities',
+  'capabilities',
+]
 
 /** `- **Label:** value` lines of one card section. */
 function bullets(markdown: string, heading: string): Map<string, string> {
@@ -171,27 +181,35 @@ async function listModels(
   const listed = parseNvidiaModels(await fetchJson(NVIDIA_MODELS_URL))
   // A card takes about ten seconds to render. The six-hour cache per card
   // (misses included) keeps that off most polls.
-  const models = await mapConcurrent(listed, 8, async (model) => {
-    const card = await cachedDocs(
-      kv,
-      `${NVIDIA_CARD_BASE}${model.rawId}.md`,
-      () => fetchCard(model.rawId),
-    )
-    if (card.url === null) return model
-    const facts = parseNvidiaCard(card.markdown)
-    return {
-      ...model,
-      ...facts,
-      factSources: tagDocsFacts(facts, card.url, card.hash),
-    }
-  })
-  assertParsed(
-    new Map(
-      models.flatMap((model) => (model.activity ? [[model.rawId, model]] : [])),
-    ),
-    'nvidia model cards',
+  // A card that fails to load is that model's alone: its row keeps the
+  // stored card facts and the next poll retries.
+  const docsFailures: Array<DocsFailure> = []
+  const models = await mapConcurrent(
+    listed,
+    8,
+    async (model): Promise<ModelInfo> => {
+      const source = `${NVIDIA_CARD_BASE}${model.rawId}.md`
+      const patch = await tryDocs(docsFailures, source, async () => {
+        const card = await cachedDocs(kv, source, () => fetchCard(model.rawId))
+        if (card.url === null) return {}
+        const facts = parseNvidiaCard(card.markdown)
+        return {
+          ...facts,
+          factSources: tagDocsFacts(facts, card.url, card.hash),
+        }
+      })
+      return { ...model, ...(patch ?? unavailable(...CARD_FACTS)) }
+    },
   )
-  return { models }
+  const parsed = new Map(
+    models.flatMap((model) => (model.activity ? [[model.rawId, model]] : [])),
+  )
+  // Zero rows with every card loaded is a reshaped site. With cards
+  // failing it is the outage `docsFailures` already reports.
+  if (parsed.size > 0 || docsFailures.length === 0) {
+    assertParsed(parsed, 'nvidia model cards')
+  }
+  return { models, docsFailures }
 }
 
 function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
