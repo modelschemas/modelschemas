@@ -38,7 +38,7 @@ bun run gap:report | jq '.providers[] | select(.provider == "grok")
 - `reasoning` and `efforts` have a smaller `need` than `chat`: they count
   only the rows that claim reasoning, or that use an effort or adaptive mode.
 - A fact under `silent` is one the provider does not publish. It is left out
-  of the score. The ledger is `docs/source-silent.md`.
+  of the score. The ledger is `docs/source-silent/`, one file per provider.
 - `fromModelsDev` rows have a price sourced from models.dev. They do not
   count as `priced` or `cacheRead`.
 
@@ -54,7 +54,7 @@ The report only measures. When filling what it finds:
 - Take each fact from the provider's own listing, docs, or spec. Never copy
   it from OpenRouter or any other catalog.
 - If no native source states the fact, add a line to
-  `docs/source-silent.md` with the reason and the issue number. Do not
+  `docs/source-silent/<provider>.md` with the reason and the issue number. Do not
   invent a value.
 - The provider is done when `--check --providers <id>` exits 0 against a
   base that serves the new data.

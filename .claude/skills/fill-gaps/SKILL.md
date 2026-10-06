@@ -20,7 +20,7 @@ secrets:pull` creates it where Doppler is set up). Agents copy it: Doppler
 is scoped to a directory, so `secrets:pull` fails in a new worktree.
 
 1. Run `bun run gap:report`. If every provider with chat rows scores 1,
-   stop the loop and report. Facts in `docs/source-silent.md` are already
+   stop the loop and report. Facts in `docs/source-silent/` are already
    left out of the score.
 2. Pick up to three providers. Use the ones passed as arguments. With no
    arguments, take the lowest scores first. Skip a provider that:
@@ -74,7 +74,7 @@ checkout (for its `.env.local`), and this:
 - **Prices** are the standard tier, not batch, flex, or a promotion. A
   price is the billed price or it is absent. No estimates, no fallbacks.
 - **Nothing published?** Leave the fact null and add a line to
-  `docs/source-silent.md`: `- <provider>: <fact> — <why>, <URL checked>,
+  `docs/source-silent/<provider>.md`: `- <provider>: <fact> — <why>, <URL checked>,
 checked <date>`.
 - **Do not change the DB schema or the API shape.** If a fact has no
   field, stop and say so.
