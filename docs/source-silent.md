@@ -13,3 +13,4 @@ The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 
 - grok: maxOutput — xAI's spec states only a 128k default, no per-model cap (#75, checked 2026-09-26)
 - mistral: maxOutput — Mistral caps output by the context length and publishes no separate limit (#75, checked 2026-09-26)
+- moonshotai-cn: maxOutput — kimi-k2.7-code, kimi-k2.7-code-highspeed and kimi-k2.6 cap output at `256*1024 - prompt_tokens` and publish no separate limit; kimi-k3's stated 1048576 is filled, https://platform.kimi.com/docs/guide/troubleshooting.md, checked 2026-10-06

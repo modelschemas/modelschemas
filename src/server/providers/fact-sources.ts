@@ -204,6 +204,27 @@ export function requestSchemaPropertyNames(schema: unknown): Set<string> {
   return new Set(Object.keys(propertiesOf(schema, schema)))
 }
 
+/**
+ * One `[model id, request schema]` per entry of a `model` discriminator.
+ * A union walked whole would give every model its siblings' fields.
+ */
+export function modelBranchSchemas(schema: unknown): Array<[string, unknown]> {
+  if (!isRecord(schema) || !isRecord(schema.discriminator)) return []
+  const { propertyName, mapping } = schema.discriminator
+  if (propertyName !== 'model' || !isRecord(mapping)) return []
+  const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _d, ...rest } = schema
+  return Object.entries(mapping).flatMap(([rawId, ref]) =>
+    typeof ref === 'string'
+      ? [
+          [
+            rawId,
+            { ...rest, $ref: `#/$defs/${ref.slice(ref.lastIndexOf('/') + 1)}` },
+          ] satisfies [string, unknown],
+        ]
+      : [],
+  )
+}
+
 export interface SchemaWalk {
   flags: Array<string>
   modalities: { input: Array<string>; output: Array<string> } | null

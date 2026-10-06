@@ -1,21 +1,42 @@
 /**
- * Moonshot AI (China) — model ids from platform.moonshot.cn pricing docs.
- * Amounts on that page are yuan. Rate cards are USD, so prices stay null.
- * Context windows are the token counts the page names.
+ * Moonshot AI (China). platform.moonshot.cn redirects to platform.kimi.com,
+ * whose OpenAPI document names api.moonshot.cn as its server. Model ids and
+ * context windows come from the pricing page; activity, reasoning, max
+ * output and modalities from the spec's per-model chat request schemas.
+ * Prices on the pricing page are yuan. Rate cards are USD, so prices stay
+ * null. `GET /v1/models` needs a CN key, which is region-bound.
  */
-import { fetchText } from '../types.ts'
+import { classifyOpenAiCompat } from '../openai-compat.ts'
+import { cachedDocs } from '../model-facts.ts'
+import { compatGenerationEndpointId } from '../model-meta.ts'
+import { REASONING_SOURCE_SILENT } from '../reasoning-config.ts'
+import { fetchText, sha256Text } from '../types.ts'
 import type {
+  FactSource,
   ListModelsResult,
+  ModelFactSources,
   ModelInfo,
+  ModelReasoning,
+  OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
 
 export const MOONSHOT_CN_PRICING_URL =
-  'https://platform.moonshot.cn/docs/pricing.md'
+  'https://platform.kimi.com/docs/pricing/chat.md'
+export const MOONSHOT_CN_OPENAPI_URL =
+  'https://platform.kimi.com/docs/openapi.json'
 
-const SPEC_SKIP = 'moonshotai-cn: no first-party OpenAPI document — skipped'
+const CN_SERVER = 'https://api.moonshot.cn'
+const CHAT_PATH = '/v1/chat/completions'
+const FETCH_TIMEOUT_MS = 20_000
+
+type Json = Record<string, unknown>
+
+function isRecord(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 export function parseMoonshotCnModels(markdown: string): Array<ModelInfo> {
   const models: Array<ModelInfo> = []
@@ -45,27 +66,212 @@ export function parseMoonshotCnModels(markdown: string): Array<ModelInfo> {
   return models
 }
 
-async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
-  const markdown = await fetchText(MOONSHOT_CN_PRICING_URL)
-  return { models: parseMoonshotCnModels(markdown) }
+function deref(spec: OpenApiDocument, node: unknown, depth = 0): unknown {
+  if (depth > 8 || !isRecord(node) || typeof node.$ref !== 'string') return node
+  const name = node.$ref.replace('#/components/schemas/', '')
+  return deref(spec, spec.components?.schemas?.[name], depth + 1)
 }
 
-function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  return Promise.resolve({
-    specs: [],
-    sources: [],
-    outputStrategy: 'post-200',
-    skipped: SPEC_SKIP,
+/** Own and `allOf` properties. `oneOf` branches are alternatives, not merged. */
+function propertiesOf(spec: OpenApiDocument, node: unknown): Json {
+  const resolved = deref(spec, node)
+  if (!isRecord(resolved)) return {}
+  const out: Json = {}
+  if (Array.isArray(resolved.allOf)) {
+    for (const part of resolved.allOf) {
+      Object.assign(out, propertiesOf(spec, part))
+    }
+  }
+  return {
+    ...out,
+    ...(isRecord(resolved.properties) ? resolved.properties : {}),
+  }
+}
+
+function stringEnum(node: unknown): Array<string> {
+  if (!isRecord(node) || !Array.isArray(node.enum)) return []
+  return node.enum.filter((item): item is string => typeof item === 'string')
+}
+
+const PART_MODALITY: Record<string, string> = {
+  text: 'text',
+  image_url: 'image',
+  video_url: 'video',
+}
+
+/** Content part names (`image_url`, …) anywhere under a messages schema. */
+function partModalities(
+  spec: OpenApiDocument,
+  node: unknown,
+  into: Set<string>,
+  depth = 0,
+): void {
+  const resolved = deref(spec, node)
+  if (depth > 12 || typeof resolved !== 'object' || resolved === null) return
+  for (const [key, value] of Object.entries(resolved)) {
+    const modality = PART_MODALITY[key]
+    if (modality) into.add(modality)
+    partModalities(spec, value, into, depth + 1)
+  }
+}
+
+/**
+ * `Kimi K3 默认为 131072，最大可设置为 1048576`. The cap counts only when the
+ * sentence names this model: `Kimi K3` → `kimi-k3`.
+ */
+function statedMaxOutput(rawId: string, description: unknown): number | null {
+  if (typeof description !== 'string') return null
+  for (const match of description.matchAll(
+    /(Kimi [A-Za-z0-9. ]+?) 默认为 \d+，最大可设置为 (\d+)/g,
+  )) {
+    const named = (match[1] ?? '').toLowerCase().replace(/ /g, '-')
+    if (named === rawId) return Number(match[2])
+  }
+  return null
+}
+
+export type MoonshotChatFacts = Pick<
+  ModelInfo,
+  'activity' | 'reasoning' | 'maxOutput' | 'modalities'
+> & { factSources: ModelFactSources }
+
+/**
+ * Per-model facts from the chat request union, keyed by the ids in its
+ * `model` discriminator. Throws when the document is not the CN chat spec.
+ */
+export function moonshotCnChatFacts(
+  spec: OpenApiDocument,
+  hash: string,
+): Record<string, MoonshotChatFacts> {
+  if (spec.servers?.[0]?.url !== CN_SERVER) {
+    throw new Error(`moonshotai-cn: spec server is not ${CN_SERVER}`)
+  }
+  const post = spec.paths?.[CHAT_PATH]?.post
+  const body = isRecord(post?.requestBody) ? post.requestBody : {}
+  const content = isRecord(body.content) ? body.content : {}
+  const media = content['application/json']
+  const schema = isRecord(media) && isRecord(media.schema) ? media.schema : {}
+  const discriminator = isRecord(schema.discriminator)
+    ? schema.discriminator
+    : {}
+  const mapping = isRecord(discriminator.mapping) ? discriminator.mapping : {}
+  if (discriminator.propertyName !== 'model') {
+    throw new Error('moonshotai-cn: chat request is not a per-model union')
+  }
+
+  const out: Record<string, MoonshotChatFacts> = {}
+  for (const [rawId, ref] of Object.entries(mapping)) {
+    if (typeof ref !== 'string') continue
+    const name = ref.replace('#/components/schemas/', '')
+    const props = propertiesOf(spec, { $ref: ref })
+    if (!stringEnum(props.model).includes(rawId)) continue
+    const source = (path: string): FactSource => ({
+      derivation: 'upstream-spec',
+      sourceUrl: MOONSHOT_CN_OPENAPI_URL,
+      sourceHash: hash,
+      path,
+    })
+    const facts: MoonshotChatFacts = { activity: 'chat', factSources: {} }
+
+    const efforts = stringEnum(props.reasoning_effort)
+    const thinking = stringEnum(propertiesOf(spec, props.thinking).type)
+    if (efforts.length > 0) {
+      const reasoning: ModelReasoning = {
+        mode: 'effort',
+        mandatory: !efforts.includes('none') && !thinking.includes('disabled'),
+        efforts,
+      }
+      facts.reasoning = reasoning
+      facts.factSources.reasoning = source(
+        `/components/schemas/${name}/properties/reasoning_effort`,
+      )
+    } else if (thinking.length > 0) {
+      // An on/off `thinking.type` names no mode `ModelReasoning` can hold.
+      facts.factSources.reasoning = source(REASONING_SOURCE_SILENT)
+    }
+
+    const cap = isRecord(props.max_completion_tokens)
+      ? statedMaxOutput(rawId, props.max_completion_tokens.description)
+      : null
+    if (cap !== null) {
+      facts.maxOutput = cap
+      facts.factSources.maxOutput = source(
+        `/components/schemas/${name}/properties/max_completion_tokens/description`,
+      )
+    }
+
+    const input = new Set<string>()
+    partModalities(spec, props.messages, input)
+    if (input.size > 0) {
+      facts.modalities = { input: [...input], output: ['text'] }
+      facts.factSources.modalities = source(
+        `/components/schemas/${name}/properties/messages`,
+      )
+    }
+    out[rawId] = facts
+  }
+  if (Object.keys(out).length === 0) {
+    throw new Error('moonshotai-cn: chat spec mapped no model ids')
+  }
+  return out
+}
+
+async function fetchCnSpec(): Promise<{ spec: OpenApiDocument; hash: string }> {
+  const text = await fetchText(MOONSHOT_CN_OPENAPI_URL, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
+  // An unknown docs path answers 200 with another page; JSON.parse throws on it.
+  const spec = JSON.parse(text) as OpenApiDocument
+  return { spec, hash: await sha256Text(text) }
+}
+
+async function listModels(
+  _env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const markdown = await fetchText(MOONSHOT_CN_PRICING_URL, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  })
+  const pricingHash = await sha256Text(markdown)
+  const chat = await cachedDocs(kv, MOONSHOT_CN_OPENAPI_URL, async () => {
+    const { spec, hash } = await fetchCnSpec()
+    return moonshotCnChatFacts(spec, hash)
+  })
+  const models = parseMoonshotCnModels(markdown).map((model): ModelInfo => {
+    const facts = chat[model.rawId]
+    const factSources: ModelFactSources = { ...facts?.factSources }
+    if (model.contextWindow != null) {
+      factSources.contextWindow = {
+        derivation: 'docs-derived',
+        sourceUrl: MOONSHOT_CN_PRICING_URL,
+        sourceHash: pricingHash,
+        path: 'contextWindow',
+      }
+    }
+    return { ...model, ...facts, factSources }
+  })
+  return { models }
+}
+
+async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const { spec, hash } = await fetchCnSpec()
+  moonshotCnChatFacts(spec, hash)
+  return {
+    specs: [spec],
+    sources: [{ url: MOONSHOT_CN_OPENAPI_URL, hash }],
+    outputStrategy: 'post-200',
+  }
 }
 
 export const provider: ProviderConfig = {
   id: 'moonshotai-cn',
   displayName: 'Moonshot AI (China)',
-  specSourceUrl: 'https://platform.moonshot.cn/docs/api/chat',
+  specSourceUrl: MOONSHOT_CN_OPENAPI_URL,
   modelsEndpoint: MOONSHOT_CN_PRICING_URL,
-  defaultDerivation: 'docs-derived',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
-  classify: () => null,
+  classify: classifyOpenAiCompat,
+  generationEndpointId: ({ activity }) =>
+    compatGenerationEndpointId(activity, 'v1/'),
 }

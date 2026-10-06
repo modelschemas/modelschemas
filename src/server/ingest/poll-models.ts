@@ -18,6 +18,7 @@ import { stableStringify } from '#/server/kv.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
   mergeListingAndSchema,
+  modelBranchSchemas,
   requestSchemaPropertyNames,
   schemaRung,
   walkRequestSchema,
@@ -141,6 +142,11 @@ type InputWalks = {
   properties: Map<string, Set<string>>
 }
 
+/** Key for the walk of one model's branch of a `model`-discriminated body. */
+function modelWalkKey(endpointId: string, rawId: string): string {
+  return `${endpointId}\n${rawId}`
+}
+
 async function loadInputWalks(
   db: SyncDeps['db'],
   provider: ProviderConfig,
@@ -212,14 +218,19 @@ async function loadInputWalks(
     if (skipFactWalk) continue
     const rung = schemaRung(row.derivation)
     if (rung === null) continue
-    const walk = walkRequestSchema(parsed, {
+    const meta = {
       derivation: rung,
       endpointId: publicId,
       sourceUrl: row.sourceUrl,
       sourceHash: row.sourceHash,
       fetchedAt: row.createdAt,
-    })
+    }
+    const walk = walkRequestSchema(parsed, meta)
     if (walk) walks.set(publicId, walk)
+    for (const [rawId, branch] of modelBranchSchemas(parsed)) {
+      const own = walkRequestSchema(branch, meta)
+      if (own) walks.set(modelWalkKey(publicId, rawId), own)
+    }
   }
   return { walks, properties }
 }
@@ -281,7 +292,9 @@ function enrichListed(
     capabilities: info.capabilities,
     schemaEndpointId: info.schemaEndpointId,
   })
-  const walk = bound ? (walks.get(bound) ?? null) : null
+  const walk = bound
+    ? (walks.get(modelWalkKey(bound, info.rawId)) ?? walks.get(bound) ?? null)
+    : null
   const merged = mergeListingAndSchema(info, walk)
   return {
     ...info,
