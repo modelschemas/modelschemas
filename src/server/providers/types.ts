@@ -167,16 +167,82 @@ export interface UpstreamModelIdentity {
 }
 
 /**
- * How a model's thinking is configured (issue #77). `adaptive`: the model
- * decides (Anthropic `thinking.type: adaptive`); `budget`: a token budget
- * (`thinking.budget_tokens`, Gemini 2.5 `thinkingBudget`); `effort`: a level
- * (`reasoning_effort`, Gemini 3 `thinkingLevel`). `mandatory`: reasoning
- * cannot be turned off. `efforts`: accepted effort values, when stated.
+ * How a model's thinking is configured (issue #77). Null on a row means the
+ * model does not reason, or its source names no control for it.
+ *
+ * `mode` names the one control the request exposes:
+ * - `adaptive`: the model decides (Anthropic `thinking.type: adaptive`). A
+ *   three-state switch with an `auto` value (`enabled | disabled | auto`)
+ *   is `adaptive` too.
+ * - `budget`: a token budget (`thinking.budget_tokens`, Gemini 2.5
+ *   `thinkingBudget`). A switch plus a budget is `budget`.
+ * - `effort`: a level (`reasoning_effort`, Gemini 3 `thinkingLevel`). A
+ *   switch plus levels is `effort`.
+ * - `toggle`: an on/off switch and nothing else (`thinking.type: enabled |
+ *   disabled`, `enable_thinking`, `reasoning_mode: think | no_think`). It
+ *   says nothing about whether the model thinks when the field is omitted.
+ *
+ * `mandatory` has one meaning on every mode:
+ * - `true`: the provider's own source STATES thinking cannot be turned off
+ *   for this model ("cannot be disabled", an upstream `mandatory` boolean).
+ *   On a `toggle`: the model takes the switch and its off value is rejected,
+ *   so send "on" or omit the field.
+ * - `false`: the source states it can be turned off: documented prose, or
+ *   an off value (`none`, `disabled`, `off`, `no_think`) in this model's
+ *   OWN request schema or level list.
+ * - `null`: unstated. Never read it as `false`: do not offer an off option
+ *   from it, and do not claim thinking is forced. A schema SHARED by many
+ *   models that lists an off value states nothing about one model, so it is
+ *   `null`. A level list with no `none` is not a statement, so it is
+ *   `null`. A probe (off returns 400) is not a source.
+ *
+ * `efforts`: the accepted effort values as published, an off value such as
+ * `none` included. Never present on `toggle`.
+ *
+ * No object is stored when the source names no request field for the model:
+ * a catalog flag alone, thinking picked by a model-id suffix or a prompt
+ * tag, or a model that always thinks and takes no parameter. The
+ * `reasoning` capability flag carries those. A `toggle` is stored only
+ * with a stated `mandatory`: `{ mode: 'toggle', mandatory: null }` is not a
+ * fact, and `reasoningViolation` refuses it.
+ *
+ * Many rows written before this rule infer `true` from a level list with
+ * no `none`; README "Releasing on npm" lists the providers.
  */
 export interface ModelReasoning {
-  mode: 'adaptive' | 'budget' | 'effort'
-  mandatory: boolean
+  mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+  mandatory: boolean | null
   efforts?: Array<string>
+}
+
+const REASONING_MODES = ['adaptive', 'budget', 'effort', 'toggle']
+
+/**
+ * Why a value is not a storable `ModelReasoning`, or null when it is. The
+ * poller runs every listed row through this before the write.
+ */
+export function reasoningViolation(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return 'not an object'
+  const { mode, mandatory, efforts } = value as Record<string, unknown>
+  if (typeof mode !== 'string' || !REASONING_MODES.includes(mode)) {
+    return `unknown mode ${JSON.stringify(mode)}`
+  }
+  if (mandatory !== null && typeof mandatory !== 'boolean') {
+    return 'mandatory is not true, false or null'
+  }
+  if (mode === 'toggle' && mandatory === null) {
+    return 'a toggle needs a stated mandatory'
+  }
+  if (efforts === undefined) return null
+  if (mode === 'toggle') return 'a toggle takes no efforts'
+  if (
+    !Array.isArray(efforts) ||
+    efforts.length === 0 ||
+    !efforts.every((effort) => typeof effort === 'string' && effort !== '')
+  ) {
+    return 'efforts is not a non-empty array of strings'
+  }
+  return null
 }
 
 /** The stored model columns a listing fills; each can be marked absent. */

@@ -1120,6 +1120,49 @@ describe('reasoning and server tools (issue #77)', () => {
   })
 })
 
+describe('reasoning write gate', () => {
+  it('keeps the stored value when a later poll lists a malformed one', async () => {
+    const id = 'poll-reasoning-gate'
+    const deps = await freshDeps(id)
+    const good = { mode: 'effort', mandatory: null, efforts: ['low', 'max'] }
+    const row = () =>
+      deps.db.query.models.findFirst({
+        where: eq(models.id, modelDbId(id, fable.rawId)),
+      })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...fable, reasoning: good } as ModelInfo]),
+    )
+    expect((await row())?.reasoning).toEqual(good)
+
+    // A toggle with an unstated mandatory is not a fact: nothing is written.
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, reasoning: { mode: 'toggle', mandatory: null } },
+      ]),
+    )
+    expect(outcome.updated).toBe(0)
+    expect((await row())?.reasoning).toEqual(good)
+
+    // On a row with nothing stored it stays null, and the row still lands.
+    const fresh = 'poll-reasoning-gate-new'
+    const freshDepsRow = await freshDeps(fresh)
+    await pollProviderModels(
+      freshDepsRow,
+      stubProvider(fresh, [
+        { ...fable, reasoning: { mode: 'switch', mandatory: false } as never },
+      ]),
+    )
+    const stored = await freshDepsRow.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(fresh, fable.rawId)),
+    })
+    expect(stored?.rawId).toBe(fable.rawId)
+    expect(stored?.reasoning).toBeNull()
+    expect(stored?.factSources).not.toHaveProperty('reasoning')
+  })
+})
+
 describe('listed request map', () => {
   it('keeps a map the listing read from the model schema', async () => {
     const id = 'poll-listed-request-map'
@@ -1277,6 +1320,49 @@ describe('absent facts (FactAbsence)', () => {
     const after = await storedRow(deps, id, 'm')
     expect(after).toMatchObject({ contextWindow: 8192, maxOutput: null })
     expect(after.pricing).toEqual(before.pricing)
+  })
+
+  it('keeps a stored reasoning through the write gate when it is unavailable', async () => {
+    const id = 'poll-absent-reasoning'
+    const deps = await freshDeps(id)
+    const source = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://docs.example.com/models.md',
+      sourceHash: 'h1',
+      path: 'reasoning_effort',
+    }
+    const row: ModelInfo = {
+      rawId: 'kimi-k3',
+      activity: 'chat',
+      capabilities: ['reasoning', 'reasoning_effort'],
+      reasoning: { mode: 'effort', mandatory: null, efforts: ['low', 'max'] },
+      factSources: { reasoning: source },
+    }
+    await pollProviderModels(deps, stubProvider(id, [row]))
+    const good = await storedRow(deps, id, 'kimi-k3')
+    expect(good.reasoning).toEqual(row.reasoning)
+
+    // The docs are down. A value the listing still carries, even one the
+    // gate would refuse, is not what gets judged: the stored one is kept.
+    for (const reasoning of [undefined, { mode: 'nonsense' }]) {
+      const { outcome, events } = await pollWithEvents(
+        deps,
+        stubProvider(id, [
+          {
+            rawId: 'kimi-k3',
+            activity: 'chat',
+            ...(reasoning ? { reasoning: reasoning as never } : {}),
+            ...unavailable('capabilities', 'reasoning'),
+          },
+        ]),
+      )
+      expect(outcome).toMatchObject({ updated: 0, failures: 0 })
+      expect(events).toEqual([])
+      const kept = await storedRow(deps, id, 'kimi-k3')
+      expect(kept.reasoning).toEqual(good.reasoning)
+      expect(kept.capabilities).toEqual(good.capabilities)
+      expect(kept.factSources).toEqual(good.factSources)
+    }
   })
 
   it('inserts a new row with nothing for an unavailable fact', async () => {

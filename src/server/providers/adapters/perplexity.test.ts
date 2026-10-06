@@ -81,19 +81,26 @@ const KIMI_SENTENCE =
 
 describe('parsePerplexityModelsPage', () => {
   it('reads the effort sentence and the reasoning-model cards', () => {
-    expect([...parsePerplexityModelsPage(MODELS_DOC)]).toEqual([
+    const page = parsePerplexityModelsPage(MODELS_DOC)
+    expect([...page.flags]).toEqual([
       ['perplexity/glm-5.3', ['reasoning']],
       ['perplexity/glm-5.3-flash', ['reasoning']],
       ['perplexity/kimi-k3', ['reasoning', 'reasoning_effort']],
       ['perplexity/nemotron-3-ultra-550b-a55b', ['reasoning']],
     ])
+    expect([...page.efforts]).toEqual([
+      [
+        'perplexity/kimi-k3',
+        ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      ],
+    ])
   })
 
   it('leaves the effort flag off when no tab states an effort', () => {
     const silent = MODELS_DOC.replace(/ {4}<Info>[^]*?<\/Info>\n/, '')
-    expect(parsePerplexityModelsPage(silent).get('perplexity/kimi-k3')).toEqual(
-      ['reasoning'],
-    )
+    const page = parsePerplexityModelsPage(silent)
+    expect(page.flags.get('perplexity/kimi-k3')).toEqual(['reasoning'])
+    expect(page.efforts.size).toBe(0)
   })
 
   it.each([
@@ -118,6 +125,16 @@ describe('parsePerplexityModelsPage', () => {
       'the sentence moved outside the tabs',
       /^ {6}Kimi K3 accepts[^]*?(<Warning>)/m,
       `    </Info>\n  </Tab>\n</Tabs>\n\n${KIMI_SENTENCE}\n\n$1`,
+    ],
+    [
+      'a statement that reasoning cannot be disabled',
+      'reasoning effort. `minimal`',
+      'reasoning effort. Reasoning cannot be disabled. `minimal`',
+    ],
+    [
+      'a statement that the model always thinks',
+      "Kimi K3 — Moonshot AI's flagship reasoning model.",
+      "Kimi K3 — Moonshot AI's flagship always-on reasoning model.",
     ],
     [
       'a card naming fewer models than its tab lists',
@@ -319,7 +336,14 @@ describe('perplexity listModels', () => {
         releasedAt: 1,
         activity: 'chat',
         capabilities: ['reasoning', 'reasoning_effort'],
+        // The page publishes the levels and is silent on turning it off.
+        reasoning: {
+          mode: 'effort',
+          mandatory: null,
+          efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        },
         factSources: {
+          reasoning: source(DOC_URL, 'reasoning_effort'),
           capabilities: {
             reasoning: source(DOC_URL, 'reasoning'),
             reasoning_effort: source(DOC_URL, 'reasoning_effort'),
@@ -342,13 +366,33 @@ describe('perplexity listModels', () => {
       },
       { rawId: 'xai/grok-4.20-non-reasoning', releasedAt: 4, activity: 'chat' },
     ])
-    expect(result.models.every((model) => model.reasoning == null)).toBe(true)
+    // Only the row whose effort list the models page states gets `reasoning`.
+    expect(result.models.filter((model) => model.reasoning != null)).toEqual([
+      expect.objectContaining({ rawId: 'perplexity/kimi-k3' }),
+    ])
     expect(
       provider.generationEndpointId?.({
         rawId: 'perplexity/sonar',
         activity: 'chat',
       }),
     ).toBe('v1/agent')
+  })
+
+  it('reads an off value in the published list as "can be turned off"', async () => {
+    const withNone = MODELS_DOC.replace('accepts `minimal`,', 'accepts `none`,')
+    expect(withNone).not.toBe(MODELS_DOC)
+    globalThis.fetch = ((url: string) =>
+      Promise.resolve(
+        String(url) === MODELS_URL
+          ? Response.json({ data: [{ id: 'perplexity/kimi-k3' }] })
+          : new Response(String(url) === DOC_URL ? withNone : PRESETS_DOC),
+      )) as typeof fetch
+    const result = await provider.listModels({ PERPLEXITY_API_KEY: 'test-key' })
+    expect(result.models[0]?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
   })
 
   it('still lists, and reports the page, when a docs page is an HTML error page', async () => {
@@ -370,7 +414,7 @@ describe('perplexity listModels', () => {
           rawId: 'perplexity/sonar',
           releasedAt: null,
           activity: 'chat',
-          absent: { capabilities: 'unavailable' },
+          absent: { capabilities: 'unavailable', reasoning: 'unavailable' },
         },
       ],
       docsFailures: {

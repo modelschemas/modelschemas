@@ -25,6 +25,7 @@ import {
   walkRequestSchema,
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
+import { keepValidReasoning } from '#/server/providers/reasoning-config.ts'
 import { chatRequestMap } from '#/server/providers/request-map.ts'
 import {
   parseStoredRateCard,
@@ -629,11 +630,11 @@ export async function pollProviderModels(
     if (decision.keepPrior) {
       factSources = restorePriorPricing(factSources, existing?.factSources)
     }
-    const info: ModelInfo = {
-      ...enriched,
-      pricing: card,
-      factSources: factSources ?? undefined,
-    }
+    const info: ModelInfo = keepValidReasoning(
+      provider.id,
+      { ...enriched, pricing: card, factSources: factSources ?? undefined },
+      existing,
+    )
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
     const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null

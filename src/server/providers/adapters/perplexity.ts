@@ -72,16 +72,23 @@ function dedent(text: string): string {
  *
  * - "Kimi K3 accepts `minimal`, … and `max` reasoning effort." gives
  *   `reasoning` and `reasoning_effort` to the row whose link text is the
- *   name. The page does not say whether reasoning can be turned off, so no
- *   `reasoning` object is built from the list.
+ *   name, and its list is the row's `efforts`. A list that holds `none`
+ *   or `off` says reasoning can be turned off; any other list leaves
+ *   `mandatory` null.
  * - A card that ends "… reasoning model(s)." gives `reasoning` to every row
  *   of its tab, and only when it names as many models as the tab lists.
  *
  * Any other wording of either statement throws, as does an effort sentence
- * outside the tabs or a second one for the same model.
+ * outside the tabs or a second one for the same model. So does tab prose
+ * that speaks of turning reasoning off ("cannot be disabled", "always on"):
+ * no such sentence is on the page today, and one must be read, not dropped.
  */
-export function parsePerplexityModelsPage(markdown: string): StatedFlags {
+export function parsePerplexityModelsPage(markdown: string): {
+  flags: StatedFlags
+  efforts: Map<string, Array<string>>
+} {
   const stated: StatedFlags = new Map()
+  const levels = new Map<string, Array<string>>()
   const unread = (what: string) =>
     new Error(`perplexity: models page states ${what} in an unread shape`)
   let rows = 0
@@ -111,12 +118,24 @@ export function parsePerplexityModelsPage(markdown: string): StatedFlags {
 
     const efforts = [
       ...tab.matchAll(
-        /^(\S.*?) accepts (?:`[a-z]+`(?:, and |, | and )?)+ reasoning effort\./gm,
+        /^(\S.*?) accepts ((?:`[a-z]+`(?:, and |, | and )?)+) reasoning effort\./gm,
       ),
     ]
     sentences += efforts.length
+    const prose = tab.split('\n').filter((line) => !line.startsWith('|'))
+    if (
+      prose.some(
+        (line) =>
+          /reasoning|thinking/i.test(line) &&
+          /disabl|always[- ]on|(?:turn|switch)\w* off|cannot be|can['’]t be/i.test(
+            line,
+          ),
+      )
+    ) {
+      throw unread('whether reasoning can be turned off')
+    }
     const seen = new Set<string>()
-    for (const [, name] of efforts) {
+    for (const [, name, list] of efforts) {
       const named = table.filter((cells) =>
         cells.at(-1)?.startsWith(`[${name ?? ''}](`),
       )
@@ -124,13 +143,14 @@ export function parsePerplexityModelsPage(markdown: string): StatedFlags {
       if (!id || seen.has(id)) throw unread('reasoning effort')
       seen.add(id)
       addFlags(stated, id, ['reasoning', 'reasoning_effort'])
+      levels.set(id, (list ?? '').match(/(?<=`)[a-z]+(?=`)/g) ?? [])
     }
   }
   if (rows === 0) throw new Error('perplexity: models page lists no models')
   if (sentences !== (markdown.match(/reasoning effort/gi) ?? []).length) {
     throw unread('reasoning effort')
   }
-  return stated
+  return { flags: stated, efforts: levels }
 }
 
 /**
@@ -180,28 +200,64 @@ export function parsePerplexityPresets(markdown: string): StatedFlags {
 interface StatedDoc {
   hash: string
   flags: Array<[string, Array<string>]>
+  /** Absent on the presets page, and on an entry cached before efforts were kept. */
+  efforts?: Array<[string, Array<string>]>
 }
 
 function statedDoc(
   kv: KVNamespace | undefined,
   url: string,
-  parse: (markdown: string) => StatedFlags,
+  parse: (markdown: string) => {
+    flags: StatedFlags
+    efforts?: Map<string, Array<string>>
+  },
 ): Promise<StatedDoc> {
   return cachedDocs(kv, url, async () => {
     const text = await fetchText(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
-    return { hash: await sha256Text(text), flags: [...parse(text)] }
+    const { flags, efforts } = parse(text)
+    return {
+      hash: await sha256Text(text),
+      flags: [...flags],
+      ...(efforts ? { efforts: [...efforts] } : {}),
+    }
   })
 }
 
-/** The flags both pages state for one model, each with its page. */
+/**
+ * The flags both pages state for one model, each with its page, and the
+ * effort list the models page states for it.
+ */
 function statedFacts(
   id: string,
   docs: Array<{ url: string; doc: StatedDoc }>,
-): Pick<ModelInfo, 'capabilities' | 'factSources'> {
+): Pick<ModelInfo, 'capabilities' | 'reasoning' | 'factSources'> {
   const sources: Record<string, FactSource> = {}
+  let reasoning: Pick<ModelInfo, 'reasoning' | 'factSources'> = {}
   for (const { url, doc } of docs) {
+    const efforts = new Map(doc.efforts).get(id)
+    if (efforts) {
+      reasoning = {
+        reasoning: {
+          mode: 'effort',
+          // The sentence is this model's own list: an off value in it is a
+          // statement. Without one the page does not say.
+          mandatory: efforts.some((e) => e === 'none' || e === 'off')
+            ? false
+            : null,
+          efforts,
+        },
+        factSources: {
+          reasoning: {
+            derivation: 'docs-derived',
+            sourceUrl: url,
+            sourceHash: doc.hash,
+            path: 'reasoning_effort',
+          },
+        },
+      }
+    }
     for (const flag of new Map(doc.flags).get(id) ?? []) {
       sources[flag] ??= {
         derivation: 'docs-derived',
@@ -213,7 +269,11 @@ function statedFacts(
   }
   const capabilities = Object.keys(sources)
   if (capabilities.length === 0) return {}
-  return { capabilities, factSources: { capabilities: sources } }
+  return {
+    capabilities,
+    ...reasoning,
+    factSources: { ...reasoning.factSources, capabilities: sources },
+  }
 }
 
 type StatedFact = Exclude<keyof ReturnType<typeof statedFacts>, 'factSources'>
@@ -223,7 +283,10 @@ type StatedFact = Exclude<keyof ReturnType<typeof statedFacts>, 'factSources'>
  * Keyed by its return type, so a fact added there fails to compile here
  * instead of going null on a docs failure.
  */
-const STATED_FACTS: Record<StatedFact, true> = { capabilities: true }
+const STATED_FACTS: Record<StatedFact, true> = {
+  capabilities: true,
+  reasoning: true,
+}
 
 interface PerplexityModelList {
   data?: Array<{ id: string; created?: number; pricing?: unknown }>
@@ -247,7 +310,9 @@ async function listModels(
       statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
     ),
     tryDocs(run, PERPLEXITY_PRESETS_DOC_URL, () =>
-      statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, parsePerplexityPresets),
+      statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, (text) => ({
+        flags: parsePerplexityPresets(text),
+      })),
     ),
   ])
   // Both pages or neither: one page's flags alone would drop the other's.
