@@ -744,6 +744,21 @@ export const openApiDocument = {
           id: { type: 'string' },
           provider: { type: 'string' },
           rawId: { type: 'string' },
+          sameAs: {
+            description:
+              "The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.",
+            oneOf: [
+              {
+                type: 'object',
+                required: ['provider', 'rawId'],
+                properties: {
+                  provider: { type: 'string' },
+                  rawId: { type: 'string' },
+                },
+              },
+              { type: 'null' },
+            ],
+          },
           activity: { type: ['string', 'null'], enum: [...activityEnum, null] },
           displayName: { type: ['string', 'null'] },
           schemaEndpointId: { type: ['string', 'null'] },

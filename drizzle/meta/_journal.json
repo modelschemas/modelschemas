@@ -85,6 +85,13 @@
       "when": 1791302400000,
       "tag": "0011_drop_models_dev_facts",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1791388800000,
+      "tag": "0012_same_as_links",
+      "breakpoints": true
     }
   ]
 }

@@ -327,3 +327,122 @@ describe('catalog rate cards', () => {
     expect(blob?.pricing).toBeNull()
   })
 })
+
+describe('stored sameAs relationships', () => {
+  beforeAll(async () => {
+    await db.insert(providers).values([
+      {
+        id: 'cat-maker',
+        displayName: 'Maker',
+        specSourceUrl: 'https://example.com/maker',
+      },
+      {
+        id: 'cat-reseller',
+        displayName: 'Reseller',
+        specSourceUrl: 'https://example.com/reseller',
+      },
+    ])
+    await db.insert(models).values({
+      id: 'sameas-maker',
+      providerId: 'cat-maker',
+      rawId: 'native-1',
+      pricing: GPT_4O,
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    })
+    await db.insert(models).values([
+      {
+        id: 'sameas-linked',
+        providerId: 'cat-reseller',
+        rawId: 'dealer-id',
+        sameAsModelId: 'sameas-maker',
+        contextWindow: 1234,
+        upstreamProvider: 'cat-maker',
+        upstreamRawId: 'native-1',
+        upstreamSource: {
+          derivation: 'docs-derived',
+          sourceUrl: 'https://example.com/reseller/model',
+        },
+        factSources: { contextWindow: { derivation: 'listing' } },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-no-link',
+        providerId: 'cat-reseller',
+        rawId: 'cat-maker/native-1',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-unresolved',
+        providerId: 'cat-reseller',
+        rawId: 'unresolved',
+        upstreamProvider: 'cat-maker',
+        upstreamRawId: 'missing',
+        upstreamSource: { derivation: 'listing' },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        // A link reconcile has not caught up with: the evidence is gone.
+        id: 'sameas-stale',
+        providerId: 'cat-reseller',
+        rawId: 'stale',
+        sameAsModelId: 'sameas-maker',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-normalized',
+        providerId: 'cat-reseller',
+        rawId: 'dotted',
+        sameAsModelId: 'sameas-maker',
+        upstreamProvider: 'cat-maker',
+        upstreamRawId: 'native.1',
+        upstreamSource: { derivation: 'listing' },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+    ])
+  })
+
+  it('serves the stored link, with its evidence as provenance only when resolved', async () => {
+    const linked = await getModelDetail(db, 'cat-reseller', 'dealer-id')
+    expect(linked?.sameAs).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
+    expect(linked?.factSources).toEqual({
+      contextWindow: { derivation: 'listing' },
+      sameAs: {
+        derivation: 'docs-derived',
+        sourceUrl: 'https://example.com/reseller/model',
+      },
+    })
+    expect(linked?.contextWindow).toBe(1234)
+    expect(linked?.pricing).toBeNull()
+    for (const rawId of ['cat-maker/native-1', 'unresolved', 'stale']) {
+      const unlinked = await getModelDetail(db, 'cat-reseller', rawId)
+      expect(unlinked?.sameAs).toBeNull()
+      expect(unlinked?.factSources).toBeNull()
+    }
+    const dotted = await getModelDetail(db, 'cat-reseller', 'dotted')
+    expect(dotted?.factSources?.sameAs).toEqual({
+      derivation: 'listing',
+      normalized: true,
+    })
+  })
+
+  it('joins the stored target on catalog and provider lists', async () => {
+    const listed = await listModelsCatalog(db, {
+      provider: 'cat-reseller',
+      provenance: true,
+    })
+    const linked = listed.models.find((row) => row.id === 'sameas-linked')
+    expect(linked?.sameAs).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
+    expect(linked?.factSources?.sameAs?.derivation).toBe('docs-derived')
+    const provider = await listProviderModels(db, 'cat-reseller')
+    expect(
+      provider?.models.find((row) => row.id === 'sameas-linked')?.sameAs,
+    ).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
+    expect(provider?.models[0]).not.toHaveProperty('factSources')
+  })
+})

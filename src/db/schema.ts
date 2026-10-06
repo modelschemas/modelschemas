@@ -1,5 +1,13 @@
-import { relations } from 'drizzle-orm'
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { relations, sql } from 'drizzle-orm'
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  check,
+  primaryKey,
+} from 'drizzle-orm/sqlite-core'
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -368,6 +376,21 @@ export const providers = sqliteTable('providers', {
     .default('active'),
 })
 
+/** Names other providers' model ids use for a provider (`google` → gemini). */
+export const providerModelNamespaces = sqliteTable(
+  'provider_model_namespaces',
+  {
+    namespace: text('namespace').notNull(),
+    providerId: text('provider_id')
+      .notNull()
+      .references(() => providers.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.namespace, table.providerId] }),
+    index('provider_model_namespaces_providerId_idx').on(table.providerId),
+  ],
+)
+
 export const models = sqliteTable(
   'models',
   {
@@ -391,6 +414,17 @@ export const models = sqliteTable(
     requestMap: text('request_map', { mode: 'json' }),
     // Caller ids that resolve to this dated row (issue #112).
     aliases: text('aliases', { mode: 'json' }).$type<Array<string> | null>(),
+    // The provider's own statement of its upstream model (issue #199); it
+    // can precede the target row's arrival. The namespace resolves through
+    // providers / provider_model_namespaces.
+    upstreamProvider: text('upstream_provider'),
+    upstreamRawId: text('upstream_raw_id'),
+    upstreamSource: text('upstream_source', { mode: 'json' }),
+    // Resolved link, written only by reconcileSameAs; never the row's facts.
+    sameAsModelId: text('same_as_model_id').references(
+      (): AnySQLiteColumn => models.id,
+      { onDelete: 'set null' },
+    ),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see
@@ -407,6 +441,13 @@ export const models = sqliteTable(
   (table) => [
     index('models_providerId_idx').on(table.providerId),
     index('models_activity_idx').on(table.activity),
+    index('models_sameAsModelId_idx').on(table.sameAsModelId),
+    check(
+      'models_upstream_identity_pair',
+      sql`(${table.upstreamProvider} IS NULL) = (${table.upstreamRawId} IS NULL)
+        AND (${table.upstreamProvider} IS NULL) = (${table.upstreamSource} IS NULL)`,
+    ),
+    check('models_sameAs_not_self', sql`${table.sameAsModelId} != ${table.id}`),
   ],
 )
 

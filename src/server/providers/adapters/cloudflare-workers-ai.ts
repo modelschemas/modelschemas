@@ -110,6 +110,7 @@ function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'cloudflare-workers-ai',
+  modelNamespaces: ['workers-ai'],
   displayName: 'Cloudflare Workers AI',
   specSourceUrl: WORKERS_AI_MODELS_URL,
   modelsEndpoint: WORKERS_AI_MODELS_URL,

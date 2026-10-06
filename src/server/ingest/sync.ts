@@ -5,7 +5,7 @@
  * upstream reverts to previously seen content), mark superseded, upsert
  * `endpoints`, write `changes` rows, warm KV with new blobs. Idempotent.
  */
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, notInArray } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import {
@@ -13,6 +13,7 @@ import {
   endpoints,
   models,
   providers,
+  providerModelNamespaces,
   schemaVersions,
 } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
@@ -254,7 +255,8 @@ async function applyAsyncApiCatalogFlags(
 /**
  * Upsert the provider's row from its registry config: refreshes the seeded
  * config columns, preserves runtime state (lastPolledAt/lastSyncedAt/status).
- * Same semantics as `scripts/seed.ts`, run automatically so a newly
+ * Same provider row as `scripts/seed.ts`, plus the provider's namespaces
+ * (which only this writes), run automatically so a newly
  * registered provider self-heals into the DB on its first sync/poll instead
  * of waiting on a manual seed against prod.
  */
@@ -264,18 +266,44 @@ export async function ensureProviderRow(
 ): Promise<void> {
   const seed = seedForProvider(provider)
   if (seed === null) return
-  await db
-    .insert(providers)
-    .values(seed)
-    .onConflictDoUpdate({
-      target: providers.id,
-      set: {
-        displayName: seed.displayName,
-        specSourceUrl: seed.specSourceUrl,
-        modelsEndpoint: seed.modelsEndpoint ?? null,
-        authEnvVar: seed.authEnvVar ?? null,
-      },
-    })
+  const namespaces = provider.modelNamespaces ?? []
+  // One batch: the namespace table mirrors config (a dropped name stops
+  // resolving) without a second round trip on every poll.
+  await db.batch([
+    db
+      .insert(providers)
+      .values(seed)
+      .onConflictDoUpdate({
+        target: providers.id,
+        set: {
+          displayName: seed.displayName,
+          specSourceUrl: seed.specSourceUrl,
+          modelsEndpoint: seed.modelsEndpoint ?? null,
+          authEnvVar: seed.authEnvVar ?? null,
+        },
+      }),
+    db
+      .delete(providerModelNamespaces)
+      .where(
+        and(
+          eq(providerModelNamespaces.providerId, seed.id),
+          notInArray(providerModelNamespaces.namespace, namespaces),
+        ),
+      ),
+    ...(namespaces.length
+      ? [
+          db
+            .insert(providerModelNamespaces)
+            .values(
+              namespaces.map((namespace) => ({
+                namespace,
+                providerId: seed.id,
+              })),
+            )
+            .onConflictDoNothing(),
+        ]
+      : []),
+  ])
 }
 
 /** Composite map key for an endpoint's current version of one kind. */

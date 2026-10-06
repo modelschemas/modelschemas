@@ -5,6 +5,7 @@
  */
 import { and, eq, inArray, isNull, like, or, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 
 import type { Db } from '#/db/index.ts'
 import { models, providers } from '#/db/schema.ts'
@@ -12,7 +13,11 @@ import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
 import { getProvider } from '#/server/providers/index.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
-import type { ModelFactSources, SpecGrain } from '#/server/providers/types.ts'
+import type {
+  FactSource,
+  ModelFactSources,
+  SpecGrain,
+} from '#/server/providers/types.ts'
 import {
   factDiscrepancies,
   openRouterJoinIds,
@@ -78,6 +83,49 @@ function specDescriptor(
 
 type ModelRow = typeof models.$inferSelect
 
+const upstreamModel = alias(models, 'upstream_model')
+const catalogSelection = {
+  row: models,
+  upstream: {
+    provider: upstreamModel.providerId,
+    rawId: upstreamModel.rawId,
+    aliases: upstreamModel.aliases,
+  },
+}
+interface UpstreamRow {
+  provider: string
+  rawId: string
+  aliases: Array<string> | null
+}
+
+// The stored link is only as fresh as the last reconcile, so it is served
+// only while the row's current evidence still names that target. The
+// evidence is its provenance: a link with no source, or a source with no
+// link, would each read as a claim nobody made.
+function linkMatch(
+  row: ModelRow,
+  upstream: UpstreamRow | null | undefined,
+): 'published' | 'normalized' | null {
+  const stated = row.upstreamRawId
+  if (!upstream || stated === null || !row.upstreamSource) return null
+  const ids = [upstream.rawId, ...(upstream.aliases ?? [])]
+  if (ids.includes(stated)) return 'published'
+  return ids.includes(stated.replaceAll('.', '-')) ? 'normalized' : null
+}
+
+function modelFactSources(
+  row: ModelRow,
+  match: ReturnType<typeof linkMatch>,
+): ModelFactSources | null {
+  const stored = (row.factSources as ModelFactSources | null) ?? null
+  if (match === null) return stored
+  const source = row.upstreamSource as FactSource
+  return {
+    ...stored,
+    sameAs: match === 'published' ? source : { ...source, normalized: true },
+  }
+}
+
 function encodeEndpointId(endpointId: string): string {
   return endpointId.split('/').map(encodeURIComponent).join('/')
 }
@@ -87,6 +135,7 @@ function toApiModel(
   opts: {
     includeFactSources?: boolean
     pricing?: 'compact' | 'full'
+    upstream?: UpstreamRow | null
   } = {},
 ) {
   const schemaEndpointId = resolveSchemaEndpointId({
@@ -104,10 +153,15 @@ function toApiModel(
     schemaPath === null
       ? undefined
       : halGet(schemaPath, { example: `${schemaPath}?kind=input` })
+  const match = linkMatch(row, opts.upstream)
   return {
     id: row.id,
     provider: row.providerId,
     rawId: row.rawId,
+    sameAs:
+      match && opts.upstream
+        ? { provider: opts.upstream.provider, rawId: opts.upstream.rawId }
+        : null,
     activity: row.activity,
     displayName: row.displayName,
     schemaEndpointId,
@@ -124,7 +178,7 @@ function toApiModel(
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
     ...(opts.includeFactSources
-      ? { factSources: (row.factSources as ModelFactSources | null) ?? null }
+      ? { factSources: modelFactSources(row, match) }
       : {}),
     _links: {
       ...modelLinks(row.providerId),
@@ -175,16 +229,18 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
   }
 
   const rows = await db
-    .select()
+    .select(catalogSelection)
     .from(models)
+    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(models.id)
   return {
     count: rows.length,
-    models: rows.map((row) =>
+    models: rows.map(({ row, upstream }) =>
       toApiModel(row, {
         includeFactSources: filters.provenance === true,
         pricing: filters.pricing === true ? 'full' : 'compact',
+        upstream,
       }),
     ),
     _links: {
@@ -206,14 +262,17 @@ export async function listProviderModels(db: Db, providerId: string) {
   })
   if (!provider) return null
   const rows = await db
-    .select()
+    .select(catalogSelection)
     .from(models)
+    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
     .where(eq(models.providerId, providerId))
     .orderBy(models.id)
   return {
     provider: provider.id,
     count: rows.length,
-    models: rows.map((row) => toApiModel(row, { pricing: 'compact' })),
+    models: rows.map(({ row, upstream }) =>
+      toApiModel(row, { pricing: 'compact', upstream }),
+    ),
     _links: modelLinks(provider.id),
   }
 }
@@ -246,9 +305,20 @@ export async function getModelDetail(
         )
   const row = direct ?? resolveAlias(modelId, aliasHits)
   if (!row) return null
+  const [upstream] = row.sameAsModelId
+    ? await db
+        .select({
+          provider: models.providerId,
+          rawId: models.rawId,
+          aliases: models.aliases,
+        })
+        .from(models)
+        .where(eq(models.id, row.sameAsModelId))
+    : []
   const body = toApiModel(row, {
     includeFactSources: true,
     pricing: 'full',
+    upstream,
   })
   const joinIds = openRouterJoinIds(providerId, row.rawId)
   if (joinIds.length === 0) return { ...body, discrepancies: [] }

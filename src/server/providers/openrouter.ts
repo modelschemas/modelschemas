@@ -12,6 +12,7 @@ import {
   openrouterModelActivity,
 } from './model-meta.ts'
 import { openRouterReasoning } from './reasoning-config.ts'
+import { namespacedUpstreamIdentity } from './upstream-model.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
@@ -294,6 +295,12 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
 
 export const openrouterProvider: ProviderConfig = {
   id: 'openrouter',
+  upstreamModelIdentity: (rawId) =>
+    namespacedUpstreamIdentity(rawId, {
+      derivation: 'listing',
+      sourceUrl: OPENROUTER_MODELS_URL,
+      path: 'data[].id',
+    }),
   displayName: 'OpenRouter',
   defaultDerivation: 'upstream-spec',
   specGrain: 'provider',

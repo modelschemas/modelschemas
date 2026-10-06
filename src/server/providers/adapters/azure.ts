@@ -51,6 +51,17 @@ function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'azure',
+  // Azure OpenAI serves OpenAI models under OpenAI's ids; an id with no
+  // OpenAI row simply stays unlinked.
+  upstreamModelIdentity: (rawId) => ({
+    providerNamespace: 'openai',
+    rawId,
+    source: {
+      derivation: 'docs-derived',
+      sourceUrl: AZURE_MODELS_URL,
+      path: 'model id',
+    },
+  }),
   displayName: 'Azure OpenAI',
   specSourceUrl: AZURE_MODELS_URL,
   modelsEndpoint: AZURE_MODELS_URL,

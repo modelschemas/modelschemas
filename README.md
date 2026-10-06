@@ -95,6 +95,23 @@ every derivation is recorded and reproducible:
   matching their content addresses, with each check's provenance telling
   you which upstream document to audit.
 
+### Same model at another provider
+
+A model row carries `sameAs: { provider, rawId }` when its own provider names
+the upstream model — a gateway id such as `anthropic/claude-opus-4.5`, or
+Azure's OpenAI model ids — and that model has a catalog row. It is a link
+only: the row's price, limits, and other facts stay its own provider's.
+
+- Within the named provider an exact id wins, then a documented alias, then
+  the same with dots read as hyphens (`claude-opus-4.5` → `claude-opus-4-5`).
+- `sameAs` is `null` when no upstream is stated, or the stated one matches no
+  row or more than one. Priced variants such as `:batch` stay unlinked.
+- `factSources.sameAs` records the source when the link is set, with
+  `normalized: true` for a dots-as-hyphens match. Detail responses include
+  it; `/v1/models` includes it with `?provenance=1`.
+- Links refresh on each model poll (every 15 minutes) and a change emits
+  `model.updated`.
+
 ## Examples
 
 Three TanStack Start apps in [`examples/`](./examples) exercise the

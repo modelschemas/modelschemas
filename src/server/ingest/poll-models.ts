@@ -56,6 +56,12 @@ import {
 } from './retire-models-dev.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
+import {
+  persistUpstreamIdentities,
+  reconcileSameAs,
+  sameEvidence,
+} from './model-identity.ts'
+import type { UpstreamIdentityWrite } from './model-identity.ts'
 
 export interface PollOutcome {
   providerId: string
@@ -333,6 +339,7 @@ export async function pollProviderModels(
     .where(eq(models.providerId, provider.id))
   const existingById = new Map(existingRows.map((m) => [m.id, m]))
   const seenIds = new Set<string>()
+  const identities: Array<UpstreamIdentityWrite> = []
   // Unchanged rows only need their lastSeenAt bumped; collect them and write
   // in chunked bulk UPDATEs. One-per-row writes here previously cost ~2,000
   // sequential D1 round trips per poll (~10 min wall), starving the crons.
@@ -405,6 +412,9 @@ export async function pollProviderModels(
     }
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
+    const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null
+    // Only changed evidence is written: most rows restate it every poll.
+    if (!sameEvidence(existing, identity)) identities.push({ id, identity })
 
     if (!existing) {
       await db.insert(models).values({
@@ -582,6 +592,7 @@ export async function pollProviderModels(
     .set({ lastPolledAt: now })
     .where(eq(providers.id, provider.id))
   await markModelsDevCatalogSettled(db, provider.id, now)
+  await persistUpstreamIdentities(db, identities)
 
   return outcome
 }
@@ -589,9 +600,10 @@ export async function pollProviderModels(
 /** Poll every registered provider with per-provider failure isolation. */
 export async function pollAllProviders(
   deps: SyncDeps,
+  registry: ReadonlyArray<ProviderConfig> = providerRegistry,
 ): Promise<Array<PollOutcome>> {
   const outcomes: Array<PollOutcome> = []
-  for (const provider of providerRegistry) {
+  for (const provider of registry) {
     await runIngestScope(async () => {
       try {
         outcomes.push(await pollProviderModels(deps, provider))
@@ -622,5 +634,23 @@ export async function pollAllProviders(
       }
     })
   }
+  // Links span providers, so resolve them once per run, outside any one
+  // provider's outcome: a failure here must not read as every poll failing.
+  await runIngestScope(async () => {
+    try {
+      await reconcileSameAs(
+        deps.db,
+        deps.now?.() ?? Math.floor(Date.now() / 1000),
+      )
+    } catch (error) {
+      const message = errorMessage(error)
+      console.error(
+        JSON.stringify({ job: 'same-as-reconcile', error: message }),
+      )
+      noteIngest(ingestFailedEvent('same-as-reconcile', '*', message))
+    } finally {
+      await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
+    }
+  })
   return outcomes
 }
