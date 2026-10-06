@@ -36,7 +36,20 @@ export const Route = createFileRoute('/v1/admin/sync/$provider')({
           )
           // The models poll's record of a docs source that keeps failing;
           // null when the provider's docs load.
-          const docsFailing = await readDocsFailing(db, provider.id)
+          // A record that cannot be read must not turn a finished sync
+          // into an error.
+          const docsFailing = await readDocsFailing(db, provider.id).catch(
+            (error: unknown) => {
+              console.error(
+                JSON.stringify({
+                  job: 'spec-sync',
+                  providerId: provider.id,
+                  error: `docs-failing record not read: ${errorMessage(error)}`,
+                }),
+              )
+              return null
+            },
+          )
           return Response.json({ outcome, docsFailing })
         } catch (error) {
           return jsonError(502, 'sync_failed', errorMessage(error))

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 
 import { getDb } from '../../db/index.ts'
 import {
+  cacheMeta,
   changes,
   endpoints,
   models,
@@ -19,7 +20,7 @@ import {
   unavailable,
 } from '../providers/model-facts.ts'
 import type { ModelInfo, ProviderConfig } from '../providers/types.ts'
-import { readDocsFailing } from './docs-failing.ts'
+import { readDocsFailing, recordDocsFailing } from './docs-failing.ts'
 import { runIngestScope, takeIngestEvents } from './ingest-signals.ts'
 import {
   modelDbId,
@@ -1409,6 +1410,41 @@ describe('absent facts (FactAbsence)', () => {
     expect(await priced()).toBe(2)
   })
 
+  it('does not count delisted rows toward the priced rows', async () => {
+    const id = 'poll-clear-delisted'
+    const deps = await freshDeps(id)
+    const live = ['a', 'b', 'c', 'd', 'e', 'f']
+    const gone = ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n']
+    const priced = (rawId: string): ModelInfo => ({
+      rawId,
+      activity: 'chat',
+      pricing: listing,
+    })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [...live, ...gone].map(priced)),
+    )
+    // Eight rows leave the listing and keep their cards as deprecated rows.
+    await pollProviderModels(deps, stubProvider(id, live.map(priced)))
+    const { outcome } = await pollWithEvents(
+      deps,
+      stubProvider(
+        id,
+        live.map((rawId) => ({
+          rawId,
+          activity: 'chat',
+          absent: { pricing: 'cleared' },
+        })),
+      ),
+    )
+    expect(outcome).toMatchObject({
+      updated: 0,
+      failures: 1,
+      priceClearsRefused: 6,
+    })
+    expect((await storedRow(deps, id, 'a')).pricing).not.toBeNull()
+  })
+
   it('applies clears of exactly half the priced rows', async () => {
     const id = 'poll-clear-half'
     const deps = await freshDeps(id)
@@ -1639,6 +1675,74 @@ describe('docs failures (tryDocs)', () => {
     expect(await storedRow(deps, id, 'a')).toEqual(before)
   })
 
+  it('polls on when the docs-failing record cannot be written or read', async () => {
+    const id = 'poll-docs-record-broken'
+    const deps = await freshDeps(id)
+    const state: State = { price: '0.000001', docs: 'ok', listing: 'ok' }
+    const provider = docsProvider(id, state)
+    // A stored row that is not a record: overwritten, never fatal.
+    await deps.db.insert(cacheMeta).values({
+      key: `docs-failing:${id}`,
+      fetchedAt: 5,
+      staleTime: 0,
+      lastError: '<html>not json',
+    })
+    expect(await readDocsFailing(deps.db, id)).toBeNull()
+    state.docs = 'down'
+    expect(await pollProviderModels(deps, provider)).toMatchObject({
+      added: 2,
+      failures: 1,
+      docsFailing: { polls: 1 },
+    })
+    const record = await readDocsFailing(deps.db, id)
+    expect(record).toMatchObject({ polls: 1 })
+    expect(record?.since).toBeGreaterThan(5)
+
+    // The table itself failing: the poll still lands, without the record.
+    const broken: SyncDeps = {
+      ...deps,
+      db: new Proxy(deps.db, {
+        get(target, prop, receiver) {
+          if (prop === 'insert' || prop === 'delete') {
+            return (table: unknown) => {
+              if (table === cacheMeta) throw new Error('D1 write refused')
+              return (
+                Reflect.get(target, prop, receiver) as (t: unknown) => unknown
+              ).call(target, table)
+            }
+          }
+          return Reflect.get(target, prop, receiver) as unknown
+        },
+      }),
+    }
+    state.price = '0.000003'
+    const outcome = await pollProviderModels(broken, provider)
+    expect(outcome).toMatchObject({ updated: 2, failures: 1 })
+    expect(outcome.docsFailing).toBeUndefined()
+    // The rows were added without docs facts; the docs coming back fills them.
+    state.docs = 'ok'
+    expect(await pollProviderModels(broken, provider)).toMatchObject({
+      updated: 2,
+      failures: 0,
+    })
+  })
+
+  it('truncates a long error in the docs-failing record', async () => {
+    const id = 'poll-docs-long-error'
+    const deps = await freshDeps(id)
+    const record = await recordDocsFailing(
+      deps.db,
+      id,
+      {
+        failed: 1,
+        skipped: 0,
+        first: [{ source: DOC, error: 'x'.repeat(5000), elapsedMs: 1 }],
+      },
+      10,
+    )
+    expect(record?.error).toHaveLength(500)
+  })
+
   it('reports a whole docs host down as a few events and a count', async () => {
     const id = 'poll-docs-capped'
     const deps = await freshDeps(id)
@@ -1746,9 +1850,7 @@ describe('Hugging Face prices follow provider agreement', () => {
     let hosts: Array<unknown> = [route('nscale', 0.07)]
     const provider: ProviderConfig = {
       ...stubProvider(id, []),
-      listModels: async () => ({
-        models: await parseHuggingFaceModels(payload(hosts)),
-      }),
+      listModels: () => parseHuggingFaceModels(payload(hosts)),
     }
     const inputRate = async () => {
       const card = (await storedRow(deps, id, 'org/model')).pricing as {

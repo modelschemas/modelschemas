@@ -415,10 +415,11 @@ function resolveAbsent(
  * adapter's word that a price is gone, and an adapter that misreads a
  * reshaped listing would say it for every row at once. When a poll would
  * clear at least `PRICE_CLEARS_MIN` stored cards and more than
- * `PRICE_CLEARS_SHARE` of the provider's priced rows, none of its clears
- * is applied: the cards stay and the poll logs one failure. Fewer than the
+ * `PRICE_CLEARS_SHARE` of the priced rows it lists, none of its clears is
+ * applied: the cards stay and the poll logs one failure. Fewer than the
  * minimum always passes, so a small provider can still lose every price.
- * A real mass removal then needs the adapter (or this bound) changed.
+ * The refusal repeats every poll until the adapter or this bound changes,
+ * or the stale cards are nulled by hand in D1.
  */
 const PRICE_CLEARS_MIN = 5
 const PRICE_CLEARS_SHARE = 0.5
@@ -437,8 +438,12 @@ function refusesPriceClears(
       ),
   ).length
   if (clears < PRICE_CLEARS_MIN) return null
-  const priced = [...existingById.values()].filter((row) =>
-    storedCardIsPrior(row.pricing),
+  // Of the rows this poll lists: a delisted row that still holds a card
+  // must not make room for clearing every live one.
+  const priced = listed.filter((info) =>
+    storedCardIsPrior(
+      existingById.get(modelDbId(providerId, info.rawId))?.pricing,
+    ),
   ).length
   return clears > priced * PRICE_CLEARS_SHARE ? { clears, priced } : null
 }
@@ -481,8 +486,19 @@ export async function pollProviderModels(
   const docs = listed.docsFailures
   if (docs) {
     // Kept across polls (`docs-failing.ts`): when it began, how long.
-    const failing = await recordDocsFailing(db, provider.id, docs, now)
-    if (failing) outcome.docsFailing = failing
+    // The record describes the poll; it must never be what fails it.
+    try {
+      const failing = await recordDocsFailing(db, provider.id, docs, now)
+      if (failing) outcome.docsFailing = failing
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          job: 'models-poll',
+          providerId: provider.id,
+          error: `docs-failing record not written: ${errorMessage(error)}`,
+        }),
+      )
+    }
   }
   if (docs && docs.failed + docs.skipped > 0) {
     outcome.docsFailures = docs

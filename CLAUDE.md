@@ -125,7 +125,9 @@ ones).
   agreeing on a price), `unavailable` keeps the stored value. `cleared` is
   only for a value the source visibly lacks: an unreadable shape throws,
   and the poller refuses a poll that would clear 5 or more stored prices
-  and over half of a provider's priced rows (`refusesPriceClears`). Wrap a
+  and over half of the priced rows the provider lists (`refusesPriceClears`).
+  A refused mass clear repeats every poll until the adapter or the bound
+  changes, or the stale cards are nulled by hand in D1. Wrap a
   docs load in `tryDocs` (`model-facts.ts`) so its throw marks rows
   `unavailable(...)` and is reported as `docsFailures` instead of failing
   the provider's poll; the listing itself is never wrapped. While a

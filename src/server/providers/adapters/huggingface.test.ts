@@ -164,7 +164,8 @@ afterEach(() => {
 
 describe('huggingface listing', () => {
   it('stores a fact only when every provider states it and agrees', async () => {
-    const models = await parseHuggingFaceModels(FIXTURE)
+    const { models, docsFailures } = await parseHuggingFaceModels(FIXTURE)
+    expect(docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
     const byId = Object.fromEntries(models.map((m) => [m.rawId, m]))
 
     expect(byId['agree/all']).toMatchObject({
@@ -248,23 +249,28 @@ describe('huggingface listing', () => {
         row.pricing === null ? { pricing: 'cleared' } : undefined,
       )
     }
-    const [zero] = await parseHuggingFaceModels({
+    // A zero quote and a null `pricing` both state no price.
+    const none = await parseHuggingFaceModels({
       data: [
         model('zero/quote', [
           host('novita', { pricing: { input: 0, output: 0 } }),
         ]),
+        model('null/quote', [host('novita', { pricing: null })]),
         ...FIXTURE.data,
       ],
     })
-    expect(zero).toMatchObject({
-      pricing: null,
-      absent: { pricing: 'cleared' },
-    })
+    expect(none.docsFailures.failed).toBe(0)
+    for (const row of none.models.slice(0, 2)) {
+      expect(row).toMatchObject({
+        pricing: null,
+        absent: { pricing: 'cleared' },
+      })
+    }
   })
 
   // `cleared` drops a stored card, so nothing the parser cannot read may
   // come out as "no price".
-  it('throws on a reshaped price or providers list instead of clearing', async () => {
+  it('throws on a listing-wide reshape instead of clearing', async () => {
     const replay = (edit: (json: string) => string) =>
       parseHuggingFaceModels(JSON.parse(edit(JSON.stringify(FIXTURE))))
     // The listing with its price keys renamed, then with numbers as strings.
@@ -274,10 +280,14 @@ describe('huggingface listing', () => {
           .replaceAll('"input":', '"prompt":')
           .replaceAll('"output":', '"completion":'),
       ),
-    ).rejects.toThrow('a provider price is in an unread shape')
+    ).rejects.toThrow(
+      /^huggingface: (\d+) of \1 provider prices are in an unread shape$/,
+    )
     await expect(
       replay((json) => json.replace(/"(input|output)":([\d.]+)/g, '"$1":"$2"')),
-    ).rejects.toThrow('a provider price is in an unread shape')
+    ).rejects.toThrow(
+      /^huggingface: (\d+) of \1 provider prices are in an unread shape$/,
+    )
     // Prices moved out of the entries altogether.
     await expect(
       replay((json) => json.replaceAll('"pricing":', '"rates":')),
@@ -298,22 +308,68 @@ describe('huggingface listing', () => {
         }),
       ).rejects.toThrow('a providers list is in an unread shape')
     }
+    // More than a tenth of the stated prices unreadable is a reshape too.
+    const odd = (id: string) =>
+      model(id, [{ ...ranked, pricing: { input: 0.07 } }])
+    await expect(
+      parseHuggingFaceModels({
+        data: [...FIXTURE.data, odd('a/1'), odd('a/2'), odd('a/3'), odd('a/4')],
+      }),
+    ).rejects.toThrow(
+      /^huggingface: 4 of \d+ provider prices are in an unread shape$/,
+    )
+  })
+
+  it('withholds only that row’s price when one entry’s price is unreadable', async () => {
+    const ranked = host('nscale', {
+      context_length: 40960,
+      pricing: { input: 0.07, output: 0.2 },
+    })
+    const clean = await parseHuggingFaceModels(FIXTURE)
     for (const pricing of [
-      null,
       0.07,
+      '0.07',
       { input: 0.07 },
       { input: -1, output: 1 },
     ]) {
-      await expect(
-        parseHuggingFaceModels({
-          data: [...FIXTURE.data, model('x/y', [{ ...ranked, pricing }])],
-        }),
-      ).rejects.toThrow('a provider price is in an unread shape')
+      const { models, docsFailures } = await parseHuggingFaceModels({
+        data: [
+          // A second, readable entry: the row still cannot be settled.
+          model('x/y', [ranked, { ...ranked, provider: 'novita', pricing }]),
+          ...FIXTURE.data,
+        ],
+      })
+      expect(docsFailures).toEqual({
+        failed: 1,
+        skipped: 0,
+        first: [
+          {
+            source: `${HUGGINGFACE_MODELS_URL}#x/y`,
+            error:
+              'huggingface: the price of provider entry "novita" is in an unread shape',
+            elapsedMs: expect.any(Number) as number,
+          },
+        ],
+      })
+      // Kept as stored, not cleared; its other facts are read as usual.
+      expect(models[0]).toMatchObject({
+        rawId: 'x/y',
+        contextWindow: 40960,
+        pricing: null,
+        absent: { pricing: 'unavailable' },
+      })
+      const facts = ({ pricing: card, ...rest }: (typeof models)[number]) => ({
+        ...rest,
+        priced: card !== null,
+      })
+      expect(models.slice(1).map(facts)).toEqual(clean.models.map(facts))
     }
   })
 
   it('leaves context and flags null when their fields change type', async () => {
-    const [row] = await parseHuggingFaceModels({
+    const {
+      models: [row],
+    } = await parseHuggingFaceModels({
       data: [
         model('x/y', [
           host('nscale', {

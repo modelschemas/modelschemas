@@ -31,6 +31,9 @@ export interface DocsFailing {
   error: string
 }
 
+/** An upstream error can quote a whole HTML page. */
+const ERROR_MAX = 500
+
 function key(providerId: string): string {
   return `docs-failing:${providerId}`
 }
@@ -43,7 +46,13 @@ export async function readDocsFailing(
     where: eq(cacheMeta.key, key(providerId)),
   })
   if (!row?.lastError) return null
-  return JSON.parse(row.lastError) as DocsFailing
+  try {
+    return JSON.parse(row.lastError) as DocsFailing
+  } catch {
+    // A row that is not ours to read counts as no record: the next failing
+    // poll overwrites it, the next healthy one deletes it.
+    return null
+  }
 }
 
 /** Write, extend, or (when nothing failed) delete the provider's record. */
@@ -65,7 +74,7 @@ export async function recordDocsFailing(
     failed: docs.failed,
     skipped: docs.skipped,
     sources: docs.first.map((failure) => failure.source),
-    error: docs.first[0]?.error ?? '',
+    error: (docs.first[0]?.error ?? '').slice(0, ERROR_MAX),
   }
   const lastError = JSON.stringify(record)
   await db
@@ -76,6 +85,9 @@ export async function recordDocsFailing(
       staleTime: 0,
       lastError,
     })
-    .onConflictDoUpdate({ target: cacheMeta.key, set: { lastError } })
+    .onConflictDoUpdate({
+      target: cacheMeta.key,
+      set: { fetchedAt: record.since, lastError },
+    })
   return record
 }
