@@ -46,7 +46,11 @@ export interface MinimaxPlatform {
   priceSection: string
   /** Title of the standard-tier `<Tab>`; every other tab is dropped. */
   standardTab: string
-  /** Title of the only `<Accordion>` whose rows are standard prices. */
+  /**
+   * Title of the only `<Accordion>` whose rows are standard prices. One
+   * with any other title is ignored when it holds no price row, and
+   * refuses the section when it does.
+   */
   legacyAccordion: string
   /** First header cell of a price table. */
   modelHeader: string
@@ -332,6 +336,9 @@ function perMillion(cell: string, price: RegExp): number | null {
   return amount ? Number(amount) : null
 }
 
+/** A price row's first cell: the bold id, then any bound or badge. */
+const MODEL_CELL = /^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/
+
 export interface MinimaxRates {
   base: Record<string, number>
   tiers: Array<TokenRateTier>
@@ -352,7 +359,7 @@ export function parseMinimaxPricing(
   markdown: string,
   platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  const section = markdownSection(markdown, platform.priceSection)
+  const tabbed = markdownSection(markdown, platform.priceSection)
     .replace(
       new RegExp(
         `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
@@ -364,18 +371,30 @@ export function parseMinimaxPricing(
     .map((line) => line.trim())
     .join('\n')
   const out = new Map<string, MinimaxRates>()
-  // A tab the strip did not recognise, an accordion that is not the
-  // legacy models, or a sub-heading may hold another tier's table under
-  // the same headers.
+  // A tab the strip did not recognise, or a sub-heading, may hold another
+  // tier's table under the same headers.
   const standard = `<Tab title="${platform.standardTab}">`
-  const legacy = `<Accordion title="${platform.legacyAccordion}">`
   if (
-    /<Tab(?!s>)/.test(section.replaceAll(standard, '')) ||
-    section.replaceAll(legacy, '').includes('<Accordion') ||
-    /^#{1,6} /m.test(section.slice(section.indexOf('\n')))
+    /<Tab(?!s>)/.test(tabbed.replaceAll(standard, '')) ||
+    /^#{1,6} /m.test(tabbed.slice(tabbed.indexOf('\n')))
   ) {
     return out
   }
+  // So may an accordion that is not the legacy models. One with no price
+  // row (a FAQ) is dropped; one with a price row cannot be attributed.
+  const priceRow = (cells: Array<string>) =>
+    cells[0] === platform.modelHeader || MODEL_CELL.test(cells[0] ?? '')
+  const foreign: Array<string> = []
+  const section = tabbed.replace(
+    /<Accordion\b([^>]*)>([\s\S]*?)<\/Accordion>/g,
+    (whole, attributes: string, body: string) => {
+      const title = /\btitle="([^"]*)"/.exec(attributes)?.[1]
+      if (title === platform.legacyAccordion) return whole
+      if (markdownTableRows(body).some(priceRow)) foreign.push(whole)
+      return ''
+    },
+  )
+  if (foreign.length > 0) return out
   const refused = new Set<string>()
   const based = new Set<string>()
   /** A base row's `≤ N` bound; the first tier must start at the same N. */
@@ -386,7 +405,7 @@ export function parseMinimaxPricing(
       header = cells
       continue
     }
-    const model = cells[0]?.match(/^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/)
+    const model = cells[0]?.match(MODEL_CELL)
     const id = model?.[1]
     if (!id) continue
     // A struck price without a `Permanent` badge may be a promotion that

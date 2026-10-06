@@ -48,16 +48,25 @@ export function cardPrice(card: Pick<RateCard, 'price'>): {
   currency: string
   expr: Expr
 } {
-  const raw: unknown = (card as { price?: unknown } | null)?.price
+  const loose = card as { price?: unknown; currency?: unknown } | null
+  const raw = loose?.price
   const wrapper = currencyWrapper(raw)
-  if (raw === undefined || wrapper === 'malformed') {
+  if (raw == null || wrapper === 'malformed') {
     throw new RateCardError(
       'unknown-op',
       `price is not an expression or { currency: [code, expr] }: ${JSON.stringify(raw)}`,
     )
   }
+  // The schema refuses this key; an unparsed card meant as another
+  // currency must not be read as USD here either.
+  if (loose?.currency !== undefined) {
+    throw new RateCardError(
+      'unknown-op',
+      'currency is stated by wrapping price, not by a top-level key',
+    )
+  }
   return wrapper === null
-    ? { currency: 'USD', expr: raw as Expr }
+    ? { currency: 'USD', expr: raw }
     : { currency: wrapper.currency, expr: wrapper.expr as Expr }
 }
 

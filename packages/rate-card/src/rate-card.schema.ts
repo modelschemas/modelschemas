@@ -223,7 +223,8 @@ export function currencyWrapper(
     pair.length !== 2 ||
     typeof pair[0] !== 'string' ||
     !/^[A-Z]{3}$/.test(pair[0]) ||
-    pair[0] === 'USD'
+    pair[0] === 'USD' ||
+    pair[1] == null
   ) {
     return 'malformed'
   }

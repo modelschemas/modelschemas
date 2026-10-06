@@ -363,9 +363,47 @@ describe.each([
     expect(prices.size).toBe(7)
   })
 
-  it('prices nothing when an accordion is not the legacy models', () => {
+  describe('accordions', () => {
     const legacy = `<Accordion title="${c.platform.legacyAccordion}">`
-    expect(edit(legacy, '<Accordion title="Batch">').size).toBe(0)
+    const published = JSON.stringify([...parse(c.page)])
+    const same = (page: string) => {
+      expect(page).not.toBe(c.page)
+      expect(JSON.stringify([...parse(page)])).toBe(published)
+    }
+
+    it('ignores a text-only accordion, whatever its title or attributes', () => {
+      const faq =
+        '<Accordion title="FAQ" icon="circle-question">\n  Prices exclude tax.\n\n  | Tier | Note |\n  | :- | :- |\n  | Standard | default |\n</Accordion>\n\n'
+      same(c.page.replace(legacy, faq + legacy))
+      same(c.page.replace('<Tabs>', `${faq}<Tabs>`))
+    })
+
+    it('still reads the legacy accordion when it gains an attribute', () => {
+      same(c.page.replace(legacy, legacy.replace('>', ' defaultOpen>')))
+      same(
+        c.page.replace(
+          legacy,
+          legacy.replace('<Accordion ', '<Accordion icon="clock" '),
+        ),
+      )
+    })
+
+    it('prices nothing when the legacy accordion is retitled', () => {
+      expect(edit(legacy, '<Accordion title="Batch">').size).toBe(0)
+    })
+
+    it('prices nothing when an unknown accordion holds a price table', () => {
+      const batch = [
+        '<Accordion title="Batch">',
+        c.header,
+        '| :- | :- | :- | :- | :- |',
+        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+        '</Accordion>',
+        '',
+        legacy,
+      ].join('\n')
+      expect(edit(legacy, batch).size).toBe(0)
+    })
   })
 
   it('refuses a base bound that does not meet the tier', () => {

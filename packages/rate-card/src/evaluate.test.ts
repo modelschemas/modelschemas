@@ -270,11 +270,23 @@ describe('refusals', () => {
     ['a sibling op', { currency: ['CNY', 1], '+': [1, 2] }],
     ['a bare code', { currency: 'CNY' }],
     ['no price', undefined],
+    ['a null price', null],
+    ['a null wrapper payload', { currency: null }],
+    ['a null wrapped expression', { currency: ['CNY', null] }],
   ])('evaluator refuses %s with its own error', (_name, bad) => {
     const card = { ...cardFor(1), price: bad } as unknown as RateCard
     expect(rateCardSchema.safeParse(card).success).toBe(false)
     for (const read of [cardPrice, cardCurrency, price, priceDetailed]) {
       expect(() => read(card)).toThrow(RateCardError)
+      expect(() => read(card)).toThrow(
+        expect.objectContaining({ code: 'unknown-op' }),
+      )
+    }
+  })
+
+  it('evaluator refuses a stray top-level currency on an unparsed card', () => {
+    const card = { ...cardFor(1), currency: 'CNY' } as unknown as RateCard
+    for (const read of [cardCurrency, price, priceDetailed]) {
       expect(() => read(card)).toThrow(
         expect.objectContaining({ code: 'unknown-op' }),
       )
