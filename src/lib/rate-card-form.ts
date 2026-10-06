@@ -10,10 +10,12 @@ type CardInput = RateCard['inputs'][string]
 /** Numbers stay strings while being edited; the estimator reports bad ones. */
 export type FieldValue = string | boolean | { width: string; height: string }
 
-export function formatUsd(n: number): string {
-  if (Number.isInteger(n)) return `$${String(n)}`
+/** `$1.5` for USD, `CNY 1.5` for anything else (ISO-4217 code). */
+export function formatAmount(n: number, currency: string): string {
+  const symbol = currency === 'USD' ? '$' : `${currency} `
+  if (Number.isInteger(n)) return `${symbol}${String(n)}`
   const fixed = n >= 0.01 ? n.toFixed(4) : n.toFixed(6)
-  return `$${fixed.replace(/0+$/, '').replace(/\.$/, '')}`
+  return `${symbol}${fixed.replace(/0+$/, '').replace(/\.$/, '')}`
 }
 
 const TOKEN_DEFAULT = 1_000_000

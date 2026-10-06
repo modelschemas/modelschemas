@@ -387,7 +387,7 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'USD for this call, the card source, and which inputs (if any) were estimated.',
+              'The amount for this call and its currency, the card source, and which inputs (if any) were estimated.',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/EstimateResult' },
@@ -580,8 +580,13 @@ export const openApiDocument = {
         type: 'object',
         description:
           'List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.',
-        required: ['per'],
+        required: ['currency', 'per'],
         properties: {
+          currency: {
+            type: 'string',
+            description:
+              'ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.',
+          },
           per: {
             type: 'string',
             enum: ['token', 'second', 'character', 'image', 'request', 'unit'],
@@ -606,7 +611,10 @@ export const openApiDocument = {
         required: ['params', 'usd', 'quote'],
         properties: {
           params: { type: 'object' },
-          usd: { type: 'number' },
+          usd: {
+            type: 'number',
+            description: "In the card's currency; the name predates currency.",
+          },
           quote: { type: 'string' },
         },
       },
@@ -651,6 +659,12 @@ export const openApiDocument = {
         type: 'object',
         required: ['inputs', 'tables', 'price', 'examples', 'source'],
         properties: {
+          currency: {
+            type: 'string',
+            pattern: '^[A-Z]{3}$',
+            description:
+              'ISO-4217 code of the currency price yields. Absent means USD.',
+          },
           inputs: {
             type: 'object',
             additionalProperties: {
@@ -842,15 +856,27 @@ export const openApiDocument = {
       },
       EstimateResult: {
         type: 'object',
-        required: ['usd', 'cardSource', 'estimated'],
+        required: ['amount', 'currency', 'cardSource', 'estimated'],
         properties: {
-          usd: { type: 'number' },
+          amount: {
+            type: 'number',
+            description: 'The price, in currency. Never converted.',
+          },
+          currency: {
+            type: 'string',
+            description: "ISO-4217 code of the card's currency.",
+          },
+          usd: {
+            type: 'number',
+            description:
+              'amount again when currency is USD. Absent for any other currency.',
+          },
           cardSource: { $ref: '#/components/schemas/RateCardSource' },
           estimated: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Params the caller omitted that the card estimated by its published method. Empty: usd is the price as billed for the supplied request and usage.',
+              'Params the caller omitted that the card estimated by its published method. Empty: amount is the price as billed for the supplied request and usage.',
           },
         },
       },

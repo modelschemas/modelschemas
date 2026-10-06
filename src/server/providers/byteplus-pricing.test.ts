@@ -430,7 +430,7 @@ describe('byteplus video generation tutorial', () => {
     const request = { resolution: '720p', ratio: '16:9', duration: 5 }
     const result = priceDetailed(card, request, { input_video: false })
     expect(result.estimated).toEqual(['completion_tokens'])
-    expect(result.usd.toFixed(2)).toBe('0.60')
+    expect(result.amount.toFixed(2)).toBe('0.60')
     // Video input carries a minimum-token floor the method does not cover
     // unless the Lark range was supplied.
     expect(() => priceDetailed(card, request, { input_video: true })).toThrow(
@@ -470,12 +470,12 @@ describe('byteplus video generation tutorial', () => {
         { input_video: true },
       )
     // Page: 720p 16:9, 5s out, 2–4s in → $1.244. 480p → $0.553.
-    expect(video(5, 2).usd.toFixed(3)).toBe('1.244')
-    expect(video(5, 2, '480p').usd.toFixed(3)).toBe('0.553')
+    expect(video(5, 2).amount.toFixed(3)).toBe('1.244')
+    expect(video(5, 2, '480p').amount.toFixed(3)).toBe('0.553')
     // 30s out floors a 2s input at 20s in: 480,375 tokens × $6.40.
-    expect(video(30, 2, '480p').usd).toBeCloseTo((480_375 * 6.4) / 1e6, 6)
+    expect(video(30, 2, '480p').amount).toBeCloseTo((480_375 * 6.4) / 1e6, 6)
     // Past the minimum, the real input length wins.
-    expect(video(30, 30, '480p').usd).toBeCloseTo((576_450 * 6.4) / 1e6, 6)
+    expect(video(30, 30, '480p').amount).toBeCloseTo((576_450 * 6.4) / 1e6, 6)
     expect(() => video(31, 2)).toThrow(/min_input_seconds/)
     // The generation schema has duration and ratio, not input seconds.
     // That lever must still store; refusing it used to null the card.
@@ -586,6 +586,6 @@ describe('byteplus tutorial notes and columns', () => {
     // Billed tokens price a 1.0 draft: its rate does not split on resolution.
     expect(
       priceDetailed(card, { draft: true }, { completion_tokens: 1e6 }),
-    ).toEqual({ usd: 2.5, estimated: [] })
+    ).toEqual({ amount: 2.5, currency: 'USD', usd: 2.5, estimated: [] })
   })
 })

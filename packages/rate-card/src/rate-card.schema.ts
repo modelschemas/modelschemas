@@ -175,6 +175,7 @@ const rateCardExampleSchema = z.object({
    * input's `param`. `verifyExamples` feeds it as both `request` and `usage`.
    */
   params: z.record(z.string(), z.unknown()),
+  /** In the card's currency; the name predates `currency`. */
   usd: z.number().positive(),
   /** The sentence in the source text this example comes from. */
   quote: z.string().min(1),
@@ -183,6 +184,15 @@ const rateCardExampleSchema = z.object({
 export type RateCardExample = z.infer<typeof rateCardExampleSchema>
 
 export const rateCardSchema = z.object({
+  /**
+   * ISO-4217 code of the currency `price` yields. Absent means USD, so a
+   * card written before the field existed reads unchanged. Amounts in
+   * different currencies are never added, compared or converted.
+   */
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .optional(),
   inputs: z.record(z.string(), inputSchema).superRefine((inputs, ctx) => {
     for (const [name, input] of Object.entries(inputs)) {
       if (input.kind !== 'number' || !input.estimate) continue
@@ -205,7 +215,7 @@ export const rateCardSchema = z.object({
     }
   }),
   tables: z.record(z.string(), tableSchema),
-  /** JSONLogic yielding USD for one request. */
+  /** JSONLogic yielding the amount for one request, in `currency`. */
   price: exprSchema,
   examples: z.array(rateCardExampleSchema),
   source: z.object({
@@ -221,3 +231,8 @@ export const rateCardSchema = z.object({
 })
 
 export type RateCard = z.infer<typeof rateCardSchema>
+
+/** The currency a card's amounts are in: its `currency`, or USD. */
+export function cardCurrency(card: { currency?: string }): string {
+  return card.currency ?? 'USD'
+}

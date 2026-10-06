@@ -60,6 +60,10 @@ export type ValidateResult = {
  * List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.
  */
 export type CompactPricing = {
+  /**
+   * ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.
+   */
+  currency: string
   per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
   inputPerMillion?: number
   outputPerMillion?: number
@@ -77,6 +81,9 @@ export type RateCardExample = {
   params: {
     [key: string]: unknown
   }
+  /**
+   * In the card's currency; the name predates currency.
+   */
   usd: number
   quote: string
 }
@@ -104,6 +111,10 @@ export type RateCardInput = {
 }
 
 export type RateCard = {
+  /**
+   * ISO-4217 code of the currency price yields. Absent means USD.
+   */
+  currency?: string
   inputs: {
     [key: string]: RateCardInput
   }
@@ -229,10 +240,21 @@ export type EstimateRequest = {
 }
 
 export type EstimateResult = {
-  usd: number
+  /**
+   * The price, in currency. Never converted.
+   */
+  amount: number
+  /**
+   * ISO-4217 code of the card's currency.
+   */
+  currency: string
+  /**
+   * amount again when currency is USD. Absent for any other currency.
+   */
+  usd?: number
   cardSource: RateCardSource
   /**
-   * Params the caller omitted that the card estimated by its published method. Empty: usd is the price as billed for the supplied request and usage.
+   * Params the caller omitted that the card estimated by its published method. Empty: amount is the price as billed for the supplied request and usage.
    */
   estimated: Array<string>
 }
@@ -667,7 +689,7 @@ export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors]
 
 export type EstimateCostResponses = {
   /**
-   * USD for this call, the card source, and which inputs (if any) were estimated.
+   * The amount for this call and its currency, the card source, and which inputs (if any) were estimated.
    */
   200: EstimateResult
 }

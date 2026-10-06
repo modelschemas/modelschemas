@@ -1,4 +1,4 @@
-export { CORE_OPS, rateCardSchema } from './rate-card.schema.ts'
+export { CORE_OPS, cardCurrency, rateCardSchema } from './rate-card.schema.ts'
 export type {
   CoreOp,
   Expr,

@@ -207,6 +207,29 @@ describe('refusals', () => {
     expect(() => usd(expr)).toThrow(expect.objectContaining({ code }))
   })
 
+  it('prices a card in its own currency and never calls it USD', () => {
+    const yuan = cardFor({ '*': [{ var: 'x' }, 2] }, { currency: 'CNY' })
+    expect(rateCardSchema.parse(yuan).currency).toBe('CNY')
+    expect(priceDetailed(yuan)).toEqual({
+      amount: 8,
+      currency: 'CNY',
+      estimated: [],
+    })
+    expect(price(yuan)).toBe(8)
+    // No `currency` is USD: a card stored before the field reads unchanged.
+    expect(rateCardSchema.parse(cardFor(1)).currency).toBeUndefined()
+    expect(priceDetailed(cardFor(1))).toMatchObject({ currency: 'USD', usd: 1 })
+  })
+
+  it.each(['yuan', 'cny', '¥', 'RMBX', ''])(
+    'schema rejects %j as a currency',
+    (currency) => {
+      expect(rateCardSchema.safeParse(cardFor(1, { currency })).success).toBe(
+        false,
+      )
+    },
+  )
+
   it('schema rejects an op outside the vocabulary', () => {
     expect(rateCardSchema.safeParse(cardFor(unknownOp)).success).toBe(false)
   })
@@ -312,12 +335,12 @@ describe('estimate', () => {
     expect(rateCardSchema.parse(card)).toEqual(card)
     expect(
       priceDetailed(card, { resolution: '480p' }, { tokens: 500 }),
-    ).toEqual({ usd: 0.5, estimated: [] })
+    ).toEqual({ amount: 0.5, currency: 'USD', usd: 0.5, estimated: [] })
   })
 
   it('labels an estimated input and binds its own inputs only then', () => {
     expect(priceDetailed(card, { resolution: '480p', seconds: 2 }, {})).toEqual(
-      { usd: 2, estimated: ['tokens'] },
+      { amount: 2, currency: 'USD', usd: 2, estimated: ['tokens'] },
     )
     expect(() => priceDetailed(card, { resolution: '480p' }, {})).toThrow(
       /tokens \(tokens\): not supplied, and cannot be estimated.*seconds.*required/,

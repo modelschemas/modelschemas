@@ -90,6 +90,15 @@ describe('compileTokenCard', () => {
     expect(price(card, {}, { input_tokens: 1e6 })).toBeCloseTo(0.02, 9)
   })
 
+  it('labels a card with the currency its rates are in, USD unlabelled', () => {
+    const yuan = compileTokenCard({ input_tokens: 20 / 1e6 }, [], source, {
+      currency: 'CNY',
+    })
+    expect(yuan?.currency).toBe('CNY')
+    expect(rateCardSchema.safeParse(yuan).success).toBe(true)
+    expect(compile({ input_tokens: 20 / 1e6 })).not.toHaveProperty('currency')
+  })
+
   it('is null when nothing is priced', () => {
     expect(compileTokenCard({}, [], source)).toBeNull()
     expect(

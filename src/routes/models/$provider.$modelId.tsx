@@ -16,7 +16,7 @@ import {
 } from '#/components/site.tsx'
 import type { ResourceView } from '#/components/site.tsx'
 import type { SerializableModel } from '#/lib/json.ts'
-import { formatUsd } from '#/lib/rate-card-form.ts'
+import { formatAmount } from '#/lib/rate-card-form.ts'
 import { timeAgo, shortDate } from '#/lib/time.ts'
 
 interface EndpointLink {
@@ -59,6 +59,7 @@ function SchemaEndpointLinks({
 
 interface PricingView {
   compact: {
+    currency: string
     per: string
     inputPerMillion?: number
     outputPerMillion?: number
@@ -322,10 +323,13 @@ function ModelDetail() {
                           >
                             {pricing.compact.inputPerMillion !== undefined ? (
                               <span>
-                                {formatUsd(pricing.compact.inputPerMillion)} /
-                                1M input
+                                {formatAmount(
+                                  pricing.compact.inputPerMillion,
+                                  pricing.compact.currency,
+                                )}{' '}
+                                / 1M input
                                 {pricing.compact.outputPerMillion !== undefined
-                                  ? ` · ${formatUsd(pricing.compact.outputPerMillion)} / 1M output`
+                                  ? ` · ${formatAmount(pricing.compact.outputPerMillion, pricing.compact.currency)} / 1M output`
                                   : ''}
                                 {pricing.compact.tiered
                                   ? ' · base rate; long prompts re-quote'
@@ -353,7 +357,11 @@ function ModelDetail() {
                           ) : null}
                           {pricing.examples.map((example) => (
                             <div key={example.quote}>
-                              {formatUsd(example.usd)} — {example.quote}
+                              {formatAmount(
+                                example.usd,
+                                pricing.compact.currency,
+                              )}{' '}
+                              — {example.quote}
                             </div>
                           ))}
                         </div>

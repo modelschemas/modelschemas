@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
+  MINIMAX_CN_PRICING_PAGE,
   MINIMAX_CN_SDK_PAGE,
   MINIMAX_MAX_COMPLETION_TOKENS,
   MINIMAX_PRICING_PAGE,
@@ -159,6 +160,84 @@ describe('minimax docs', () => {
     // No pay-as-you-go price is published for the M Plan preview model.
     expect(prices.has('MiniMax-M3.1-Flash-Preview')).toBe(false)
     expect(prices.size).toBe(8)
+  })
+})
+
+describe('minimax-cn pricing', () => {
+  const cn = (page: string) => parseMinimaxPricing(page, MINIMAX_CN)
+
+  it('prices the 标准 tier in yuan at the billed amount, with the long-context tier', () => {
+    const prices = cn(MINIMAX_CN_PRICING_PAGE)
+    // The 优先 tab (3.15) and the struck list price (4.20) are not used.
+    expect(prices.get('MiniMax-M3')).toEqual({
+      base: {
+        input_tokens: 2.1 / 1e6,
+        output_tokens: 8.4 / 1e6,
+        cache_read_tokens: 0.42 / 1e6,
+      },
+      tiers: [
+        {
+          minPromptTokens: 512_000,
+          rates: {
+            input_tokens: 4.2 / 1e6,
+            output_tokens: 16.8 / 1e6,
+            cache_read_tokens: 0.84 / 1e6,
+          },
+        },
+      ],
+    })
+    expect(prices.get('MiniMax-M2.7-highspeed')).toEqual({
+      base: {
+        input_tokens: 4.2 / 1e6,
+        output_tokens: 16.8 / 1e6,
+        cache_read_tokens: 0.42 / 1e6,
+        cache_write_tokens: 2.625 / 1e6,
+      },
+      tiers: [],
+    })
+    expect(prices.get('MiniMax-M2')?.base.cache_read_tokens).toBe(0.21 / 1e6)
+    // No pay-as-you-go price is published for the M Plan preview model.
+    expect(prices.has('MiniMax-M3.1-Flash-Preview')).toBe(false)
+    expect(prices.size).toBe(8)
+  })
+
+  it('reads nothing across platforms', () => {
+    expect(parseMinimaxPricing(MINIMAX_CN_PRICING_PAGE).size).toBe(0)
+    expect(cn(MINIMAX_PRICING_PAGE).size).toBe(0)
+  })
+
+  it('refuses a struck price whose badge is not permanent', () => {
+    const promo = MINIMAX_CN_PRICING_PAGE.replaceAll('永久五折', '限时五折')
+    expect(promo).not.toBe(MINIMAX_CN_PRICING_PAGE)
+    expect(cn(promo).has('MiniMax-M3')).toBe(false)
+    expect(cn(promo).size).toBe(7)
+    // One row losing its badge refuses the whole model, not just that tier.
+    const half = MINIMAX_CN_PRICING_PAGE.replace('永久五折', '限时五折')
+    expect(cn(half).has('MiniMax-M3')).toBe(false)
+  })
+
+  it.each([
+    [
+      'a unit in the cell',
+      '| 2.1 | 8.4 | 0.42 | 2.625 |',
+      '| 2.1 元 | 8.4 | 0.42 | 2.625 |',
+    ],
+    [
+      'a 万 suffix',
+      '| 2.1 | 8.4 | 0.42 | 2.625 |',
+      '| 2.1万 | 8.4 | 0.42 | 2.625 |',
+    ],
+    [
+      'a range',
+      '| 2.1 | 8.4 | 0.42 | 2.625 |',
+      '| 2.1 | 8.4-16.8 | 0.42 | 2.625 |',
+    ],
+    ['a reworded unit', '元/百万 tokens', '元/千 tokens'],
+    ['a renamed section', '## 语言模型', '## 文本模型'],
+  ])('stores no price for %s', (_name, from, to) => {
+    const page = MINIMAX_CN_PRICING_PAGE.replaceAll(from, to)
+    expect(page).not.toBe(MINIMAX_CN_PRICING_PAGE)
+    expect(cn(page).has('MiniMax-M2.7')).toBe(false)
   })
 })
 

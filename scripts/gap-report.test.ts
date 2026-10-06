@@ -81,6 +81,20 @@ describe('gap report scoring', () => {
     expect(provider('full', own).score).toBe(1)
   })
 
+  it('counts a card in another currency as priced', () => {
+    const yuan = buildReport([
+      {
+        ...complete,
+        pricing: {
+          ...complete.pricing,
+          currency: 'CNY',
+        } as ModelRow['pricing'],
+      },
+    ])
+    expect(provider('full', yuan).facts.priced).toEqual({ have: 1, need: 1 })
+    expect(provider('full', yuan).facts.cacheRead).toEqual({ have: 1, need: 1 })
+  })
+
   it('leaves a ledger fact out of the score', () => {
     const quiet = provider('quiet')
     expect(quiet.silent).toEqual(['maxOutput'])

@@ -40,13 +40,14 @@ function usable(rates: Record<string, number>): boolean {
  *
  * `extraPromptLevers` join the threshold sum. The default set is text and
  * cache tokens; a host whose prompt length also counts audio passes those
- * levers here so other hosts stay on the default.
+ * levers here so other hosts stay on the default. `currency` is the
+ * ISO-4217 code the rates are in; omit it for USD.
  */
 export function compileTokenCard(
   base: Record<string, number>,
   tiers: Array<TokenRateTier>,
   source: RateCard['source'],
-  options?: { extraPromptLevers?: ReadonlyArray<string> },
+  options?: { extraPromptLevers?: ReadonlyArray<string>; currency?: string },
 ): RateCard | null {
   if (Object.keys(base).length === 0 || !usable(base)) return null
   if (Object.values(base).every((n) => n === 0)) return null
@@ -84,6 +85,7 @@ export function compileTokenCard(
   }
 
   return {
+    ...(options?.currency && { currency: options.currency }),
     inputs: Object.fromEntries(
       levers.map((lever) => [
         lever,

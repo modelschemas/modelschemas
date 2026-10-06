@@ -253,6 +253,12 @@ by unit — so `null` on a list row always means no card. `GET
 `GET /v1/status` counts `priced` models per provider. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
 
+A card is in one currency: `currency` (ISO 4217) on the card, absent
+meaning USD. List summaries and `POST /v1/estimate` always name it
+(`{ amount, currency }`; `usd` repeats the amount only for a USD card).
+Nothing is converted, so amounts in different currencies never compare.
+`moonshotai-cn` and `minimax-cn` publish yuan and carry `CNY` cards.
+
 Cards come from each host's own source — the OpenRouter, Together and xAI
 listings (`listing`), and the OpenAI, Anthropic and Gemini pricing pages
 (`docs-derived`); `factSources.pricing` says which. Token models carry

@@ -6,7 +6,7 @@
  * price that is not a finite positive number. A refusal is an honest
  * "unknown"; a made-up number is a wrong price.
  */
-import { CORE_OPS } from './rate-card.schema.ts'
+import { CORE_OPS, cardCurrency } from './rate-card.schema.ts'
 import type {
   CoreOp,
   Expr,
@@ -290,7 +290,10 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
 }
 
 /**
- * USD for this call, as billed. Request-bound levers read `request`;
+ * The amount for this call, as billed, in the card's currency
+ * (`cardCurrency(card)`; USD unless the card says otherwise). Never add
+ * or compare amounts from cards in different currencies. Request-bound
+ * levers read `request`;
  * usage-bound levers read `usage`. A usage key on the request body, or a
  * request field in usage, is not read. Omit `usage` only when every
  * usage-bound input has a default (or the card has none); token cards that
@@ -305,15 +308,20 @@ export function price(
   request: Vars = {},
   usage: Vars = {},
 ): number {
-  return evaluate(card, request, usage, false).usd
+  return evaluate(card, request, usage, false).amount
 }
 
 export interface PriceResult {
-  usd: number
+  /** The price, in `currency`. */
+  amount: number
+  /** ISO-4217 code `amount` is in. */
+  currency: string
+  /** `amount` again when `currency` is USD; absent for any other currency. */
+  usd?: number
   /**
    * Params of inputs the caller omitted whose value came from the card's
    * published `estimate`. Empty means every input was supplied (or a plain
-   * default), so `usd` is the price as billed.
+   * default), so `amount` is the price as billed.
    */
   estimated: string[]
 }
@@ -384,14 +392,20 @@ function evaluate(
       )
     }
   }
-  const usd = evalExpr(card.price, vars, card.tables)
-  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
+  const amount = evalExpr(card.price, vars, card.tables)
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     throw new RateCardError(
       'bad-result',
-      `price evaluated to ${JSON.stringify(usd)}`,
+      `price evaluated to ${JSON.stringify(amount)}`,
     )
   }
-  return { usd, estimated }
+  const currency = cardCurrency(card)
+  return {
+    amount,
+    currency,
+    ...(currency === 'USD' && { usd: amount }),
+    estimated,
+  }
 }
 
 /** Relative tolerance when reproducing a source's worked example. */

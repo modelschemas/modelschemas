@@ -25,7 +25,7 @@ full provider specs daily.
 GET ${origin}/v1/models?activity=chat&q=claude     # what can I call right now
 GET ${origin}/v1/schemas/{provider}                # endpoint ids per activity
 POST ${origin}/v1/validate                         # check a payload before spending tokens
-POST ${origin}/v1/estimate                         # USD from the stored rate card
+POST ${origin}/v1/estimate                         # amount + currency from the stored rate card
 \`\`\`
 
 No signup for reads (60 req/h per IP; 5,000/h with a key — see ${origin}/auth.md).

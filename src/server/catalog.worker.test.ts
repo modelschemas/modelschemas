@@ -297,11 +297,15 @@ describe('catalog rate cards', () => {
     const listed = await listModelsCatalog(db, { provider: 'cat-price' })
     const byId = Object.fromEntries(listed.models.map((m) => [m.id, m]))
     expect(byId['cat-price-gpt-4o']?.pricing).toEqual({
+      currency: 'USD',
       per: 'token',
       inputPerMillion: 2.5,
       outputPerMillion: 10,
     })
-    expect(byId['cat-price-nano']?.pricing).toEqual({ per: 'image' })
+    expect(byId['cat-price-nano']?.pricing).toEqual({
+      currency: 'USD',
+      per: 'image',
+    })
     expect(byId['cat-price-blob']?.pricing).toBeNull()
     expect(listed._links.self.href).toContain('pricing')
   })

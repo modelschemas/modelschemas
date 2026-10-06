@@ -21,7 +21,11 @@ export type EstimateOutcome =
   | {
       ok: true
       result: {
-        usd: number
+        /** The price, in `currency` (ISO 4217). Never converted. */
+        amount: number
+        currency: string
+        /** `amount` again for a USD card; absent for any other currency. */
+        usd?: number
         cardSource: RateCard['source']
         /** Omitted params the card estimated; empty means billed price. */
         estimated: string[]
@@ -110,12 +114,15 @@ export async function estimateCost(
     }
   }
   try {
-    const { usd, estimated } = priceDetailed(
+    const { estimated, ...amount } = priceDetailed(
       card,
       body.request ?? {},
       body.usage ?? {},
     )
-    return { ok: true, result: { usd, cardSource: card.source, estimated } }
+    return {
+      ok: true,
+      result: { ...amount, cardSource: card.source, estimated },
+    }
   } catch (error) {
     if (error instanceof RateCardError) {
       const mapped = mapRateCardError(error, card, body)

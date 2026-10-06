@@ -5,8 +5,8 @@
  * per 1M tokens. A parse that finds no rows throws.
  *
  * The China platform (platform.minimaxi.com) publishes the same pages in
- * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan,
- * and rate cards are USD, so it reads no pricing page.
+ * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan
+ * per 1M tokens, stored as CNY cards.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -39,8 +39,23 @@ export interface MinimaxPlatform {
   hosts: Array<string>
   sdkUrl: string
   chatSpecUrl: string
-  /** Null when the page quotes no USD price. */
-  pricingUrl: string | null
+  pricingUrl: string
+  /** ISO-4217 code of the pricing page's amounts; absent for USD. */
+  currency?: string
+  /** `## <heading>` of the token-price tables. */
+  priceSection: string
+  /** Title of the standard-tier `<Tab>`; every other tab is dropped. */
+  standardTab: string
+  /** First header cell of a price table. */
+  modelHeader: string
+  /** Price-table header cell → the usage lever it prices. */
+  priceLevers: Record<string, string>
+  /** A billed price cell, whole: group 1 is the amount per 1M tokens. */
+  price: RegExp
+  /** The badge that makes a struck price the standing one. */
+  permanent: RegExp
+  /** A model cell's tier bound: group 1 is `≤` or `>`, group 2 the count. */
+  inputBound: RegExp
   /** Header of the context-window column. */
   contextWindow: string
   /** `Messages Field Support` status: every model. */
@@ -69,6 +84,18 @@ export const MINIMAX: MinimaxPlatform = {
   sdkUrl: MINIMAX_SDK_URL,
   chatSpecUrl: MINIMAX_CHAT_SPEC_URL,
   pricingUrl: MINIMAX_PRICING_URL,
+  priceSection: 'LLM',
+  standardTab: 'Standard',
+  modelHeader: 'Model',
+  priceLevers: {
+    Input: 'input_tokens',
+    Output: 'output_tokens',
+    'Prompt caching Read': 'cache_read_tokens',
+    'Prompt caching Write': 'cache_write_tokens',
+  },
+  price: /^\\?\$([\d.]+) \/ M tokens$/,
+  permanent: /<span[^>]*>\s*Permanent\b/,
+  inputBound: /([≤>])\s*([\d.]+[kKmM]?) input tokens/,
   contextWindow: 'Context Window',
   allModels: /^fully supported$/i,
   onlyModels: /^(M\d[\w.-]*(?:\s*\/\s*M\d[\w.-]*)*) only$/i,
@@ -90,7 +117,21 @@ export const MINIMAX_CN: MinimaxPlatform = {
   hosts: ['platform.minimaxi.com', 'platform.minimax.cn'],
   sdkUrl: `${DOCS_CN}/api-reference/text-anthropic-api.md`,
   chatSpecUrl: `${DOCS_CN}/api-reference/text/api/openapi-chat-openai.json`,
-  pricingUrl: null,
+  pricingUrl: `${DOCS_CN}/guides/pricing-paygo.md`,
+  currency: 'CNY',
+  priceSection: '语言模型',
+  standardTab: '标准',
+  modelHeader: '**模型**',
+  // The header carries the unit, so a reworded unit prices nothing.
+  priceLevers: {
+    '**输入价格**<br /> 元/百万 tokens': 'input_tokens',
+    '**输出价格**<br /> 元/百万 tokens': 'output_tokens',
+    '**缓存读取**<br /> 元/百万 tokens': 'cache_read_tokens',
+    '**缓存写入**<br /> 元/百万 tokens': 'cache_write_tokens',
+  },
+  price: /^(\d+(?:\.\d+)?)$/,
+  permanent: /<span[^>]*>\s*永久/,
+  inputBound: /([≤>])\s*([\d.]+[kKmM]?) 输入 tokens/,
   contextWindow: '上下文窗口',
   allModels: /^完全支持$/,
   onlyModels: /^仅\s*(M\d[\w.-]*(?:\s*\/\s*M\d[\w.-]*)*)$/,
@@ -277,20 +318,13 @@ function maxCompletionTokensDescription(spec: unknown): string {
   return found
 }
 
-const PRICE_LEVERS: Record<string, string> = {
-  Input: 'input_tokens',
-  Output: 'output_tokens',
-  'Prompt caching Read': 'cache_read_tokens',
-  'Prompt caching Write': 'cache_write_tokens',
-}
-
 /**
  * `~~\$0.60~~ \$0.30 / M tokens` → 0.30: the struck list price is not
  * billed. The caller takes a struck row only under a `Permanent` badge.
  */
-function perMillion(cell: string): number | null {
+function perMillion(cell: string, price: RegExp): number | null {
   const billed = cell.replace(/~~[^~]*~~/g, '').trim()
-  const amount = billed.match(/^\\?\$([\d.]+) \/ M tokens$/)?.[1]
+  const amount = billed.match(price)?.[1]
   return amount ? Number(amount) : null
 }
 
@@ -302,13 +336,20 @@ export interface MinimaxRates {
 /**
  * The `## LLM` tables, standard tier only: the `Priority` tab is dropped.
  * A `> 512k input tokens` row is a tier over the same model's base row.
- * Rates are USD per token.
+ * Rates are per token, in the platform's currency.
  */
 export function parseMinimaxPricing(
   markdown: string,
+  platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  const section = markdownSection(markdown, 'LLM')
-    .replace(/<Tab title="(?!Standard")[^"]*">[\s\S]*?<\/Tab>/g, '')
+  const section = markdownSection(markdown, platform.priceSection)
+    .replace(
+      new RegExp(
+        `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
+        'g',
+      ),
+      '',
+    )
     .split('\n')
     .map((line) => line.trim())
     .join('\n')
@@ -316,7 +357,7 @@ export function parseMinimaxPricing(
   const refused = new Set<string>()
   let header: Array<string> = []
   for (const cells of markdownTableRows(section)) {
-    if (cells[0] === 'Model') {
+    if (cells[0] === platform.modelHeader) {
       header = cells
       continue
     }
@@ -326,21 +367,23 @@ export function parseMinimaxPricing(
     // A struck price without a `Permanent` badge may be a promotion that
     // ends: the model gets no card.
     const struck = cells.some((cell) => cell.includes('~~'))
-    if (struck && !/<span[^>]*>\s*Permanent\b/.test(model[2] ?? '')) {
+    if (struck && !platform.permanent.test(model[2] ?? '')) {
       refused.add(id)
       continue
     }
     const rates: Record<string, number> = {}
     header.forEach((name, index) => {
-      const lever = PRICE_LEVERS[name]
-      const amount = lever ? perMillion(cells[index] ?? '') : null
+      const lever = platform.priceLevers[name]
+      const amount = lever
+        ? perMillion(cells[index] ?? '', platform.price)
+        : null
       if (lever && amount !== null) rates[lever] = amount / 1e6
     })
     if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
       continue
     }
     const entry = out.get(id) ?? { base: {}, tiers: [] }
-    const bound = model[2]?.match(/([≤>])\s*([\d.]+[kKmM]?) input tokens/)
+    const bound = model[2]?.match(platform.inputBound)
     const above = bound?.[1] === '>' ? tokenCount(bound[2]) : null
     if (above !== null) entry.tiers.push({ minPromptTokens: above, rates })
     else entry.base = rates
@@ -386,7 +429,7 @@ export async function minimaxModelFacts(
   const doc = await cachedDocs(kv, sdkUrl, async () => {
     const [sdk, pricingPage, specText] = await Promise.all([
       fetchPage(sdkUrl),
-      pricingUrl ? fetchPage(pricingUrl) : null,
+      fetchPage(pricingUrl),
       fetchPage(chatSpecUrl),
     ])
     const windows = parseMinimaxContextWindows(sdk, platform)
@@ -402,15 +445,12 @@ export async function minimaxModelFacts(
       platform,
     )
     assertParsed(caps, `${label} max output`)
-    const prices =
-      pricingPage === null
-        ? new Map<string, MinimaxRates>()
-        : parseMinimaxPricing(pricingPage)
-    if (pricingPage !== null) assertParsed(prices, `${label} pricing page`)
+    const prices = parseMinimaxPricing(pricingPage, platform)
+    assertParsed(prices, `${label} pricing page`)
 
     const [sdkHash, pricingHash, specHash] = await Promise.all([
       sha256Text(sdk),
-      sha256Text(pricingPage ?? ''),
+      sha256Text(pricingPage),
       sha256Text(specText),
     ])
     const extractedAt = new Date().toISOString()
@@ -424,14 +464,14 @@ export async function minimaxModelFacts(
       }
       const maxOutput = caps.get(id) ?? null
       const rates = prices.get(id)
-      const pricing =
-        rates && pricingUrl
-          ? compileTokenCard(rates.base, rates.tiers, {
-              url: pricingUrl,
-              hash: pricingHash,
-              extractedAt,
-            })
-          : null
+      const pricing = rates
+        ? compileTokenCard(
+            rates.base,
+            rates.tiers,
+            { url: pricingUrl, hash: pricingHash, extractedAt },
+            { currency: platform.currency },
+          )
+        : null
       facts[id] = {
         ...fromSdk,
         maxOutput,
@@ -439,9 +479,7 @@ export async function minimaxModelFacts(
         factSources: {
           ...tagDocsFacts(fromSdk, sdkUrl, sdkHash),
           ...tagDocsFacts({ maxOutput }, chatSpecUrl, specHash),
-          ...(pricingUrl
-            ? tagDocsFacts({ pricing }, pricingUrl, pricingHash)
-            : {}),
+          ...tagDocsFacts({ pricing }, pricingUrl, pricingHash),
         },
       }
     }

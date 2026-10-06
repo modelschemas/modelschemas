@@ -24,8 +24,9 @@ import {
 const card = rateCardSchema.parse(json)
 if (verifyExamples(card).some((r) => !r.ok)) throw new Error('bad card')
 
-// request-bound levers read the body; usage-bound levers read usage
-const usd = price(
+// request-bound levers read the body; usage-bound levers read usage.
+// The number is in cardCurrency(card): USD unless the card says otherwise.
+const amount = price(
   card,
   { duration: 5, resolution: '720p' },
   { input_tokens: 1200, output_tokens: 300 },
@@ -42,10 +43,18 @@ const tokenCard = compileOpenRouterPricing(model.pricing, {
 A number input may carry an `estimate`: the source's published way to
 derive it when the caller omits it (Seedance `completion_tokens` from
 resolution × ratio × duration), with its own `inputs` and `source`.
-`priceDetailed` returns `{ usd, estimated }`; `estimated` lists the params
+`priceDetailed` returns `{ amount, currency, usd?, estimated }`; `estimated` lists the params
 that were filled that way, so an estimate is never mistaken for the billed
 price. Supplying the real value skips the estimate and its inputs. `price`
 never estimates: it throws `required` for the omitted input instead.
+
+A card is in one currency. `card.currency` is an ISO-4217 code and absent
+means USD, so cards written before the field read unchanged;
+`cardCurrency(card)` gives the code either way. `priceDetailed` names it
+beside `amount`, and sets `usd` only for a USD card. Nothing converts:
+never add or compare amounts from cards in different currencies.
+`compileTokenCard(rates, tiers, source, { currency: 'CNY' })` labels a
+compiled card.
 
 Token counts on compiled OpenRouter cards are disjoint: `input_tokens`
 excludes `cache_read_tokens` / `cache_write_tokens`, `output_tokens`

@@ -4,9 +4,11 @@
  * context windows come from the pricing page; activity, reasoning and
  * modalities from the spec's per-model chat request schemas. Output is
  * capped by the context window; no separate limit is published.
- * Prices on the pricing page are yuan. Rate cards are USD, so prices stay
- * null. `GET /v1/models` needs a CN key, which is region-bound.
+ * Prices on the pricing page are yuan per 1M tokens, stored as CNY cards.
+ * `GET /v1/models` needs a CN key, which is region-bound.
  */
+import { compileTokenCard } from '@modelschemas/rate-card'
+
 import { classifyOpenAiCompat } from '../openai-compat.ts'
 import { cachedDocs } from '../model-facts.ts'
 import { compatGenerationEndpointId } from '../model-meta.ts'
@@ -65,6 +67,94 @@ export function parseMoonshotCnModels(markdown: string): Array<ModelInfo> {
     throw new Error('moonshotai-cn: pricing page listed no ids')
   }
   return models
+}
+
+/** Price column title → the usage lever it prices. */
+const PRICE_COLUMNS: Record<string, string> = {
+  '缓存写入（TTL 5min）': 'cache_write_tokens',
+  '缓存写入（TTL 1h）': 'cache_write_1h_tokens',
+  '输入价格（缓存命中）': 'cache_read_tokens',
+  '输入价格（缓存未命中）': 'input_tokens',
+  输出价格: 'output_tokens',
+}
+const UNIT_COLUMN = '计费单位'
+const OTHER_COLUMNS = new Set(['模型', UNIT_COLUMN, '上下文窗口'])
+
+/**
+ * Model id → yuan per token, by lever. Columns are read by title, so a
+ * table with a title this does not know prices nothing. A row is priced
+ * only when its unit is `1M tokens` and every price cell is a bare
+ * `¥12.50`: a unit suffix, a struck price or a range leaves the model
+ * unpriced, and so does an id two rows price. Throws when no row is priced.
+ */
+export function parseMoonshotCnPricing(
+  markdown: string,
+): Map<string, Record<string, number>> {
+  const out = new Map<string, Record<string, number>>()
+  const refused = new Set<string>()
+  for (const table of markdown.matchAll(
+    /columns=\{\[([\s\S]*?)\]\}\s*rows=\{\[([\s\S]*?)\]\}/g,
+  )) {
+    const titles = [...(table[1] ?? '').matchAll(/title:\s*"([^"]*)"/g)].map(
+      (match) => match[1] ?? '',
+    )
+    if (titles.some((t) => !(t in PRICE_COLUMNS) && !OTHER_COLUMNS.has(t))) {
+      continue
+    }
+    for (const row of (table[2] ?? '').matchAll(/\[("[^\]]*")\]/g)) {
+      const cells = [...(row[1] ?? '').matchAll(/"([^"]*)"/g)].map(
+        (match) => match[1] ?? '',
+      )
+      const id = cells[0]
+      if (!id || cells.length !== titles.length) continue
+      if (cells[titles.indexOf(UNIT_COLUMN)] !== '1M tokens') continue
+      const rates: Record<string, number> = {}
+      titles.forEach((title, index) => {
+        const lever = PRICE_COLUMNS[title]
+        const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?)$/)?.[1]
+        if (lever && amount !== undefined) rates[lever] = Number(amount) / 1e6
+      })
+      const priceColumns = titles.filter((title) => title in PRICE_COLUMNS)
+      if (
+        Object.keys(rates).length !== priceColumns.length ||
+        rates.input_tokens === undefined ||
+        rates.output_tokens === undefined
+      ) {
+        continue
+      }
+      if (out.has(id)) refused.add(id)
+      out.set(id, rates)
+    }
+  }
+  for (const id of refused) out.delete(id)
+  if (out.size === 0) {
+    throw new Error('moonshotai-cn: pricing page priced no ids')
+  }
+  return out
+}
+
+/**
+ * The pricing page. platform.kimi.ai publishes the same path in USD, so a
+ * redirect off the CN host would hand this provider the other's prices.
+ */
+async function fetchPricingPage(): Promise<string> {
+  const response = await fetch(MOONSHOT_CN_PRICING_URL, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  })
+  if (!response.ok) {
+    throw new Error(
+      `fetch failed: ${MOONSHOT_CN_PRICING_URL} → ${String(response.status)} ${response.statusText}`,
+    )
+  }
+  const host = new URL(response.url || MOONSHOT_CN_PRICING_URL).host
+  if (host !== new URL(MOONSHOT_CN_PRICING_URL).host) {
+    throw new Error(`moonshotai-cn: pricing page was answered by ${host}`)
+  }
+  const text = await response.text()
+  if (/^\s*<(?:!doctype|html)/i.test(text)) {
+    throw new Error('moonshotai-cn: pricing page is HTML, not markdown')
+  }
+  return text
 }
 
 function deref(spec: OpenApiDocument, node: unknown, depth = 0): unknown {
@@ -209,10 +299,10 @@ async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  const markdown = await fetchText(MOONSHOT_CN_PRICING_URL, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  })
+  const markdown = await fetchPricingPage()
   const pricingHash = await sha256Text(markdown)
+  const prices = parseMoonshotCnPricing(markdown)
+  const extractedAt = new Date().toISOString()
   const chat = await cachedDocs(kv, MOONSHOT_CN_OPENAPI_URL, async () => {
     const { spec, hash } = await fetchCnSpec()
     return moonshotCnChatFacts(spec, hash)
@@ -228,7 +318,24 @@ async function listModels(
         path: 'contextWindow',
       }
     }
-    return { ...model, ...facts, factSources }
+    const rates = prices.get(model.rawId)
+    const pricing = rates
+      ? compileTokenCard(
+          rates,
+          [],
+          { url: MOONSHOT_CN_PRICING_URL, hash: pricingHash, extractedAt },
+          { currency: 'CNY' },
+        )
+      : null
+    if (pricing) {
+      factSources.pricing = {
+        derivation: 'docs-derived',
+        sourceUrl: MOONSHOT_CN_PRICING_URL,
+        sourceHash: pricingHash,
+        path: 'Pricing',
+      }
+    }
+    return { ...model, ...facts, pricing, factSources }
   })
   return { models }
 }
