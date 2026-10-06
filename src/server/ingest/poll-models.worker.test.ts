@@ -1009,6 +1009,64 @@ describe('models.dev residue on skip (issue #197)', () => {
   })
 })
 
+describe('perModelSchemaFlags', () => {
+  it('keeps the named schema flags off unless the listing states them', async () => {
+    const id = 'poll-per-model-flags'
+    const deps = await freshDeps(id)
+    const db = deps.db
+    await db.insert(endpoints).values({
+      id: `${id}/v1/agent`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/v1/agent',
+    })
+    await db.insert(schemaVersions).values({
+      id: `${id}/v1/agent:input`,
+      endpointId: `${id}/v1/agent`,
+      kind: 'input',
+      contentHash: 'b'.repeat(64),
+      schema: JSON.stringify({
+        properties: {
+          tools: { type: 'array' },
+          temperature: { type: 'number' },
+          reasoning: { type: 'object' },
+        },
+      }),
+      derivation: 'upstream-spec',
+      sourceUrl: 'https://example.com/openapi.json',
+      createdAt: 1_781_150_000,
+    })
+    await pollProviderModels(deps, {
+      ...stubProvider(id, [
+        { rawId: 'plain', activity: 'chat', schemaEndpointId: 'v1/agent' },
+        {
+          rawId: 'thinker',
+          activity: 'chat',
+          schemaEndpointId: 'v1/agent',
+          capabilities: ['reasoning'],
+        },
+      ]),
+      perModelSchemaFlags: ['reasoning', 'tools'],
+    })
+    const plain = await db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, 'plain')))
+    expect(plain[0]?.capabilities).toEqual(['temperature'])
+    expect(
+      Object.keys(
+        (plain[0]?.factSources as { capabilities: object }).capabilities,
+      ),
+    ).toEqual(['temperature'])
+    const thinker = await db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, 'thinker')))
+    expect(thinker[0]?.capabilities).toEqual(['reasoning', 'temperature'])
+  })
+})
+
 describe('reasoning and server tools (issue #77)', () => {
   it('stores both with provenance and emits model.updated on change', async () => {
     const id = 'poll-features'
