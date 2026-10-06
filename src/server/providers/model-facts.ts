@@ -135,7 +135,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // maxOutput on Grok pages for six hours.
 // v12: Azure rows gain `tabulated` and the price doc gains `thresholds`. A
 // v11 entry written by the PR's preview build would drop every Azure row.
-const DOCS_CACHE_VERSION = 'v12'
+// v13: MiniMax M2 rows store no maxOutput (the spec maximum is the context
+// window). A v12 entry would keep 204800 on them for six hours.
+const DOCS_CACHE_VERSION = 'v13'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
