@@ -114,6 +114,17 @@ function reasoningSourcePath(sources: unknown): string | null {
   return typeof path === 'string' ? path : null
 }
 
+/**
+ * A map the listing read from the model's own request schema wins; else the
+ * provider-wide table.
+ */
+function requestMapFor(providerId: string, info: ModelInfo) {
+  return (
+    info.requestMap ??
+    chatRequestMap(providerId, info.rawId, info.activity ?? null)
+  )
+}
+
 /** The fields whose changes constitute a `model.updated` event. */
 function comparable(
   providerId: string,
@@ -130,7 +141,7 @@ function comparable(
     reasoning: info.reasoning ?? null,
     reasoningSource: reasoningSourcePath(info.factSources),
     serverTools: info.serverTools ?? null,
-    requestMap: chatRequestMap(providerId, info.rawId, info.activity ?? null),
+    requestMap: requestMapFor(providerId, info),
     aliases: storedAliases(info.aliases),
     schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
@@ -458,11 +469,7 @@ export async function pollProviderModels(
         capabilities: info.capabilities ?? null,
         reasoning: info.reasoning ?? null,
         serverTools: info.serverTools ?? null,
-        requestMap: chatRequestMap(
-          provider.id,
-          info.rawId,
-          info.activity ?? null,
-        ),
+        requestMap: requestMapFor(provider.id, info),
         aliases: storedAliases(info.aliases),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
@@ -538,11 +545,7 @@ export async function pollProviderModels(
         capabilities: after.capabilities ?? null,
         reasoning: info.reasoning ?? null,
         serverTools: info.serverTools ?? null,
-        requestMap: chatRequestMap(
-          provider.id,
-          info.rawId,
-          info.activity ?? null,
-        ),
+        requestMap: requestMapFor(provider.id, info),
         aliases: storedAliases(info.aliases),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,

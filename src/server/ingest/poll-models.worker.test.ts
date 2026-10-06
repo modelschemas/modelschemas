@@ -1104,3 +1104,34 @@ describe('reasoning and server tools (issue #77)', () => {
     expect(outcome.updated).toBe(1)
   })
 })
+
+describe('listed request map', () => {
+  it('keeps a map the listing read from the model schema', async () => {
+    const id = 'poll-listed-request-map'
+    const deps = await freshDeps(id)
+    const requestMap = {
+      thinking: null,
+      maxTokensField: 'max_completion_tokens' as const,
+      developerRole: null,
+      replayReasoningContent: null,
+      store: null,
+      strictTools: null,
+      sessionAffinity: null,
+      cacheControl: null,
+      toolStream: null,
+      reasoningEffort: true,
+    }
+    const provider = stubProvider(id, [{ ...fable, requestMap }, haiku])
+    await pollProviderModels(deps, provider)
+    const stored = async (rawId: string) =>
+      (
+        await deps.db.query.models.findFirst({
+          where: eq(models.id, modelDbId(id, rawId)),
+        })
+      )?.requestMap
+    expect(await stored(fable.rawId)).toEqual(requestMap)
+    // No listed map and no provider-wide case: still null.
+    expect(await stored(haiku.rawId)).toBeNull()
+    expect((await pollProviderModels(deps, provider)).updated).toBe(0)
+  })
+})
