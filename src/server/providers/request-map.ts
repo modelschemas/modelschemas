@@ -56,6 +56,8 @@ const QWEN_ON = { enable_thinking: true }
 const VLLM_QWEN_ON = {
   chat_template_kwargs: { enable_thinking: true, preserve_thinking: true },
 }
+const KIMI_ON = { thinking: { type: 'enabled' } }
+const KIMI_OFF = { thinking: { type: 'disabled' } }
 const OPENROUTER_ON = { reasoning: { effort: 'high' } }
 const TOGETHER_ON = { reasoning: { enabled: true } }
 const MINIMAX_ON = { thinking: { type: 'adaptive' } }
@@ -92,6 +94,37 @@ const DEEPSEEK_FLASH_LEVELS: EffortLevelMap = {
   high: 'high',
   xhigh: null,
   max: 'max',
+}
+
+/** `kimi-k3`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
+const KIMI_K3_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: null,
+  low: 'low',
+  medium: null,
+  high: 'high',
+  xhigh: null,
+  max: 'max',
+}
+
+/**
+ * Moonshot's per-model chat schemas, by exact id: `kimi-k3` takes
+ * `reasoning_effort` and always thinks, `kimi-k2.7-code` takes only
+ * `thinking.type: enabled`, `kimi-k2.6` also takes `disabled`. An id the
+ * spec does not map stays null.
+ */
+function kimiThinking(rawId: string): ThinkingRequest | null {
+  switch (rawId) {
+    case 'kimi-k3':
+      return { on: OPENAI_ON, off: null, levels: KIMI_K3_LEVELS }
+    case 'kimi-k2.7-code':
+    case 'kimi-k2.7-code-highspeed':
+      return { on: KIMI_ON, off: null, levels: null }
+    case 'kimi-k2.6':
+      return { on: KIMI_ON, off: KIMI_OFF, levels: null }
+    default:
+      return null
+  }
 }
 
 /** `zai/glm-5.2`: only high and max. */
@@ -306,13 +339,27 @@ export function chatRequestMap(
         developerRole: false,
         reasoningEffort: false,
       })
+    // From Moonshot's chat spec, not probed. The international and China
+    // documents agree: `max_tokens` is deprecated for
+    // `max_completion_tokens`, the role enum has no `developer`, and only
+    // `kimi-k3` declares `reasoning_effort`. The spec does not say the other
+    // models reject it, so that stays null. For `kimi-k3` Moonshot's OpenClaw
+    // guide sets `maxTokensField: "max_tokens"` against the spec, so its
+    // field stays null until probed.
     case 'moonshot':
+    case 'moonshotai-cn':
+      return blank({
+        thinking: kimiThinking(rawId),
+        maxTokensField: rawId === 'kimi-k3' ? null : 'max_completion_tokens',
+        developerRole: false,
+        reasoningEffort: rawId === 'kimi-k3' ? true : null,
+      })
     case 'nvidia':
-    case 'cloudflare':
+      // reasoning_effort varies per model (kimi-k3's reference page takes
+      // low/high/max), and those pages are not read yet: unknown, not false.
       return blank({
         maxTokensField: 'max_tokens',
         developerRole: false,
-        reasoningEffort: false,
       })
     case 'grok':
       return blank({
