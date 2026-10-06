@@ -77,6 +77,15 @@ describe('chatRequestMap', () => {
     })
     expect(flash?.reasoningEffort).toBe(true)
     expect(flash?.toolStream).toBe(true)
+    // GLM-5.3 and GLM-5.3-FLASH "can only be enabled": there is no off body.
+    expect(flash?.thinking?.off).toBeNull()
+    expect(chatRequestMap('zai', 'glm-5.3', 'chat')?.thinking?.off).toBeNull()
+    // Every other thinking model takes `thinking.type: disabled`.
+    for (const id of ['glm-5.2', 'glm-5', 'glm-4.7-flash', 'glm-4.6v']) {
+      expect(chatRequestMap('zai', id, 'chat')?.thinking?.off).toEqual({
+        thinking: { type: 'disabled' },
+      })
+    }
 
     // glm-5 is not glm-5.2: no effort field, but it is a tool_stream series.
     const five = chatRequestMap('zai', 'glm-5', 'chat')

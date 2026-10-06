@@ -51,6 +51,7 @@ const DEEPSEEK_ON = {
 }
 const DEEPSEEK_OFF = { thinking: { type: 'disabled' } }
 const GLM_ON = { thinking: { type: 'enabled', clear_thinking: false } }
+const GLM_OFF = { thinking: { type: 'disabled' } }
 const QWEN_ON = { enable_thinking: true }
 const VLLM_QWEN_ON = {
   chat_template_kwargs: { enable_thinking: true, preserve_thinking: true },
@@ -107,7 +108,10 @@ const GLM_53_LEVELS: EffortLevelMap = {
 
 /**
  * Series the Z.AI spec names under `tool_stream`
- * (docs.z.ai/openapi.json, ChatCompletionTextRequest).
+ * (docs.z.ai/openapi.json, ChatCompletionTextRequest). The vision request
+ * has no such field; for `glm-5.3-flash` and `glm-5.3-flashx` the source is
+ * docs.z.ai/guides/vlm/glm-5.3-flash ("enabling both stream: true and
+ * `tool_stream: true`").
  */
 const GLM_TOOL_STREAM = [
   'glm-5.3',
@@ -202,11 +206,17 @@ export function chatRequestMap(
     case 'zai':
     case 'glm':
       return blank({
-        // The spec's `thinking` is "GLM-4.5 series and higher" only.
+        // The spec's `thinking` is "GLM-4.5 series and higher" only, and
+        // `thinking.type` is enabled | disabled, except that the GLM-5.3
+        // and GLM-5.3-FLASH series "can only be enabled".
         thinking: matches(rawId, 'glm-4-32b')
           ? null
           : withLevels(
-              { on: GLM_ON, off: null, levels: null },
+              {
+                on: GLM_ON,
+                off: matches(rawId, 'glm-5.3') ? null : GLM_OFF,
+                levels: null,
+              },
               providerId,
               rawId,
             ),

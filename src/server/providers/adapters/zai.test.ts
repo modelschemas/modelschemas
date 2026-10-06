@@ -10,6 +10,7 @@ import {
   ZAI_PRICING_URL,
   ZAI_THINKING_URL,
   zaiSpecFacts,
+  zaiSupportedBy,
 } from './zai.ts'
 
 /** `max_tokens` descriptions of https://docs.z.ai/openapi.json (2026-10-06). */
@@ -35,9 +36,17 @@ const message = (role: string, content: Array<unknown>) => ({
 function spec(
   overrides: {
     textMaxTokens?: string
+    visionMaxTokens?: string
     parts?: Array<string>
+    thinking?: string
+    visionTools?: string
   } = {},
 ) {
+  const shared = {
+    temperature: { type: 'number' },
+    thinking: { $ref: '#/components/schemas/ChatThinking' },
+    tool_choice: { oneOf: [{ type: 'string', enum: ['auto'] }] },
+  }
   return {
     openapi: '3.0.1',
     info: { title: 'Z.AI API', version: '1' },
@@ -112,8 +121,43 @@ function spec(
             max_tokens: {
               type: 'integer',
               description: overrides.textMaxTokens ?? TEXT_MAX_TOKENS,
+              maximum: 131072,
             },
+            reasoning_effort: {
+              type: 'string',
+              description:
+                "Controls the model's reasoning effort level, takes effect when `thinking` is enabled. Default is `max`, supported by `GLM-5.2` and above. For the `GLM-5.3` `GLM-5.3-FLASH` model, only the `low` / `high` / `max` levels are supported.",
+              enum: [
+                'max',
+                'xhigh',
+                'high',
+                'medium',
+                'low',
+                'minimal',
+                'none',
+              ],
+            },
+            response_format: {
+              type: 'object',
+              description:
+                'Specifies the response format of the model. Defaults to text. Only text models support this field.',
+              properties: { type: { type: 'string' } },
+            },
+            tool_stream: { type: 'boolean' },
+            tools: {
+              type: 'array',
+              description:
+                'A list of tools the model may call. Currently, only functions are supported as a tool. A max of 128 functions are supported.\n',
+            },
+            ...shared,
           },
+        },
+        ChatThinking: {
+          type: 'object',
+          description:
+            overrides.thinking ??
+            'Only supported by GLM-4.5 series and higher models. This parameter is used to control whether the model enable the chain of thought.',
+          properties: { type: { type: 'string' } },
         },
         ChatCompletionVisionRequest: {
           type: 'object',
@@ -124,6 +168,7 @@ function spec(
                 'glm-5.3-flashx',
                 'glm-5.3-flash',
                 'glm-4.6v',
+                'glm-4.5v',
                 'autoglm-phone-multilingual',
               ],
             },
@@ -144,7 +189,24 @@ function spec(
                 ],
               },
             },
-            max_tokens: { type: 'integer', description: VISION_MAX_TOKENS },
+            max_tokens: {
+              type: 'integer',
+              description: overrides.visionMaxTokens ?? VISION_MAX_TOKENS,
+              maximum: 131072,
+            },
+            reasoning_effort: {
+              type: 'string',
+              description:
+                "Controls the model's reasoning effort level, takes effect when `thinking` is enabled. Default is `max`.",
+              enum: ['max', 'high', 'low'],
+            },
+            tools: {
+              type: 'array',
+              description:
+                overrides.visionTools ??
+                'A list of tools the model may call. Only supported by `GLM-5.3-Flash` series, the GLM-4.6V series, and autoglm-phone-multilingual. Use this to provide a list of functions the model may generate JSON inputs for. A max of 128 functions are supported.\n',
+            },
+            ...shared,
           },
         },
         VisionMultimodalContentItem: {
@@ -281,6 +343,7 @@ describe('zai', () => {
     expect(listed.models.map((model) => model.rawId)).toEqual([
       'glm-4-32b-0414-128k',
       'glm-4.5-air',
+      'glm-4.5v',
       'glm-4.6v',
       'glm-4.7-flash',
       'glm-5',
@@ -364,7 +427,8 @@ describe('zai', () => {
 
     expect(byId.get('glm-5.3')).toMatchObject({
       contextWindow: 1_000_000,
-      maxOutput: 128_000,
+      // "128K" is the label of the spec's exact `maximum`.
+      maxOutput: 131_072,
       modalities: { input: ['text'], output: ['text'] },
       reasoning: {
         mode: 'effort',
@@ -380,7 +444,7 @@ describe('zai', () => {
     // The vision request has its own cap list and content parts.
     expect(byId.get('glm-5.3-flashx')).toMatchObject({
       contextWindow: 1_000_000,
-      maxOutput: 128_000,
+      maxOutput: 131_072,
       modalities: { input: ['text', 'image', 'video', 'file'] },
       reasoning: { mandatory: true, efforts: ['max', 'high', 'low'] },
     })
@@ -391,11 +455,11 @@ describe('zai', () => {
     })
     // A series cap covers its variants; glm-5 is not glm-5.x.
     expect(byId.get('glm-4.5-air')?.maxOutput).toBe(96_000)
-    expect(byId.get('glm-4.7-flash')?.maxOutput).toBe(128_000)
+    expect(byId.get('glm-4.7-flash')?.maxOutput).toBe(131_072)
     expect(byId.get('glm-4-32b-0414-128k')?.maxOutput).toBe(16_000)
     expect(byId.get('glm-5')).toMatchObject({
       contextWindow: 200_000,
-      maxOutput: 128_000,
+      maxOutput: 131_072,
     })
     // No effort list names these, so no reasoning object is invented.
     expect(byId.get('glm-5')?.reasoning).toBeUndefined()
@@ -434,8 +498,67 @@ describe('zai', () => {
       sourceUrl: ZAI_OPENAPI_URL,
     })
     expect(sources?.maxOutput?.sourceHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(sources?.capabilities?.tools).toMatchObject({
+      derivation: 'upstream-spec',
+      sourceUrl: ZAI_OPENAPI_URL,
+      endpointId: 'paas/v4/chat/completions',
+      path: '/properties/tools',
+    })
+    // The thinking page does not name FlashX; its request variant's own
+    // `reasoning_effort` enum is the same list.
+    expect(
+      models.find((model) => model.rawId === 'glm-5.3-flashx')?.factSources
+        ?.reasoning,
+    ).toMatchObject({
+      derivation: 'upstream-spec',
+      sourceUrl: ZAI_OPENAPI_URL,
+      path: 'reasoning_effort',
+    })
     expect(
       models.find((model) => model.rawId === 'glm-ocr')?.factSources,
+    ).toBeUndefined()
+  })
+
+  it('lists only the flags the spec gives each model', async () => {
+    serve(DOCS)
+    const { models } = await provider.listModels({})
+    const flags = (id: string) => {
+      const model = models.find((row) => row.rawId === id)
+      expect(model?.exactCapabilities).toBe(true)
+      return [...(model?.capabilities as Array<string>)].sort()
+    }
+    const base = ['max_tokens', 'temperature']
+
+    expect(flags('glm-5.3')).toEqual(
+      [
+        ...base,
+        'reasoning',
+        'reasoning_effort',
+        'response_format',
+        'tool_choice',
+        'tools',
+      ].sort(),
+    )
+    // `reasoning_effort` is "supported by GLM-5.2 and above".
+    expect(flags('glm-5')).toEqual(
+      [...base, 'reasoning', 'response_format', 'tool_choice', 'tools'].sort(),
+    )
+    // `thinking` is "GLM-4.5 series and higher".
+    expect(flags('glm-4-32b-0414-128k')).toEqual(
+      [...base, 'response_format', 'tool_choice', 'tools'].sort(),
+    )
+    // The vision request has no `response_format`.
+    expect(flags('glm-5.3-flashx')).toEqual(
+      [...base, 'reasoning', 'reasoning_effort', 'tool_choice', 'tools'].sort(),
+    )
+    // No effort list names glm-4.6v, whatever enum its variant carries.
+    expect(flags('glm-4.6v')).toEqual(
+      [...base, 'reasoning', 'tool_choice', 'tools'].sort(),
+    )
+    // Vision `tools` names the series it is supported by; not glm-4.5v.
+    expect(flags('glm-4.5v')).toEqual([...base, 'reasoning'].sort())
+    expect(
+      models.find((row) => row.rawId === 'glm-image')?.capabilities,
     ).toBeUndefined()
   })
 
@@ -468,12 +591,72 @@ describe('zai parsers fail closed', () => {
         ),
       ),
     ).toThrow(/unreadable output cap/)
+    // A clause with another verb must not take the next clause's cap:
+    // unguarded, the 128K series would be stored as 96K ...
+    expect(() =>
+      parseZaiOutputCaps(
+        TEXT_MAX_TOKENS.replace(
+          'GLM-4.6 series supports 128K maximum output',
+          'GLM-4.6 series allows up to 128K of output',
+        ),
+      ),
+    ).toThrow(/unreadable output cap/)
+    // ... and glm-4.6v as 16K.
+    expect(() =>
+      zaiSpecFacts(
+        spec({
+          visionMaxTokens: VISION_MAX_TOKENS.replace(
+            'the GLM-4.6V series supports 32K',
+            'the GLM-4.6V series can output 32K',
+          ),
+        }),
+      ),
+    ).toThrow(/unreadable output cap/)
+    // The last clause has no next one to fall into; it is left over.
+    expect(() =>
+      parseZaiOutputCaps(
+        VISION_MAX_TOKENS.replace(
+          'autoglm-phone-multilingual supports 4K',
+          'autoglm-phone-multilingual is capped at 4K',
+        ),
+      ),
+    ).toThrow(/model with no output cap/)
     expect(() =>
       parseZaiOutputCaps('The maximum number of tokens for model output.'),
     ).toThrow(/states no output cap/)
     expect(() =>
       zaiSpecFacts(spec({ textMaxTokens: 'Up to 128K for every model.' })),
     ).toThrow(/states no output cap/)
+  })
+
+  it('drops a flag whose "supported by" clause it cannot read', () => {
+    expect(zaiSupportedBy('A list of tools. A max of 128.', 'glm-5')).toBeNull()
+    expect(
+      zaiSupportedBy('Only supported by GLM-4.5 series and higher.', 'glm-5'),
+    ).toBe(true)
+    expect(
+      zaiSupportedBy('Only supported by GLM-4.5 series and higher.', 'glm-4'),
+    ).toBe(false)
+
+    const reasoning = (thinking: string, id: string) =>
+      Object.keys(
+        zaiSpecFacts(spec({ thinking })).get(id)?.capabilities ?? {},
+      ).includes('reasoning')
+    // Reworded floor: nobody keeps the flag.
+    expect(
+      reasoning('Only supported by models newer than GLM-4.5.', 'glm-5.3'),
+    ).toBe(false)
+    expect(
+      reasoning('Only supported by GLM-4.5 or GLM-5 on request.', 'glm-5'),
+    ).toBe(false)
+
+    const tools = Object.keys(
+      zaiSpecFacts(
+        spec({ visionTools: 'Only supported by most GLM-4.6V models.' }),
+      ).get('glm-4.6v')?.capabilities ?? {},
+    )
+    expect(tools).not.toContain('tools')
+    expect(tools).not.toContain('tool_choice')
   })
 
   it('throws on a content part it does not know', () => {

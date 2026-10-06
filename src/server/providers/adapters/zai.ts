@@ -9,11 +9,17 @@
  * windows come from the overview page's model tables, reasoning efforts
  * from the Deep Thinking page. Each parser throws on a shape it does not
  * know rather than guess.
+ *
+ * The chat body is a `oneOf` of a text and a vision request, split by
+ * `model` enum with no discriminator, and several properties say in prose
+ * which models they are "supported by". So capability flags are listed
+ * here per model (`exactCapabilities`), not walked from the merged body.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 
+import { walkRequestSchema } from '../fact-sources.ts'
 import { tokenCount } from '../model-facts.ts'
 import { fetchOpenApi, fetchText, sha256Text } from '../types.ts'
 import type {
@@ -69,6 +75,10 @@ interface SpecFacts {
   schemaEndpointId: string
   maxOutput: number | null
   modalities: { input: Array<string>; output: Array<string> } | null
+  /** The `reasoning_effort` enum of the request variant that lists the id. */
+  efforts: Array<string>
+  /** Chat only: flag → where the variant's own request states it. */
+  capabilities: Record<string, FactSource> | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -86,10 +96,10 @@ function money(cell: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
+const MODEL_NAME = /(?:auto)?glm-[a-z0-9.-]*[a-z0-9]/gi
+
 function modelNames(text: string): Array<string> {
-  return (text.match(/(?:auto)?glm-[a-z0-9.-]*[a-z0-9]/gi) ?? []).map((name) =>
-    name.toLowerCase(),
-  )
+  return (text.match(MODEL_NAME) ?? []).map((name) => name.toLowerCase())
 }
 
 /**
@@ -213,9 +223,17 @@ export function parseZaiContextWindows(markdown: string): Map<string, number> {
   return windows
 }
 
+/** True when `text`, its model names aside, is only list filler. */
+function onlyNames(text: string, filler: string): boolean {
+  const rest = text.replace(MODEL_NAME, ' ')
+  return new RegExp(`^(?:[\\s,.\`]|\\b(?:${filler})\\b)*$`, 'i').test(rest)
+}
+
 /**
  * A `max_tokens` description: "<models> [series] supports <N>K", repeated.
- * A cap worded any other way throws, so it is never read onto the next one.
+ * Every model name must sit in a clause of exactly that shape. A clause
+ * with another verb would otherwise be read as part of the next clause's
+ * subject and take its cap, so anything left over throws.
  */
 export function parseZaiOutputCaps(description: string): Array<OutputCap> {
   const [first = '', ...rest] = description.split(/\bsupports\b/)
@@ -223,14 +241,20 @@ export function parseZaiOutputCaps(description: string): Array<OutputCap> {
     throw new Error('zai: max_tokens description states no output cap')
   }
   const caps: Array<OutputCap> = []
-  let subject = first
+  // The opening sentence runs up to the first model name.
+  let subject = first.slice(Math.max(first.search(MODEL_NAME), 0))
   for (const part of rest) {
     const cap = part.match(
       /^\s+(?:a maximum output length of\s+)?(\d+(?:\.\d+)?[KM])\b(?:\s+maximum output\b)?/,
     )
     const names = modelNames(subject)
     const tokens = tokenCount(cap?.[1])
-    if (!cap || tokens === null || names.length === 0) {
+    if (
+      !cap ||
+      tokens === null ||
+      names.length === 0 ||
+      !onlyNames(subject, 'the|and|series')
+    ) {
       throw new Error(
         `zai: unreadable output cap: ${subject.trim()} supports${part}`,
       )
@@ -238,7 +262,41 @@ export function parseZaiOutputCaps(description: string): Array<OutputCap> {
     caps.push({ names, series: /\bseries\s*$/.test(subject), tokens })
     subject = part.slice(cap[0].length)
   }
+  if (modelNames(subject).length > 0) {
+    throw new Error(`zai: model with no output cap: ${subject.trim()}`)
+  }
   return caps
+}
+
+/**
+ * Does a property description's "supported by <models>" clause cover this
+ * id? Null when the description has no such clause. A clause that is not a
+ * plain model list, or a "<model> and higher" floor, covers nothing.
+ */
+export function zaiSupportedBy(
+  description: string,
+  rawId: string,
+): boolean | null {
+  const clause = description.match(/supported by (.+?)(?:\.\s|\.$|$)/is)?.[1]
+  if (clause === undefined) return null
+  const names = modelNames(clause)
+  if (names.length === 0) return false
+  if (/\b(?:higher|above)\b/i.test(clause)) {
+    const version = (id: string) => id.match(/^glm-(\d+(?:\.\d+)?)/)?.[1]
+    const floor = version(names[0] ?? '')
+    const own = version(rawId)
+    return (
+      names.length === 1 &&
+      onlyNames(clause, 'series|and|higher|above|models?|versions?') &&
+      floor !== undefined &&
+      own !== undefined &&
+      Number(own) >= Number(floor)
+    )
+  }
+  return (
+    onlyNames(clause, 'the|and|series') &&
+    namedBy(rawId, [{ names, series: true }]) !== null
+  )
 }
 
 /**
@@ -345,15 +403,47 @@ function userInputs(spec: unknown, messages: unknown): Array<string> {
 }
 
 /**
+ * The flags of one request variant that hold for one of its models: the
+ * shared walk's flags for the variant's own properties, less any whose
+ * description says "supported by" other models. `tool_choice` goes with
+ * `tools`.
+ */
+function variantCapabilities(
+  spec: unknown,
+  props: Record<string, unknown>,
+  rawId: string,
+  meta: Parameters<typeof walkRequestSchema>[1],
+): Record<string, FactSource> {
+  const walked = walkRequestSchema({ properties: props }, meta)
+  const kept = Object.entries(walked?.sources.capabilities ?? {}).filter(
+    ([, source]) => {
+      const property = source.path?.split('/')[2] ?? ''
+      const description = at(spec, props[property], 'description')
+      return (
+        typeof description !== 'string' ||
+        zaiSupportedBy(description, rawId) !== false
+      )
+    },
+  )
+  const flags = Object.fromEntries(kept)
+  if (!('tools' in flags)) delete flags.tool_choice
+  return flags
+}
+
+/**
  * Route and request-body facts for each id a generation path's request
  * lists under `model`. The first path that lists an id binds it.
  */
-export function zaiSpecFacts(spec: unknown): Map<string, SpecFacts> {
+export function zaiSpecFacts(
+  spec: unknown,
+  source: { url: string; hash: string } = { url: ZAI_OPENAPI_URL, hash: '' },
+): Map<string, SpecFacts> {
   const facts = new Map<string, SpecFacts>()
   const paths = at(spec, spec, 'paths')
   for (const [path, item] of Object.entries(isRecord(paths) ? paths : {})) {
     const activity = classifyZaiPath(path)
     if (activity === null) continue
+    const schemaEndpointId = path.replace(/^\//, '')
     const content = at(spec, item, 'post', 'requestBody', 'content')
     for (const media of Object.values(isRecord(content) ? content : {})) {
       const body = at(spec, media, 'schema')
@@ -377,13 +467,33 @@ export function zaiSpecFacts(spec: unknown): Map<string, SpecFacts> {
                 input: userInputs(spec, props.messages),
               }
             : null
+        // "128K" is a label; `maximum` is the bound, when it is that tier's.
+        const maximum = at(spec, props.max_tokens, 'maximum')
+        const exact = (tokens: number | undefined) =>
+          tokens === undefined
+            ? null
+            : typeof maximum === 'number' && (tokens / 1000) * 1024 === maximum
+              ? maximum
+              : tokens
+        const efforts = list(at(spec, props.reasoning_effort, 'enum')).filter(
+          (effort): effort is string => typeof effort === 'string',
+        )
         for (const id of ids) {
           if (facts.has(id)) continue
           facts.set(id, {
             activity,
-            schemaEndpointId: path.replace(/^\//, ''),
-            maxOutput: chat ? (namedBy(id, chat.caps)?.tokens ?? null) : null,
+            schemaEndpointId,
+            maxOutput: chat ? exact(namedBy(id, chat.caps)?.tokens) : null,
             modalities: chat ? { input: chat.input, output: ['text'] } : null,
+            efforts,
+            capabilities: chat
+              ? variantCapabilities(spec, props, id, {
+                  derivation: 'upstream-spec',
+                  endpointId: schemaEndpointId,
+                  sourceUrl: source.url,
+                  sourceHash: source.hash,
+                })
+              : null,
           })
         }
       }
@@ -406,7 +516,7 @@ export function parseZaiModels(
   const prices = parseZaiTokenPrices(pricing.text)
   const windows = parseZaiContextWindows(overview.text)
   const reasonings = parseZaiReasoning(thinking.text)
-  const facts = zaiSpecFacts(document)
+  const facts = zaiSpecFacts(document, spec)
   const from = (
     doc: ZaiDoc,
     derivation: FactSource['derivation'],
@@ -438,13 +548,34 @@ export function parseZaiModels(
     const fact = facts.get(rawId)
     const contextWindow = windows.get(rawId) ?? null
     const reasoning = namedBy(rawId, reasonings)?.reasoning ?? null
+    // The thinking page names series. Cite the request variant instead when
+    // its own enum is the same list, as it is for `glm-5.3-flashx`.
+    const specEfforts =
+      reasoning?.efforts !== undefined &&
+      [...reasoning.efforts].sort().join() ===
+        [...(fact?.efforts ?? [])].sort().join()
+    // No effort list for the model means no `reasoning_effort` flag either.
+    const capabilities = fact?.capabilities
+      ? Object.fromEntries(
+          Object.entries(fact.capabilities).filter(
+            ([flag]) => flag !== 'reasoning_effort' || reasoning !== null,
+          ),
+        )
+      : null
     const factSources: ModelFactSources = {
       ...(card ? { pricing: from(pricing, 'docs-derived', 'Pricing') } : {}),
       ...(contextWindow !== null
         ? { contextWindow: from(overview, 'docs-derived', 'Context') }
         : {}),
       ...(reasoning
-        ? { reasoning: from(thinking, 'docs-derived', 'reasoning_effort') }
+        ? {
+            reasoning: specEfforts
+              ? from(spec, 'upstream-spec', 'reasoning_effort')
+              : from(thinking, 'docs-derived', 'reasoning_effort'),
+          }
+        : {}),
+      ...(capabilities && Object.keys(capabilities).length > 0
+        ? { capabilities }
         : {}),
       ...(fact?.maxOutput != null
         ? { maxOutput: from(spec, 'upstream-spec', 'max_tokens') }
@@ -463,6 +594,9 @@ export function parseZaiModels(
             maxOutput: fact.maxOutput,
             modalities: fact.modalities,
           }
+        : {}),
+      ...(capabilities
+        ? { capabilities: Object.keys(capabilities), exactCapabilities: true }
         : {}),
       ...(contextWindow !== null ? { contextWindow } : {}),
       ...(reasoning ? { reasoning } : {}),

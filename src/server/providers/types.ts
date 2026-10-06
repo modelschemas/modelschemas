@@ -189,6 +189,13 @@ export interface ModelInfo {
   modalities?: unknown
   pricing?: unknown
   capabilities?: unknown
+  /**
+   * True when `capabilities` is the model's whole flag list, read from its
+   * own branch of a request body other models share. The bound request
+   * schema then adds no flags: walked whole, it would give each model its
+   * siblings' fields.
+   */
+  exactCapabilities?: boolean
   /** Thinking configuration; null when the model does not reason or docs are silent. */
   reasoning?: ModelReasoning | null
   /**
