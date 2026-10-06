@@ -15,6 +15,10 @@ a one-off backfill.
 
 ## Each turn
 
+Before starting, check your own checkout has `.env.local` (`bun run
+secrets:pull` creates it where Doppler is set up). Agents copy it: Doppler
+is scoped to a directory, so `secrets:pull` fails in a new worktree.
+
 1. Run `bun run gap:report`. If every provider with chat rows scores 1,
    stop the loop and report. Facts in `docs/source-silent.md` are already
    left out of the score.
@@ -37,7 +41,8 @@ Do not merge, deploy, or close issues. The user does that.
 ## Filler brief
 
 Give the agent the provider id, its row from the gap report, a dev-server
-port no other agent has (3101, 3102, 3103), and this:
+port no other agent has (3101, 3102, 3103), the absolute path of your own
+checkout (for its `.env.local`), and this:
 
 - **Find the source.** For each missing fact, find where the provider
   publishes it: the model listing API, the docs, the pricing page, the
@@ -79,7 +84,8 @@ checked <date>`.
   `.env.local`.
 
   ```bash
-  bun install && bun run secrets:pull && bun run db:migrate && bun run seed
+  cp <orchestrator checkout>/.env.local .env.local
+  bun install && bun run db:migrate && bun run seed
   bunx vite dev --port <port> &
   curl -X POST localhost:<port>/v1/admin/sync/<provider> -H "X-Admin-Key: $ADMIN_KEY"
   curl "localhost:<port>/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*"   # model poll
@@ -97,7 +103,8 @@ checked <date>`.
 
 ## Checker brief
 
-Give the agent the PR number, a free dev-server port, and this:
+Give the agent the PR number, a free dev-server port, the absolute path of
+your own checkout, and this:
 
 - Check out the PR in your own worktree and run the local verify steps
   above on the port the orchestrator gave you.
