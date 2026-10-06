@@ -1,0 +1,2 @@
+- huggingface: maxOutput — the router listing states only `context_length` per provider, no output cap, https://huggingface.co/docs/inference-providers/hub-api, checked 2026-10-06
+- huggingface: cacheRead — the router listing prices only `input` and `output`, https://huggingface.co/docs/inference-providers/hub-api, checked 2026-10-06
