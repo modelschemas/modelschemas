@@ -243,6 +243,20 @@ migrate-then-deploy).
 
 ## Releasing on npm
 
+**Breaking (0.1.x):** `reasoning.mode` gains `toggle` (an on/off thinking
+switch and nothing else), and `reasoning.mandatory` is `boolean | null`.
+`null` means the provider's source does not say whether thinking can be
+turned off. It must NOT be read as `false`: `if (!reasoning.mandatory)`
+now misreads it, so test `reasoning.mandatory === false` before offering
+an off option. `efforts` is never present on `toggle`, a `toggle` row
+always has a stated `mandatory`, and a `switch (mode)` needs a `toggle`
+case. `true` means the provider states thinking cannot be turned off —
+but rows written before this rule also store `true` when a level list
+merely has no `none`. Until those adapters are converted, treat `true` as
+"inferred" on `openai`, `vercel`, `amazon-bedrock` (effort rows),
+`mistral`, `groq`, `grok`, `zai`, `moonshotai-cn`, `baseten`, `byteplus`,
+`fal`, and on the `effort` rows of `gemini` and `google-vertex`.
+
 **Breaking (0.1.x):** `models.pricing` is a RateCard or `null`, not an
 OpenRouter `{ prompt, completion, … }` blob. List rows carry a summary of
 the stored card — `{ per: 'token', inputPerMillion, outputPerMillion }` at

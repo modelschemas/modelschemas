@@ -65,13 +65,16 @@ function dedent(text: string): string {
  *
  * - "Kimi K3 accepts `minimal`, … and `max` reasoning effort." gives
  *   `reasoning` and `reasoning_effort` to the row whose link text is the
- *   name, and its list is the row's `efforts`. The page does not say
- *   whether reasoning can be turned off, so the row's `mandatory` is null.
+ *   name, and its list is the row's `efforts`. A list that holds `none`
+ *   or `off` says reasoning can be turned off; any other list leaves
+ *   `mandatory` null.
  * - A card that ends "… reasoning model(s)." gives `reasoning` to every row
  *   of its tab, and only when it names as many models as the tab lists.
  *
  * Any other wording of either statement throws, as does an effort sentence
- * outside the tabs or a second one for the same model.
+ * outside the tabs or a second one for the same model. So does tab prose
+ * that speaks of turning reasoning off ("cannot be disabled", "always on"):
+ * no such sentence is on the page today, and one must be read, not dropped.
  */
 export function parsePerplexityModelsPage(markdown: string): {
   flags: StatedFlags
@@ -112,6 +115,18 @@ export function parsePerplexityModelsPage(markdown: string): {
       ),
     ]
     sentences += efforts.length
+    const prose = tab.split('\n').filter((line) => !line.startsWith('|'))
+    if (
+      prose.some(
+        (line) =>
+          /reasoning|thinking/i.test(line) &&
+          /disabl|always[- ]on|(?:turn|switch)\w* off|cannot be|can['’]t be/i.test(
+            line,
+          ),
+      )
+    ) {
+      throw unread('whether reasoning can be turned off')
+    }
     const seen = new Set<string>()
     for (const [, name, list] of efforts) {
       const named = table.filter((cells) =>
@@ -217,7 +232,15 @@ function statedFacts(
     const efforts = new Map(doc.efforts).get(id)
     if (efforts) {
       reasoning = {
-        reasoning: { mode: 'effort', mandatory: null, efforts },
+        reasoning: {
+          mode: 'effort',
+          // The sentence is this model's own list: an off value in it is a
+          // statement. Without one the page does not say.
+          mandatory: efforts.some((e) => e === 'none' || e === 'off')
+            ? false
+            : null,
+          efforts,
+        },
         factSources: {
           reasoning: {
             derivation: 'docs-derived',

@@ -127,6 +127,16 @@ describe('parsePerplexityModelsPage', () => {
       `    </Info>\n  </Tab>\n</Tabs>\n\n${KIMI_SENTENCE}\n\n$1`,
     ],
     [
+      'a statement that reasoning cannot be disabled',
+      'reasoning effort. `minimal`',
+      'reasoning effort. Reasoning cannot be disabled. `minimal`',
+    ],
+    [
+      'a statement that the model always thinks',
+      "Kimi K3 — Moonshot AI's flagship reasoning model.",
+      "Kimi K3 — Moonshot AI's flagship always-on reasoning model.",
+    ],
+    [
       'a card naming fewer models than its tab lists',
       'GLM 5.3 and GLM 5.3 Flash — Z.AI',
       'GLM 5.3 — Z.AI',
@@ -366,6 +376,23 @@ describe('perplexity listModels', () => {
         activity: 'chat',
       }),
     ).toBe('v1/agent')
+  })
+
+  it('reads an off value in the published list as "can be turned off"', async () => {
+    const withNone = MODELS_DOC.replace('accepts `minimal`,', 'accepts `none`,')
+    expect(withNone).not.toBe(MODELS_DOC)
+    globalThis.fetch = ((url: string) =>
+      Promise.resolve(
+        String(url) === MODELS_URL
+          ? Response.json({ data: [{ id: 'perplexity/kimi-k3' }] })
+          : new Response(String(url) === DOC_URL ? withNone : PRESETS_DOC),
+      )) as typeof fetch
+    const result = await provider.listModels({ PERPLEXITY_API_KEY: 'test-key' })
+    expect(result.models[0]?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
   })
 
   it('fails the poll when a docs page is an HTML error page', async () => {

@@ -125,8 +125,15 @@ ones).
   become a card (one repair turn, same model); a failed one rewinds the
   cursor so the next shard retries it once.
   `models.reasoning` (`{ mode, mandatory, efforts? }`; mode is
-  adaptive/budget/effort/toggle, `mandatory: null` means the source does
-  not say — semantics on `ModelReasoning` in `providers/types.ts`) and
+  adaptive/budget/effort/toggle). `mandatory` has one meaning: `true` the
+  source STATES thinking cannot be turned off, `false` it states it can
+  (prose, or an off value in the model's OWN schema or level list), `null`
+  unstated — a shared schema or a list with no `none` states nothing. A
+  `toggle` is never stored with `null`. Full rules on `ModelReasoning` in
+  `providers/types.ts`; `reasoningViolation` gates every poll write
+  (`keepValidReasoning`: a bad object keeps the prior value and emits
+  `ingest_failed`). Older adapters still infer `true` (README "Releasing
+  on npm" lists them). `models.reasoning` and
   `models.serverTools` (provider tool type ids) come from docs: OpenAI and
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
   Models API + thinking table; Anthropic tools are a hand-written table
