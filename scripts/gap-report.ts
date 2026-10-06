@@ -7,10 +7,10 @@
  *   bun run gap:report --base http://localhost:3100
  *   bun run gap:report --check --providers grok,mistral --target 0.9
  *
- * `docs/source-silent.md` lists facts a provider does not publish; those
+ * `docs/source-silent/<provider>.md` lists facts a provider does not publish; those
  * are left out of that provider's score and listed under `silent`.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -279,9 +279,14 @@ export async function main(
   if (!response.ok) throw new Error(`GET ${url.href} → ${response.status}`)
   const { models } = (await response.json()) as { models: Array<ModelRow> }
 
-  const ledgerPath = join(import.meta.dirname, '..', 'docs', 'source-silent.md')
-  const ledger = existsSync(ledgerPath)
-    ? parseLedger(readFileSync(ledgerPath, 'utf8'))
+  const ledgerDir = join(import.meta.dirname, '..', 'docs', 'source-silent')
+  const ledger = existsSync(ledgerDir)
+    ? parseLedger(
+        readdirSync(ledgerDir)
+          .filter((file) => file.endsWith('.md') && file !== 'README.md')
+          .map((file) => readFileSync(join(ledgerDir, file), 'utf8'))
+          .join('\n'),
+      )
     : undefined
   const report = buildReport(models, ledger)
 
