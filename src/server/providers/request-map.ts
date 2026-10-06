@@ -82,6 +82,17 @@ const DEEPSEEK_FLASH_LEVELS: EffortLevelMap = {
   max: 'max',
 }
 
+/** `kimi-k3`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
+const KIMI_K3_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: null,
+  low: 'low',
+  medium: null,
+  high: 'high',
+  xhigh: null,
+  max: 'max',
+}
+
 /**
  * Moonshot's per-model chat schemas, by exact id: `kimi-k3` takes
  * `reasoning_effort` and always thinks, `kimi-k2.7-code` takes only
@@ -107,17 +118,6 @@ const GLM_52_LEVELS: EffortLevelMap = {
   off: null,
   minimal: null,
   low: null,
-  medium: null,
-  high: 'high',
-  xhigh: null,
-  max: 'max',
-}
-
-/** `kimi-k3`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
-const KIMI_K3_LEVELS: EffortLevelMap = {
-  off: null,
-  minimal: null,
-  low: 'low',
   medium: null,
   high: 'high',
   xhigh: null,
