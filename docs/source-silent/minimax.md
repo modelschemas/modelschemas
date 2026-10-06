@@ -1,0 +1,1 @@
+- minimax: efforts — only MiniMax-M3.1-Flash-Preview takes an effort; the docs say the spec's `reasoning_effort` description says other models ignore the field, https://platform.minimax.io/docs/api-reference/text/api/openapi-chat-openai.json, checked 2026-10-06

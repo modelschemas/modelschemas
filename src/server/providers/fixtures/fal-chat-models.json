@@ -1,0 +1,1566 @@
+[
+  {
+    "endpoint_id": "openrouter/router/openai/v1/chat/completions",
+    "metadata": {
+      "display_name": "OpenRouter Chat Completions [OpenAI Compatible]",
+      "category": "llm",
+      "description": "OpenAI-compatible chat completions API. Drop-in replacement for the OpenAI API — use any OpenAI SDK or client to access Claude, Gemini, Grok, DeepSeek, Llama, Qwen, Mistral, and all OpenAI models (GPT-5, GPT-4o, o3) through fal. Powered by OpenRouter.",
+      "status": "active",
+      "date": "2025-11-12T20:15:52.898Z"
+    },
+    "openapi": {
+      "openapi": "3.0.4",
+      "paths": {
+        "/openrouter/router/openai/v1/chat/completions": {
+          "post": {
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/RouterOpenaiV1ChatCompletionsInput"
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "The request status.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/QueueStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/openrouter/router/openai/v1/chat/completions/requests/{request_id}": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "Result of the request.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/RouterOpenaiV1ChatCompletionsOutput"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "RouterOpenaiV1ChatCompletionsInput": {
+            "type": "object",
+            "description": "OpenAI-format request. This endpoint is an OpenAI-compatible passthrough to OpenRouter's Chat Completions API: the request body follows the OpenAI Chat Completions wire format and is forwarded with minimal normalization (usage accounting is enabled, and when a fal caller id is available, a privacy-preserving hash of it replaces any caller-supplied `user`); the response follows the OpenAI wire format except that `usage`, when returned non-null, is replaced with fal's accounting shape (`prompt_tokens`, `completion_tokens`, `total_tokens`, `cost`, `prompt_tokens_details`; fields may be null). When `stream` is true on a synchronous invocation, the response is delivered as server-sent events instead of a single JSON object. Authoritative behavior, including which fields each model accepts, is defined by OpenRouter's implementation (https://openrouter.ai/docs/api-reference); see also the OpenAI Chat Completions API reference (https://platform.openai.com/docs/api-reference/chat). Any field accepted there is accepted here, subject to the normalization above.",
+            "additionalProperties": true
+          },
+          "RouterOpenaiV1ChatCompletionsOutput": {
+            "type": "object",
+            "description": "OpenAI-format response. This endpoint is an OpenAI-compatible passthrough to OpenRouter's Chat Completions API: the request body follows the OpenAI Chat Completions wire format and is forwarded with minimal normalization (usage accounting is enabled, and when a fal caller id is available, a privacy-preserving hash of it replaces any caller-supplied `user`); the response follows the OpenAI wire format except that `usage`, when returned non-null, is replaced with fal's accounting shape (`prompt_tokens`, `completion_tokens`, `total_tokens`, `cost`, `prompt_tokens_details`; fields may be null). When `stream` is true on a synchronous invocation, the response is delivered as server-sent events instead of a single JSON object. Authoritative behavior, including which fields each model accepts, is defined by OpenRouter's implementation (https://openrouter.ai/docs/api-reference); see also the OpenAI Chat Completions API reference (https://platform.openai.com/docs/api-reference/chat).",
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "endpoint_id": "openrouter/router/video",
+    "metadata": {
+      "display_name": "OpenRouter [Video]",
+      "category": "video-to-text",
+      "description": "Run any video-capable LLM with fal. Analyze, summarize, and understand video files using Gemini (Google) models. Supports mp4, mpeg, mov, webm, and YouTube links. Powered by OpenRouter.",
+      "status": "active",
+      "date": "2026-01-13T23:31:16.485Z"
+    },
+    "openapi": {
+      "openapi": "3.0.4",
+      "paths": {
+        "/openrouter/router/video": {
+          "post": {
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/RouterVideoInput"
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "The request status.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/QueueStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/openrouter/router/video/requests/{request_id}": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "Result of the request.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/RouterVideoOutput"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "RouterVideoInput": {
+            "x-fal-order-properties": [
+              "video_urls",
+              "prompt",
+              "system_prompt",
+              "model",
+              "reasoning",
+              "temperature",
+              "max_tokens",
+              "enable_web_search",
+              "web_search_options"
+            ],
+            "title": "VideoInput",
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "string",
+                "title": "Prompt",
+                "description": "Prompt to be used for the video processing",
+                "examples": ["Please transcribe the videos respectively."]
+              },
+              "system_prompt": {
+                "title": "System Prompt",
+                "description": "System prompt to provide context or instructions to the model",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "examples": [
+                  "Please look at the videos in order and answer the question."
+                ]
+              },
+              "web_search_options": {
+                "description": "Options for web search (engine, result limits, domain filters, ...). Ignored unless enable_web_search is true.",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WebSearchOptions"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reasoning": {
+                "type": "boolean",
+                "title": "Reasoning",
+                "description": "Should reasoning be the part of the final answer.",
+                "default": false
+              },
+              "video_urls": {
+                "title": "Video Urls",
+                "description": "List of URLs or data URIs of video files to process. Supported formats: mp4, mpeg, mov, webm. For Google Gemini on AI Studio, YouTube links are also supported. Mutually exclusive with video_url.",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "examples": [
+                  [
+                    "https://v3b.fal.media/files/b/0a8b3081/t4Jsy53x-Q8iQqg78_Vj__vid01.mp4",
+                    "https://v3b.fal.media/files/b/0a8b3085/xWtbpb6pf4i-BSvR2oWbi_vid06.mp4"
+                  ]
+                ]
+              },
+              "enable_web_search": {
+                "type": "boolean",
+                "title": "Enable Web Search",
+                "description": "Give the model access to real-time web information via OpenRouter's web search server tool. When enabled, the model decides when to search and may search multiple times per request. Search costs are charged in addition to token usage.",
+                "default": false
+              },
+              "max_tokens": {
+                "title": "Max Tokens",
+                "description": "This sets the upper limit for the number of tokens the model can generate in response. It won't produce more than this limit. The maximum value is the context length minus the prompt length.",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "temperature": {
+                "type": "number",
+                "title": "Temperature",
+                "description": "This setting influences the variety in the model's responses. Lower values lead to more predictable and typical responses, while higher values encourage more diverse and less common responses. At 0, the model always gives the same response for a given input.",
+                "maximum": 2,
+                "default": 1,
+                "minimum": 0
+              },
+              "model": {
+                "type": "string",
+                "title": "Model",
+                "description": "Name of the model to use. Charged based on actual token usage.",
+                "examples": [
+                  "google/gemini-3.8-flash",
+                  "google/gemini-3.5-flash-lite",
+                  "google/gemini-3.1-pro-preview",
+                  "google/gemini-2.5-flash",
+                  "google/gemini-2.5-pro"
+                ]
+              }
+            },
+            "required": ["prompt", "model"]
+          },
+          "RouterVideoOutput": {
+            "x-fal-order-properties": ["output", "usage"],
+            "title": "VideoOutput",
+            "type": "object",
+            "properties": {
+              "usage": {
+                "description": "Token usage information",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/UsageInfo"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "examples": [
+                  {
+                    "prompt_tokens": 1000,
+                    "total_tokens": 1100,
+                    "cost": 0.0005,
+                    "completion_tokens": 100
+                  }
+                ]
+              },
+              "output": {
+                "type": "string",
+                "title": "Output",
+                "description": "Generated output from video processing",
+                "examples": [
+                  "that's the way I look at it and I don't know what you would say. Sooner or later the child gets run over.\nThey seem to be too local, too provincial."
+                ]
+              }
+            },
+            "required": ["output", "usage"]
+          },
+          "WebSearchOptions": {
+            "x-fal-order-properties": [
+              "engine",
+              "max_results",
+              "max_uses",
+              "max_total_results",
+              "search_context_size",
+              "max_characters",
+              "allowed_domains",
+              "excluded_domains",
+              "user_location"
+            ],
+            "title": "WebSearchOptions",
+            "description": "Options for the OpenRouter ``openrouter:web_search`` server tool.",
+            "type": "object",
+            "properties": {
+              "max_characters": {
+                "title": "Max Characters",
+                "description": "Exact maximum characters of content per result (1-100,000). Applies to the Exa engine; ignored with native provider search. Takes precedence over search_context_size when both are set.",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "excluded_domains": {
+                "title": "Excluded Domains",
+                "description": "Exclude results from these domains. Supported by Exa and some native providers (not OpenAI or Google native search).",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "max_uses": {
+                "title": "Max Uses",
+                "description": "Maximum number of searches the model may perform in a single request. Once reached, further search calls return an error result instead of executing. With native provider search, forwarded only to Anthropic; other native providers ignore it.",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "max_results": {
+                "title": "Max Results",
+                "description": "Maximum results per search call (1-25). Applies to the Exa engine; ignored with native provider search. Defaults to 5.",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "maximum": 25,
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "allowed_domains": {
+                "title": "Allowed Domains",
+                "description": "Limit results to these domains. Supported by Exa and most native providers (not Google native search).",
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "max_total_results": {
+                "title": "Max Total Results",
+                "description": "Maximum total results across all search calls in a single request. Useful for controlling cost and context size in agentic loops.",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "search_context_size": {
+                "title": "Search Context Size",
+                "description": "How much content to retrieve per result. For Exa: low=5K, medium=15K, high=30K characters per result; when omitted, Exa picks adaptively (~2-4K per result). Ignored with native provider search. Overridden by max_characters when both are set.",
+                "anyOf": [
+                  {
+                    "enum": ["low", "medium", "high"],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "engine": {
+                "enum": ["auto", "native", "exa"],
+                "title": "Engine",
+                "description": "Search engine to use. 'auto' uses native provider search when available and falls back to Exa. 'native' prefers the provider's built-in web search (OpenAI, Anthropic, Google, xAI, Perplexity), falling back to Exa for models without native support. 'exa' always uses Exa's search API.",
+                "type": "string",
+                "default": "auto"
+              },
+              "user_location": {
+                "description": "Approximate user location for location-biased results. Only supported by native provider search; ignored by Exa.",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WebSearchUserLocation"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "UsageInfo": {
+            "x-fal-order-properties": [
+              "prompt_tokens",
+              "completion_tokens",
+              "total_tokens",
+              "cost",
+              "prompt_tokens_details"
+            ],
+            "title": "UsageInfo",
+            "type": "object",
+            "properties": {
+              "prompt_tokens": {
+                "title": "Prompt Tokens",
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "completion_tokens": {
+                "title": "Completion Tokens",
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "total_tokens": {
+                "type": "integer",
+                "title": "Total Tokens",
+                "default": 0
+              },
+              "cost": {
+                "type": "number",
+                "title": "Cost"
+              },
+              "prompt_tokens_details": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PromptTokensDetails"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["cost"]
+          },
+          "WebSearchUserLocation": {
+            "x-fal-order-properties": [
+              "type",
+              "city",
+              "region",
+              "country",
+              "timezone"
+            ],
+            "title": "WebSearchUserLocation",
+            "description": "Approximate user location to bias web search results geographically.\n\nOnly honored by native provider search; ignored by the Exa engine.\nAll fields are optional.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "description": "Location type. Only 'approximate' is supported.",
+                "const": "approximate",
+                "default": "approximate"
+              },
+              "country": {
+                "title": "Country",
+                "description": "Two-letter country code, e.g. 'US'.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "region": {
+                "title": "Region",
+                "description": "Region or state, e.g. 'California'.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "city": {
+                "title": "City",
+                "description": "City name, e.g. 'San Francisco'.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "timezone": {
+                "title": "Timezone",
+                "description": "IANA timezone, e.g. 'America/Los_Angeles'.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "PromptTokensDetails": {
+            "x-fal-order-properties": ["cached_tokens", "cache_write_tokens"],
+            "title": "PromptTokensDetails",
+            "type": "object",
+            "properties": {
+              "cache_write_tokens": {
+                "type": "integer",
+                "title": "Cache Write Tokens",
+                "default": 0
+              },
+              "cached_tokens": {
+                "type": "integer",
+                "title": "Cached Tokens",
+                "default": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "endpoint_id": "openrouter/router/decisions",
+    "metadata": {
+      "display_name": "Router",
+      "category": "text-to-text",
+      "description": "Run any decision model with fal, powered by OpenRouter.",
+      "status": "active",
+      "date": "2026-09-21T22:13:11.671Z"
+    },
+    "openapi": {
+      "openapi": "3.0.4",
+      "paths": {
+        "/openrouter/router/decisions": {
+          "post": {
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/RouterDecisionsInput"
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "The request status.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/QueueStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/openrouter/router/decisions/requests/{request_id}": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "Result of the request.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/RouterDecisionsOutput"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "RouterDecisionsInput": {
+            "type": "object",
+            "title": "DecisionsInput",
+            "properties": {
+              "session_id": {
+                "title": "Session Id",
+                "description": "Identifier for grouping related decision requests.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "questions": {
+                "minProperties": 1,
+                "title": "Questions",
+                "description": "Questions keyed by caller-defined IDs. Each question is evaluated independently against the same state.",
+                "type": "object",
+                "examples": [
+                  {
+                    "refund_requested": {
+                      "type": "noul",
+                      "instructions": "Is the customer requesting a refund?"
+                    },
+                    "department": {
+                      "type": "choice",
+                      "criteria": {
+                        "returns": "Refunds, exchanges, or damaged items",
+                        "shipping": "Delivery status, delays, or lost packages",
+                        "billing": "Charges, invoices, or payment problems"
+                      },
+                      "instructions": "Which team should handle this request?"
+                    }
+                  }
+                ],
+                "additionalProperties": {
+                  "discriminator": {
+                    "mapping": {
+                      "choice": "#/components/schemas/DecisionsChoiceQuestion",
+                      "score": "#/components/schemas/DecisionsScoreQuestion",
+                      "noul": "#/components/schemas/DecisionsNoulQuestion"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DecisionsNoulQuestion"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DecisionsChoiceQuestion"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DecisionsScoreQuestion"
+                    }
+                  ]
+                }
+              },
+              "state": {
+                "title": "State",
+                "description": "Text or structured JSON content for the model to evaluate.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  }
+                ],
+                "examples": [
+                  "My card was charged twice. Please refund the duplicate."
+                ]
+              },
+              "model": {
+                "type": "string",
+                "title": "Model",
+                "description": "OpenRouter Decisions model to use.",
+                "default": "typesafe/jev-1.13",
+                "examples": ["typesafe/jev-1.13"]
+              }
+            },
+            "x-fal-order-properties": [
+              "state",
+              "questions",
+              "model",
+              "session_id"
+            ],
+            "required": ["state", "questions"],
+            "additionalProperties": false
+          },
+          "RouterDecisionsOutput": {
+            "x-fal-order-properties": [
+              "model",
+              "answers",
+              "usage",
+              "id",
+              "provider"
+            ],
+            "title": "DecisionsOutput",
+            "type": "object",
+            "properties": {
+              "id": {
+                "title": "Id",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answers": {
+                "type": "object",
+                "title": "Answers",
+                "additionalProperties": {
+                  "discriminator": {
+                    "mapping": {
+                      "choice": "#/components/schemas/DecisionsChoiceAnswer",
+                      "score": "#/components/schemas/DecisionsScoreAnswer",
+                      "noul": "#/components/schemas/DecisionsNoulAnswer"
+                    },
+                    "propertyName": "type"
+                  },
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DecisionsNoulAnswer"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DecisionsChoiceAnswer"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DecisionsScoreAnswer"
+                    }
+                  ]
+                }
+              },
+              "provider": {
+                "title": "Provider",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "usage": {
+                "$ref": "#/components/schemas/DecisionsUsage"
+              },
+              "model": {
+                "type": "string",
+                "title": "Model"
+              }
+            },
+            "required": ["model", "answers", "usage"]
+          },
+          "DecisionsNoulQuestion": {
+            "x-fal-order-properties": ["type", "instructions", "criteria"],
+            "title": "DecisionsNoulQuestion",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "const": "noul"
+              },
+              "criteria": {
+                "description": "Optional descriptions clarifying true and false outcomes.",
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DecisionsNoulCriteria"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "instructions": {
+                "type": "string",
+                "title": "Instructions",
+                "description": "The yes/no question to evaluate."
+              }
+            },
+            "required": ["type", "instructions"]
+          },
+          "DecisionsChoiceQuestion": {
+            "x-fal-order-properties": ["type", "instructions", "criteria"],
+            "title": "DecisionsChoiceQuestion",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "const": "choice"
+              },
+              "criteria": {
+                "minProperties": 2,
+                "title": "Criteria",
+                "description": "Answer options mapped to descriptions of each option.",
+                "type": "object",
+                "maxProperties": 255,
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "array",
+                      "items": {}
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "instructions": {
+                "type": "string",
+                "title": "Instructions",
+                "description": "The question the model should answer."
+              }
+            },
+            "required": ["type", "instructions", "criteria"]
+          },
+          "DecisionsScoreQuestion": {
+            "x-fal-order-properties": ["type", "instructions", "criteria"],
+            "title": "DecisionsScoreQuestion",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "const": "score"
+              },
+              "criteria": {
+                "type": "array",
+                "title": "Criteria",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object"
+                    },
+                    {
+                      "type": "array",
+                      "items": {}
+                    }
+                  ]
+                },
+                "minItems": 2,
+                "description": "Ordered level descriptions, from the low end to the high end.",
+                "maxItems": 10
+              },
+              "instructions": {
+                "type": "string",
+                "title": "Instructions",
+                "description": "The quality or property to score."
+              }
+            },
+            "required": ["type", "instructions", "criteria"]
+          },
+          "DecisionsNoulAnswer": {
+            "x-fal-order-properties": ["type", "noul"],
+            "title": "DecisionsNoulAnswer",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "const": "noul"
+              },
+              "noul": {
+                "type": "number",
+                "title": "Noul",
+                "description": "Probability from 0 to 1 that the answer is yes.",
+                "maximum": 1,
+                "minimum": 0
+              }
+            },
+            "required": ["type", "noul"]
+          },
+          "DecisionsChoiceAnswer": {
+            "x-fal-order-properties": [
+              "type",
+              "choice",
+              "confidence",
+              "probabilities"
+            ],
+            "title": "DecisionsChoiceAnswer",
+            "type": "object",
+            "properties": {
+              "probabilities": {
+                "title": "Probabilities",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number",
+                      "maximum": 1,
+                      "minimum": 0
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "choice": {
+                "type": "string",
+                "title": "Choice"
+              },
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "const": "choice"
+              },
+              "confidence": {
+                "title": "Confidence",
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "maximum": 1,
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["type", "choice"]
+          },
+          "DecisionsScoreAnswer": {
+            "x-fal-order-properties": [
+              "type",
+              "score",
+              "confidence",
+              "probabilities",
+              "legend"
+            ],
+            "title": "DecisionsScoreAnswer",
+            "type": "object",
+            "properties": {
+              "probabilities": {
+                "title": "Probabilities",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number",
+                      "maximum": 1,
+                      "minimum": 0
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "confidence": {
+                "title": "Confidence",
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "maximum": 1,
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "title": "Type",
+                "const": "score"
+              },
+              "legend": {
+                "title": "Legend",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "score": {
+                "type": "number",
+                "title": "Score"
+              }
+            },
+            "required": ["type", "score"]
+          },
+          "DecisionsUsage": {
+            "x-fal-order-properties": [
+              "input_tokens",
+              "output_tokens",
+              "total_tokens",
+              "cost"
+            ],
+            "title": "DecisionsUsage",
+            "type": "object",
+            "properties": {
+              "total_tokens": {
+                "title": "Total Tokens",
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "output_tokens": {
+                "type": "integer",
+                "title": "Output Tokens",
+                "minimum": 0
+              },
+              "cost": {
+                "title": "Cost",
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "input_tokens": {
+                "type": "integer",
+                "title": "Input Tokens",
+                "minimum": 0
+              }
+            },
+            "required": ["input_tokens", "output_tokens"]
+          },
+          "DecisionsNoulCriteria": {
+            "x-fal-order-properties": ["true", "false"],
+            "title": "DecisionsNoulCriteria",
+            "type": "object",
+            "properties": {
+              "true": {
+                "title": "True",
+                "description": "What should count as a yes/true outcome.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  }
+                ]
+              },
+              "false": {
+                "title": "False",
+                "description": "What should count as a no/false outcome.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object"
+                  },
+                  {
+                    "type": "array",
+                    "items": {}
+                  }
+                ]
+              }
+            },
+            "required": ["true", "false"]
+          }
+        }
+      }
+    }
+  },
+  {
+    "endpoint_id": "nvidia/nemotron-3-nano-omni/vision",
+    "metadata": {
+      "display_name": "Nemotron 3 Nano Omni",
+      "category": "image-to-text",
+      "description": "Vision reasoning variant of NVIDIA's Nemotron 3 Nano Omni. 30B A3B hybrid Transformer-Mamba MoE - accepts an image plus a prompt and returns text.",
+      "status": "active",
+      "date": "2026-04-27T21:46:49.986Z"
+    },
+    "openapi": {
+      "openapi": "3.0.4",
+      "paths": {
+        "/nvidia/nemotron-3-nano-omni/vision": {
+          "post": {
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/Nemotron3NanoOmniVisionInput"
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "The request status.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/QueueStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/nvidia/nemotron-3-nano-omni/vision/requests/{request_id}": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "Result of the request.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/Nemotron3NanoOmniVisionOutput"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "Nemotron3NanoOmniVisionInput": {
+            "required": ["prompt", "image_url"],
+            "type": "object",
+            "x-fal-order-properties": [
+              "prompt",
+              "system_prompt",
+              "reasoning_mode",
+              "max_tokens",
+              "temperature",
+              "top_p",
+              "enable_safety_checker",
+              "image_url"
+            ],
+            "title": "VisionInput",
+            "properties": {
+              "prompt": {
+                "minLength": 1,
+                "description": "Text prompt to send to the model. English only.",
+                "type": "string",
+                "examples": [
+                  "Summarize the key capabilities of a multimodal agent."
+                ],
+                "title": "Prompt"
+              },
+              "temperature": {
+                "minimum": 0,
+                "maximum": 2,
+                "type": "number",
+                "description": "Sampling temperature. Lower is more deterministic.",
+                "default": 0.7,
+                "title": "Temperature"
+              },
+              "max_tokens": {
+                "minimum": 1,
+                "maximum": 20000,
+                "type": "integer",
+                "description": "Maximum number of tokens to generate.",
+                "default": 1024,
+                "title": "Max Tokens"
+              },
+              "reasoning_mode": {
+                "description": "Whether the model should emit an explicit reasoning trace. `no_think` returns a direct answer; `think` returns chain-of-thought followed by the final answer.",
+                "type": "string",
+                "enum": ["think", "no_think"],
+                "default": "no_think",
+                "title": "Reasoning Mode"
+              },
+              "system_prompt": {
+                "description": "Optional system prompt to steer the model. Reasoning behavior is controlled by the separate `reasoning_mode` field.",
+                "examples": ["You are a concise enterprise assistant."],
+                "title": "System Prompt",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "top_p": {
+                "minimum": 0,
+                "maximum": 1,
+                "type": "number",
+                "description": "Nucleus sampling probability mass.",
+                "default": 0.95,
+                "title": "Top P"
+              },
+              "image_url": {
+                "description": "URL of the image to reason about. RGB JPEG or PNG.",
+                "type": "string",
+                "examples": [
+                  "https://storage.googleapis.com/falserverless/example_inputs/nemotron-3-nano-omni/vision_in.jpg"
+                ],
+                "title": "Image URL"
+              },
+              "enable_safety_checker": {
+                "description": "Whether to enable the safety checker.",
+                "type": "boolean",
+                "default": true,
+                "title": "Enable Safety Checker"
+              }
+            }
+          },
+          "Nemotron3NanoOmniVisionOutput": {
+            "required": ["output", "usage"],
+            "type": "object",
+            "x-fal-order-properties": ["output", "finish_reason", "usage"],
+            "title": "BaseOutput",
+            "properties": {
+              "output": {
+                "description": "Generated text response.",
+                "type": "string",
+                "examples": [
+                  "The image shows a golden retriever puppy sitting on a wooden floor."
+                ],
+                "title": "Output"
+              },
+              "finish_reason": {
+                "description": "Reason generation stopped.",
+                "type": "string",
+                "examples": ["stop", "length"],
+                "default": "stop",
+                "title": "Finish Reason"
+              },
+              "usage": {
+                "description": "Token usage for the request.",
+                "$ref": "#/components/schemas/UsageInfo",
+                "examples": [
+                  {
+                    "output_tokens": 87,
+                    "input_tokens": 412
+                  }
+                ]
+              }
+            }
+          },
+          "UsageInfo": {
+            "required": ["input_tokens", "output_tokens"],
+            "type": "object",
+            "x-fal-order-properties": ["input_tokens", "output_tokens"],
+            "title": "UsageInfo",
+            "properties": {
+              "output_tokens": {
+                "description": "Number of output tokens generated.",
+                "type": "integer",
+                "title": "Output Tokens"
+              },
+              "input_tokens": {
+                "description": "Number of input tokens processed.",
+                "type": "integer",
+                "title": "Input Tokens"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "endpoint_id": "fal-ai/bytedance/seed/v2/mini",
+    "metadata": {
+      "display_name": "Bytedance Seed V2 Mini",
+      "category": "llm",
+      "description": " Seed 2.0 Mini is a high-performance multimodal model optimized for low latency and high concurrency. It supports text, image, and video input with 256K context and configurable thinking/reasoning modes.",
+      "status": "active",
+      "date": "2026-03-17T10:53:52.704Z"
+    },
+    "openapi": {
+      "openapi": "3.0.4",
+      "paths": {
+        "/fal-ai/bytedance/seed/v2/mini": {
+          "post": {
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/BytedanceSeedV2MiniInput"
+                  }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "The request status.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/QueueStatus"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "/fal-ai/bytedance/seed/v2/mini/requests/{request_id}": {
+          "get": {
+            "responses": {
+              "200": {
+                "description": "Result of the request.",
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "$ref": "#/components/schemas/BytedanceSeedV2MiniOutput"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "components": {
+        "schemas": {
+          "BytedanceSeedV2MiniInput": {
+            "x-fal-order-properties": [
+              "prompt",
+              "image_urls",
+              "video_urls",
+              "system_prompt",
+              "messages",
+              "thinking",
+              "reasoning_effort",
+              "max_completion_tokens",
+              "temperature",
+              "top_p"
+            ],
+            "required": ["prompt"],
+            "title": "Seed2MiniInput",
+            "properties": {
+              "image_urls": {
+                "description": "URLs of images for visual understanding. Supported formats: JPEG, PNG, WebP. A maximum of 6 images is supported. Any additional images will be ignored.",
+                "title": "Image Urls",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "messages": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/components/schemas/Seed2MiniMessage"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "examples": [[]],
+                "description": "Optional prior conversation history for multi-turn conversations. Pass back the `messages` field from a previous response to provide context. The current `prompt`, `image_urls`, `video_urls`, and `system_prompt` are always appended as the latest user turn.",
+                "title": "Messages"
+              },
+              "thinking": {
+                "default": "enabled",
+                "description": "Controls the model's chain-of-thought reasoning. `enabled` always includes reasoning, `disabled` never includes reasoning, `auto` lets the model decide based on the query.",
+                "enum": ["enabled", "disabled", "auto"],
+                "title": "Thinking",
+                "type": "string"
+              },
+              "reasoning_effort": {
+                "anyOf": [
+                  {
+                    "enum": ["minimal", "low", "medium", "high"],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Controls the depth of reasoning before the model responds. Only applicable when `thinking` is `enabled` or `auto`. `minimal` for immediate response, `low` for faster response with light reasoning, `medium` for balanced speed and depth, `high` for deep analysis of complex issues.",
+                "title": "Reasoning Effort"
+              },
+              "top_p": {
+                "default": 0.7,
+                "description": "Nucleus sampling parameter. The model considers tokens with top_p cumulative probability mass. Lower values narrow the token selection.",
+                "title": "Top P",
+                "minimum": 0,
+                "type": "number",
+                "maximum": 1
+              },
+              "temperature": {
+                "default": 1,
+                "description": "Controls randomness in the response. Lower values make output more focused and deterministic, higher values make it more creative.",
+                "title": "Temperature",
+                "minimum": 0,
+                "type": "number",
+                "maximum": 2
+              },
+              "video_urls": {
+                "description": "URLs of videos for video understanding. Supported formats: MP4, MOV. Audio comprehension is not supported. A maximum of 3 videos is supported. Any additional videos will be ignored.",
+                "title": "Video Urls",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "max_completion_tokens": {
+                "default": 4096,
+                "description": "Controls the maximum length of the model's output, including both the model's response and its chain-of-thought content, measured in tokens.",
+                "title": "Max Completion Tokens",
+                "minimum": 1,
+                "type": "integer",
+                "maximum": 65536
+              },
+              "prompt": {
+                "examples": ["What can you do?"],
+                "description": "The text prompt or question for the model.",
+                "title": "Prompt",
+                "type": "string"
+              },
+              "system_prompt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Optional system prompt to guide the model's behavior.",
+                "title": "System Prompt"
+              }
+            },
+            "type": "object"
+          },
+          "BytedanceSeedV2MiniOutput": {
+            "x-fal-order-properties": [
+              "output",
+              "reasoning_content",
+              "messages"
+            ],
+            "required": ["output", "messages"],
+            "title": "Seed2MiniOutput",
+            "properties": {
+              "messages": {
+                "description": "The full conversation history including the model's response. Pass this back as the `messages` input field to continue the conversation.",
+                "title": "Messages",
+                "items": {
+                  "$ref": "#/components/schemas/Seed2MiniMessage"
+                },
+                "type": "array"
+              },
+              "reasoning_content": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The model's chain-of-thought reasoning content. Only present when `thinking` is `enabled` or `auto`.",
+                "title": "Reasoning Content"
+              },
+              "output": {
+                "description": "The model's text response.",
+                "title": "Output",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "Seed2MiniMessage": {
+            "x-fal-order-properties": ["role", "content"],
+            "required": ["role", "content"],
+            "title": "Seed2MiniMessage",
+            "properties": {
+              "content": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                ],
+                "description": "The content of the message. Can be a string for text-only messages, or a list of content parts for multimodal messages (e.g. with images).",
+                "title": "Content"
+              },
+              "role": {
+                "description": "The role of the message author.",
+                "enum": ["system", "user", "assistant"],
+                "title": "Role",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+]

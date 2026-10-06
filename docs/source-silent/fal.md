@@ -1,0 +1,1 @@
+- fal: cacheRead — no chat endpoint publishes a cached-token rate: each Pricing section names input and output tokens only, https://fal.ai/models/fal-ai/bytedance/seed/v2/mini/llms.txt and https://fal.ai/models/openrouter/router/llms.txt, checked 2026-10-06
