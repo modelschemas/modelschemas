@@ -143,6 +143,34 @@ describe('gap report scoring', () => {
     expect(plain.facts.efforts).toEqual({ have: 0, need: 0 })
   })
 
+  it('asks a toggle row for reasoning and for no efforts', () => {
+    const toggles = provider(
+      'full',
+      buildReport([
+        { ...complete, reasoning: { mode: 'toggle', mandatory: false } },
+        { ...complete, reasoning: { mode: 'toggle', mandatory: true } },
+      ]),
+    )
+    expect(toggles.facts.reasoning).toEqual({ have: 2, need: 2 })
+    expect(toggles.facts.efforts).toEqual({ have: 0, need: 0 })
+    expect(toggles.score).toBe(1)
+  })
+
+  it('counts efforts with an unstated mandatory as filled', () => {
+    const unstated = provider(
+      'full',
+      buildReport([
+        {
+          ...complete,
+          reasoning: { mode: 'effort', mandatory: null, efforts: ['low'] },
+        },
+      ]),
+    )
+    expect(unstated.facts.reasoning).toEqual({ have: 1, need: 1 })
+    expect(unstated.facts.efforts).toEqual({ have: 1, need: 1 })
+    expect(unstated.score).toBe(1)
+  })
+
   it('picks the providers below target', () => {
     expect(failing(report, 1)).toEqual(['borrowed'])
     expect(failing(report, 1, ['full', 'images', 'absent'])).toEqual([

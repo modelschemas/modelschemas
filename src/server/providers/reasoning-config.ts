@@ -4,9 +4,10 @@
  * docs page. A model the source does not configure stays null; `path:
  * 'silent'` records that the page was read and did not state a mode.
  */
+import { ingestFailedEvent, noteIngest } from '../ingest/ingest-signals.ts'
 import { emptySources } from './fact-sources.ts'
 import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
-import { fetchText, sha256Text } from './types.ts'
+import { fetchText, reasoningViolation, sha256Text } from './types.ts'
 import type { ModelFactSources, ModelInfo, ModelReasoning } from './types.ts'
 
 export const MISTRAL_REASONING_URL =
@@ -18,6 +19,38 @@ export const BYTEPLUS_REASONING_URL =
 
 /** The thinking page names no mode for this id. */
 export const REASONING_SOURCE_SILENT = 'silent'
+
+/**
+ * The write gate for `reasoning`. A listed object that breaks the shape is
+ * not stored: the row keeps the value and source it had (null on a new row),
+ * the poll goes on, and an `ingest_failed` event names the model and reason.
+ */
+export function keepValidReasoning(
+  providerId: string,
+  info: ModelInfo,
+  prior?: { reasoning: unknown; factSources: unknown },
+): ModelInfo {
+  if (info.reasoning == null) return info
+  const reason = reasoningViolation(info.reasoning)
+  if (reason === null) return info
+  noteIngest(
+    ingestFailedEvent(
+      'models-poll',
+      providerId,
+      `${info.rawId}: reasoning not stored: ${reason}`,
+    ),
+  )
+  const { reasoning: _refused, ...sources } = info.factSources ?? {}
+  const priorSource = (prior?.factSources as ModelFactSources | null)?.reasoning
+  const factSources = priorSource
+    ? { ...sources, reasoning: priorSource }
+    : sources
+  return {
+    ...info,
+    reasoning: (prior?.reasoning ?? null) as ModelReasoning | null,
+    factSources: emptySources(factSources) ? undefined : factSources,
+  }
+}
 
 export function listsReasoning(capabilities: unknown): boolean {
   return Array.isArray(capabilities) && capabilities.includes('reasoning')

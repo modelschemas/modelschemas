@@ -194,11 +194,11 @@ export type Model = {
   pricing?: RateCard | CompactPricing | null
   capabilities?: unknown
   /**
-   * How thinking is configured, or null when unknown. mode: adaptive (the model decides; Anthropic thinking.type adaptive), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget) or effort (a level: reasoning_effort, Gemini thinkingLevel). mandatory: reasoning cannot be turned off. efforts: accepted effort values, when stated.
+   * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
    */
   reasoning?: {
-    mode: 'adaptive' | 'budget' | 'effort'
-    mandatory: boolean
+    mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+    mandatory: boolean | null
     efforts?: Array<string>
   } | null
   /**

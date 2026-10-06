@@ -1105,6 +1105,49 @@ describe('reasoning and server tools (issue #77)', () => {
   })
 })
 
+describe('reasoning write gate', () => {
+  it('keeps the stored value when a later poll lists a malformed one', async () => {
+    const id = 'poll-reasoning-gate'
+    const deps = await freshDeps(id)
+    const good = { mode: 'effort', mandatory: null, efforts: ['low', 'max'] }
+    const row = () =>
+      deps.db.query.models.findFirst({
+        where: eq(models.id, modelDbId(id, fable.rawId)),
+      })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...fable, reasoning: good } as ModelInfo]),
+    )
+    expect((await row())?.reasoning).toEqual(good)
+
+    // A toggle with an unstated mandatory is not a fact: nothing is written.
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, reasoning: { mode: 'toggle', mandatory: null } },
+      ]),
+    )
+    expect(outcome.updated).toBe(0)
+    expect((await row())?.reasoning).toEqual(good)
+
+    // On a row with nothing stored it stays null, and the row still lands.
+    const fresh = 'poll-reasoning-gate-new'
+    const freshDepsRow = await freshDeps(fresh)
+    await pollProviderModels(
+      freshDepsRow,
+      stubProvider(fresh, [
+        { ...fable, reasoning: { mode: 'switch', mandatory: false } as never },
+      ]),
+    )
+    const stored = await freshDepsRow.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(fresh, fable.rawId)),
+    })
+    expect(stored?.rawId).toBe(fable.rawId)
+    expect(stored?.reasoning).toBeNull()
+    expect(stored?.factSources).not.toHaveProperty('reasoning')
+  })
+})
+
 describe('listed request map', () => {
   it('keeps a map the listing read from the model schema', async () => {
     const id = 'poll-listed-request-map'
