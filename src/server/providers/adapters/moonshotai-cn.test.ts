@@ -69,48 +69,47 @@ describe('moonshotCnChatFacts', () => {
         mandatory: true,
         efforts: ['low', 'high', 'max'],
       },
-      maxOutput: 1048576,
+      // `reasoning_effort` alone says the model reasons; it has no `thinking`.
+      capabilities: ['reasoning'],
       modalities: { input: ['text', 'image', 'video'], output: ['text'] },
     })
-    expect(facts['kimi-k3']?.factSources.reasoning).toEqual({
+    const effortSource = {
       derivation: 'upstream-spec',
       sourceUrl: MOONSHOT_CN_OPENAPI_URL,
       sourceHash: 'h',
       path: '/components/schemas/KimiK3ChatRequest/properties/reasoning_effort',
+    }
+    expect(facts['kimi-k3']?.factSources.reasoning).toEqual(effortSource)
+    expect(facts['kimi-k3']?.factSources.capabilities).toEqual({
+      reasoning: effortSource,
     })
-    // The K2 schemas take an on/off `thinking` and state no output cap.
+    // The K2 schemas take an on/off `thinking`; the walk flags that itself.
     for (const id of ['kimi-k2.7-code', 'kimi-k2.6']) {
       expect(facts[id]?.reasoning).toBeUndefined()
+      expect(facts[id]?.capabilities).toBeUndefined()
       expect(facts[id]?.factSources.reasoning?.path).toBe('silent')
-      expect(facts[id]?.maxOutput).toBeUndefined()
       expect(facts[id]?.modalities).toEqual({
         input: ['text', 'image', 'video'],
         output: ['text'],
       })
     }
+    // "最大可设置为 1048576" is the context bound, not an output cap.
+    for (const model of Object.values(facts)) {
+      expect(model).not.toHaveProperty('maxOutput')
+    }
   })
 
-  it('stores no cap when the sentence is reworded or names another model', () => {
-    const reworded = mutated((spec) => {
-      const common = spec.components?.schemas?.ChatRequestCommon as {
-        properties: { max_completion_tokens: { description: string } }
+  it('claims no reasoning when the branch drops reasoning_effort', () => {
+    const bare = mutated((spec) => {
+      const k3 = spec.components?.schemas?.KimiK3ChatRequest as {
+        allOf: Array<{ properties?: Record<string, unknown> }>
       }
-      common.properties.max_completion_tokens.description =
-        'Kimi K3 默认 131072，上限 1048576。'
+      delete k3.allOf[1]?.properties?.reasoning_effort
     })
-    expect(moonshotCnChatFacts(reworded, 'h')['kimi-k3']?.maxOutput).toBe(
-      undefined,
-    )
-    const other = mutated((spec) => {
-      const common = spec.components?.schemas?.ChatRequestCommon as {
-        properties: { max_completion_tokens: { description: string } }
-      }
-      common.properties.max_completion_tokens.description =
-        'Kimi K4 默认为 131072，最大可设置为 1048576。'
-    })
-    expect(moonshotCnChatFacts(other, 'h')['kimi-k3']?.maxOutput).toBe(
-      undefined,
-    )
+    const k3 = moonshotCnChatFacts(bare, 'h')['kimi-k3']
+    expect(k3?.reasoning).toBeUndefined()
+    expect(k3?.capabilities).toBeUndefined()
+    expect(k3?.factSources.reasoning).toBeUndefined()
   })
 
   it('throws on another host’s spec or a chat body that is not a model union', () => {
@@ -155,9 +154,10 @@ describe('moonshotai-cn', () => {
       rawId: 'kimi-k3',
       activity: 'chat',
       contextWindow: 1048576,
-      maxOutput: 1048576,
+      capabilities: ['reasoning'],
       pricing: null,
     })
+    expect(models[0]?.maxOutput).toBeUndefined()
     expect(models[0]?.factSources?.contextWindow).toMatchObject({
       derivation: 'docs-derived',
       sourceUrl: MOONSHOT_CN_PRICING_URL,
@@ -218,5 +218,32 @@ describe('modelBranchSchemas', () => {
       expect.arrayContaining(['reasoning', 'reasoning_effort']),
     )
     expect(modelBranchSchemas({ properties: { model: {} } })).toEqual([])
+  })
+
+  it('keeps the fields the union shares beside its branches', () => {
+    const schema = {
+      properties: { tools: {}, temperature: {} },
+      allOf: [{ properties: { top_p: {} } }],
+      oneOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/B' }],
+      discriminator: {
+        propertyName: 'model',
+        mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' },
+      },
+      $defs: {
+        A: { properties: { reasoning_effort: {} } },
+        B: { properties: { thinking: {} } },
+      },
+    }
+    const meta = { derivation: 'upstream-spec', endpointId: 'x' } as const
+    const flags = Object.fromEntries(
+      modelBranchSchemas(schema).map(([rawId, branch]) => [
+        rawId,
+        [...(walkRequestSchema(branch, meta)?.flags ?? [])].sort(),
+      ]),
+    )
+    expect(flags).toEqual({
+      a: ['reasoning_effort', 'temperature', 'tools', 'top_p'],
+      b: ['reasoning', 'temperature', 'tools', 'top_p'],
+    })
   })
 })

@@ -1,8 +1,9 @@
 /**
  * Moonshot AI (China). platform.moonshot.cn redirects to platform.kimi.com,
  * whose OpenAPI document names api.moonshot.cn as its server. Model ids and
- * context windows come from the pricing page; activity, reasoning, max
- * output and modalities from the spec's per-model chat request schemas.
+ * context windows come from the pricing page; activity, reasoning and
+ * modalities from the spec's per-model chat request schemas. Output is
+ * capped by the context window; no separate limit is published.
  * Prices on the pricing page are yuan. Rate cards are USD, so prices stay
  * null. `GET /v1/models` needs a CN key, which is region-bound.
  */
@@ -115,24 +116,9 @@ function partModalities(
   }
 }
 
-/**
- * `Kimi K3 默认为 131072，最大可设置为 1048576`. The cap counts only when the
- * sentence names this model: `Kimi K3` → `kimi-k3`.
- */
-function statedMaxOutput(rawId: string, description: unknown): number | null {
-  if (typeof description !== 'string') return null
-  for (const match of description.matchAll(
-    /(Kimi [A-Za-z0-9. ]+?) 默认为 \d+，最大可设置为 (\d+)/g,
-  )) {
-    const named = (match[1] ?? '').toLowerCase().replace(/ /g, '-')
-    if (named === rawId) return Number(match[2])
-  }
-  return null
-}
-
 export type MoonshotChatFacts = Pick<
   ModelInfo,
-  'activity' | 'reasoning' | 'maxOutput' | 'modalities'
+  'activity' | 'reasoning' | 'capabilities' | 'modalities'
 > & { factSources: ModelFactSources }
 
 /**
@@ -181,23 +167,17 @@ export function moonshotCnChatFacts(
         mandatory: !efforts.includes('none') && !thinking.includes('disabled'),
         efforts,
       }
-      facts.reasoning = reasoning
-      facts.factSources.reasoning = source(
+      const effortSource = source(
         `/components/schemas/${name}/properties/reasoning_effort`,
       )
+      facts.reasoning = reasoning
+      facts.factSources.reasoning = effortSource
+      // The schema walk flags `reasoning` only for a `thinking` property.
+      facts.capabilities = ['reasoning']
+      facts.factSources.capabilities = { reasoning: effortSource }
     } else if (thinking.length > 0) {
       // An on/off `thinking.type` names no mode `ModelReasoning` can hold.
       facts.factSources.reasoning = source(REASONING_SOURCE_SILENT)
-    }
-
-    const cap = isRecord(props.max_completion_tokens)
-      ? statedMaxOutput(rawId, props.max_completion_tokens.description)
-      : null
-    if (cap !== null) {
-      facts.maxOutput = cap
-      facts.factSources.maxOutput = source(
-        `/components/schemas/${name}/properties/max_completion_tokens/description`,
-      )
     }
 
     const input = new Set<string>()

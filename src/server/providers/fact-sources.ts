@@ -213,12 +213,21 @@ export function modelBranchSchemas(schema: unknown): Array<[string, unknown]> {
   const { propertyName, mapping } = schema.discriminator
   if (propertyName !== 'model' || !isRecord(mapping)) return []
   const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _d, ...rest } = schema
+  // The branch joins `allOf`: a `$ref` beside the union's shared `properties`
+  // would replace them when resolved.
+  const shared: Array<unknown> = Array.isArray(rest.allOf) ? rest.allOf : []
   return Object.entries(mapping).flatMap(([rawId, ref]) =>
     typeof ref === 'string'
       ? [
           [
             rawId,
-            { ...rest, $ref: `#/$defs/${ref.slice(ref.lastIndexOf('/') + 1)}` },
+            {
+              ...rest,
+              allOf: [
+                ...shared,
+                { $ref: `#/$defs/${ref.slice(ref.lastIndexOf('/') + 1)}` },
+              ],
+            },
           ] satisfies [string, unknown],
         ]
       : [],
