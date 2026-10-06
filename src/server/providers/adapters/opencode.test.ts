@@ -105,7 +105,7 @@ function serve(docs: string) {
 type Card = { tables: { rate: Record<string, Record<string, number>> } }
 
 describe('opencode', () => {
-  it('reads activity, route, and price from the docs tables', async () => {
+  it('reads activity and price from the docs tables', async () => {
     serve(DOCS)
     const { models } = await provider.listModels({})
     const byId = Object.fromEntries(models.map((m) => [m.rawId, m]))
@@ -116,7 +116,6 @@ describe('opencode', () => {
     expect(opus).toMatchObject({
       displayName: 'Claude Opus 5.5',
       activity: 'chat',
-      schemaEndpointId: 'v1/messages',
       factSources: {
         pricing: { derivation: 'docs-derived', sourceUrl: OPENCODE_DOCS_URL },
       },
@@ -134,7 +133,6 @@ describe('opencode', () => {
     const gpt = byId['gpt-5.5']
     expect(gpt).toMatchObject({
       activity: 'chat',
-      schemaEndpointId: 'v1/responses',
     })
     expect((gpt?.pricing as Card).tables.rate).toEqual({
       base: {
@@ -151,17 +149,14 @@ describe('opencode', () => {
 
     expect(byId['gemini-3.1-pro']).toMatchObject({
       activity: 'chat',
-      schemaEndpointId: 'v1/models/gemini-3.1-pro',
     })
     expect(byId['qwen3.8-max']).toMatchObject({
       activity: 'chat',
-      schemaEndpointId: 'v1/chat/completions',
     })
 
     // System One is not a chat route.
     expect(byId['jev-1.13']).toMatchObject({
       activity: null,
-      schemaEndpointId: 'v1/systemone',
     })
     // An all-free row is not a price.
     expect(byId['big-pickle']).toMatchObject({
@@ -175,6 +170,9 @@ describe('opencode', () => {
       releasedAt: 1791285710,
       pricing: null,
     })
+
+    // No spec is synced, so no row binds a schema route.
+    expect(models.every((m) => m.schemaEndpointId === undefined)).toBe(true)
 
     expect((await provider.fetchSpec({})).skipped).toContain('skipped')
   })
@@ -215,13 +213,24 @@ describe('opencode', () => {
     expect(unpaired['gpt-5.5']?.rates).toBeNull()
     expect(unpaired['gemini-3.1-pro']?.rates).toBeNull()
 
+    // A tier row that drops a rate its base row quotes would inherit the
+    // base price, so the model is unpriced.
+    const dashed = parseZenDocs(
+      DOCS.replace(
+        '| $10.00 | $45.00  | $1.00       |',
+        '| $10.00 | $45.00  | -           |',
+      ),
+    )
+    expect(dashed['gpt-5.5']?.rates).toBeNull()
+    expect(dashed['gemini-3.1-pro']?.rates).not.toBeNull()
+
     // A qualifier this parser does not know leaves the model unpriced.
     const peak = parseZenDocs(
       DOCS.replace('| Qwen3.8 Max   ', '| Qwen3.8 Max (Peak)'),
     )
     expect(peak['qwen3.8-max']?.rates).toBeNull()
 
-    // An unknown route keeps its published path and stays unclassified.
+    // An unknown route stays unclassified.
     const route = parseZenDocs(
       DOCS.replace(
         'zen/v1/chat/completions`             | `@ai-sdk/openai-compatible` |\n| Jev',
@@ -229,7 +238,6 @@ describe('opencode', () => {
       ),
     )
     expect(route['qwen3.8-max']).toMatchObject({
-      endpoint: 'v1/embeddings',
       activity: null,
     })
   })

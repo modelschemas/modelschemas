@@ -3,9 +3,11 @@
  * its docs page.
  *
  * The list publishes ids only (`created` is the request time). The docs
- * page's Endpoints table names each model's route, and its Pricing table
- * quotes USD per 1M tokens. Context window, output cap, modalities,
- * capabilities, and reasoning are published nowhere (docs/source-silent.md).
+ * page's Endpoints table names each model's route, which classifies the
+ * row, and its Pricing table quotes USD per 1M tokens. The route is not
+ * stored: no OpenAPI document exists for `schemaEndpointId` to bind to.
+ * Context window, output cap, modalities, capabilities, and reasoning are
+ * published nowhere (docs/source-silent.md).
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -66,8 +68,6 @@ interface Rates {
 
 export interface ZenDocsModel {
   displayName: string
-  /** Route under `https://opencode.ai/zen/`, as the Endpoints table states it. */
-  endpoint: string
   activity: Activity | null
   /** Null when the Pricing table has no usable row for this model. */
   rates: Rates | null
@@ -128,7 +128,11 @@ function parsePricing(markdown: string): Map<string, Rates | null> {
   const out = new Map<string, Rates | null>()
   for (const [name, { base, tier, bad }] of slots) {
     // A tier row needs its `≤` base row at the same threshold, and back.
-    if (bad || !base || (tier?.at ?? null) !== base.at) {
+    // It must also quote every rate the base does: the compiled tier fills
+    // a missing lever from the base, which would invent a tier price.
+    const unquoted =
+      base && tier && Object.keys(base.rates).some((k) => !(k in tier.rates))
+    if (bad || !base || unquoted || (tier?.at ?? null) !== base.at) {
       out.set(name, null)
       continue
     }
@@ -136,7 +140,9 @@ function parsePricing(markdown: string): Map<string, Rates | null> {
       base: base.rates,
       tiers:
         tier?.at != null
-          ? [{ minPromptTokens: tier.at, rates: tier.rates }]
+          ? // The page says only `(> 272K tokens)`, not what is counted. The
+            // card counts prompt tokens: input plus cache read and write.
+            [{ minPromptTokens: tier.at, rates: tier.rates }]
           : [],
     })
   }
@@ -169,7 +175,6 @@ export function parseZenDocs(markdown: string): Record<string, ZenDocsModel> {
     if (rates) priced += 1
     byId[id] = {
       displayName: name,
-      endpoint,
       // Gemini models are served at `v1/models/<id>`.
       activity:
         CHAT_ROUTES.has(endpoint) || endpoint === `v1/models/${id}`
@@ -235,7 +240,6 @@ async function listModels(
       ...model,
       displayName: row.displayName,
       activity: row.activity,
-      schemaEndpointId: row.endpoint,
       pricing,
       ...(pricing
         ? {
