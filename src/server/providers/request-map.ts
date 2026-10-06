@@ -56,6 +56,7 @@ const VLLM_QWEN_ON = {
   chat_template_kwargs: { enable_thinking: true, preserve_thinking: true },
 }
 const MINIMAX_ON = { thinking: { type: 'adaptive' } }
+const MINIMAX_OFF = { thinking: { type: 'disabled' } }
 const OPENROUTER_ON = { reasoning: { effort: 'high' } }
 const TOGETHER_ON = { reasoning: { enabled: true } }
 
@@ -89,6 +90,17 @@ const GLM_52_LEVELS: EffortLevelMap = {
   medium: null,
   high: 'high',
   xhigh: null,
+  max: 'max',
+}
+
+/** `minimax/MiniMax-M3.1-Flash-Preview`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
+const MINIMAX_M31_FLASH_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: null,
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
   max: 'max',
 }
 
@@ -128,6 +140,12 @@ function levelsFor(providerId: string, rawId: string): EffortLevelMap | null {
     matches(rawId, 'glm-5.2')
   ) {
     return GLM_52_LEVELS
+  }
+  if (
+    providerId === 'minimax' &&
+    matches(rawId, 'MiniMax-M3.1-Flash-Preview')
+  ) {
+    return MINIMAX_M31_FLASH_LEVELS
   }
   return null
 }
@@ -229,9 +247,19 @@ export function chatRequestMap(
       })
     // From MiniMax's chat spec, not probed: `max_tokens` is deprecated, the
     // role enum has no `developer`, and every model takes adaptive thinking.
+    // `disabled` skips thinking on MiniMax-M3 only: M3.1-Flash-Preview
+    // answers 400 and the M2 models ignore it.
     case 'minimax':
       return blank({
-        thinking: { on: MINIMAX_ON, off: null, levels: null },
+        thinking: withLevels(
+          {
+            on: MINIMAX_ON,
+            off: matches(rawId, 'MiniMax-M3') ? MINIMAX_OFF : null,
+            levels: null,
+          },
+          providerId,
+          rawId,
+        ),
         maxTokensField: 'max_completion_tokens',
         developerRole: false,
         reasoningEffort: true,

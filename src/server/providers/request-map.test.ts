@@ -117,6 +117,30 @@ describe('chatRequestMap', () => {
     const map = chatRequestMap('minimax', 'MiniMax-M3', 'chat')
     expect(map?.thinking).toEqual({
       on: { thinking: { type: 'adaptive' } },
+      off: { thinking: { type: 'disabled' } },
+      levels: null,
+    })
+    // M3.1-Flash-Preview rejects `disabled` and takes the effort enum.
+    expect(
+      chatRequestMap('minimax', 'MiniMax-M3.1-Flash-Preview', 'chat')?.thinking,
+    ).toEqual({
+      on: { thinking: { type: 'adaptive' } },
+      off: null,
+      levels: {
+        off: null,
+        minimal: null,
+        low: 'low',
+        medium: 'medium',
+        high: 'high',
+        xhigh: 'xhigh',
+        max: 'max',
+      },
+    })
+    // The M2 models ignore `disabled`.
+    expect(
+      chatRequestMap('minimax', 'MiniMax-M2.7-highspeed', 'chat')?.thinking,
+    ).toEqual({
+      on: { thinking: { type: 'adaptive' } },
       off: null,
       levels: null,
     })

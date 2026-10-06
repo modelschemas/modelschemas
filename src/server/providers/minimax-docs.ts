@@ -140,7 +140,10 @@ export function parseMinimaxReasoning(
 
 /**
  * The spec's `max_completion_tokens` description: `For A and B … the
- * maximum is N; for other models … the maximum is M`.
+ * maximum is N; for other models … the maximum is M`. The `other models`
+ * number goes only to ids the description never names. Empty unless every
+ * id it does name got a maximum from its own clause, so a reworded clause
+ * cannot hand a named model the catch-all.
  */
 export function parseMinimaxMaxOutput(
   description: string,
@@ -156,6 +159,8 @@ export function parseMinimaxMaxOutput(
     for (const id of named) out.set(id, tokens)
     if (named.length === 0 && /other models/i.test(clause)) others = tokens
   }
+  const named = ids.filter((id) => names(description, id))
+  if (named.length === 0 || named.some((id) => !out.has(id))) return new Map()
   if (others !== null) {
     for (const id of ids) if (!out.has(id)) out.set(id, others)
   }
@@ -185,7 +190,10 @@ const PRICE_LEVERS: Record<string, string> = {
   'Prompt caching Write': 'cache_write_tokens',
 }
 
-/** `~~\$0.60~~ \$0.30 / M tokens` → 0.30: the struck list price is not billed. */
+/**
+ * `~~\$0.60~~ \$0.30 / M tokens` → 0.30: the struck list price is not
+ * billed. The caller takes a struck row only under a `Permanent` badge.
+ */
 function perMillion(cell: string): number | null {
   const billed = cell.replace(/~~[^~]*~~/g, '').trim()
   const amount = billed.match(/^\\?\$([\d.]+) \/ M tokens$/)?.[1]
@@ -211,6 +219,7 @@ export function parseMinimaxPricing(
     .map((line) => line.trim())
     .join('\n')
   const out = new Map<string, MinimaxRates>()
+  const refused = new Set<string>()
   let header: Array<string> = []
   for (const cells of markdownTableRows(section)) {
     if (cells[0] === 'Model') {
@@ -220,6 +229,13 @@ export function parseMinimaxPricing(
     const model = cells[0]?.match(/^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/)
     const id = model?.[1]
     if (!id || cells.length !== header.length) continue
+    // A struck price without a `Permanent` badge may be a promotion that
+    // ends: the model gets no card.
+    const struck = cells.some((cell) => cell.includes('~~'))
+    if (struck && !/<span[^>]*>\s*Permanent\b/.test(model[2] ?? '')) {
+      refused.add(id)
+      continue
+    }
     const rates: Record<string, number> = {}
     header.forEach((name, index) => {
       const lever = PRICE_LEVERS[name]
@@ -236,6 +252,7 @@ export function parseMinimaxPricing(
     else entry.base = rates
     out.set(id, entry)
   }
+  for (const id of refused) out.delete(id)
   return out
 }
 

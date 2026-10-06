@@ -75,6 +75,52 @@ describe('minimax docs', () => {
     ).toBe(0)
   })
 
+  it('stores no output cap when the clause naming a model is reworded', () => {
+    // Only the M3 clause changes; `other models` still parses and must not
+    // be handed to the models the sentence names.
+    const reworded = MINIMAX_MAX_COMPLETION_TOKENS.replace(
+      'the maximum is 524288',
+      'the upper bound is 524288',
+    )
+    expect(reworded).not.toBe(MINIMAX_MAX_COMPLETION_TOKENS)
+    expect(parseMinimaxMaxOutput(reworded, IDS).size).toBe(0)
+  })
+
+  it('never gives a named model the other-models cap, whatever the clause order', () => {
+    const swapped =
+      'For other models the recommended value is 65536 (64K) and the maximum is 204800 (200K); for MiniMax-M3.1-Flash-Preview and MiniMax-M3 the recommended value is 131072 (128K) and the maximum is 524288 (512K).'
+    const caps = parseMinimaxMaxOutput(swapped, IDS)
+    expect(caps.get('MiniMax-M3')).toBe(524_288)
+    expect(caps.get('MiniMax-M3.1-Flash-Preview')).toBe(524_288)
+    expect(caps.get('MiniMax-M2')).toBe(204_800)
+
+    const othersOnly =
+      'For other models the maximum is 204800 (200K); MiniMax-M3 has a higher limit.'
+    expect(parseMinimaxMaxOutput(othersOnly, IDS).size).toBe(0)
+    expect(
+      parseMinimaxMaxOutput('For other models the maximum is 204800.', IDS)
+        .size,
+    ).toBe(0)
+  })
+
+  it('refuses a struck price whose badge is not permanent', () => {
+    const promo = MINIMAX_PRICING_PAGE.replaceAll(
+      'Permanent 50% off',
+      '50% off until Dec 31',
+    )
+    expect(promo).not.toBe(MINIMAX_PRICING_PAGE)
+    const prices = parseMinimaxPricing(promo)
+    expect(prices.has('MiniMax-M3')).toBe(false)
+    expect(prices.size).toBe(7)
+
+    // One row losing its badge refuses the whole model, not just that tier.
+    const half = MINIMAX_PRICING_PAGE.replace(
+      'Permanent 50% off',
+      'Limited offer',
+    )
+    expect(parseMinimaxPricing(half).has('MiniMax-M3')).toBe(false)
+  })
+
   it('prices the standard tier at the billed amount, with the long-context tier', () => {
     const prices = parseMinimaxPricing(MINIMAX_PRICING_PAGE)
     // The Priority tab ($0.45) and the struck list price ($0.60) are not used.
