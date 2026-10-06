@@ -5,19 +5,23 @@
  * not USD, so prices stay null.
  *
  * Each model's facts come from Zhipu's China docs. Those are Z.AI's docs in
- * Chinese, so the Z.AI parsers read them with a Chinese wording (their
- * errors keep the `zai:` prefix): the chat request that lists the id in the
- * OpenAPI document gives the route, output cap, input modalities and flags;
- * the model overview table gives the context window; the Deep Thinking
- * page's "Coding Plan request" list gives reasoning.
+ * Chinese, so the Z.AI parsers read them with a Chinese wording: the chat
+ * request that lists the id in the OpenAPI document gives the route, output
+ * cap, input modalities and flags; the model overview table gives the
+ * context window; the Deep Thinking page's "Coding Plan request" list gives
+ * reasoning. A fact is looked up by the exact id. `glm-5.3-flash[1m]` is a
+ * Claude Code setting none of those documents name, so it gets only what
+ * the switch guide says of it: its context window.
  *
- * The plan's OpenAI base URL is `…/api/coding/paas/v4`, the document's is
- * `…/api/paas/v4`. Zhipu publishes no separate document for the plan; the
- * Deep Thinking page describes Coding Plan requests as requests to this
- * chat API, so its request is the one bound here.
+ * The OpenAPI document is the general platform's (`…/api/paas/v4`), and the
+ * endpoint id is that pay-as-you-go path. The plan's OpenAI base URL is
+ * `…/api/coding/paas/v4`. Zhipu publishes no document for it and no page
+ * says the two take the same body; the plan docs only name the protocol,
+ * "OpenAI Chat Completion". The binding rests on that, hence `docs-derived`.
  */
 import type { Activity } from '#/db/schema.ts'
 
+import { tokenCount } from '../model-facts.ts'
 import type {
   FactSource,
   ListModelsResult,
@@ -51,15 +55,13 @@ export const ZHIPU_THINKING_URL =
 /** The document's async chat, image, video and audio routes are not the plan's. */
 const CHAT_PATH = '/paas/v4/chat/completions'
 
-/** Claude Code's spelling of a model with its 1M context switched on. */
-const CONTEXT_SUFFIX = '[1m]'
-
 /**
  * docs.bigmodel.cn wording. An "only these models" clause starts with a
  * model name ("仅限`GLM-5.3-Flash`系列…支持"); "仅文本模型支持此字段" names a
  * request variant, which the variant's own properties already express.
  */
 export const ZHIPU_WORDING: GlmWording = {
+  label: 'zhipuai-coding-plan',
   modelColumn: '模型',
   contextColumn: '上下文',
   supports: /最大支持/,
@@ -154,6 +156,32 @@ export function parseZhipuCodingReasoning(
   return rows
 }
 
+/**
+ * The switch guide's one statement about a suffixed name: "开启 GLM 1M
+ * 上下文需要模型后缀加上 `[1m]` ，即 `glm-5.3-flash[1m]`". The size, the
+ * suffix and the name must agree, or nothing is read.
+ */
+export function parseZhipuSuffixContexts(
+  markdown: string,
+): Map<string, number> {
+  const windows = new Map<string, number>()
+  const statement =
+    /开启 GLM (\d+(?:\.\d+)?[KM]) 上下文需要模型后缀加上 `(\[[^`]+\])`\s*，即 `([^`]+)`/g
+  for (const [, size = '', suffix = '', name = ''] of markdown.matchAll(
+    statement,
+  )) {
+    const tokens = tokenCount(size)
+    if (
+      tokens !== null &&
+      suffix === `[${size.toLowerCase()}]` &&
+      name.endsWith(suffix)
+    ) {
+      windows.set(name, tokens)
+    }
+  }
+  return windows
+}
+
 export function classifyZhipuCodingPath(path: string): Activity | null {
   return path === CHAT_PATH ? 'chat' : null
 }
@@ -166,18 +194,14 @@ export function parseZhipuCodingModels(docs: {
   thinking: ZaiDoc
 }): Array<ModelInfo> {
   const ids = zhipuCodingIds(docs.overview.text, docs.latest.text)
-  const modelOf = (rawId: string) =>
-    rawId.endsWith(CONTEXT_SUFFIX)
-      ? rawId.slice(0, -CONTEXT_SUFFIX.length)
-      : rawId
-  const wanted = new Set(ids.map(modelOf))
-  const only = (id: string) => wanted.has(id)
+  const only = (id: string) => ids.includes(id)
   const facts = zaiSpecFacts(JSON.parse(docs.spec.text), docs.spec, {
     wording: ZHIPU_WORDING,
     classify: classifyZhipuCodingPath,
     only,
   })
   const windows = parseZaiContextWindows(docs.models.text, ZHIPU_WORDING, only)
+  const suffixed = parseZhipuSuffixContexts(docs.latest.text)
   const reasonings = parseZhipuCodingReasoning(docs.thinking.text)
   const from = (
     doc: ZaiDoc,
@@ -190,24 +214,24 @@ export function parseZhipuCodingModels(docs: {
     path,
   })
   return ids.map((rawId) => {
-    const model = modelOf(rawId)
-    const fact = facts.get(model)
-    const contextWindow = windows.get(model) ?? null
-    const reasoning = namedBy(model, reasonings)?.reasoning ?? null
-    // The chat request lists `glm-5.3-flash`, not `glm-5.3-flash[1m]`: the
-    // suffixed id gets the model's facts, but no route and no request flags.
-    const listed = model === rawId ? fact : undefined
+    const fact = facts.get(rawId)
+    const contextWindow = windows.get(rawId) ?? suffixed.get(rawId) ?? null
+    const reasoning = namedBy(rawId, reasonings)?.reasoning ?? null
     // No effort list for the model means no `reasoning_effort` flag either.
-    const capabilities = listed?.capabilities
+    const capabilities = fact?.capabilities
       ? Object.fromEntries(
-          Object.entries(listed.capabilities).filter(
+          Object.entries(fact.capabilities).filter(
             ([flag]) => flag !== 'reasoning_effort' || reasoning !== null,
           ),
         )
       : null
     const factSources: ModelFactSources = {
       ...(contextWindow !== null
-        ? { contextWindow: from(docs.models, 'docs-derived', '上下文') }
+        ? {
+            contextWindow: windows.has(rawId)
+              ? from(docs.models, 'docs-derived', '上下文')
+              : from(docs.latest, 'docs-derived', '1M 上下文'),
+          }
         : {}),
       ...(reasoning
         ? {
@@ -230,11 +254,11 @@ export function parseZhipuCodingModels(docs: {
       ...(fact
         ? {
             activity: fact.activity,
+            schemaEndpointId: fact.schemaEndpointId,
             maxOutput: fact.maxOutput,
             modalities: fact.modalities,
           }
         : {}),
-      ...(listed ? { schemaEndpointId: listed.schemaEndpointId } : {}),
       ...(capabilities
         ? { capabilities: Object.keys(capabilities), exactCapabilities: true }
         : {}),
@@ -246,12 +270,13 @@ export function parseZhipuCodingModels(docs: {
 }
 
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
+  const doc = (url: string) => fetchZaiDoc(url, ZHIPU_WORDING.label)
   const [overview, latest, spec, models, thinking] = await Promise.all([
-    fetchZaiDoc(ZHIPU_CODING_OVERVIEW_URL),
-    fetchZaiDoc(ZHIPU_CODING_MODELS_URL),
-    fetchZaiDoc(ZHIPU_OPENAPI_URL),
-    fetchZaiDoc(ZHIPU_MODEL_OVERVIEW_URL),
-    fetchZaiDoc(ZHIPU_THINKING_URL),
+    doc(ZHIPU_CODING_OVERVIEW_URL),
+    doc(ZHIPU_CODING_MODELS_URL),
+    doc(ZHIPU_OPENAPI_URL),
+    doc(ZHIPU_MODEL_OVERVIEW_URL),
+    doc(ZHIPU_THINKING_URL),
   ])
   return {
     models: parseZhipuCodingModels({
@@ -265,7 +290,10 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const { text, hash } = await fetchZaiDoc(ZHIPU_OPENAPI_URL)
+  const { text, hash } = await fetchZaiDoc(
+    ZHIPU_OPENAPI_URL,
+    ZHIPU_WORDING.label,
+  )
   return {
     specs: [JSON.parse(text) as OpenApiDocument],
     sources: [{ url: ZHIPU_OPENAPI_URL, hash }],
@@ -279,7 +307,7 @@ export const provider: ProviderConfig = {
   displayName: 'Zhipu AI Coding Plan',
   specSourceUrl: ZHIPU_OPENAPI_URL,
   modelsEndpoint: ZHIPU_CODING_MODELS_URL,
-  defaultDerivation: 'upstream-spec',
+  defaultDerivation: 'docs-derived',
   fetchSpec,
   listModels,
   classify: (path) => classifyZhipuCodingPath(path),

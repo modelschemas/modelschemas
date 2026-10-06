@@ -115,7 +115,16 @@ describe('chatRequestMap', () => {
           on: { thinking: { type: 'enabled', clear_thinking: false } },
           // A Coding Plan request runs `none` as low: there is no off body.
           off: null,
-          levels: { off: null, minimal: 'minimal', medium: 'medium' },
+          // Zhipu's own mapping for a Coding Plan request.
+          levels: {
+            off: null,
+            minimal: 'low',
+            low: 'low',
+            medium: 'high',
+            high: 'high',
+            xhigh: 'max',
+            max: 'max',
+          },
         },
         maxTokensField: 'max_tokens',
         developerRole: false,

@@ -153,18 +153,20 @@ const GLM_53_LEVELS: EffortLevelMap = {
 }
 
 /**
- * `zhipuai-coding-plan/glm-5.3` and `glm-5.3-flash`: a Coding Plan request
- * takes every level and runs it as low, high, or max. `none` and `minimal`
- * run as low, so nothing stops thinking
+ * `zhipuai-coding-plan/glm-5.3` and `glm-5.3-flash`: each level is sent as
+ * the level Zhipu says a Coding Plan request runs it at: `minimal` and `low`
+ * as low, `medium` and `high` as high, `xhigh` and `max` as max
  * (docs.bigmodel.cn/cn/guide/capabilities/thinking, "在 Coding Plan 请求中").
+ * Those three are also the bound schema's whole enum. `none` runs as low
+ * too, so nothing stops thinking.
  */
 const GLM_CODING_PLAN_LEVELS: EffortLevelMap = {
   off: null,
-  minimal: 'minimal',
+  minimal: 'low',
   low: 'low',
-  medium: 'medium',
+  medium: 'high',
   high: 'high',
-  xhigh: 'xhigh',
+  xhigh: 'max',
   max: 'max',
 }
 
@@ -298,8 +300,8 @@ export function chatRequestMap(
         reasoningEffort: levelsFor(providerId, rawId) === null ? null : true,
       })
     // From Zhipu's China chat spec (docs.bigmodel.cn/openapi/openapi.json)
-    // and docs, not probed, for the two ids that spec lists. Same body as
-    // Z.AI's, but a Coding Plan request has its own effort levels.
+    // and docs, not probed, for the two ids that spec lists. That spec is
+    // the general platform's; the plan's own effort mapping picks the levels.
     // `tool_stream` is the spec's for the GLM-5.3 series; for
     // `glm-5.3-flash` the source is
     // docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash ("同时开启

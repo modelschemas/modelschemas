@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { parseZaiContextWindows, zaiSupportedBy } from './zai.ts'
+import { chatRequestMap } from '../request-map.ts'
+import { parseZaiContextWindows, zaiSpecFacts, zaiSupportedBy } from './zai.ts'
 import {
+  classifyZhipuCodingPath,
   parseZhipuCodingReasoning,
+  parseZhipuSuffixContexts,
   provider,
   ZHIPU_CODING_MODELS_URL,
   ZHIPU_CODING_OVERVIEW_URL,
@@ -87,6 +90,7 @@ const chat = (variants: Array<unknown>) => ({
 function spec(
   overrides: {
     textMaxTokens?: string
+    textMaximum?: number
     visionTools?: string
     textModels?: Array<string>
   } = {},
@@ -119,7 +123,7 @@ function spec(
       max_tokens: {
         type: 'integer',
         description: overrides.textMaxTokens ?? TEXT_MAX_TOKENS,
-        maximum: 131072,
+        maximum: overrides.textMaximum ?? 131072,
       },
       tool_stream: { type: 'boolean' },
       tools: { type: 'array', description: '模型可以调用的工具列表。' },
@@ -267,7 +271,12 @@ describe('zhipuai-coding-plan', () => {
       'glm-5.3-flash[1m]',
     ])
     expect(models.every((model) => model.pricing == null)).toBe(true)
-    expect(models.every((model) => model.activity === 'chat')).toBe(true)
+    // The chat request lists two of them. `[1m]` stays unclassified.
+    expect(models.map((model) => model.activity)).toEqual([
+      'chat',
+      'chat',
+      undefined,
+    ])
     expect(urls).toEqual([
       ZHIPU_CODING_OVERVIEW_URL,
       ZHIPU_CODING_MODELS_URL,
@@ -333,19 +342,57 @@ describe('zhipuai-coding-plan', () => {
     )
   })
 
-  it('gives the [1m] id its model facts but no route and no flags', async () => {
+  it('gives the [1m] id only the context window the switch guide states', async () => {
     const suffixed = (await listed()).get('glm-5.3-flash[1m]')
 
-    expect(suffixed).toMatchObject({
-      activity: 'chat',
+    // Nothing is inherited from `glm-5.3-flash` by dropping the suffix.
+    expect(suffixed).toEqual({
+      rawId: 'glm-5.3-flash[1m]',
+      pricing: null,
       contextWindow: 1_000_000,
-      maxOutput: 131_072,
-      modalities: { input: ['text', 'image', 'video', 'file'] },
-      reasoning: { mandatory: true },
+      factSources: {
+        contextWindow: expect.objectContaining({
+          derivation: 'docs-derived',
+          sourceUrl: ZHIPU_CODING_MODELS_URL,
+        }) as unknown,
+      },
     })
-    expect(suffixed?.schemaEndpointId).toBeUndefined()
-    expect(suffixed?.capabilities).toBeUndefined()
-    expect(suffixed?.factSources?.capabilities).toBeUndefined()
+    expect(
+      chatRequestMap('zhipuai-coding-plan', 'glm-5.3-flash[1m]', null),
+    ).toBe(null)
+  })
+
+  it('reads a suffix context only when size, suffix and name agree', () => {
+    const line =
+      '注意开启 GLM 1M 上下文需要模型后缀加上 `[1m]` ，即 `glm-5.3-flash[1m]`'
+    expect(parseZhipuSuffixContexts(line)).toEqual(
+      new Map([['glm-5.3-flash[1m]', 1_000_000]]),
+    )
+    for (const reworded of [
+      line.replace('GLM 1M', 'GLM 2M'),
+      line.replace('即 `glm-5.3-flash[1m]`', '即 `glm-5.3-flash`'),
+      line.replace('需要模型后缀加上', '可以在模型后加上'),
+      line.replace('1M 上下文', '长上下文'),
+    ]) {
+      expect(parseZhipuSuffixContexts(reworded).size).toBe(0)
+    }
+  })
+
+  it('sends only effort levels the bound request variant lists', () => {
+    const facts = zaiSpecFacts(spec(), undefined, {
+      wording: ZHIPU_WORDING,
+      classify: classifyZhipuCodingPath,
+      only: (id) => id.startsWith('glm-5.3'),
+    })
+    for (const id of ['glm-5.3', 'glm-5.3-flash']) {
+      const levels = chatRequestMap('zhipuai-coding-plan', id, 'chat')?.thinking
+        ?.levels
+      const sent = Object.values(levels ?? {}).filter((level) => level !== null)
+      expect(sent.length).toBeGreaterThan(0)
+      for (const level of sent) {
+        expect(facts.get(id)?.efforts).toContain(level)
+      }
+    }
   })
 
   it('names the document each fact came from', async () => {
@@ -375,7 +422,9 @@ describe('zhipuai-coding-plan', () => {
 describe('zhipuai-coding-plan parsers fail closed', () => {
   it('throws on a 200 that is a web page', async () => {
     serve({ ...DOCS, [ZHIPU_THINKING_URL]: '<!DOCTYPE html><html></html>' })
-    await expect(provider.listModels({})).rejects.toThrow(/returned HTML/)
+    await expect(provider.listModels({})).rejects.toThrow(
+      /^zhipuai-coding-plan: .* returned HTML/,
+    )
   })
 
   it('throws on a reworded output cap', async () => {
@@ -394,7 +443,22 @@ describe('zhipuai-coding-plan parsers fail closed', () => {
         listed({
           [ZHIPU_OPENAPI_URL]: JSON.stringify(spec({ textMaxTokens })),
         }),
-      ).rejects.toThrow(/output cap/)
+      ).rejects.toThrow(/^zhipuai-coding-plan: .*output cap/)
+    }
+  })
+
+  it('stores no output cap when the label exceeds the spec maximum', async () => {
+    for (const override of [
+      { textMaximum: 65536 },
+      { textMaxTokens: TEXT_MAX_TOKENS.replace('`128K`', '`128M`') },
+    ]) {
+      const byId = await listed({
+        [ZHIPU_OPENAPI_URL]: JSON.stringify(spec(override)),
+      })
+      expect(byId.get('glm-5.3')?.maxOutput).toBeNull()
+      expect(byId.get('glm-5.3')?.factSources?.maxOutput).toBeUndefined()
+      // The vision variant's own cap and maximum still agree.
+      expect(byId.get('glm-5.3-flash')?.maxOutput).toBe(131_072)
     }
   })
 

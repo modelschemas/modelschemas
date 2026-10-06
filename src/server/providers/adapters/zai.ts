@@ -48,6 +48,8 @@ const MODEL_ID = /^(?:glm|cog)[a-z0-9._-]*$/
  * Chinese (`zhipuai-coding-plan.ts`).
  */
 export interface GlmWording {
+  /** Provider id that prefixes a parser's error. */
+  label: string
   /** Header cells of the overview table's model and context columns. */
   modelColumn: string
   contextColumn: string
@@ -68,6 +70,7 @@ export interface GlmWording {
 }
 
 export const ZAI_WORDING: GlmWording = {
+  label: 'zai',
   modelColumn: 'Model',
   contextColumn: 'Context',
   supports: /\bsupports\b/,
@@ -259,13 +262,13 @@ export function parseZaiContextWindows(
       : null
     if (tokens === null) {
       throw new Error(
-        `zai: unreadable context window for ${name}: ${String(cell)}`,
+        `${wording.label}: unreadable context window for ${name}: ${String(cell)}`,
       )
     }
     windows.set(name.toLowerCase(), tokens)
   }
   if (windows.size === 0) {
-    throw new Error('zai: overview page has no context windows')
+    throw new Error(`${wording.label}: overview page has no context windows`)
   }
   return windows
 }
@@ -288,7 +291,9 @@ export function parseZaiOutputCaps(
 ): Array<OutputCap> {
   const [first = '', ...rest] = description.split(wording.supports)
   if (rest.length === 0) {
-    throw new Error('zai: max_tokens description states no output cap')
+    throw new Error(
+      `${wording.label}: max_tokens description states no output cap`,
+    )
   }
   const caps: Array<OutputCap> = []
   // The opening sentence runs up to the first model name.
@@ -304,14 +309,16 @@ export function parseZaiOutputCaps(
       !onlyNames(subject, wording.filler)
     ) {
       throw new Error(
-        `zai: unreadable output cap: ${subject.trim()} supports${part}`,
+        `${wording.label}: unreadable output cap: ${subject.trim()} supports${part}`,
       )
     }
     caps.push({ names, series: wording.series.test(subject), tokens })
     subject = part.slice(cap[0].length)
   }
   if (modelNames(subject).length > 0) {
-    throw new Error(`zai: model with no output cap: ${subject.trim()}`)
+    throw new Error(
+      `${wording.label}: model with no output cap: ${subject.trim()}`,
+    )
   }
   return caps
 }
@@ -422,7 +429,11 @@ const CONTENT_PART: Record<string, string> = {
 }
 
 /** What a user message may carry: a string, or the listed content parts. */
-function userInputs(spec: unknown, messages: unknown): Array<string> {
+function userInputs(
+  spec: unknown,
+  messages: unknown,
+  label: string,
+): Array<string> {
   const user = list(at(spec, messages, 'items', 'oneOf')).find((message) =>
     list(at(spec, message, 'properties', 'role', 'enum')).includes('user'),
   )
@@ -438,19 +449,21 @@ function userInputs(spec: unknown, messages: unknown): Array<string> {
     }
     const parts = list(at(spec, shape, 'items', 'oneOf'))
     if (parts.length === 0) {
-      throw new Error('zai: user message content lists no parts')
+      throw new Error(`${label}: user message content lists no parts`)
     }
     for (const part of parts) {
       const type = list(at(spec, part, 'properties', 'type', 'enum'))[0]
       const modality = typeof type === 'string' ? CONTENT_PART[type] : undefined
       if (!modality) {
-        throw new Error(`zai: unknown message content part: ${String(type)}`)
+        throw new Error(
+          `${label}: unknown message content part: ${String(type)}`,
+        )
       }
       inputs.add(modality)
     }
   }
   if (inputs.size === 0) {
-    throw new Error('zai: chat request has no user message content')
+    throw new Error(`${label}: chat request has no user message content`)
   }
   return ['text', 'image', 'video', 'file'].filter((kind) => inputs.has(kind))
 }
@@ -530,17 +543,19 @@ export function zaiSpecFacts(
                   String(at(spec, props.max_tokens, 'description') ?? ''),
                   wording,
                 ),
-                input: userInputs(spec, props.messages),
+                input: userInputs(spec, props.messages, wording.label),
               }
             : null
         // "128K" is a label; `maximum` is the bound, when it is that tier's.
+        // A label above the bound contradicts it: neither is stored.
         const maximum = at(spec, props.max_tokens, 'maximum')
-        const exact = (tokens: number | undefined) =>
-          tokens === undefined
-            ? null
-            : typeof maximum === 'number' && (tokens / 1000) * 1024 === maximum
-              ? maximum
-              : tokens
+        const exact = (tokens: number | undefined) => {
+          if (tokens === undefined) return null
+          if (typeof maximum !== 'number') return tokens
+          const binary = (tokens / 1000) * 1024
+          if (binary > maximum) return null
+          return binary === maximum ? maximum : tokens
+        }
         const efforts = list(at(spec, props.reasoning_effort, 'enum')).filter(
           (effort): effort is string => typeof effort === 'string',
         )
@@ -572,7 +587,7 @@ export function zaiSpecFacts(
     }
   }
   if (![...facts.values()].some((fact) => fact.activity === 'chat')) {
-    throw new Error('zai: OpenAPI chat request lists no model ids')
+    throw new Error(`${wording.label}: OpenAPI chat request lists no model ids`)
   }
   return facts
 }
@@ -677,13 +692,13 @@ export function parseZaiModels(
   })
 }
 
-export async function fetchZaiDoc(url: string): Promise<ZaiDoc> {
+export async function fetchZaiDoc(url: string, label = 'zai'): Promise<ZaiDoc> {
   const text = await fetchText(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
   // A 200 that is a web page is an error page, not the document.
   if (/^\s*<(?:!doctype|html)/i.test(text)) {
-    throw new Error(`zai: ${url} returned HTML, not the document`)
+    throw new Error(`${label}: ${url} returned HTML, not the document`)
   }
   return { url, text, hash: await sha256Text(text) }
 }
