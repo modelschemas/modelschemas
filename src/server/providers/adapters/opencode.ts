@@ -149,39 +149,68 @@ function parsePricing(markdown: string): Map<string, Rates | null> {
   return out
 }
 
-/** Endpoints and Pricing tables of the Zen docs page, keyed by model id. */
-export function parseZenDocs(markdown: string): Record<string, ZenDocsModel> {
+export interface DocsEndpointRow {
+  id: string
+  displayName: string
+  activity: Activity | null
+}
+
+/**
+ * Rows of a docs page's Endpoints table. `tag` prefixes the errors and
+ * every route cell must sit under `routeBase`. Shared with the OpenCode Go
+ * page, whose table has the same shape.
+ */
+export function parseDocsEndpoints(
+  markdown: string,
+  tag: string,
+  routeBase: string,
+): Array<DocsEndpointRow> {
   // A 200 that is an HTML error page must not be read as the document.
   if (/^\s*<(?:!doctype|html)/i.test(markdown)) {
-    throw new Error('opencode: docs page returned HTML, not markdown')
+    throw new Error(`${tag}: docs page returned HTML, not markdown`)
   }
   const rows = markdownTableRows(markdownSection(markdown, 'Endpoints'))
   if (!sameCells(rows[0], ENDPOINT_HEADER)) {
-    throw new Error('opencode: docs Endpoints table not found')
+    throw new Error(`${tag}: docs Endpoints table not found`)
   }
-  const prices = parsePricing(markdown)
-  const byId: Record<string, ZenDocsModel> = {}
-  let priced = 0
-  for (const row of rows.slice(1)) {
+  const seen = new Set<string>()
+  return rows.slice(1).map((row) => {
     const [name, id, endpointCell] = row
-    const endpoint = endpointCell?.match(
-      /^`https:\/\/opencode\.ai\/zen\/(v1\/[^`\s]+)`$/,
-    )?.[1]
+    const url = endpointCell?.match(/^`([^`\s]+)`$/)?.[1]
+    const endpoint = url?.startsWith(`${routeBase}v1/`)
+      ? url.slice(routeBase.length)
+      : undefined
     if (row.length !== ENDPOINT_HEADER.length || !name || !id || !endpoint) {
-      throw new Error(`opencode: unreadable Endpoints row: ${row.join(' | ')}`)
+      throw new Error(`${tag}: unreadable Endpoints row: ${row.join(' | ')}`)
     }
-    if (id in byId) throw new Error(`opencode: duplicate model id ${id}`)
-    const rates = prices.get(name) ?? null
-    if (rates) priced += 1
-    byId[id] = {
+    if (seen.has(id)) throw new Error(`${tag}: duplicate model id ${id}`)
+    seen.add(id)
+    return {
+      id,
       displayName: name,
       // Gemini models are served at `v1/models/<id>`.
       activity:
         CHAT_ROUTES.has(endpoint) || endpoint === `v1/models/${id}`
           ? 'chat'
           : null,
-      rates,
     }
+  })
+}
+
+/** Endpoints and Pricing tables of the Zen docs page, keyed by model id. */
+export function parseZenDocs(markdown: string): Record<string, ZenDocsModel> {
+  const rows = parseDocsEndpoints(
+    markdown,
+    'opencode',
+    'https://opencode.ai/zen/',
+  )
+  const prices = parsePricing(markdown)
+  const byId: Record<string, ZenDocsModel> = {}
+  let priced = 0
+  for (const { id, displayName, activity } of rows) {
+    const rates = prices.get(displayName) ?? null
+    if (rates) priced += 1
+    byId[id] = { displayName, activity, rates }
   }
   if (priced === 0) throw new Error('opencode: docs priced 0 model rows')
   return byId
