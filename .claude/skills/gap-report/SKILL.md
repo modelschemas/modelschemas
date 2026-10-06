@@ -26,7 +26,8 @@ One provider's gaps, as `fact: have/need`:
 
 ```bash
 bun run gap:report | jq '.providers[] | select(.provider == "grok")
-  | {score, silent, gaps: (.facts | with_entries(select(.value.have < .value.need)))}'
+  | .silent as $s | {score, silent, gaps: (.facts | with_entries(
+      select(.value.have < .value.need and (.key | IN($s[]) | not))))}'
 ```
 
 ## Read it
