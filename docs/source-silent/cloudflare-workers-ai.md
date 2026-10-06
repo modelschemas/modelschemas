@@ -1,0 +1,1 @@
+- cloudflare-workers-ai: maxOutput — Cloudflare caps `max_tokens` by the context window ("This limit cannot exceed the context window") and publishes no separate output limit: no model's catalog properties or request schema state one, https://developers.cloudflare.com/workers-ai/platform/glossary/, checked 2026-10-07
