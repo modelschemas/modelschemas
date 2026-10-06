@@ -18,6 +18,7 @@ import type { Activity } from '#/db/schema.ts'
 import { activities } from '#/db/schema.ts'
 import { extractAsyncApiSchemas } from '#/server/ingest/asyncapi.ts'
 import { contentHash } from '#/server/kv.ts'
+import { falChatFacts } from './fal-chat-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import { sha256Text, skippedResult } from './types.ts'
 import type {
@@ -115,6 +116,12 @@ const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504])
 
 const MAX_BACKOFF_MS = 15_000
 
+/** A page that has not answered by now is retried like a dropped connection. */
+const FETCH_TIMEOUT_MS = 60_000
+
+/** Most `endpoint_id` filters the models API takes in one request. */
+const ENDPOINT_FILTER_MAX = 50
+
 /** Non-retryable upstream failure — thrown through the retry loop as-is. */
 class FalFetchError extends Error {}
 
@@ -135,6 +142,7 @@ export async function fetchPageWithRetry(
     try {
       const response = await fetch(url, {
         headers: { Authorization: `Key ${apiKey}` },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       })
       if (response.ok) return (await response.json()) as FalApiResponse
       lastFailure = `${String(response.status)} ${response.statusText}`
@@ -164,12 +172,14 @@ export async function fetchPageWithRetry(
 async function fetchFalModels(
   apiKey: string,
   expandOpenApi: boolean,
+  endpointIds: Array<string> = [],
 ): Promise<Array<FalApiModel>> {
   const allModels: Array<FalApiModel> = []
   let cursor: string | null = null
   do {
     const params = new URLSearchParams({ status: 'active' })
     if (expandOpenApi) params.set('expand', 'openapi-3.0')
+    for (const id of endpointIds) params.append('endpoint_id', id)
     if (cursor) params.set('cursor', cursor)
     const data = await fetchPageWithRetry(
       `${FAL_MODELS_URL}?${params.toString()}`,
@@ -360,6 +370,27 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     return { models: [], ...skippedResult('fal', 'FAL_KEY') }
   }
   const falModels = await fetchFalModels(apiKey, false)
+  // The poll lists without specs (1,500 documents). Chat facts come from
+  // the request schema, so fetch the few chat endpoints' specs by id. A
+  // failed fetch throws: the poll keeps the stored rows.
+  const chatIds = falModels
+    .filter((m) => falCategoryActivity(m.metadata.category) === 'chat')
+    .map((m) => m.endpoint_id)
+  const chatSpecs = new Map<string, OpenApiDocument | undefined>()
+  for (let i = 0; i < chatIds.length; i += ENDPOINT_FILTER_MAX) {
+    const page = await fetchFalModels(
+      apiKey,
+      true,
+      chatIds.slice(i, i + ENDPOINT_FILTER_MAX),
+    )
+    for (const m of page) chatSpecs.set(m.endpoint_id, m.openapi)
+  }
+  const unanswered = chatIds.filter((id) => !chatSpecs.has(id))
+  if (unanswered.length > 0) {
+    throw new Error(
+      `fal chat specs: models API left out ${unanswered.join(', ')}`,
+    )
+  }
   const models: Array<ModelInfo> = falModels.map((m) => ({
     rawId: m.endpoint_id,
     displayName: m.metadata.display_name ?? null,
@@ -367,6 +398,18 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     deprecated: m.metadata.status === 'deprecated',
     releasedAt: isoToEpochSeconds(m.metadata.date),
     capabilities: { category: m.metadata.category },
+    // A chat row with a request schema swaps the category object for the
+    // flag list every other provider's chat rows carry.
+    ...(chatSpecs.has(m.endpoint_id)
+      ? falChatFacts(
+          {
+            endpoint_id: m.endpoint_id,
+            description: m.metadata.description,
+            openapi: chatSpecs.get(m.endpoint_id),
+          },
+          FAL_MODELS_URL,
+        )
+      : {}),
   }))
   return { models }
 }

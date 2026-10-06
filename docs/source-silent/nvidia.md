@@ -1,0 +1,2 @@
+- nvidia: priced — hosted endpoints are free for prototyping and production is licensed per GPU, so no per-token price exists, https://docs.api.nvidia.com/nim/docs/product, checked 2026-10-06
+- nvidia: cacheRead — no per-token price exists, so no cached-input rate either, https://docs.api.nvidia.com/nim/docs/product, checked 2026-10-06
