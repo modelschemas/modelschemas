@@ -12,6 +12,7 @@ import {
 import { getByHash } from '../kv.ts'
 import type { OpenApiDocument, ProviderConfig } from '../providers/types.ts'
 import { EXTRACTOR_VERSION } from './bundle.ts'
+import { MODELS_DEV_API_URL } from './retire-models-dev.ts'
 import { syncProvider } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -266,5 +267,56 @@ describe('syncProvider', () => {
       where: eq(providers.id, id),
     })
     expect(providerRow?.lastSyncedAt).toBeNull()
+  })
+
+  it('drops schema versions sourced from models.dev on a skipped sync', async () => {
+    const id = 'stub-models-dev-schema'
+    const deps = await freshDeps(id)
+    await deps.db.insert(endpoints).values({
+      id: `${id}/chat/completions`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/chat/completions',
+    })
+    await deps.db.insert(schemaVersions).values([
+      {
+        id: `${id}/chat/completions:dev`,
+        endpointId: `${id}/chat/completions`,
+        kind: 'input',
+        contentHash: 'a'.repeat(64),
+        schema: JSON.stringify({ type: 'object' }),
+        sourceUrl: MODELS_DEV_API_URL,
+        createdAt: 1,
+      },
+      {
+        id: `${id}/chat/completions:docs`,
+        endpointId: `${id}/chat/completions`,
+        kind: 'output',
+        contentHash: 'b'.repeat(64),
+        schema: JSON.stringify({ type: 'object' }),
+        sourceUrl: 'https://example.com/openapi.json',
+        createdAt: 1,
+      },
+    ])
+    const outcome = await syncProvider(deps, {
+      ...stubProvider(id, fixtureSpec(false)),
+      fetchSpec: () =>
+        Promise.resolve({
+          specs: [],
+          sources: [],
+          outputStrategy: 'post-200' as const,
+          skipped: 'stub: no first-party spec — skipped',
+        }),
+    })
+    expect(outcome.skipped).toContain('no first-party spec')
+    const versions = await deps.db
+      .select()
+      .from(schemaVersions)
+      .where(eq(schemaVersions.endpointId, `${id}/chat/completions`))
+    expect(versions.map((row) => row.id)).toEqual([
+      `${id}/chat/completions:docs`,
+    ])
+    expect(await providerEndpoints(deps.db, id)).toHaveLength(1)
   })
 })

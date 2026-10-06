@@ -78,6 +78,13 @@
       "when": 1791015997769,
       "tag": "0010_provider_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791302400000,
+      "tag": "0011_drop_models_dev_facts",
+      "breakpoints": true
     }
   ]
 }

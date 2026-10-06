@@ -46,6 +46,14 @@ import {
   noteIngest,
   observePricingWrite,
 } from './ingest-signals.ts'
+import {
+  deprecateFrozenModelsDevCatalog,
+  dropModelsDevSchemaVersions,
+  isModelsDevRateCard,
+  markModelsDevCatalogSettled,
+  nullModelsDevRateCards,
+  storedCardIsPrior,
+} from './retire-models-dev.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -296,10 +304,19 @@ export async function pollProviderModels(
     failures: 0,
   }
   await ensureProviderRow(db, provider)
+  await dropModelsDevSchemaVersions(db, provider.id)
+  await nullModelsDevRateCards(db, provider.id)
 
   const listed = await provider.listModels(secrets, deps.kv)
   if (listed.skipped) {
+    // Not an empty list. An empty list would also drop a later first-party
+    // row the next time this adapter skips.
     outcome.skipped = listed.skipped
+    outcome.removed = await deprecateFrozenModelsDevCatalog(
+      db,
+      provider.id,
+      now,
+    )
     return outcome
   }
   outcome.modelsSeen = listed.models.length
@@ -339,15 +356,21 @@ export async function pollProviderModels(
     })
     const existing = existingById.get(id)
     const existingPricing = existing?.pricing
-    const hadStoredCard = parseStoredRateCard(existingPricing) !== null
+    // A models.dev card is not a prior. A docs-extracted card, and any
+    // other provider source, still is.
+    const hadStoredCard = storedCardIsPrior(existingPricing)
     const keepExtracted =
       raw.pricing == null &&
-      pricingDerivation(existing?.factSources) === 'docs-extracted'
-    const incomingNull = enriched.pricing == null
+      pricingDerivation(existing?.factSources) === 'docs-extracted' &&
+      !isModelsDevRateCard(existingPricing)
+    const incomingPricing = isModelsDevRateCard(enriched.pricing)
+      ? null
+      : enriched.pricing
+    const incomingNull = incomingPricing == null
     const stored =
       keepExtracted || (incomingNull && hadStoredCard)
         ? { card: parseStoredRateCard(existingPricing) }
-        : await storeListedPricing(enriched.pricing, {
+        : await storeListedPricing(incomingPricing, {
             existing: existingPricing,
             requestProperties: bound
               ? (properties.get(bound) ?? new Set())
@@ -558,6 +581,7 @@ export async function pollProviderModels(
     .update(providers)
     .set({ lastPolledAt: now })
     .where(eq(providers.id, provider.id))
+  await markModelsDevCatalogSettled(db, provider.id, now)
 
   return outcome
 }
