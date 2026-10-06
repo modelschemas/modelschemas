@@ -79,40 +79,6 @@ describe('chatRequestMap', () => {
     })
   })
 
-  it('sends OpenRouter and Together thinking-on bodies', () => {
-    const openrouter = chatRequestMap('openrouter', 'openai/gpt-5.1', 'chat')
-    expect(openrouter?.thinking?.on).toEqual({ reasoning: { effort: 'high' } })
-    expect(openrouter?.thinking?.levels ?? null).toBeNull()
-    expect(openrouter?.sessionAffinity).toBe(true)
-    expect(
-      chatRequestMap('openrouter', 'anthropic/claude-opus-4', 'chat')
-        ?.cacheControl,
-    ).toBe('anthropic')
-
-    const together = chatRequestMap(
-      'together',
-      'deepseek-ai/DeepSeek-V3',
-      'chat',
-    )
-    expect(together?.thinking?.on).toEqual({ reasoning: { enabled: true } })
-    expect(together?.maxTokensField).toBe('max_tokens')
-    expect(together?.developerRole).toBe(false)
-    expect(together?.reasoningEffort).toBe(false)
-  })
-
-  it('names max_tokens and rejects reasoning_effort where the docs do', () => {
-    for (const provider of ['moonshot', 'nvidia', 'cloudflare'] as const) {
-      const map = chatRequestMap(provider, 'some-chat', 'chat')
-      expect(map?.maxTokensField).toBe('max_tokens')
-      expect(map?.reasoningEffort).toBe(false)
-      expect(map?.developerRole).toBe(false)
-      expect(map?.thinking).toBeNull()
-    }
-    expect(chatRequestMap('grok', 'grok-4', 'chat')?.reasoningEffort).toBe(
-      false,
-    )
-  })
-
   it('sends MiniMax adaptive thinking and max_completion_tokens', () => {
     const map = chatRequestMap('minimax', 'MiniMax-M3', 'chat')
     expect(map?.thinking).toEqual({
@@ -149,6 +115,40 @@ describe('chatRequestMap', () => {
     expect(map?.reasoningEffort).toBe(true)
     // The China host is a separate provider and is not mapped here.
     expect(chatRequestMap('minimax-cn', 'MiniMax-M3', 'chat')).toBeNull()
+  })
+
+  it('sends OpenRouter and Together thinking-on bodies', () => {
+    const openrouter = chatRequestMap('openrouter', 'openai/gpt-5.1', 'chat')
+    expect(openrouter?.thinking?.on).toEqual({ reasoning: { effort: 'high' } })
+    expect(openrouter?.thinking?.levels ?? null).toBeNull()
+    expect(openrouter?.sessionAffinity).toBe(true)
+    expect(
+      chatRequestMap('openrouter', 'anthropic/claude-opus-4', 'chat')
+        ?.cacheControl,
+    ).toBe('anthropic')
+
+    const together = chatRequestMap(
+      'together',
+      'deepseek-ai/DeepSeek-V3',
+      'chat',
+    )
+    expect(together?.thinking?.on).toEqual({ reasoning: { enabled: true } })
+    expect(together?.maxTokensField).toBe('max_tokens')
+    expect(together?.developerRole).toBe(false)
+    expect(together?.reasoningEffort).toBe(false)
+  })
+
+  it('names max_tokens and rejects reasoning_effort where the docs do', () => {
+    for (const provider of ['moonshot', 'nvidia', 'cloudflare'] as const) {
+      const map = chatRequestMap(provider, 'some-chat', 'chat')
+      expect(map?.maxTokensField).toBe('max_tokens')
+      expect(map?.reasoningEffort).toBe(false)
+      expect(map?.developerRole).toBe(false)
+      expect(map?.thinking).toBeNull()
+    }
+    expect(chatRequestMap('grok', 'grok-4', 'chat')?.reasoningEffort).toBe(
+      false,
+    )
   })
 
   it('returns null for an unverified provider, a non-chat row, and an unknown activity', () => {

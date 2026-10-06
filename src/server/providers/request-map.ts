@@ -55,10 +55,10 @@ const QWEN_ON = { enable_thinking: true }
 const VLLM_QWEN_ON = {
   chat_template_kwargs: { enable_thinking: true, preserve_thinking: true },
 }
-const MINIMAX_ON = { thinking: { type: 'adaptive' } }
-const MINIMAX_OFF = { thinking: { type: 'disabled' } }
 const OPENROUTER_ON = { reasoning: { effort: 'high' } }
 const TOGETHER_ON = { reasoning: { enabled: true } }
+const MINIMAX_ON = { thinking: { type: 'adaptive' } }
+const MINIMAX_OFF = { thinking: { type: 'disabled' } }
 
 /** `openai/gpt-5.1`: off is sent as "none"; minimal, xhigh, and max are omitted. */
 const GPT_51_LEVELS: EffortLevelMap = {
@@ -69,6 +69,17 @@ const GPT_51_LEVELS: EffortLevelMap = {
   high: 'high',
   xhigh: null,
   max: null,
+}
+
+/** `minimax/MiniMax-M3.1-Flash-Preview`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
+const MINIMAX_M31_FLASH_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: null,
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'max',
 }
 
 /** `deepseek/deepseek-flash`: only low, high, and max. medium is omitted. */
@@ -90,17 +101,6 @@ const GLM_52_LEVELS: EffortLevelMap = {
   medium: null,
   high: 'high',
   xhigh: null,
-  max: 'max',
-}
-
-/** `minimax/MiniMax-M3.1-Flash-Preview`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
-const MINIMAX_M31_FLASH_LEVELS: EffortLevelMap = {
-  off: null,
-  minimal: null,
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
   max: 'max',
 }
 
@@ -132,6 +132,12 @@ function matches(rawId: string, name: string): boolean {
 
 function levelsFor(providerId: string, rawId: string): EffortLevelMap | null {
   if (providerId === 'openai' && matches(rawId, 'gpt-5.1')) return GPT_51_LEVELS
+  if (
+    providerId === 'minimax' &&
+    matches(rawId, 'MiniMax-M3.1-Flash-Preview')
+  ) {
+    return MINIMAX_M31_FLASH_LEVELS
+  }
   if (providerId === 'deepseek' && matches(rawId, 'deepseek-flash')) {
     return DEEPSEEK_FLASH_LEVELS
   }
@@ -140,12 +146,6 @@ function levelsFor(providerId: string, rawId: string): EffortLevelMap | null {
     matches(rawId, 'glm-5.2')
   ) {
     return GLM_52_LEVELS
-  }
-  if (
-    providerId === 'minimax' &&
-    matches(rawId, 'MiniMax-M3.1-Flash-Preview')
-  ) {
-    return MINIMAX_M31_FLASH_LEVELS
   }
   return null
 }
@@ -215,6 +215,25 @@ export function chatRequestMap(
         ),
         developerRole: false,
       })
+    // From MiniMax's chat spec, not probed: `max_tokens` is deprecated, the
+    // role enum has no `developer`, and every model takes adaptive thinking.
+    // `disabled` skips thinking on MiniMax-M3 only: M3.1-Flash-Preview
+    // answers 400 and the M2 models ignore it.
+    case 'minimax':
+      return blank({
+        thinking: withLevels(
+          {
+            on: MINIMAX_ON,
+            off: matches(rawId, 'MiniMax-M3') ? MINIMAX_OFF : null,
+            levels: null,
+          },
+          providerId,
+          rawId,
+        ),
+        maxTokensField: 'max_completion_tokens',
+        developerRole: false,
+        reasoningEffort: true,
+      })
     case 'vllm':
       return blank({
         thinking: withLevels(
@@ -244,25 +263,6 @@ export function chatRequestMap(
         maxTokensField: 'max_tokens',
         developerRole: false,
         reasoningEffort: false,
-      })
-    // From MiniMax's chat spec, not probed: `max_tokens` is deprecated, the
-    // role enum has no `developer`, and every model takes adaptive thinking.
-    // `disabled` skips thinking on MiniMax-M3 only: M3.1-Flash-Preview
-    // answers 400 and the M2 models ignore it.
-    case 'minimax':
-      return blank({
-        thinking: withLevels(
-          {
-            on: MINIMAX_ON,
-            off: matches(rawId, 'MiniMax-M3') ? MINIMAX_OFF : null,
-            levels: null,
-          },
-          providerId,
-          rawId,
-        ),
-        maxTokensField: 'max_completion_tokens',
-        developerRole: false,
-        reasoningEffort: true,
       })
     case 'moonshot':
     case 'nvidia':
