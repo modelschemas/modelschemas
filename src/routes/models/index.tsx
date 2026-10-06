@@ -83,6 +83,15 @@ function queryString(search: CatalogSearch): string {
   return qs === '' ? '' : `?${qs}`
 }
 
+/** The reasoning mode a row states (effort, toggle, adaptive, budget), if any. */
+function reasoningMode(
+  reasoning: SerializableModel['reasoning'],
+): string | null {
+  if (reasoning === null || typeof reasoning !== 'object') return null
+  if (Array.isArray(reasoning)) return null
+  return typeof reasoning.mode === 'string' ? reasoning.mode : null
+}
+
 /** Model rawIds can contain slashes (FAL); those detail URLs use the slug id. */
 export function modelHref(model: SerializableModel): string {
   const id = model.rawId.includes('/') ? model.id : model.rawId
@@ -216,6 +225,13 @@ function ModelsCatalog() {
                     <th>model id</th>
                     <th>display name</th>
                     <th className="max-sm:hidden">activity</th>
+                    <th title="Has a price card">priced</th>
+                    <th
+                      className="max-sm:hidden"
+                      title="How reasoning is controlled: effort, toggle, adaptive or budget"
+                    >
+                      reasoning controls
+                    </th>
                     <th className="num">first seen</th>
                     <th className="num">last seen</th>
                     <th aria-label="links" />
@@ -224,7 +240,7 @@ function ModelsCatalog() {
                 <tbody>
                   {data.models.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-ink-faint">
+                      <td colSpan={8} className="text-ink-faint">
                         No models match these filters — clear a filter or
                         broaden <code>q</code>.
                       </td>
@@ -243,6 +259,21 @@ function ModelsCatalog() {
                         <td>{m.displayName ?? '—'}</td>
                         <td className="font-mono text-xs text-ink-soft max-sm:hidden">
                           {m.activity ?? '—'}
+                        </td>
+                        <td
+                          className={
+                            m.pricing === null
+                              ? 'text-ink-faint'
+                              : 'text-tok-green'
+                          }
+                          aria-label={
+                            m.pricing === null ? 'not priced' : 'priced'
+                          }
+                        >
+                          {m.pricing === null ? '✗' : '✓'}
+                        </td>
+                        <td className="font-mono text-xs text-ink-soft max-sm:hidden">
+                          {reasoningMode(m.reasoning) ?? '—'}
                         </td>
                         <td className="num text-ink-faint">
                           {shortDate(m.firstSeenAt)}

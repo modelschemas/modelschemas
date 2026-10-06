@@ -240,8 +240,15 @@ function Landing() {
                   <th className="num">models</th>
                   <th className="num">endpoints</th>
                   <th className="num">schemas</th>
-                  <th className="num">price</th>
-                  <th className="num">reasoning</th>
+                  <th className="num" title="Share of models with a price card">
+                    priced
+                  </th>
+                  <th
+                    className="num"
+                    title="Share of chat models with known reasoning controls: mode, whether it can be turned off, effort levels"
+                  >
+                    reasoning controls
+                  </th>
                   <th className="num">polled</th>
                   <th className="num">synced</th>
                 </tr>
@@ -278,10 +285,10 @@ function Landing() {
                         fmt.format(p.counts.schemas)
                       )}
                     </td>
-                    <td className="num" data-label="price">
+                    <td className="num" data-label="priced">
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
-                    <td className="num" data-label="reasoning">
+                    <td className="num" data-label="reasoning controls">
                       {showPct(pct(p.counts.reasoning, p.counts.chat))}
                     </td>
                     <td className="num text-ink-faint" data-label="polled">
