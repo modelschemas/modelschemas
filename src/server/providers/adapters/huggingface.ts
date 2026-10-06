@@ -11,6 +11,11 @@
  * and nothing is averaged. Field meanings and units:
  * https://huggingface.co/docs/inference-providers/hub-api
  *
+ * Prices stay null although the listing has them. The poller keeps a stored
+ * card when a later poll has no price (`observePricingWrite`), so a row whose
+ * providers stop agreeing would serve a stale price. Add them back once the
+ * poller can tell "source failed" from "source says unsettled".
+ *
  * The request schema is Hugging Face's own chat-completion JSON Schema
  * (huggingface.js `tasks`), wrapped into one OpenAPI path at sync time.
  * It is `generated`, so its fields are not walked onto rows: a shared
@@ -18,7 +23,6 @@
  */
 import type { Activity } from '#/db/schema.ts'
 
-import { hyperbolicListingCard } from '../catalog-prices.ts'
 import { bearerConnect } from '../connect.ts'
 import { fetchJson, fetchText, sha256Text } from '../types.ts'
 import type {
@@ -87,19 +91,6 @@ function contextLength(p: Row): number | null {
   return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null
 }
 
-/** The listing carries float noise (`0.030000000000000002`). */
-const exact = (n: number) => Number(n.toPrecision(12))
-
-/** USD per million tokens. `is_free` is a promo, not the standard price. */
-function price(p: Row): { input: number; output: number } | null {
-  if (p.is_free === true || !isRecord(p.pricing)) return null
-  const { input, output } = p.pricing
-  if (typeof input !== 'number' || typeof output !== 'number') return null
-  return input > 0 && output > 0
-    ? { input: exact(input), output: exact(output) }
-    : null
-}
-
 const flag = (key: string) => (p: Row) => {
   const value = p[key]
   return typeof value === 'boolean' ? value : null
@@ -109,21 +100,11 @@ function listed(path: string): FactSource {
   return { derivation: 'listing', sourceUrl: HUGGINGFACE_MODELS_URL, path }
 }
 
-async function routeFacts(
+function routeFacts(
   providers: unknown,
-): Promise<
-  Pick<ModelInfo, 'contextWindow' | 'pricing' | 'capabilities' | 'factSources'>
-> {
+): Pick<ModelInfo, 'contextWindow' | 'capabilities' | 'factSources'> {
   const route = routes(providers)
   const contextWindow = agreed(route, contextLength)
-  const quote = agreed(route, price)
-  const pricing = quote
-    ? await hyperbolicListingCard(
-        quote.input,
-        quote.output,
-        HUGGINGFACE_MODELS_URL,
-      )
-    : null
   // The flag list reads "absent = unsupported", so it is stored only when
   // both flags are settled.
   const tools = agreed(route, flag('supports_tools'))
@@ -140,7 +121,6 @@ async function routeFacts(
   if (contextWindow !== null) {
     factSources.contextWindow = listed('providers[].context_length')
   }
-  if (pricing !== null) factSources.pricing = listed('providers[].pricing')
   if (capabilities && capabilities.length > 0) {
     factSources.capabilities = Object.fromEntries(
       capabilities.map((name) => [
@@ -153,12 +133,10 @@ async function routeFacts(
       ]),
     )
   }
-  return { contextWindow, pricing, capabilities, factSources }
+  return { contextWindow, capabilities, factSources }
 }
 
-export async function parseHuggingFaceModels(
-  payload: unknown,
-): Promise<Array<ModelInfo>> {
+export function parseHuggingFaceModels(payload: unknown): Array<ModelInfo> {
   if (!isRecord(payload) || !Array.isArray(payload.data)) {
     throw new Error('huggingface: models payload has no data array')
   }
@@ -178,7 +156,8 @@ export async function parseHuggingFaceModels(
       rawId: row.id,
       activity: activityFor(output),
       modalities: input && output ? { input, output } : null,
-      ...(await routeFacts(row.providers)),
+      pricing: null,
+      ...routeFacts(row.providers),
       releasedAt:
         typeof row.created === 'number' && row.created > 0 ? row.created : null,
     })
@@ -193,7 +172,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
   const payload = await fetchJson(HUGGINGFACE_MODELS_URL, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
-  return { models: await parseHuggingFaceModels(payload) }
+  return { models: parseHuggingFaceModels(payload) }
 }
 
 /**
