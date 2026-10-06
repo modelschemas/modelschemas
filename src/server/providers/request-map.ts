@@ -197,7 +197,7 @@ function matches(rawId: string, name: string): boolean {
 function levelsFor(providerId: string, rawId: string): EffortLevelMap | null {
   if (providerId === 'openai' && matches(rawId, 'gpt-5.1')) return GPT_51_LEVELS
   if (
-    providerId === 'minimax' &&
+    (providerId === 'minimax' || providerId === 'minimax-cn') &&
     matches(rawId, 'MiniMax-M3.1-Flash-Preview')
   ) {
     return MINIMAX_M31_FLASH_LEVELS
@@ -293,8 +293,10 @@ export function chatRequestMap(
     // From MiniMax's chat spec, not probed: `max_tokens` is deprecated, the
     // role enum has no `developer`, and every model takes adaptive thinking.
     // `disabled` skips thinking on MiniMax-M3 only: M3.1-Flash-Preview
-    // answers 400 and the M2 models ignore it.
+    // answers 400 and the M2 models ignore it. The China platform's chat
+    // spec states the same of the same ids.
     case 'minimax':
+    case 'minimax-cn':
       return blank({
         thinking: withLevels(
           {

@@ -154,8 +154,16 @@ describe('chatRequestMap', () => {
     expect(map?.maxTokensField).toBe('max_completion_tokens')
     expect(map?.developerRole).toBe(false)
     expect(map?.reasoningEffort).toBe(true)
-    // The China host is a separate provider and is not mapped here.
-    expect(chatRequestMap('minimax-cn', 'MiniMax-M3', 'chat')).toBeNull()
+    // The China platform's chat spec states the same of the same ids.
+    for (const id of [
+      'MiniMax-M3',
+      'MiniMax-M3.1-Flash-Preview',
+      'MiniMax-M2.7-highspeed',
+    ]) {
+      expect(chatRequestMap('minimax-cn', id, 'chat')).toEqual(
+        chatRequestMap('minimax', id, 'chat'),
+      )
+    }
   })
 
   it('sends OpenRouter and Together thinking-on bodies', () => {
