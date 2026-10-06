@@ -5,8 +5,8 @@
  * per 1M tokens. A parse that finds no rows throws.
  *
  * The China platform (platform.minimaxi.com) publishes the same pages in
- * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan,
- * and rate cards are USD, so it reads no pricing page.
+ * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan
+ * per 1M tokens, stored as CNY cards.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -39,8 +39,29 @@ export interface MinimaxPlatform {
   hosts: Array<string>
   sdkUrl: string
   chatSpecUrl: string
-  /** Null when the page quotes no USD price. */
-  pricingUrl: string | null
+  pricingUrl: string
+  /** ISO-4217 code of the pricing page's amounts; absent for USD. */
+  currency?: string
+  /** `## <heading>` of the token-price tables. */
+  priceSection: string
+  /** Title of the standard-tier `<Tab>`; every other tab is dropped. */
+  standardTab: string
+  /**
+   * Title of the only `<Accordion>` whose rows are standard prices. One
+   * with any other title is ignored when it holds no price row, and
+   * refuses the section when it does.
+   */
+  legacyAccordion: string
+  /** First header cell of a price table. */
+  modelHeader: string
+  /** Price-table header cell → the usage lever it prices. */
+  priceLevers: Record<string, string>
+  /** A billed price cell, whole: group 1 is the amount per 1M tokens. */
+  price: RegExp
+  /** The badge that makes a struck price the standing one. */
+  permanent: RegExp
+  /** A model cell's tier bound: group 1 is `≤` or `>`, group 2 the count. */
+  inputBound: RegExp
   /** Header of the context-window column. */
   contextWindow: string
   /** `Messages Field Support` status: every model. */
@@ -69,6 +90,19 @@ export const MINIMAX: MinimaxPlatform = {
   sdkUrl: MINIMAX_SDK_URL,
   chatSpecUrl: MINIMAX_CHAT_SPEC_URL,
   pricingUrl: MINIMAX_PRICING_URL,
+  priceSection: 'LLM',
+  standardTab: 'Standard',
+  legacyAccordion: 'Legacy Models',
+  modelHeader: 'Model',
+  priceLevers: {
+    Input: 'input_tokens',
+    Output: 'output_tokens',
+    'Prompt caching Read': 'cache_read_tokens',
+    'Prompt caching Write': 'cache_write_tokens',
+  },
+  price: /^\\?\$([\d.]+) \/ M tokens$/,
+  permanent: /<span[^>]*>\s*Permanent\b/,
+  inputBound: /([≤>])\s*([\d.]+[kKmM]?) input tokens/,
   contextWindow: 'Context Window',
   allModels: /^fully supported$/i,
   onlyModels: /^(M\d[\w.-]*(?:\s*\/\s*M\d[\w.-]*)*) only$/i,
@@ -90,7 +124,22 @@ export const MINIMAX_CN: MinimaxPlatform = {
   hosts: ['platform.minimaxi.com', 'platform.minimax.cn'],
   sdkUrl: `${DOCS_CN}/api-reference/text-anthropic-api.md`,
   chatSpecUrl: `${DOCS_CN}/api-reference/text/api/openapi-chat-openai.json`,
-  pricingUrl: null,
+  pricingUrl: `${DOCS_CN}/guides/pricing-paygo.md`,
+  currency: 'CNY',
+  priceSection: '语言模型',
+  standardTab: '标准',
+  legacyAccordion: '历史模型',
+  modelHeader: '**模型**',
+  // The header carries the unit, so a reworded unit prices nothing.
+  priceLevers: {
+    '**输入价格**<br /> 元/百万 tokens': 'input_tokens',
+    '**输出价格**<br /> 元/百万 tokens': 'output_tokens',
+    '**缓存读取**<br /> 元/百万 tokens': 'cache_read_tokens',
+    '**缓存写入**<br /> 元/百万 tokens': 'cache_write_tokens',
+  },
+  price: /^(\d+(?:\.\d+)?)$/,
+  permanent: /<span[^>]*>\s*永久/,
+  inputBound: /([≤>])\s*([\d.]+[kKmM]?) 输入 tokens/,
   contextWindow: '上下文窗口',
   allModels: /^完全支持$/,
   onlyModels: /^仅\s*(M\d[\w.-]*(?:\s*\/\s*M\d[\w.-]*)*)$/,
@@ -277,22 +326,18 @@ function maxCompletionTokensDescription(spec: unknown): string {
   return found
 }
 
-const PRICE_LEVERS: Record<string, string> = {
-  Input: 'input_tokens',
-  Output: 'output_tokens',
-  'Prompt caching Read': 'cache_read_tokens',
-  'Prompt caching Write': 'cache_write_tokens',
-}
-
 /**
  * `~~\$0.60~~ \$0.30 / M tokens` → 0.30: the struck list price is not
  * billed. The caller takes a struck row only under a `Permanent` badge.
  */
-function perMillion(cell: string): number | null {
+function perMillion(cell: string, price: RegExp): number | null {
   const billed = cell.replace(/~~[^~]*~~/g, '').trim()
-  const amount = billed.match(/^\\?\$([\d.]+) \/ M tokens$/)?.[1]
+  const amount = billed.match(price)?.[1]
   return amount ? Number(amount) : null
 }
+
+/** A price row's first cell: the bold id, then any bound or badge. */
+const MODEL_CELL = /^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/
 
 export interface MinimaxRates {
   base: Record<string, number>
@@ -302,49 +347,130 @@ export interface MinimaxRates {
 /**
  * The `## LLM` tables, standard tier only: the `Priority` tab is dropped.
  * A `> 512k input tokens` row is a tier over the same model's base row.
- * Rates are USD per token.
+ * Rates are per token, in the platform's currency.
+ *
+ * What it cannot attribute it refuses. Nothing is priced when a `<Tab`
+ * other than the standard one survives, or the section holds a heading
+ * of its own. A model gets no price when a row of its has text beside the
+ * id that is not a bound or the permanent badge, a price cell that does
+ * not read, a second base row, or a repeated tier threshold.
  */
 export function parseMinimaxPricing(
   markdown: string,
+  platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  const section = markdownSection(markdown, 'LLM')
-    .replace(/<Tab title="(?!Standard")[^"]*">[\s\S]*?<\/Tab>/g, '')
+  const tabbed = markdownSection(markdown, platform.priceSection)
+    .replace(
+      new RegExp(
+        `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
+        'g',
+      ),
+      '',
+    )
     .split('\n')
     .map((line) => line.trim())
     .join('\n')
   const out = new Map<string, MinimaxRates>()
+  // A tab the strip did not recognise, or a sub-heading, may hold another
+  // tier's table under the same headers.
+  const standard = `<Tab title="${platform.standardTab}">`
+  if (
+    /<Tab(?!s>)/.test(tabbed.replaceAll(standard, '')) ||
+    /^#{1,6} /m.test(tabbed.slice(tabbed.indexOf('\n')))
+  ) {
+    return out
+  }
+  // So may an accordion that is not the legacy models. One with no price
+  // row (a FAQ) is dropped; one with a price row cannot be attributed.
+  const priceRow = (cells: Array<string>) =>
+    cells[0] === platform.modelHeader || MODEL_CELL.test(cells[0] ?? '')
+  const foreign: Array<string> = []
+  const section = tabbed.replace(
+    /<Accordion\b([^>]*)>([\s\S]*?)<\/Accordion>/g,
+    (whole, attributes: string, body: string) => {
+      const title = /\btitle="([^"]*)"/.exec(attributes)?.[1]
+      if (title === platform.legacyAccordion) return whole
+      if (markdownTableRows(body).some(priceRow)) foreign.push(whole)
+      return ''
+    },
+  )
+  if (foreign.length > 0) return out
   const refused = new Set<string>()
+  const based = new Set<string>()
+  /** A base row's `≤ N` bound; the first tier must start at the same N. */
+  const baseBound = new Map<string, number | null>()
   let header: Array<string> = []
   for (const cells of markdownTableRows(section)) {
-    if (cells[0] === 'Model') {
+    if (cells[0] === platform.modelHeader) {
       header = cells
       continue
     }
-    const model = cells[0]?.match(/^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/)
+    const model = cells[0]?.match(MODEL_CELL)
     const id = model?.[1]
-    if (!id || cells.length !== header.length) continue
+    if (!id) continue
     // A struck price without a `Permanent` badge may be a promotion that
     // ends: the model gets no card.
     const struck = cells.some((cell) => cell.includes('~~'))
-    if (struck && !/<span[^>]*>\s*Permanent\b/.test(model[2] ?? '')) {
+    if (struck && !platform.permanent.test(model[2] ?? '')) {
       refused.add(id)
       continue
     }
     const rates: Record<string, number> = {}
-    header.forEach((name, index) => {
-      const lever = PRICE_LEVERS[name]
-      const amount = lever ? perMillion(cells[index] ?? '') : null
+    // Every column beside the model is a price this must read: an unknown
+    // header or a cell that does not parse refuses the model, so a lever
+    // is never dropped from a card that still prices the rest.
+    let unread = cells.length !== header.length
+    header.slice(1).forEach((name, index) => {
+      const lever = platform.priceLevers[name]
+      const amount = lever
+        ? perMillion(cells[index + 1] ?? '', platform.price)
+        : null
       if (lever && amount !== null) rates[lever] = amount / 1e6
+      else unread = true
     })
-    if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
+    const bound = model[2]?.match(platform.inputBound)
+    const above = bound?.[1] === '>' ? tokenCount(bound[2]) : null
+    // Beside the id: a bound, the permanent badge, a footnote mark. Any
+    // other text qualifies the price in a way this does not read.
+    const qualifier = (model[2] ?? '')
+      .replace(/<span[^>]*>[^<]*<\/span>/g, (span) =>
+        platform.permanent.test(span) ? '' : span,
+      )
+      .replace(bound?.[0] ?? '', '')
+      .replace(/<br \/>|\\\*/g, '')
+      .trim()
+    const entry = out.get(id) ?? { base: {}, tiers: [] }
+    const repeated =
+      above === null
+        ? based.has(id)
+        : entry.tiers.some((tier) => tier.minPromptTokens === above)
+    if (
+      unread ||
+      rates.input_tokens === undefined ||
+      rates.output_tokens === undefined ||
+      qualifier !== '' ||
+      (bound && bound[1] === '>' && above === null) ||
+      repeated
+    ) {
+      refused.add(id)
       continue
     }
-    const entry = out.get(id) ?? { base: {}, tiers: [] }
-    const bound = model[2]?.match(/([≤>])\s*([\d.]+[kKmM]?) input tokens/)
-    const above = bound?.[1] === '>' ? tokenCount(bound[2]) : null
     if (above !== null) entry.tiers.push({ minPromptTokens: above, rates })
-    else entry.base = rates
+    else {
+      entry.base = rates
+      based.add(id)
+      if (bound) baseBound.set(id, tokenCount(bound[2]))
+    }
     out.set(id, entry)
+  }
+  for (const [id, entry] of out) {
+    // `≤ 256k` beside `> 512k` leaves 256k–512k unpriced, and a bounded
+    // base with no tier leaves everything above it: neither is a card.
+    const tiers = entry.tiers.map((tier) => tier.minPromptTokens)
+    const first = tiers.length > 0 ? Math.min(...tiers) : undefined
+    if (baseBound.has(id) ? baseBound.get(id) !== first : first !== undefined) {
+      refused.add(id)
+    }
   }
   for (const id of refused) out.delete(id)
   return out
@@ -386,7 +512,7 @@ export async function minimaxModelFacts(
   const doc = await cachedDocs(kv, sdkUrl, async () => {
     const [sdk, pricingPage, specText] = await Promise.all([
       fetchPage(sdkUrl),
-      pricingUrl ? fetchPage(pricingUrl) : null,
+      fetchPage(pricingUrl),
       fetchPage(chatSpecUrl),
     ])
     const windows = parseMinimaxContextWindows(sdk, platform)
@@ -402,15 +528,12 @@ export async function minimaxModelFacts(
       platform,
     )
     assertParsed(caps, `${label} max output`)
-    const prices =
-      pricingPage === null
-        ? new Map<string, MinimaxRates>()
-        : parseMinimaxPricing(pricingPage)
-    if (pricingPage !== null) assertParsed(prices, `${label} pricing page`)
+    const prices = parseMinimaxPricing(pricingPage, platform)
+    assertParsed(prices, `${label} pricing page`)
 
     const [sdkHash, pricingHash, specHash] = await Promise.all([
       sha256Text(sdk),
-      sha256Text(pricingPage ?? ''),
+      sha256Text(pricingPage),
       sha256Text(specText),
     ])
     const extractedAt = new Date().toISOString()
@@ -424,14 +547,14 @@ export async function minimaxModelFacts(
       }
       const maxOutput = caps.get(id) ?? null
       const rates = prices.get(id)
-      const pricing =
-        rates && pricingUrl
-          ? compileTokenCard(rates.base, rates.tiers, {
-              url: pricingUrl,
-              hash: pricingHash,
-              extractedAt,
-            })
-          : null
+      const pricing = rates
+        ? compileTokenCard(
+            rates.base,
+            rates.tiers,
+            { url: pricingUrl, hash: pricingHash, extractedAt },
+            { currency: platform.currency },
+          )
+        : null
       facts[id] = {
         ...fromSdk,
         maxOutput,
@@ -439,9 +562,7 @@ export async function minimaxModelFacts(
         factSources: {
           ...tagDocsFacts(fromSdk, sdkUrl, sdkHash),
           ...tagDocsFacts({ maxOutput }, chatSpecUrl, specHash),
-          ...(pricingUrl
-            ? tagDocsFacts({ pricing }, pricingUrl, pricingHash)
-            : {}),
+          ...tagDocsFacts({ pricing }, pricingUrl, pricingHash),
         },
       }
     }

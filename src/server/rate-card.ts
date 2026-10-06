@@ -4,6 +4,7 @@
  * token formula on list rows.
  */
 import {
+  cardCurrency,
   compileOpenRouterPricing,
   price,
   rateCardSchema,
@@ -45,9 +46,12 @@ const CARD_LEVEL_LEVERS = new Set([
  * card; this means there is one. Token cards carry their per-million rates
  * when those are linear (`tiered` marks a long-prompt re-quote above some
  * threshold — the rates shown are the base); everything else names the
- * unit it bills by and points at the full card.
+ * unit it bills by and points at the full card. `currency` is the
+ * ISO-4217 code the rates are in; rows in different currencies do not
+ * compare.
  */
 export type CompactPricing = {
+  currency: string
   per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
   inputPerMillion?: number
   outputPerMillion?: number
@@ -251,7 +255,12 @@ function perMillion(
   const at1m = tryPrice(card, { ...zeros, [lever]: 1_000_000 })
   if (at1 === null || at1k === null || at1m === null) return null
   if (!linear(at1, 1_000, at1k)) return null
-  return { rate: at1 * 1_000_000, tiered: !linear(at1, 1_000_000, at1m) }
+  return {
+    // 2e-7 * 1e6 is 0.19999999999999998: drop the float noise, which sits
+    // past any digit a price is published to.
+    rate: Number((at1 * 1_000_000).toPrecision(12)),
+    tiered: !linear(at1, 1_000_000, at1m),
+  }
 }
 
 /** The unit a non-token card's quantity lever counts. */
@@ -274,11 +283,13 @@ const UNIT_OF_LEVER: Record<string, CompactPricing['per']> = {
  * Other cards name what they bill by, or `unit` when that is not obvious.
  */
 export function projectTokenPricing(card: RateCard): CompactPricing {
+  const currency = cardCurrency(card)
   if (!isTokenCard(card)) {
     const quantity = Object.values(card.inputs).find(
       (input) => input.kind === 'number',
     )
     return {
+      currency,
       per: quantity ? (UNIT_OF_LEVER[quantity.param] ?? 'unit') : 'request',
     }
   }
@@ -290,8 +301,11 @@ export function projectTokenPricing(card: RateCard): CompactPricing {
     : {}
   const input = perMillion(card, 'input_tokens', zeros)
   const output = hasOutput ? perMillion(card, 'output_tokens', zeros) : null
-  if (input === null || (hasOutput && output === null)) return { per: 'token' }
+  if (input === null || (hasOutput && output === null)) {
+    return { currency, per: 'token' }
+  }
   return {
+    currency,
     per: 'token',
     inputPerMillion: input.rate,
     ...(output && { outputPerMillion: output.rate }),

@@ -19,17 +19,18 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
   \`schemaEndpointId\` pointing at the shared generation route
   (\`v1/images/generations\`, \`images/generations\`, …). \`pricing\` is a
   RateCard (or null when no price is stored). List rows carry a summary:
-  \`{per: 'token', inputPerMillion, outputPerMillion, tiered?}\` at the
-  base rate, or \`{per: 'second' | 'character' | 'image' | …}\` for a card
-  billed by unit; \`?pricing=1\` returns the full card. \`/v1/status\`
-  counts \`priced\` models per provider.
+  \`{currency, per: 'token', inputPerMillion, outputPerMillion, tiered?}\`
+  at the base rate, or \`{currency, per: 'second' | 'character' | 'image' | …}\`
+  for a card billed by unit. \`currency\` is ISO 4217 (mostly USD; nothing
+  is converted, so compare only like with like); \`?pricing=1\` returns
+  the full card. \`/v1/status\` counts \`priced\` models per provider.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as \`{endpointId}\`: it aliases onto that
   route and pins the request \`model\` field to the one id.
 - Validate a payload server-side before spending tokens on a provider call.
-- Estimate USD for a call from the stored rate card
-  (\`POST /v1/estimate\`).
+- Estimate the cost of a call from the stored rate card, in the card's
+  currency (\`POST /v1/estimate\`).
 - Poll /v1/changes (or subscribe via webhooks) to hear about new models and
   API revisions.
 
@@ -48,9 +49,9 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
    paths). FAL requires ?model=. Over 40 endpoints, or a filter that
    matches none: 400 spec_requires_selector. HTTP only (no MCP tool).
 7. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
-8. POST /v1/estimate {"provider","model","request"?,"usage"?} — USD for a
-   call from the stored rate card. Missing levers → 422; no card → 404
-   unknown_pricing.
+8. POST /v1/estimate {"provider","model","request"?,"usage"?} — {amount,
+   currency} for a call from the stored rate card. Missing levers → 422;
+   no card → 404 unknown_pricing.
 9. GET /v1/changes?since=<unix epoch> — what changed.
 
 ## TypeScript types

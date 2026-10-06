@@ -116,7 +116,12 @@ ones).
   at write (`src/server/rate-card.ts`), and OpenAI/Anthropic/Gemini prices
   are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
   — every parser fail-closed, a page that parses nothing throws rather than
-  nulling stored cards. BytePlus chat, Seedance, and Seedream cards come
+  nulling stored cards. A card is USD unless its price is wrapped
+  as `{ currency: ['CNY', expr] }` (`moonshotai-cn`, `minimax-cn`): the
+  wrapper is the one place a currency is stated, and it is not a core op so
+  pre-currency evaluators refuse the card. Summaries and estimates name the
+  currency; nothing converts or compares across currencies.
+  BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:
   `fal-unit-rate.ts` compiles the common `$X per <unit>` sections with no

@@ -2,8 +2,8 @@
  * MiniMax (China) — model ids from the public models overview (platform.minimaxi.com).
  * Chat rows take their facts from the China docs pages, read by the parsers
  * in `minimax-docs.ts`. The spec is the two chat documents the China docs
- * site publishes. Prices on the pay-as-you-go page are yuan. Rate cards
- * are USD, so prices stay null.
+ * site publishes. Prices on the pay-as-you-go page are yuan, stored as
+ * CNY cards.
  */
 import type { Activity } from '#/db/schema.ts'
 

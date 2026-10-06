@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { NANO_BANANA_2 } from '../../packages/rate-card/src/fixtures/nano-banana-2.ts'
 import {
+  cardCurrency,
   compileOpenRouterPricing,
   compileTokenCard,
   compileUnitCard,
@@ -246,23 +247,77 @@ describe('toStoredRateCard', () => {
 describe('projectTokenPricing', () => {
   it('projects a simple token formula to per-million rates', () => {
     expect(projectTokenPricing(GPT_4O)).toEqual({
+      currency: 'USD',
       per: 'token',
       inputPerMillion: 2.5,
       outputPerMillion: 10,
     })
   })
 
+  it('says which currency the rates are in', () => {
+    const card = compileTokenCard(
+      { input_tokens: 20 / 1e6, output_tokens: 100 / 1e6 },
+      [],
+      GPT_4O.source,
+      { currency: 'CNY' },
+    )
+    if (!card) throw new Error('did not compile')
+    expect(projectTokenPricing(card)).toEqual({
+      currency: 'CNY',
+      per: 'token',
+      inputPerMillion: 20,
+      outputPerMillion: 100,
+    })
+    // The currency survives the stored-card parse, so it is never USD.
+    const stored = parseStoredRateCard(JSON.parse(JSON.stringify(card)))
+    expect(stored && cardCurrency(stored)).toBe('CNY')
+  })
+
+  // Per-token rates whose `× 1e6` is not the published figure in a double.
+  it.each([
+    [2e-7, 0.2],
+    [1.45e-6, 1.45],
+    [6.72e-7, 0.672],
+    [1.7e-7, 0.17],
+    [2.64e-7, 0.264],
+    [2.76e-7, 0.276],
+    [3e-8, 0.03],
+    [1.5e-5, 15],
+  ])('serves %d per token as %d per million, no float noise', (rate, per) => {
+    const card = compileTokenCard(
+      { input_tokens: rate, output_tokens: rate },
+      [],
+      GPT_4O.source,
+    )
+    if (!card) throw new Error('did not compile')
+    expect(projectTokenPricing(card)).toEqual({
+      currency: 'USD',
+      per: 'token',
+      inputPerMillion: per,
+      outputPerMillion: per,
+    })
+  })
+
   it('names the unit a media card bills by', () => {
-    expect(projectTokenPricing(NANO_BANANA_2)).toEqual({ per: 'image' })
+    expect(projectTokenPricing(NANO_BANANA_2)).toEqual({
+      currency: 'USD',
+      per: 'image',
+    })
     const perSecond = compileUnitCard(
       { quantity: { param: 'audio_seconds', bound: 'usage' }, rates: 1e-4 },
       GPT_4O.source,
     )
     if (!perSecond) throw new Error('did not compile')
-    expect(projectTokenPricing(perSecond)).toEqual({ per: 'second' })
+    expect(projectTokenPricing(perSecond)).toEqual({
+      currency: 'USD',
+      per: 'second',
+    })
     const flat = compileUnitCard({ rates: 0.08 }, GPT_4O.source)
     if (!flat) throw new Error('did not compile')
-    expect(projectTokenPricing(flat)).toEqual({ per: 'request' })
+    expect(projectTokenPricing(flat)).toEqual({
+      currency: 'USD',
+      per: 'request',
+    })
   })
 
   it('shows the base rate of a tiered card and says so', () => {
@@ -278,6 +333,7 @@ describe('projectTokenPricing', () => {
     )
     if (!card) throw new Error('did not compile')
     expect(projectTokenPricing(card)).toEqual({
+      currency: 'USD',
       per: 'token',
       inputPerMillion: 10,
       outputPerMillion: 50,
@@ -289,6 +345,7 @@ describe('projectTokenPricing', () => {
     const card = compileTokenCard({ input_tokens: 0.02e-6 }, [], GPT_4O.source)
     if (!card) throw new Error('did not compile')
     expect(projectTokenPricing(card)).toEqual({
+      currency: 'USD',
       per: 'token',
       inputPerMillion: 0.02,
     })
@@ -305,7 +362,10 @@ describe('projectTokenPricing', () => {
     )
     expect(card).not.toBeNull()
     if (!card) return
-    expect(projectTokenPricing(card)).toEqual({ per: 'token' })
+    expect(projectTokenPricing(card)).toEqual({
+      currency: 'USD',
+      per: 'token',
+    })
     expect(servePricing(card, 'full')).toEqual(card)
   })
 })
@@ -313,12 +373,16 @@ describe('projectTokenPricing', () => {
 describe('servePricing', () => {
   it('serves a compact projection on list and the full card on detail', () => {
     expect(servePricing(GPT_4O, 'compact')).toEqual({
+      currency: 'USD',
       per: 'token',
       inputPerMillion: 2.5,
       outputPerMillion: 10,
     })
     expect(servePricing(GPT_4O, 'full')).toEqual(GPT_4O)
-    expect(servePricing(NANO_BANANA_2, 'compact')).toEqual({ per: 'image' })
+    expect(servePricing(NANO_BANANA_2, 'compact')).toEqual({
+      currency: 'USD',
+      per: 'image',
+    })
     expect(servePricing(NANO_BANANA_2, 'full')).toEqual(NANO_BANANA_2)
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { price } from './evaluate.ts'
+import { cardCurrency, price } from './evaluate.ts'
 import { GPT_4O } from './fixtures/gpt-4o.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
 import { compileTokenCard } from './token-card.ts'
@@ -88,6 +88,27 @@ describe('compileTokenCard', () => {
   it('prices an output-less card (embeddings)', () => {
     const card = compile({ input_tokens: 0.02 / 1e6 })
     expect(price(card, {}, { input_tokens: 1e6 })).toBeCloseTo(0.02, 9)
+  })
+
+  it('labels a card with the currency its rates are in, USD unlabelled', () => {
+    const yuan = compileTokenCard({ input_tokens: 20 / 1e6 }, [], source, {
+      currency: 'CNY',
+    })
+    if (!yuan) throw new Error('did not compile')
+    const usd = compile({ input_tokens: 20 / 1e6 })
+    // One representation: the price wrapper. A USD card has none, and
+    // naming USD adds none, so it stays what 0.1.0 already reads.
+    expect(yuan).toEqual({ ...usd, price: { currency: ['CNY', usd.price] } })
+    expect(
+      compileTokenCard({ input_tokens: 20 / 1e6 }, [], source, {
+        currency: 'USD',
+      }),
+    ).toEqual(usd)
+    expect(rateCardSchema.safeParse(yuan).success).toBe(true)
+    expect(cardCurrency(yuan)).toBe('CNY')
+    expect(price(yuan, {}, { input_tokens: 1e6 })).toBe(
+      price(usd, {}, { input_tokens: 1e6 }),
+    )
   })
 
   it('is null when nothing is priced', () => {

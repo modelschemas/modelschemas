@@ -4,11 +4,15 @@ import { createServerFn } from '@tanstack/react-start'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { MetaStrip, ReqLine, SiteFooter, SiteNav } from '#/components/site.tsx'
-import { formFields, formatUsd, toEstimateParts } from '#/lib/rate-card-form.ts'
+import {
+  formFields,
+  formatAmount,
+  toEstimateParts,
+} from '#/lib/rate-card-form.ts'
 import type { FieldValue } from '#/lib/rate-card-form.ts'
 
 type Quote =
-  | { ok: true; usd: number; estimated: string[] }
+  | { ok: true; amount: number; estimated: string[] }
   | { ok: false; message: string }
 
 interface CalculatorData {
@@ -18,6 +22,7 @@ interface CalculatorData {
   displayName: string | null
   inputs: RateCard['inputs']
   compact: {
+    currency: string
     per: string
     inputPerMillion?: number
     outputPerMillion?: number
@@ -54,7 +59,7 @@ async function runQuote(raw: unknown): Promise<Quote> {
     return outcome.ok
       ? {
           ok: true,
-          usd: outcome.result.usd,
+          amount: outcome.result.amount,
           estimated: outcome.result.estimated,
         }
       : { ok: false, message: outcome.message }
@@ -142,7 +147,7 @@ function RateCardCalculator() {
   const { inputs, compact } = data
   const fields = formFields(inputs)
   const [values, setValues] = useState(data.values)
-  const [usd, setUsd] = useState(data.quote.ok ? data.quote.usd : null)
+  const [amount, setAmount] = useState(data.quote.ok ? data.quote.amount : null)
   const [estimated, setEstimated] = useState(
     data.quote.ok ? data.quote.estimated : [],
   )
@@ -162,7 +167,7 @@ function RateCardCalculator() {
         if (id !== latest.current) return
         setLoading(false)
         if (quote.ok) {
-          setUsd(quote.usd)
+          setAmount(quote.amount)
           setEstimated(quote.estimated)
           setQuoted(describe(inputs, values))
           setError(null)
@@ -259,7 +264,7 @@ function RateCardCalculator() {
                       />
                       {rate !== undefined ? (
                         <span className="ml-3 text-ink-faint">
-                          {formatUsd(rate)} / 1M
+                          {formatAmount(rate, compact.currency)} / 1M
                         </span>
                       ) : null}
                     </td>
@@ -270,9 +275,11 @@ function RateCardCalculator() {
                 <td className="font-mono text-xs text-ink-faint">quote</td>
                 <td className="font-mono text-[12.5px]" aria-live="polite">
                   <span className="text-base font-semibold">
-                    {usd === null ? '—' : formatUsd(usd)}
+                    {amount === null
+                      ? '—'
+                      : formatAmount(amount, compact.currency)}
                   </span>
-                  {usd === null ? null : (
+                  {amount === null ? null : (
                     <span className="text-ink-soft"> — {quoted}</span>
                   )}
                   {estimated.length > 0 ? (
@@ -301,7 +308,8 @@ function RateCardCalculator() {
                   <td className="font-mono text-[12.5px]">
                     {data.examples.map((example) => (
                       <div key={example.quote}>
-                        {formatUsd(example.usd)} — {example.quote}
+                        {formatAmount(example.usd, compact.currency)} —{' '}
+                        {example.quote}
                       </div>
                     ))}
                   </td>

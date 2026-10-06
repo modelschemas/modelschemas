@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
+  MINIMAX_CN_PRICING_PAGE,
   MINIMAX_CN_SDK_PAGE,
+  MINIMAX_PRICING_PAGE,
 } from '../fixtures/minimax-docs.ts'
 import { MINIMAX_CN, MINIMAX_CN_MESSAGES_SPEC_URL } from '../minimax-docs.ts'
 import { MINIMAX_CN_MODELS_URL, provider } from './minimax-cn.ts'
@@ -59,6 +61,7 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_CN_MODELS_URL]: FIXTURE,
   [MINIMAX_CN.sdkUrl]: MINIMAX_CN_SDK_PAGE,
+  [MINIMAX_CN.pricingUrl]: MINIMAX_CN_PRICING_PAGE,
   [MINIMAX_CN.chatSpecUrl]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_CN_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',
@@ -107,10 +110,28 @@ describe('minimax-cn', () => {
       maxOutput: 524_288,
       modalities: { input: ['text', 'image', 'video'], output: ['text'] },
       reasoning: { mode: 'adaptive', mandatory: false },
-      // The pay-as-you-go page quotes yuan; rate cards are USD.
-      pricing: null,
+      // The pay-as-you-go page quotes yuan: 2.10 in, 8.40 out, 0.42 cached.
+      pricing: {
+        price: { currency: ['CNY', expect.anything() as unknown] },
+        tables: {
+          rate: {
+            base: {
+              input_tokens: 2.1 / 1e6,
+              output_tokens: 8.4 / 1e6,
+              cache_read_tokens: 0.42 / 1e6,
+            },
+            '512000': { input_tokens: 4.2 / 1e6 },
+          },
+        },
+        source: { url: MINIMAX_CN.pricingUrl },
+      },
       schemaEndpointId: 'v1/chat/completions',
       factSources: {
+        pricing: {
+          derivation: 'docs-derived',
+          sourceUrl: MINIMAX_CN.pricingUrl,
+          sourceHash: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        },
         contextWindow: {
           derivation: 'docs-derived',
           sourceUrl: MINIMAX_CN.sdkUrl,
@@ -120,7 +141,12 @@ describe('minimax-cn', () => {
         reasoning: { sourceUrl: MINIMAX_CN.sdkUrl },
       },
     })
-    expect(m3?.factSources?.pricing).toBeUndefined()
+    // No pay-as-you-go price is published for the M Plan preview model.
+    const preview = listed.models.find(
+      (model) => model.rawId === 'MiniMax-M3.1-Flash-Preview',
+    )
+    expect(preview?.pricing).toBeNull()
+    expect(preview?.factSources?.pricing).toBeUndefined()
     // Only the model with an effort list takes `reasoning_effort`.
     expect(m3?.capabilities).toBeUndefined()
     expect(m3?.factSources?.capabilities).toBeUndefined()
@@ -143,9 +169,14 @@ describe('minimax-cn', () => {
     expect(listed.models.some((model) => model.rawId === 'MiniMax H3')).toBe(
       false,
     )
-    // Every page is the China platform's own; no pricing page is read.
+    // Every page is the China platform's own.
     expect(urls.sort()).toEqual(
-      [MINIMAX_CN_MODELS_URL, MINIMAX_CN.sdkUrl, MINIMAX_CN.chatSpecUrl].sort(),
+      [
+        MINIMAX_CN_MODELS_URL,
+        MINIMAX_CN.sdkUrl,
+        MINIMAX_CN.pricingUrl,
+        MINIMAX_CN.chatSpecUrl,
+      ].sort(),
     )
     expect(urls.every((url) => url.includes('platform.minimaxi.com'))).toBe(
       true,
@@ -159,6 +190,14 @@ describe('minimax-cn', () => {
     })
     await expect(provider.listModels({})).rejects.toThrow(
       'minimax-cn context windows: parsed 0 model rows',
+    )
+  })
+
+  it('throws rather than store a price off a page that is not yuan', async () => {
+    // The international page, as a cross-platform redirect would serve it.
+    mockFetch({ ...PAGES, [MINIMAX_CN.pricingUrl]: MINIMAX_PRICING_PAGE })
+    await expect(provider.listModels({})).rejects.toThrow(
+      'minimax-cn pricing page: parsed 0 model rows',
     )
   })
 

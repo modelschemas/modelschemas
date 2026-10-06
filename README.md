@@ -267,6 +267,19 @@ by unit — so `null` on a list row always means no card. `GET
 `GET /v1/status` counts `priced` models per provider. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
 
+**Currencies:** rate cards may be in a currency other than USD.
+`moonshotai-cn` and `minimax-cn` are priced in CNY. A USD card is unchanged;
+a card in another currency wraps its price as
+`{ "currency": ["CNY", <expression>] }` (ISO 4217), and that wrapper is the
+only place the currency is stated. `price()` returns an amount in the
+card's currency. **`@modelschemas/rate-card` 0.1.0 cannot read non-USD
+cards: it rejects them at parse and `price()` throws `unknown-op`, so it
+refuses rather than report yuan as dollars. Upgrade to read them.**
+`/v1/estimate` and `estimate_cost` return `{ amount, currency }`; `usd` is
+present only for USD cards and is deprecated. List summaries always include
+`currency`. Nothing is converted, so amounts in different currencies never
+compare.
+
 Cards come from each host's own source — the OpenRouter, Together and xAI
 listings (`listing`), and the OpenAI, Anthropic and Gemini pricing pages
 (`docs-derived`); `factSources.pricing` says which. Token models carry

@@ -175,6 +175,7 @@ const rateCardExampleSchema = z.object({
    * input's `param`. `verifyExamples` feeds it as both `request` and `usage`.
    */
   params: z.record(z.string(), z.unknown()),
+  /** In the card's currency; the name predates `currency`. */
   usd: z.number().positive(),
   /** The sentence in the source text this example comes from. */
   quote: z.string().min(1),
@@ -182,7 +183,60 @@ const rateCardExampleSchema = z.object({
 
 export type RateCardExample = z.infer<typeof rateCardExampleSchema>
 
+/**
+ * JSONLogic yielding the amount for one request: USD, or, wrapped as
+ * `{ currency: ['CNY', expr] }`, the ISO-4217 currency named. The wrapper
+ * is the only place a card states a currency, so a USD card is exactly
+ * what it was before cards had one.
+ *
+ * `currency` is deliberately not a core op. An evaluator that predates it
+ * (0.1.0, or a rolled-back service) fails to parse the card and throws
+ * `unknown-op` on its price, so it refuses a yuan amount instead of
+ * reporting it as dollars. Amounts in different currencies are never
+ * added, compared or converted.
+ */
+const priceSchema = z.union([
+  z
+    .strictObject({ currency: z.tuple([z.string(), exprSchema]) })
+    .refine((price) => currencyWrapper(price) !== 'malformed'),
+  exprSchema,
+])
+
+/**
+ * The one rule for a price's currency wrapper, shared by the schema and
+ * the evaluator: `null` for a bare (USD) price, the code and inner
+ * expression for `{ currency: ['CNY', expr] }`, `'malformed'` for anything
+ * else carrying a `currency` key. The code is three capitals and never
+ * `USD`: USD is said only by having no wrapper, so a USD card can never
+ * become one that 0.1.0 refuses.
+ */
+export function currencyWrapper(
+  price: unknown,
+): { currency: string; expr: unknown } | null | 'malformed' {
+  if (typeof price !== 'object' || price === null || !('currency' in price)) {
+    return null
+  }
+  const pair = price.currency
+  if (
+    Object.keys(price).length !== 1 ||
+    !Array.isArray(pair) ||
+    pair.length !== 2 ||
+    typeof pair[0] !== 'string' ||
+    !/^[A-Z]{3}$/.test(pair[0]) ||
+    pair[0] === 'USD' ||
+    pair[1] == null
+  ) {
+    return 'malformed'
+  }
+  return { currency: pair[0], expr: pair[1] }
+}
+
 export const rateCardSchema = z.object({
+  /**
+   * Not a field. A card that states its currency here instead of wrapping
+   * `price` is refused, never read as USD.
+   */
+  currency: z.never().optional(),
   inputs: z.record(z.string(), inputSchema).superRefine((inputs, ctx) => {
     for (const [name, input] of Object.entries(inputs)) {
       if (input.kind !== 'number' || !input.estimate) continue
@@ -205,8 +259,7 @@ export const rateCardSchema = z.object({
     }
   }),
   tables: z.record(z.string(), tableSchema),
-  /** JSONLogic yielding USD for one request. */
-  price: exprSchema,
+  price: priceSchema,
   examples: z.array(rateCardExampleSchema),
   source: z.object({
     url: z.string().url(),

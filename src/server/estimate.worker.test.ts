@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 
+import { compileTokenCard } from '@modelschemas/rate-card'
+
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
@@ -29,6 +31,20 @@ beforeAll(async () => {
       activity: 'chat',
       displayName: 'GPT-4o',
       pricing: GPT_4O,
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    },
+    {
+      id: 'est-openai-kimi-k3',
+      providerId: 'est-openai',
+      rawId: 'kimi-k3',
+      activity: 'chat',
+      pricing: compileTokenCard(
+        { input_tokens: 20 / 1e6, output_tokens: 100 / 1e6 },
+        [],
+        GPT_4O.source,
+        { currency: 'CNY' },
+      ),
       firstSeenAt: NOW,
       lastSeenAt: NOW,
     },
@@ -145,7 +161,31 @@ describe('estimateCost', () => {
     })
     expect(outcome).toEqual({
       ok: true,
-      result: { usd: 0.007, cardSource: GPT_4O.source, estimated: [] },
+      result: {
+        amount: 0.007,
+        currency: 'USD',
+        usd: 0.007,
+        cardSource: GPT_4O.source,
+        estimated: [],
+      },
+    })
+  })
+
+  it('prices a yuan card in CNY, with no usd', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-openai',
+      model: 'kimi-k3',
+      usage: { input_tokens: 1_000_000, output_tokens: 500_000 },
+    })
+    // ¥20 in + ¥100 out per 1M: 20 + 50. Not converted.
+    expect(outcome).toEqual({
+      ok: true,
+      result: {
+        amount: 70,
+        currency: 'CNY',
+        cardSource: GPT_4O.source,
+        estimated: [],
+      },
     })
   })
 

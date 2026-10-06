@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
+  MINIMAX_CN_PRICING_PAGE,
   MINIMAX_CN_SDK_PAGE,
   MINIMAX_MAX_COMPLETION_TOKENS,
   MINIMAX_PRICING_PAGE,
@@ -159,6 +160,265 @@ describe('minimax docs', () => {
     // No pay-as-you-go price is published for the M Plan preview model.
     expect(prices.has('MiniMax-M3.1-Flash-Preview')).toBe(false)
     expect(prices.size).toBe(8)
+  })
+})
+
+describe('minimax-cn pricing', () => {
+  const cn = (page: string) => parseMinimaxPricing(page, MINIMAX_CN)
+
+  it('prices the 标准 tier in yuan at the billed amount, with the long-context tier', () => {
+    const prices = cn(MINIMAX_CN_PRICING_PAGE)
+    // The 优先 tab (3.15) and the struck list price (4.20) are not used.
+    expect(prices.get('MiniMax-M3')).toEqual({
+      base: {
+        input_tokens: 2.1 / 1e6,
+        output_tokens: 8.4 / 1e6,
+        cache_read_tokens: 0.42 / 1e6,
+      },
+      tiers: [
+        {
+          minPromptTokens: 512_000,
+          rates: {
+            input_tokens: 4.2 / 1e6,
+            output_tokens: 16.8 / 1e6,
+            cache_read_tokens: 0.84 / 1e6,
+          },
+        },
+      ],
+    })
+    expect(prices.get('MiniMax-M2.7-highspeed')).toEqual({
+      base: {
+        input_tokens: 4.2 / 1e6,
+        output_tokens: 16.8 / 1e6,
+        cache_read_tokens: 0.42 / 1e6,
+        cache_write_tokens: 2.625 / 1e6,
+      },
+      tiers: [],
+    })
+    expect(prices.get('MiniMax-M2')?.base.cache_read_tokens).toBe(0.21 / 1e6)
+    // No pay-as-you-go price is published for the M Plan preview model.
+    expect(prices.has('MiniMax-M3.1-Flash-Preview')).toBe(false)
+    expect(prices.size).toBe(8)
+  })
+
+  it('reads nothing across platforms', () => {
+    expect(parseMinimaxPricing(MINIMAX_CN_PRICING_PAGE).size).toBe(0)
+    expect(cn(MINIMAX_PRICING_PAGE).size).toBe(0)
+  })
+
+  it('refuses a struck price whose badge is not permanent', () => {
+    const promo = MINIMAX_CN_PRICING_PAGE.replaceAll('永久五折', '限时五折')
+    expect(promo).not.toBe(MINIMAX_CN_PRICING_PAGE)
+    expect(cn(promo).has('MiniMax-M3')).toBe(false)
+    expect(cn(promo).size).toBe(7)
+    // One row losing its badge refuses the whole model, not just that tier.
+    const half = MINIMAX_CN_PRICING_PAGE.replace('永久五折', '限时五折')
+    expect(cn(half).has('MiniMax-M3')).toBe(false)
+  })
+
+  it.each([
+    [
+      'a unit in the cell',
+      '| 2.1 | 8.4 | 0.42 | 2.625 |',
+      '| 2.1 元 | 8.4 | 0.42 | 2.625 |',
+    ],
+    [
+      'a 万 suffix',
+      '| 2.1 | 8.4 | 0.42 | 2.625 |',
+      '| 2.1万 | 8.4 | 0.42 | 2.625 |',
+    ],
+    [
+      'a range',
+      '| 2.1 | 8.4 | 0.42 | 2.625 |',
+      '| 2.1 | 8.4-16.8 | 0.42 | 2.625 |',
+    ],
+    ['a reworded unit', '元/百万 tokens', '元/千 tokens'],
+    ['a renamed section', '## 语言模型', '## 文本模型'],
+  ])('stores no price for %s', (_name, from, to) => {
+    const page = MINIMAX_CN_PRICING_PAGE.replaceAll(from, to)
+    expect(page).not.toBe(MINIMAX_CN_PRICING_PAGE)
+    expect(cn(page).has('MiniMax-M2.7')).toBe(false)
+  })
+})
+
+/**
+ * Page shapes that once stored a wrong number with no throw. Each must
+ * leave the model unpriced (or the page empty) on both platforms.
+ */
+describe.each([
+  {
+    name: 'minimax',
+    platform: MINIMAX,
+    page: MINIMAX_PRICING_PAGE,
+    tier: '> 512k input tokens',
+    tierRewordings: [
+      'over 512k input tokens',
+      '512k+ input tokens',
+      '＞ 512k input tokens',
+      '> 51.2万 input tokens',
+    ],
+    priority: '<Tab title="Priority*">',
+    row: '| **MiniMax-M2.7** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
+    batchRow:
+      '| **MiniMax-M2.7** | \\$0.15 / M tokens | \\$0.6 / M tokens | \\$0.03 / M tokens | \\$0.1875 / M tokens |',
+    header:
+      '| Model | Input | Output | Prompt caching Read | Prompt caching Write |',
+    cacheHeader: 'Prompt caching Read',
+    cacheCell: ['\\$0.06 / M tokens | \\$0.375', 'free | \\$0.375'],
+    base: { input_tokens: 0.3 / 1e6, output_tokens: 1.2 / 1e6 },
+  },
+  {
+    name: 'minimax-cn',
+    platform: MINIMAX_CN,
+    page: MINIMAX_CN_PRICING_PAGE,
+    tier: '> 512k 输入 tokens',
+    tierRewordings: [
+      '超过 512k 输入 tokens',
+      '512k 以上',
+      '＞ 512k 输入 tokens',
+      '> 51.2万 输入 tokens',
+    ],
+    priority: '<Tab title="优先*">',
+    row: '| **MiniMax-M2.7** | 2.1 | 8.4 | 0.42 | 2.625 |',
+    batchRow: '| **MiniMax-M2.7** | 1.05 | 4.2 | 0.21 | 1.3125 |',
+    header:
+      '| **模型** | **输入价格**<br /> 元/百万 tokens | **输出价格**<br /> 元/百万 tokens | **缓存读取**<br /> 元/百万 tokens | **缓存写入**<br /> 元/百万 tokens |',
+    cacheHeader: '**缓存读取**<br /> 元/百万 tokens',
+    cacheCell: ['| 2.1 | 8.4 | 0.42 |', '| 2.1 | 8.4 | 免费 |'],
+    base: { input_tokens: 2.1 / 1e6, output_tokens: 8.4 / 1e6 },
+  },
+])('$name pricing refuses what it cannot attribute', (c) => {
+  const parse = (page: string) => parseMinimaxPricing(page, c.platform)
+  const edit = (from: string, to: string, all = true) => {
+    const page = all ? c.page.replaceAll(from, to) : c.page.replace(from, to)
+    expect(page).not.toBe(c.page)
+    return parse(page)
+  }
+
+  it('reads the page as published', () => {
+    const prices = parse(c.page)
+    expect(prices.size).toBe(8)
+    expect(prices.get('MiniMax-M3')?.tiers).toHaveLength(1)
+    expect(prices.get('MiniMax-M2.7')?.base).toMatchObject(c.base)
+  })
+
+  it.each(c.tierRewordings)(
+    'a tier bound reworded to %j is never the base price',
+    (reworded) => {
+      const prices = edit(c.tier, reworded)
+      expect(prices.has('MiniMax-M3')).toBe(false)
+      expect(prices.size).toBe(7)
+    },
+  )
+
+  it.each([
+    ['an extra attribute', (tag: string) => tag.replace('>', ' icon="bolt">')],
+    ['single quotes', (tag: string) => tag.replaceAll('"', "'")],
+  ])('prices nothing when the priority tab tag has %s', (_name, mutate) => {
+    expect(edit(c.priority, mutate(c.priority)).size).toBe(0)
+  })
+
+  it('refuses the model when tabs become headings and both tiers show', () => {
+    const page = c.page
+      .replace(/<Tab title="[^"]*">/g, '**tier**')
+      .replaceAll('</Tab>', '')
+    expect(page).not.toBe(c.page)
+    const prices = parse(page)
+    expect(prices.has('MiniMax-M3')).toBe(false)
+    expect(prices.size).toBe(7)
+  })
+
+  it('prices nothing under a sub-heading it cannot attribute', () => {
+    expect(edit(c.header, `### Batch\n\n${c.header}`, false).size).toBe(0)
+  })
+
+  it('refuses a model a second table prices again', () => {
+    const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow].join(
+      '\n',
+    )
+    const prices = edit(c.row, `${c.row}\n\n**Batch**\n\n${batch}`, false)
+    expect(prices.has('MiniMax-M2.7')).toBe(false)
+    expect(prices.size).toBe(7)
+  })
+
+  it('refuses a model whose tier threshold repeats', () => {
+    const tierRow = c.page.split('\n').find((line) => line.includes(c.tier))
+    if (!tierRow) throw new Error('no tier row')
+    const prices = edit(tierRow, `${tierRow}\n${tierRow}`, false)
+    expect(prices.has('MiniMax-M3')).toBe(false)
+  })
+
+  it('refuses a row with a qualifier beside the id', () => {
+    const prices = edit(
+      '**MiniMax-M2.7** |',
+      '**MiniMax-M2.7** (batch) |',
+      false,
+    )
+    expect(prices.has('MiniMax-M2.7')).toBe(false)
+  })
+
+  it('refuses a row whose cache cell does not read, rather than drop the lever', () => {
+    const prices = edit(c.cacheCell[0] ?? '', c.cacheCell[1] ?? '', false)
+    expect(prices.has('MiniMax-M2.7')).toBe(false)
+    expect(prices.size).toBe(7)
+  })
+
+  describe('accordions', () => {
+    const legacy = `<Accordion title="${c.platform.legacyAccordion}">`
+    const published = JSON.stringify([...parse(c.page)])
+    const same = (page: string) => {
+      expect(page).not.toBe(c.page)
+      expect(JSON.stringify([...parse(page)])).toBe(published)
+    }
+
+    it('ignores a text-only accordion, whatever its title or attributes', () => {
+      const faq =
+        '<Accordion title="FAQ" icon="circle-question">\n  Prices exclude tax.\n\n  | Tier | Note |\n  | :- | :- |\n  | Standard | default |\n</Accordion>\n\n'
+      same(c.page.replace(legacy, faq + legacy))
+      same(c.page.replace('<Tabs>', `${faq}<Tabs>`))
+    })
+
+    it('still reads the legacy accordion when it gains an attribute', () => {
+      same(c.page.replace(legacy, legacy.replace('>', ' defaultOpen>')))
+      same(
+        c.page.replace(
+          legacy,
+          legacy.replace('<Accordion ', '<Accordion icon="clock" '),
+        ),
+      )
+    })
+
+    it('prices nothing when the legacy accordion is retitled', () => {
+      expect(edit(legacy, '<Accordion title="Batch">').size).toBe(0)
+    })
+
+    it('prices nothing when an unknown accordion holds a price table', () => {
+      const batch = [
+        '<Accordion title="Batch">',
+        c.header,
+        '| :- | :- | :- | :- | :- |',
+        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+        '</Accordion>',
+        '',
+        legacy,
+      ].join('\n')
+      expect(edit(legacy, batch).size).toBe(0)
+    })
+  })
+
+  it('refuses a base bound that does not meet the tier', () => {
+    const prices = edit('≤ 512k', '≤ 256k')
+    expect(prices.has('MiniMax-M3')).toBe(false)
+    expect(prices.size).toBe(7)
+    // A bounded base with no tier above it, and a tier over an open base.
+    const tierRow = c.page.split('\n').find((line) => line.includes(c.tier))
+    if (!tierRow) throw new Error('no tier row')
+    expect(edit(`${tierRow}\n`, '', false).has('MiniMax-M3')).toBe(false)
+    expect(edit(c.tier.replace('>', '≤'), '').has('MiniMax-M3')).toBe(false)
+  })
+
+  it('prices nothing under a header it does not know', () => {
+    expect(edit(c.cacheHeader, `${c.cacheHeader} (peak)`).size).toBe(0)
   })
 })
 
