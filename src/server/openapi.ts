@@ -746,7 +746,7 @@ export const openApiDocument = {
           rawId: { type: 'string' },
           sameAs: {
             description:
-              "A provider-stated link to an existing maker row. It does not change this row's facts. null when the maker is not stated or its row is missing. factSources.sameAs records the source.",
+              "The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.",
             oneOf: [
               {
                 type: 'object',

@@ -66,14 +66,6 @@ assign `undefined` explicitly). Verify locally end-to-end with
 
 ## Provenance & verification
 
-Model responses include `sameAs: { provider, rawId }` when a native source
-identifies an upstream model and its catalog row exists. Ingestion stores the
-relationship as a foreign key and records the evidence in `factSources.sameAs`.
-Provider namespaces and documented model aliases resolve through the database;
-missing or ambiguous targets produce `sameAs: null`. A model's price, limits,
-and other facts continue to describe its own provider. Detail responses include
-the provenance; catalog lists include it with `?provenance=1`.
-
 You don't have to trust that a schema served here matches its upstream —
 every derivation is recorded and reproducible:
 
@@ -102,6 +94,23 @@ every derivation is recorded and reproducible:
   locally, and exits non-zero on any mismatch — so pulled schemas keep
   matching their content addresses, with each check's provenance telling
   you which upstream document to audit.
+
+### Same model at another provider
+
+A model row carries `sameAs: { provider, rawId }` when its own provider names
+the upstream model — a gateway id such as `anthropic/claude-opus-4.5`, or
+Azure's OpenAI model ids — and that model has a catalog row. It is a link
+only: the row's price, limits, and other facts stay its own provider's.
+
+- Within the named provider an exact id wins, then a documented alias, then
+  the same with dots read as hyphens (`claude-opus-4.5` → `claude-opus-4-5`).
+- `sameAs` is `null` when no upstream is stated, or the stated one matches no
+  row or more than one. Priced variants such as `:batch` stay unlinked.
+- `factSources.sameAs` records the source when the link is set, with
+  `normalized: true` for a dots-as-hyphens match. Detail responses include
+  it; lists include it with `?provenance=1`.
+- Links refresh on each model poll (every 15 minutes) and a change emits
+  `model.updated`.
 
 ## Examples
 

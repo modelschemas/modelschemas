@@ -376,7 +376,7 @@ export const providers = sqliteTable('providers', {
     .default('active'),
 })
 
-/** Alternative provider names used in native model identifiers. */
+/** Names other providers' model ids use for a provider (`google` → gemini). */
 export const providerModelNamespaces = sqliteTable(
   'provider_model_namespaces',
   {
@@ -414,12 +414,13 @@ export const models = sqliteTable(
     requestMap: text('request_map', { mode: 'json' }),
     // Caller ids that resolve to this dated row (issue #112).
     aliases: text('aliases', { mode: 'json' }).$type<Array<string> | null>(),
-    // Native upstream identity evidence can precede the target's arrival.
-    // The namespace resolves through providers / provider_model_namespaces.
+    // The provider's own statement of its upstream model (issue #199); it
+    // can precede the target row's arrival. The namespace resolves through
+    // providers / provider_model_namespaces.
     upstreamProvider: text('upstream_provider'),
     upstreamRawId: text('upstream_raw_id'),
     upstreamSource: text('upstream_source', { mode: 'json' }),
-    // Resolved relationship (issue #199), independent of the row's facts.
+    // Resolved link, written only by reconcileSameAs; never the row's facts.
     sameAsModelId: text('same_as_model_id').references(
       (): AnySQLiteColumn => models.id,
       { onDelete: 'set null' },
@@ -440,7 +441,6 @@ export const models = sqliteTable(
   (table) => [
     index('models_providerId_idx').on(table.providerId),
     index('models_activity_idx').on(table.activity),
-    index('models_provider_rawId_idx').on(table.providerId, table.rawId),
     index('models_sameAsModelId_idx').on(table.sameAsModelId),
     check(
       'models_upstream_identity_pair',
@@ -526,7 +526,6 @@ export const changes = sqliteTable(
 
 export const providersRelations = relations(providers, ({ many }) => ({
   models: many(models),
-  modelNamespaces: many(providerModelNamespaces),
   endpoints: many(endpoints),
   changes: many(changes),
 }))
@@ -536,22 +535,7 @@ export const modelsRelations = relations(models, ({ one }) => ({
     fields: [models.providerId],
     references: [providers.id],
   }),
-  sameAsModel: one(models, {
-    fields: [models.sameAsModelId],
-    references: [models.id],
-    relationName: 'sameAs',
-  }),
 }))
-
-export const providerModelNamespacesRelations = relations(
-  providerModelNamespaces,
-  ({ one }) => ({
-    provider: one(providers, {
-      fields: [providerModelNamespaces.providerId],
-      references: [providers.id],
-    }),
-  }),
-)
 
 export const endpointsRelations = relations(endpoints, ({ one, many }) => ({
   provider: one(providers, {

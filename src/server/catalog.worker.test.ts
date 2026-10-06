@@ -363,13 +363,7 @@ describe('stored sameAs relationships', () => {
           derivation: 'docs-derived',
           sourceUrl: 'https://example.com/reseller/model',
         },
-        factSources: {
-          contextWindow: { derivation: 'listing' },
-          sameAs: {
-            derivation: 'docs-derived',
-            sourceUrl: 'https://example.com/reseller/model',
-          },
-        },
+        factSources: { contextWindow: { derivation: 'listing' } },
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       },
@@ -390,10 +384,21 @@ describe('stored sameAs relationships', () => {
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       },
+      {
+        id: 'sameas-normalized',
+        providerId: 'cat-reseller',
+        rawId: 'dotted',
+        sameAsModelId: 'sameas-maker',
+        upstreamProvider: 'cat-maker',
+        upstreamRawId: 'native.1',
+        upstreamSource: { derivation: 'listing' },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
     ])
   })
 
-  it('serves the stored foreign key and evidence independently of id spelling', async () => {
+  it('serves the stored link, with its evidence as provenance only when resolved', async () => {
     const linked = await getModelDetail(db, 'cat-reseller', 'dealer-id')
     expect(linked?.sameAs).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
     expect(linked?.factSources).toEqual({
@@ -410,6 +415,11 @@ describe('stored sameAs relationships', () => {
       expect(unlinked?.sameAs).toBeNull()
       expect(unlinked?.factSources).toBeNull()
     }
+    const dotted = await getModelDetail(db, 'cat-reseller', 'dotted')
+    expect(dotted?.factSources?.sameAs).toEqual({
+      derivation: 'listing',
+      normalized: true,
+    })
   })
 
   it('joins the stored target on catalog and provider lists', async () => {

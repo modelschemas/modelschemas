@@ -143,7 +143,8 @@ export interface FactSource {
 
 /** Per-field (and per-flag) provenance for a catalog row. */
 export interface ModelFactSources {
-  sameAs?: FactSource
+  /** `normalized`: the id matched only after dots were read as hyphens. */
+  sameAs?: FactSource & { normalized?: true }
   contextWindow?: FactSource
   maxOutput?: FactSource
   modalities?: FactSource
@@ -154,8 +155,12 @@ export interface ModelFactSources {
   serverTools?: Record<string, FactSource>
 }
 
-/** A native statement of the upstream model, retained even before it exists. */
+/**
+ * A provider's own statement of which upstream model a row is; kept even
+ * while that model has no catalog row.
+ */
 export interface UpstreamModelIdentity {
+  /** A provider id, or a name `provider_model_namespaces` maps to one. */
   providerNamespace: string
   rawId: string
   source: FactSource
@@ -177,7 +182,6 @@ export interface ModelReasoning {
 /** Normalised model entry (maps onto the `models` table shape). */
 export interface ModelInfo {
   rawId: string
-  upstreamModelIdentity?: UpstreamModelIdentity | null
   displayName?: string | null
   activity?: Activity | null
   contextWindow?: number | null
@@ -345,9 +349,15 @@ export interface ProviderConfig {
    */
   specSourceUrl?: string
   modelsEndpoint?: string
-  /** Alternative names for this provider, seeded into the catalog database. */
+  /**
+   * Names other providers' model ids use for this provider (`google/…` →
+   * gemini). Stored in `provider_model_namespaces`; used only for sameAs.
+   */
   modelNamespaces?: Array<string>
-  /** Interpret only this provider's documented upstream model-id format. */
+  /**
+   * Upstream identity read from a raw id, using an id format this provider
+   * itself publishes; null when the id does not follow it. Never guess.
+   */
   upstreamModelIdentity?: (rawId: string) => UpstreamModelIdentity | null
   /**
    * Derivation recorded for this provider's endpoints unless an operation

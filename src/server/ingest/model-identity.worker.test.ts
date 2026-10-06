@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 
 import { getDb } from '#/db/index.ts'
-import { models, providerModelNamespaces } from '#/db/schema.ts'
+import { changes, models } from '#/db/schema.ts'
 import { getModelDetail } from '#/server/catalog.ts'
 import { anthropicProvider } from '#/server/providers/anthropic.ts'
 import { geminiProvider } from '#/server/providers/gemini.ts'
@@ -11,21 +11,19 @@ import { openaiProvider } from '#/server/providers/openai.ts'
 import { openrouterProvider } from '#/server/providers/openrouter.ts'
 import { provider as vercel } from '#/server/providers/adapters/vercel.ts'
 import { provider as azure } from '#/server/providers/adapters/azure.ts'
-import { provider as cloudflare } from '#/server/providers/adapters/cloudflare-ai-gateway.ts'
-import { provider as workersAi } from '#/server/providers/adapters/cloudflare-workers-ai.ts'
 import { namespacedUpstreamIdentity } from '#/server/providers/upstream-model.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { GPT_4O } from '../../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { modelDbId, pollProviderModels } from './poll-models.ts'
-import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
-import { persistUpstreamIdentities, reconcileSameAs } from './model-identity.ts'
+import { reconcileSameAs } from './model-identity.ts'
 
 const SOURCE = {
   derivation: 'listing' as const,
   sourceUrl: 'https://example.com/models',
   path: 'data[].id',
 }
+const NOW = 1_781_150_100
 
 function deps(): SyncDeps {
   let now = 1_781_150_000
@@ -54,73 +52,39 @@ function stub(
 }
 
 const identify = (rawId: string) => namespacedUpstreamIdentity(rawId, SOURCE)
+const gateway = { upstreamModelIdentity: identify }
 
-describe('persisted upstream identity', () => {
-  it('keeps a consistent link and provenance while new evidence awaits resolution', async () => {
-    const d = deps()
-    const makerId = 'identity-snapshot-maker'
-    const resellerId = 'identity-snapshot-reseller'
-    await pollProviderModels(
-      d,
-      stub(makerId, [{ rawId: 'first' }, { rawId: 'second' }]),
+function linkChanges(d: SyncDeps, subjectId: string) {
+  return d.db
+    .select()
+    .from(changes)
+    .where(
+      and(
+        eq(changes.subjectId, subjectId),
+        eq(changes.summary, 'Upstream model link updated'),
+      ),
     )
-    await pollProviderModels(
-      d,
-      stub(resellerId, [
-        {
-          rawId: 'dealer-id',
-          contextWindow: 1234,
-          upstreamModelIdentity: {
-            providerNamespace: makerId,
-            rawId: 'first',
-            source: SOURCE,
-          },
-        },
-      ]),
-    )
-    const nextSource = {
-      derivation: 'docs-derived' as const,
-      sourceUrl: 'https://example.com/revised-model',
-    }
-    await persistUpstreamIdentities(d.db, [
-      {
-        id: modelDbId(resellerId, 'dealer-id'),
-        identity: {
-          providerNamespace: makerId,
-          rawId: 'second',
-          source: nextSource,
-        },
-      },
-    ])
-    const pending = await getModelDetail(d.db, resellerId, 'dealer-id')
-    expect(pending?.sameAs).toEqual({ provider: makerId, rawId: 'first' })
-    expect(pending?.factSources?.sameAs).toEqual(SOURCE)
-    await reconcileSameAs(d.db, 1_781_150_100)
-    const resolved = await getModelDetail(d.db, resellerId, 'dealer-id')
-    expect(resolved?.sameAs).toEqual({ provider: makerId, rawId: 'second' })
-    expect(resolved?.factSources?.sameAs).toEqual(nextSource)
-    expect(resolved?.contextWindow).toBe(1234)
-  })
+}
 
-  it('resolves new providers through database identities when the maker arrives later', async () => {
+describe('sameAs links', () => {
+  it('links when the upstream arrives later, without touching the row or repeating the event', async () => {
     const d = deps()
     const makerId = 'identity-new-maker'
     const resellerId = 'identity-new-reseller'
     const rawId = 'publisher/native-alias'
-    const reseller = stub(resellerId, [{ rawId, contextWindow: 1234 }], {
-      upstreamModelIdentity: identify,
-    })
+    const rowId = modelDbId(resellerId, rawId)
+    const row = () =>
+      d.db.query.models.findFirst({ where: eq(models.id, rowId) })
+    const reseller = stub(resellerId, [{ rawId, contextWindow: 1234 }], gateway)
     await pollProviderModels(d, reseller)
-    const before = await d.db.query.models.findFirst({
-      where: eq(models.id, modelDbId(resellerId, rawId)),
-    })
+    await reconcileSameAs(d.db, NOW)
+    const before = await row()
     expect(before).toMatchObject({
       upstreamProvider: 'publisher',
       upstreamRawId: 'native-alias',
+      upstreamSource: SOURCE,
       sameAsModelId: null,
     })
-    expect(before?.upstreamSource).toEqual(SOURCE)
-    expect(before?.factSources).not.toHaveProperty('sameAs')
     const unresolved = await getModelDetail(d.db, resellerId, rawId)
     expect(unresolved?.sameAs).toBeNull()
     expect(unresolved?.factSources).not.toHaveProperty('sameAs')
@@ -131,63 +95,52 @@ describe('persisted upstream identity', () => {
       pricing: GPT_4O,
       contextWindow: 200_000,
     }
-    const maker = stub(makerId, [native], { modelNamespaces: ['publisher'] })
-    await pollProviderModels(d, maker)
+    const claim = { modelNamespaces: ['publisher'] }
+    await pollProviderModels(d, stub(makerId, [native], claim))
+    await reconcileSameAs(d.db, NOW)
     const targetId = modelDbId(makerId, native.rawId)
-    const after = await d.db.query.models.findFirst({
-      where: eq(models.id, modelDbId(resellerId, rawId)),
-    })
-    // Establishing the relation changes only the link and its provenance.
-    expect(after).toEqual({
-      ...before,
-      sameAsModelId: targetId,
-      factSources: { ...(before?.factSources as object), sameAs: SOURCE },
-    })
+    // The link is the only thing that changes on the reseller's row.
+    expect(await row()).toEqual({ ...before, sameAsModelId: targetId })
     const linked = await getModelDetail(d.db, resellerId, rawId)
     expect(linked?.sameAs).toEqual({ provider: makerId, rawId: native.rawId })
     expect(linked?.pricing).toBeNull()
     expect(linked?.contextWindow).toBe(1234)
     expect(linked?.factSources?.sameAs).toEqual(SOURCE)
+    const [event, ...extra] = await linkChanges(d, rowId)
+    expect(extra).toHaveLength(0)
+    expect(event).toMatchObject({
+      type: 'model.updated',
+      providerId: resellerId,
+      payload: {
+        before: { sameAsModelId: null },
+        after: { sameAsModelId: targetId },
+      },
+    })
+
     expect((await pollProviderModels(d, reseller)).updated).toBe(0)
+    await reconcileSameAs(d.db, NOW)
+    // A delisted upstream is deprecated, not deleted: the row still exists.
+    await pollProviderModels(d, stub(makerId, [], claim))
+    await reconcileSameAs(d.db, NOW)
+    expect((await row())?.sameAsModelId).toBe(targetId)
+    expect(await linkChanges(d, rowId)).toHaveLength(1)
 
-    await d.db.delete(models).where(eq(models.id, targetId))
-    expect((await getModelDetail(d.db, resellerId, rawId))?.sameAs).toBeNull()
-    expect(
-      (await getModelDetail(d.db, resellerId, rawId))?.factSources,
-    ).not.toHaveProperty('sameAs')
-    expect(
-      (
-        await d.db.query.models.findFirst({
-          where: eq(models.id, modelDbId(resellerId, rawId)),
-        })
-      )?.sameAsModelId,
-    ).toBeNull()
-    // Retained evidence reconnects the same row after the maker returns.
-    await pollProviderModels(d, maker)
-    expect((await getModelDetail(d.db, resellerId, rawId))?.sameAs?.rawId).toBe(
-      native.rawId,
-    )
-
+    // The provider stops stating an upstream: evidence and link both go.
     await pollProviderModels(
       d,
-      stub(
-        resellerId,
-        [{ rawId, contextWindow: 1234, upstreamModelIdentity: null }],
-        { upstreamModelIdentity: identify },
-      ),
+      stub(resellerId, [{ rawId, contextWindow: 1234 }]),
     )
-    const withdrawn = await d.db.query.models.findFirst({
-      where: eq(models.id, modelDbId(resellerId, rawId)),
-    })
-    expect(withdrawn).toMatchObject({
+    await reconcileSameAs(d.db, NOW)
+    expect(await row()).toMatchObject({
       upstreamProvider: null,
       upstreamRawId: null,
+      upstreamSource: null,
       sameAsModelId: null,
     })
-    expect(withdrawn?.factSources).not.toHaveProperty('sameAs')
+    expect(await linkChanges(d, rowId)).toHaveLength(2)
   })
 
-  it('requires an unambiguous provider and model identity, with exact ids preceding aliases', async () => {
+  it('resolves namespaces through the database and prefers exact ids, then aliases, then dots as hyphens', async () => {
     const d = deps()
     await pollProviderModels(
       d,
@@ -197,60 +150,134 @@ describe('persisted upstream identity', () => {
           { rawId: 'model', aliases: ['ambiguous'] },
           { rawId: 'other', aliases: ['ambiguous', 'model'] },
           { rawId: 'model-x' },
+          { rawId: 'v-4-5-dated', aliases: ['v-4-5'] },
+          { rawId: 'v.1' },
+          { rawId: 'v-1' },
+          { rawId: 'dup-a', aliases: ['dup-1'] },
+          { rawId: 'dup-b', aliases: ['dup-1'] },
         ],
         { modelNamespaces: ['shared-publisher'] },
       ),
     )
+    // A second claimant makes the namespace ambiguous; a provider id still
+    // beats a namespace of the same name.
+    const rival = (modelNamespaces: Array<string>) =>
+      pollProviderModels(
+        d,
+        stub('identity-b', [{ rawId: 'model' }], { modelNamespaces }),
+      )
+    await rival(['shared-publisher', 'identity-a'])
+    const host = 'identity-host'
     await pollProviderModels(
       d,
-      stub('identity-b', [{ rawId: 'model' }], {
-        modelNamespaces: ['shared-publisher', 'identity-a'],
-      }),
+      stub(
+        host,
+        [
+          'identity-a/model',
+          'identity-a/ambiguous',
+          'identity-a/MODEL-X',
+          'identity-a/model:free',
+          'identity-a/v-4.5',
+          'identity-a/v.1',
+          'identity-a/dup.1',
+          'identity-unlisted/model',
+          'shared-publisher/model',
+        ].map((rawId) => ({ rawId })),
+        gateway,
+      ),
+    )
+    // A row whose own alias matches its stated upstream must not self-link.
+    await pollProviderModels(
+      d,
+      stub(
+        'identity-self',
+        [{ rawId: 'identity-self/m', aliases: ['m'] }],
+        gateway,
+      ),
+    )
+    // No stated upstream: a matching name alone is not evidence.
+    await pollProviderModels(
+      d,
+      stub('identity-unproven-host', [{ rawId: 'identity-a/model' }]),
+    )
+    await reconcileSameAs(d.db, NOW)
+
+    const detail = (provider: string, rawId: string) =>
+      getModelDetail(d.db, provider, rawId)
+    for (const [rawId, target] of [
+      ['identity-a/model', 'model'],
+      ['identity-a/v.1', 'v.1'],
+    ] as const) {
+      const exact = await detail(host, rawId)
+      expect(exact?.sameAs).toEqual({ provider: 'identity-a', rawId: target })
+      expect(exact?.factSources?.sameAs).toEqual(SOURCE)
+    }
+    const normalized = await detail(host, 'identity-a/v-4.5')
+    expect(normalized?.sameAs).toEqual({
+      provider: 'identity-a',
+      rawId: 'v-4-5-dated',
+    })
+    expect(normalized?.factSources?.sameAs).toEqual({
+      ...SOURCE,
+      normalized: true,
+    })
+    for (const rawId of [
+      'identity-a/ambiguous',
+      'identity-a/MODEL-X',
+      'identity-a/model:free',
+      'identity-a/dup.1',
+      'identity-unlisted/model',
+      'shared-publisher/model',
+    ]) {
+      expect((await detail(host, rawId))?.sameAs).toBeNull()
+    }
+    expect(
+      (await detail('identity-self', 'identity-self/m'))?.sameAs,
+    ).toBeNull()
+    expect(
+      (await detail('identity-unproven-host', 'identity-a/model'))?.sameAs,
+    ).toBeNull()
+
+    // Dropping the rival claim from config removes its row, so the namespace
+    // resolves again.
+    await rival([])
+    await reconcileSameAs(d.db, NOW)
+    expect((await detail(host, 'shared-publisher/model'))?.sameAs).toEqual({
+      provider: 'identity-a',
+      rawId: 'model',
+    })
+  })
+
+  it('writes every link when one run changes more than a batch', async () => {
+    const d = deps()
+    const ids = Array.from({ length: 12 }, (_, i) => `m${i}`)
+    await pollProviderModels(
+      d,
+      stub(
+        'identity-bulk-maker',
+        ids.map((rawId) => ({ rawId })),
+      ),
     )
     await pollProviderModels(
       d,
       stub(
-        'identity-host',
-        [
-          { rawId: 'shared-publisher/model' },
-          { rawId: 'identity-a/model' },
-          { rawId: 'identity-a/ambiguous' },
-          { rawId: 'identity-a/MODEL-X' },
-          { rawId: 'identity-a/model:free' },
-        ],
-        { upstreamModelIdentity: identify },
+        'identity-bulk-host',
+        ids.map((id) => ({ rawId: `identity-bulk-maker/${id}` })),
+        gateway,
       ),
     )
-    for (const rawId of [
-      'shared-publisher/model',
-      'identity-a/ambiguous',
-      'identity-a/MODEL-X',
-      'identity-a/model:free',
-    ]) {
-      expect(
-        (await getModelDetail(d.db, 'identity-host', rawId))?.sameAs,
-      ).toBeNull()
-    }
-    expect(
-      (await getModelDetail(d.db, 'identity-host', 'identity-a/model'))?.sameAs,
-    ).toEqual({ provider: 'identity-a', rawId: 'model' })
+    await reconcileSameAs(d.db, NOW)
+    const rows = await d.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, 'identity-bulk-host'))
+    expect(rows.filter((row) => row.sameAsModelId !== null)).toHaveLength(12)
     expect(
       await d.db
         .select()
-        .from(providerModelNamespaces)
-        .where(eq(providerModelNamespaces.namespace, 'shared-publisher')),
-    ).toHaveLength(2)
-
-    await pollProviderModels(
-      d,
-      stub('identity-unproven-host', [
-        { rawId: 'identity-a/model', displayName: 'model' },
-      ]),
-    )
-    expect(
-      (await getModelDetail(d.db, 'identity-unproven-host', 'identity-a/model'))
-        ?.sameAs,
-    ).toBeNull()
+        .from(changes)
+        .where(eq(changes.providerId, 'identity-bulk-host')),
+    ).toHaveLength(12 * 2) // model.added + the link
   })
 
   it('enforces the target foreign key and rejects a self link', async () => {
@@ -274,7 +301,7 @@ describe('persisted upstream identity', () => {
     ).rejects.toThrow()
   })
 
-  it('ingests native identities from the issue’s gateways and Azure', async () => {
+  it('links OpenRouter, Vercel, and Azure rows to the upstream they state (#199)', async () => {
     const d = deps()
     const pollFixture = (p: ProviderConfig, listed: Array<ModelInfo>) =>
       pollProviderModels(d, {
@@ -287,37 +314,36 @@ describe('persisted upstream identity', () => {
         aliases: ['claude-opus-4-5'],
         pricing: GPT_4O,
       },
+      { rawId: 'claude-fable-5' },
     ])
     await pollFixture(openaiProvider, [{ rawId: 'gpt-4o-2024-11-20' }])
     await pollFixture(geminiProvider, [{ rawId: 'gemini-2.5-pro' }])
-    await pollFixture(workersAi, [{ rawId: '@cf/moonshotai/kimi-k2.6' }])
+    // Ids as the gateways publish them: dotted versions, `google` for Gemini.
     await pollFixture(openrouterProvider, [
-      { rawId: 'anthropic/claude-opus-4-5', contextWindow: 1234 },
+      { rawId: 'anthropic/claude-opus-4.5', contextWindow: 1234 },
+      { rawId: 'anthropic/claude-opus-4.5:batch' },
+      { rawId: 'anthropic/claude-fable-5' },
       { rawId: 'claude-opus-4-5' },
       { rawId: 'openai/missing-native-model' },
     ])
-    await pollFixture(vercel, [{ rawId: 'google/gemini-2.5-pro' }])
+    await pollFixture(vercel, [
+      { rawId: 'google/gemini-2.5-pro' },
+      { rawId: 'anthropic/claude-opus-4.5' },
+    ])
     await pollFixture(azure, [{ rawId: 'gpt-4o-2024-11-20' }])
-    await ensureProviderRow(d.db, cloudflare)
-    const cloudflareRawId = 'workers-ai/@cf/moonshotai/kimi-k2.6'
-    await d.db.insert(models).values({
-      id: modelDbId(cloudflare.id, cloudflareRawId),
-      providerId: cloudflare.id,
-      rawId: cloudflareRawId,
-      firstSeenAt: 1,
-      lastSeenAt: 1,
-    })
-    const skipped = await pollProviderModels(d, cloudflare)
-    expect(skipped.skipped).toBeDefined()
+    await reconcileSameAs(d.db, NOW)
 
+    const opus = 'claude-opus-4-5-20251101'
     const cases = [
+      ['openrouter', 'anthropic/claude-opus-4.5', 'anthropic', opus, 'listing'],
       [
         'openrouter',
-        'anthropic/claude-opus-4-5',
+        'anthropic/claude-fable-5',
         'anthropic',
-        'claude-opus-4-5-20251101',
+        'claude-fable-5',
         'listing',
       ],
+      ['vercel', 'anthropic/claude-opus-4.5', 'anthropic', opus, 'listing'],
       [
         'vercel',
         'google/gemini-2.5-pro',
@@ -332,31 +358,28 @@ describe('persisted upstream identity', () => {
         'gpt-4o-2024-11-20',
         'docs-derived',
       ],
-      [
-        'cloudflare-ai-gateway',
-        cloudflareRawId,
-        'cloudflare-workers-ai',
-        '@cf/moonshotai/kimi-k2.6',
-        'docs-derived',
-      ],
     ] as const
-    for (const [provider, rawId, maker, nativeId, derivation] of cases) {
+    for (const [provider, rawId, upstream, nativeId, derivation] of cases) {
       const result = await getModelDetail(d.db, provider, rawId)
-      expect(result?.sameAs).toEqual({ provider: maker, rawId: nativeId })
+      expect(result?.sameAs).toEqual({ provider: upstream, rawId: nativeId })
       expect(result?.factSources?.sameAs?.derivation).toBe(derivation)
-      const stored = await d.db.query.models.findFirst({
-        where: eq(models.id, modelDbId(provider, rawId)),
-      })
-      expect(stored?.sameAsModelId).toBe(modelDbId(maker, nativeId))
+      // Only the dotted spelling needed normalizing.
+      expect(result?.factSources?.sameAs?.normalized).toBe(
+        rawId.endsWith('4.5') ? true : undefined,
+      )
     }
-    const opus = await getModelDetail(
+    const linked = await getModelDetail(
       d.db,
       'openrouter',
-      'anthropic/claude-opus-4-5',
+      'anthropic/claude-opus-4.5',
     )
-    expect(opus?.contextWindow).toBe(1234)
-    expect(opus?.pricing).toBeNull()
-    for (const rawId of ['claude-opus-4-5', 'openai/missing-native-model']) {
+    expect(linked?.contextWindow).toBe(1234)
+    expect(linked?.pricing).toBeNull()
+    for (const rawId of [
+      'anthropic/claude-opus-4.5:batch',
+      'claude-opus-4-5',
+      'openai/missing-native-model',
+    ]) {
       const unlinked = await getModelDetail(d.db, 'openrouter', rawId)
       expect(unlinked?.sameAs).toBeNull()
       expect(unlinked?.factSources?.sameAs).toBeUndefined()

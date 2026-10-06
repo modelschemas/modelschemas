@@ -3,29 +3,14 @@ import { eq, sql } from 'drizzle-orm'
 import type { Db } from '#/db/index.ts'
 import { changes, models } from '#/db/schema.ts'
 import { stableStringify } from '#/server/kv.ts'
-import type {
-  ModelFactSources,
-  ProviderConfig,
-  UpstreamModelIdentity,
-} from '#/server/providers/types.ts'
+import type { UpstreamModelIdentity } from '#/server/providers/types.ts'
 
 export interface UpstreamIdentityWrite {
   id: string
   identity: UpstreamModelIdentity | null
 }
 
-/** Keep the resolved link's evidence intact until reconciliation replaces it. */
-export function retainSameAsSource(next: ModelFactSources | null | undefined) {
-  const { sameAs: _linkSource, ...facts } = next ?? {}
-  const serialized = stableStringify(facts)
-  return sql`CASE
-    WHEN ${models.sameAsModelId} IS NOT NULL THEN
-      json_set(${serialized}, '$.sameAs', json_extract(${models.factSources}, '$.sameAs'))
-    ELSE nullif(${serialized}, '{}')
-  END`
-}
-
-/** Write pending identity evidence in batches; reconciliation owns the link. */
+/** Write changed identity evidence in batches; reconcileSameAs owns the link. */
 export async function persistUpstreamIdentities(
   db: Db,
   identities: readonly UpstreamIdentityWrite[],
@@ -53,102 +38,94 @@ export async function persistUpstreamIdentities(
 }
 
 /**
- * A skipped listing cannot supply new listing evidence. An adapter can still
- * interpret stored ids using a documented upstream routing format.
- */
-export async function refreshDocumentedUpstreamIdentities(
-  db: Db,
-  provider: ProviderConfig,
-): Promise<void> {
-  const identify = provider.upstreamModelIdentity
-  if (!identify) return
-  const rows = await db
-    .select({ id: models.id, rawId: models.rawId })
-    .from(models)
-    .where(eq(models.providerId, provider.id))
-  const identities: Array<UpstreamIdentityWrite> = []
-  for (const row of rows) {
-    const identity = identify(row.rawId)
-    if (
-      !identity ||
-      !['docs-derived', 'docs-extracted'].includes(identity.source.derivation)
-    )
-      continue
-    identities.push({ id: row.id, identity })
-  }
-  await persistUpstreamIdentities(db, identities)
-}
-
-/**
- * Resolve native evidence into foreign keys after ingestion. No provider or
- * model names live here: exact provider ids and catalog namespace aliases
- * identify the native provider, then exact ids precede documented aliases.
- * Missing or ambiguous targets clear the link while retaining the evidence.
+ * Resolve stored evidence into links, catalog-wide. The stated namespace is
+ * a provider id, or a name exactly one provider claims in
+ * `provider_model_namespaces`. Within that provider an exact id wins, then a documented alias, then the same two with
+ * dots read as hyphens (gateways write `claude-opus-4.5` for Anthropic's
+ * `claude-opus-4-5`). More than one match at the winning tier is ambiguous:
+ * no link. Evidence is never touched here, so a target that arrives later
+ * links without re-polling the reseller.
  */
 export async function reconcileSameAs(db: Db, now: number): Promise<void> {
-  const changed = await db.all<{
+  const diffs = await db.all<{
     id: string
     provider_id: string
-    same_as_model_id: string | null
+    before: string | null
+    after: string | null
   }>(sql`
-    WITH upstream_providers AS (
-      SELECT source.id AS source_id, source.upstream_raw_id AS raw_id,
+    WITH sources AS (
+      SELECT id, upstream_raw_id AS raw_id,
         coalesce(
-          (SELECT id FROM providers WHERE id = source.upstream_provider),
-          (SELECT CASE WHEN count(*) = 1 THEN max(provider_id) END FROM provider_model_namespaces
-            WHERE namespace = source.upstream_provider)
+          (SELECT id FROM providers WHERE id = models.upstream_provider),
+          (SELECT CASE WHEN count(*) = 1 THEN max(provider_id) END
+            FROM provider_model_namespaces
+            WHERE namespace = models.upstream_provider)
         ) AS provider_id
-      FROM models source
-      WHERE source.upstream_provider IS NOT NULL
-        AND json_extract(source.upstream_source, '$.derivation') IS NOT NULL
+      FROM models WHERE upstream_provider IS NOT NULL
     ), candidates AS (
-      SELECT upstream.source_id, target.id AS target_id,
-        target.raw_id = upstream.raw_id AS exact
-      FROM upstream_providers upstream
-      JOIN models target ON target.provider_id = upstream.provider_id
-      WHERE target.id != upstream.source_id
-        AND (target.raw_id = upstream.raw_id OR EXISTS (
-          SELECT 1 FROM json_each(target.aliases) WHERE value = upstream.raw_id
-        ))
+      SELECT source.id AS source_id, target.id AS target_id,
+        CASE
+          WHEN target.raw_id = source.raw_id THEN 0
+          WHEN EXISTS (
+            SELECT 1 FROM json_each(target.aliases)
+            WHERE value = source.raw_id
+          ) THEN 1
+          ELSE 2
+        END AS tier
+      FROM sources source
+      JOIN models target ON target.provider_id = source.provider_id
+        AND target.id != source.id
+      WHERE target.raw_id IN (
+          source.raw_id, replace(source.raw_id, '.', '-')
+        ) OR EXISTS (
+          SELECT 1 FROM json_each(target.aliases) WHERE value IN (
+            source.raw_id, replace(source.raw_id, '.', '-')
+          )
+        )
     ), resolved AS (
       SELECT source_id,
-        CASE
-          WHEN sum(exact) = 1 THEN max(CASE WHEN exact THEN target_id END)
-          WHEN sum(exact) = 0 AND count(*) = 1 THEN max(target_id)
-          ELSE NULL
-        END AS target_id
-      FROM candidates GROUP BY source_id
-    )
-    UPDATE models SET
-      same_as_model_id = (SELECT target_id FROM resolved WHERE source_id = models.id),
-      fact_sources = CASE
-        WHEN (SELECT target_id FROM resolved WHERE source_id = models.id) IS NOT NULL
-          THEN json_set(coalesce(fact_sources, '{}'), '$.sameAs', json(upstream_source))
-        ELSE nullif(json_remove(fact_sources, '$.sameAs'), '{}')
-      END
-    WHERE (upstream_provider IS NOT NULL OR same_as_model_id IS NOT NULL
-        OR json_extract(fact_sources, '$.sameAs') IS NOT NULL)
-      AND (
-        same_as_model_id IS NOT (SELECT target_id FROM resolved WHERE source_id = models.id)
-        OR json_extract(fact_sources, '$.sameAs') IS NOT (
-          CASE WHEN (SELECT target_id FROM resolved WHERE source_id = models.id) IS NOT NULL
-            THEN json(upstream_source) END
-        )
+        CASE WHEN count(*) = 1 THEN max(target_id) END AS target_id
+      FROM (
+        SELECT *, min(tier) OVER (PARTITION BY source_id) AS best
+        FROM candidates
       )
-    RETURNING id, provider_id, same_as_model_id
+      WHERE tier = best
+      GROUP BY source_id
+    )
+    SELECT models.id, models.provider_id,
+      models.same_as_model_id AS before, resolved.target_id AS after
+    FROM models LEFT JOIN resolved ON resolved.source_id = models.id
+    WHERE (models.upstream_provider IS NOT NULL
+        OR models.same_as_model_id IS NOT NULL)
+      AND models.same_as_model_id IS NOT resolved.target_id
   `)
 
-  for (let i = 0; i < changed.length; i += 10) {
-    await db.insert(changes).values(
-      changed.slice(i, i + 10).map((row) => ({
-        id: crypto.randomUUID(),
-        type: 'model.updated' as const,
-        providerId: row.provider_id,
-        subjectId: row.id,
-        summary: 'Upstream model link updated',
-        payload: { sameAsModelId: row.same_as_model_id },
-        createdAt: now,
-      })),
-    )
+  // A link and its change row commit together: a failed chunk leaves its
+  // rows still differing, so the next run emits them. Ten rows keep the
+  // insert under D1's 100-bound-parameter limit.
+  for (let i = 0; i < diffs.length; i += 10) {
+    const chunk = diffs.slice(i, i + 10)
+    await db.batch([
+      db.insert(changes).values(
+        chunk.map((row) => ({
+          id: crypto.randomUUID(),
+          type: 'model.updated' as const,
+          providerId: row.provider_id,
+          subjectId: row.id,
+          summary: 'Upstream model link updated',
+          payload: {
+            before: { sameAsModelId: row.before },
+            after: { sameAsModelId: row.after },
+          },
+          createdAt: now,
+        })),
+      ),
+      ...chunk.map((row) =>
+        db
+          .update(models)
+          .set({ sameAsModelId: row.after })
+          .where(eq(models.id, row.id)),
+      ),
+    ])
   }
 }

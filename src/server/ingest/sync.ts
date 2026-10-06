@@ -5,7 +5,7 @@
  * upstream reverts to previously seen content), mark superseded, upsert
  * `endpoints`, write `changes` rows, warm KV with new blobs. Idempotent.
  */
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, notInArray } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import {
@@ -265,7 +265,7 @@ export async function ensureProviderRow(
 ): Promise<void> {
   const seed = seedForProvider(provider)
   if (seed === null) return
-  const { modelNamespaces, ...providerRow } = seed
+  const { modelNamespaces = [], ...providerRow } = seed
   await db
     .insert(providers)
     .values(providerRow)
@@ -278,7 +278,16 @@ export async function ensureProviderRow(
         authEnvVar: seed.authEnvVar ?? null,
       },
     })
-  if (modelNamespaces?.length) {
+  // The table mirrors config: a namespace dropped from a seed stops resolving.
+  await db
+    .delete(providerModelNamespaces)
+    .where(
+      and(
+        eq(providerModelNamespaces.providerId, seed.id),
+        notInArray(providerModelNamespaces.namespace, modelNamespaces),
+      ),
+    )
+  if (modelNamespaces.length) {
     await db
       .insert(providerModelNamespaces)
       .values(

@@ -1304,11 +1304,6 @@
           "columns": ["activity"],
           "isUnique": false
         },
-        "models_provider_rawId_idx": {
-          "name": "models_provider_rawId_idx",
-          "columns": ["provider_id", "raw_id"],
-          "isUnique": false
-        },
         "models_sameAsModelId_idx": {
           "name": "models_sameAsModelId_idx",
           "columns": ["same_as_model_id"],

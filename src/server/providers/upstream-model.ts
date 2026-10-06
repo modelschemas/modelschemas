@@ -1,6 +1,6 @@
 import type { FactSource, UpstreamModelIdentity } from './types.ts'
 
-/** Split a provider-published namespace/model id without guessing names. */
+/** Split a provider-published `namespace/model` id at the first slash. */
 export function namespacedUpstreamIdentity(
   rawId: string,
   source: FactSource,

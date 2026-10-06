@@ -13,7 +13,11 @@ import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
 import { getProvider } from '#/server/providers/index.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
-import type { ModelFactSources, SpecGrain } from '#/server/providers/types.ts'
+import type {
+  FactSource,
+  ModelFactSources,
+  SpecGrain,
+} from '#/server/providers/types.ts'
 import {
   factDiscrepancies,
   openRouterJoinIds,
@@ -79,20 +83,37 @@ function specDescriptor(
 
 type ModelRow = typeof models.$inferSelect
 
-const makerModel = alias(models, 'maker_model')
+const upstreamModel = alias(models, 'upstream_model')
 const catalogSelection = {
   row: models,
-  sameAs: { provider: makerModel.providerId, rawId: makerModel.rawId },
+  upstream: {
+    provider: upstreamModel.providerId,
+    rawId: upstreamModel.rawId,
+    aliases: upstreamModel.aliases,
+  },
+}
+interface UpstreamRow {
+  provider: string
+  rawId: string
+  aliases: Array<string> | null
 }
 
+// The link's provenance is the stored evidence, served only once it
+// resolves: a source with no link would read as a claim.
 function modelFactSources(
   row: ModelRow,
-  hasTarget: boolean,
+  upstream: UpstreamRow | null | undefined,
 ): ModelFactSources | null {
   const stored = (row.factSources as ModelFactSources | null) ?? null
-  if (!stored || hasTarget || !stored.sameAs) return stored
-  const { sameAs: _unresolved, ...sources } = stored
-  return Object.keys(sources).length ? sources : null
+  const source = row.upstreamSource as FactSource | null
+  if (!upstream || !source || row.upstreamRawId === null) return stored
+  const asPublished =
+    upstream.rawId === row.upstreamRawId ||
+    (upstream.aliases ?? []).includes(row.upstreamRawId)
+  return {
+    ...stored,
+    sameAs: asPublished ? source : { ...source, normalized: true },
+  }
 }
 
 function encodeEndpointId(endpointId: string): string {
@@ -104,7 +125,7 @@ function toApiModel(
   opts: {
     includeFactSources?: boolean
     pricing?: 'compact' | 'full'
-    sameAs?: { provider: string; rawId: string } | null
+    upstream?: UpstreamRow | null
   } = {},
 ) {
   const schemaEndpointId = resolveSchemaEndpointId({
@@ -126,7 +147,9 @@ function toApiModel(
     id: row.id,
     provider: row.providerId,
     rawId: row.rawId,
-    sameAs: opts.sameAs ?? null,
+    sameAs: opts.upstream
+      ? { provider: opts.upstream.provider, rawId: opts.upstream.rawId }
+      : null,
     activity: row.activity,
     displayName: row.displayName,
     schemaEndpointId,
@@ -143,9 +166,7 @@ function toApiModel(
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
     ...(opts.includeFactSources
-      ? {
-          factSources: modelFactSources(row, opts.sameAs != null),
-        }
+      ? { factSources: modelFactSources(row, opts.upstream) }
       : {}),
     _links: {
       ...modelLinks(row.providerId),
@@ -198,16 +219,16 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
   const rows = await db
     .select(catalogSelection)
     .from(models)
-    .leftJoin(makerModel, eq(models.sameAsModelId, makerModel.id))
+    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(models.id)
   return {
     count: rows.length,
-    models: rows.map(({ row, sameAs }) =>
+    models: rows.map(({ row, upstream }) =>
       toApiModel(row, {
         includeFactSources: filters.provenance === true,
         pricing: filters.pricing === true ? 'full' : 'compact',
-        sameAs,
+        upstream,
       }),
     ),
     _links: {
@@ -231,14 +252,14 @@ export async function listProviderModels(db: Db, providerId: string) {
   const rows = await db
     .select(catalogSelection)
     .from(models)
-    .leftJoin(makerModel, eq(models.sameAsModelId, makerModel.id))
+    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
     .where(eq(models.providerId, providerId))
     .orderBy(models.id)
   return {
     provider: provider.id,
     count: rows.length,
-    models: rows.map(({ row, sameAs }) =>
-      toApiModel(row, { pricing: 'compact', sameAs }),
+    models: rows.map(({ row, upstream }) =>
+      toApiModel(row, { pricing: 'compact', upstream }),
     ),
     _links: modelLinks(provider.id),
   }
@@ -272,15 +293,20 @@ export async function getModelDetail(
         )
   const row = direct ?? resolveAlias(modelId, aliasHits)
   if (!row) return null
-  const maker = row.sameAsModelId
-    ? await db.query.models.findFirst({
-        where: eq(models.id, row.sameAsModelId),
-      })
-    : null
+  const [upstream] = row.sameAsModelId
+    ? await db
+        .select({
+          provider: models.providerId,
+          rawId: models.rawId,
+          aliases: models.aliases,
+        })
+        .from(models)
+        .where(eq(models.id, row.sameAsModelId))
+    : []
   const body = toApiModel(row, {
     includeFactSources: true,
     pricing: 'full',
-    sameAs: maker ? { provider: maker.providerId, rawId: maker.rawId } : null,
+    upstream,
   })
   const joinIds = openRouterJoinIds(providerId, row.rawId)
   if (joinIds.length === 0) return { ...body, discrepancies: [] }

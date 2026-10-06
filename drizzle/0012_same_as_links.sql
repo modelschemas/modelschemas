@@ -1,6 +1,6 @@
--- Preserve pending native identity evidence separately from the resolved link.
--- Nullable columns are added in place to retain the existing catalog and avoid
--- rebuilding models under D1's foreign-key migration handling.
+-- Hand-written: evidence of a model's upstream identity is stored apart from
+-- the resolved link. Nullable columns are added in place so the catalog is
+-- not copied through a table rebuild.
 CREATE TABLE `provider_model_namespaces` (
   `namespace` text NOT NULL,
   `provider_id` text NOT NULL,
@@ -23,7 +23,5 @@ ALTER TABLE `models` ADD `upstream_raw_id` text
 ALTER TABLE `models` ADD `same_as_model_id` text
   REFERENCES `models` (`id`) ON DELETE set null
   CONSTRAINT `models_sameAs_not_self` CHECK (`same_as_model_id` != `id`);
---> statement-breakpoint
-CREATE INDEX `models_provider_rawId_idx` ON `models` (`provider_id`, `raw_id`);
 --> statement-breakpoint
 CREATE INDEX `models_sameAsModelId_idx` ON `models` (`same_as_model_id`);

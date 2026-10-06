@@ -10,7 +10,11 @@ import { errorMessage } from '#/server/errors.ts'
 export const POSTHOG_CAPTURE_URL = 'https://us.i.posthog.com/batch/'
 const DISTINCT_ID = 'modelschemas'
 
-export type IngestJob = 'models-poll' | 'spec-sync' | 'fal-pricing-extract'
+export type IngestJob =
+  | 'models-poll'
+  | 'spec-sync'
+  | 'fal-pricing-extract'
+  | 'same-as-reconcile'
 
 export type IngestEvent =
   | {

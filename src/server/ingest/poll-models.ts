@@ -56,12 +56,7 @@ import {
 } from './retire-models-dev.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
-import {
-  persistUpstreamIdentities,
-  reconcileSameAs,
-  refreshDocumentedUpstreamIdentities,
-  retainSameAsSource,
-} from './model-identity.ts'
+import { persistUpstreamIdentities, reconcileSameAs } from './model-identity.ts'
 import type { UpstreamIdentityWrite } from './model-identity.ts'
 
 export interface PollOutcome {
@@ -324,8 +319,6 @@ export async function pollProviderModels(
       provider.id,
       now,
     )
-    await refreshDocumentedUpstreamIdentities(db, provider)
-    await reconcileSameAs(db, now)
     return outcome
   }
   outcome.modelsSeen = listed.models.length
@@ -355,17 +348,7 @@ export async function pollProviderModels(
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
   for (const raw of listed.models) {
-    const enriched = enrichListed(
-      provider,
-      {
-        ...raw,
-        upstreamModelIdentity:
-          raw.upstreamModelIdentity === undefined
-            ? (provider.upstreamModelIdentity?.(raw.rawId) ?? null)
-            : raw.upstreamModelIdentity,
-      },
-      walks,
-    )
+    const enriched = enrichListed(provider, raw, walks)
     const id = modelDbId(provider.id, enriched.rawId)
     const bound = resolveSchemaEndpointId({
       providerId: provider.id,
@@ -425,8 +408,9 @@ export async function pollProviderModels(
     }
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
-    if (info.upstreamModelIdentity || existing?.upstreamProvider != null) {
-      identities.push({ id, identity: info.upstreamModelIdentity ?? null })
+    const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null
+    if (identity || existing?.upstreamProvider != null) {
+      identities.push({ id, identity })
     }
 
     if (!existing) {
@@ -449,9 +433,6 @@ export async function pollProviderModels(
           info.activity ?? null,
         ),
         aliases: storedAliases(info.aliases),
-        upstreamProvider: info.upstreamModelIdentity?.providerNamespace ?? null,
-        upstreamRawId: info.upstreamModelIdentity?.rawId ?? null,
-        upstreamSource: info.upstreamModelIdentity?.source ?? null,
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // Providers that report a release date get it as firstSeenAt, so
@@ -532,7 +513,7 @@ export async function pollProviderModels(
           info.activity ?? null,
         ),
         aliases: storedAliases(info.aliases),
-        factSources: retainSameAsSource(info.factSources),
+        factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.
@@ -609,7 +590,6 @@ export async function pollProviderModels(
     .where(eq(providers.id, provider.id))
   await markModelsDevCatalogSettled(db, provider.id, now)
   await persistUpstreamIdentities(db, identities)
-  await reconcileSameAs(db, now)
 
   return outcome
 }
@@ -650,5 +630,23 @@ export async function pollAllProviders(
       }
     })
   }
+  // Links span providers, so resolve them once per run, outside any one
+  // provider's outcome: a failure here must not read as fifty failed polls.
+  await runIngestScope(async () => {
+    try {
+      await reconcileSameAs(
+        deps.db,
+        deps.now?.() ?? Math.floor(Date.now() / 1000),
+      )
+    } catch (error) {
+      const message = errorMessage(error)
+      console.error(
+        JSON.stringify({ job: 'same-as-reconcile', error: message }),
+      )
+      noteIngest(ingestFailedEvent('same-as-reconcile', '*', message))
+    } finally {
+      await captureIngestEvents(deps.secrets.POSTHOG_PROJECT_KEY)
+    }
+  })
   return outcomes
 }
