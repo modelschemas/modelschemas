@@ -82,6 +82,26 @@ const DEEPSEEK_FLASH_LEVELS: EffortLevelMap = {
   max: 'max',
 }
 
+/**
+ * Moonshot's per-model chat schemas, by exact id: `kimi-k3` takes
+ * `reasoning_effort` and always thinks, `kimi-k2.7-code` takes only
+ * `thinking.type: enabled`, `kimi-k2.6` also takes `disabled`. An id the
+ * spec does not map stays null.
+ */
+function kimiThinking(rawId: string): ThinkingRequest | null {
+  switch (rawId) {
+    case 'kimi-k3':
+      return { on: OPENAI_ON, off: null, levels: KIMI_K3_LEVELS }
+    case 'kimi-k2.7-code':
+    case 'kimi-k2.7-code-highspeed':
+      return { on: KIMI_ON, off: null, levels: null }
+    case 'kimi-k2.6':
+      return { on: KIMI_ON, off: KIMI_OFF, levels: null }
+    default:
+      return null
+  }
+}
+
 /** `zai/glm-5.2`: only high and max. */
 const GLM_52_LEVELS: EffortLevelMap = {
   off: null,
@@ -102,26 +122,6 @@ const KIMI_K3_LEVELS: EffortLevelMap = {
   high: 'high',
   xhigh: null,
   max: 'max',
-}
-
-/**
- * Moonshot's per-model chat schemas, by exact id: `kimi-k3` takes
- * `reasoning_effort` and always thinks, `kimi-k2.7-code` takes only
- * `thinking.type: enabled`, `kimi-k2.6` also takes `disabled`. An id the
- * spec does not map stays null.
- */
-function kimiThinking(rawId: string): ThinkingRequest | null {
-  switch (rawId) {
-    case 'kimi-k3':
-      return { on: OPENAI_ON, off: null, levels: KIMI_K3_LEVELS }
-    case 'kimi-k2.7-code':
-    case 'kimi-k2.7-code-highspeed':
-      return { on: KIMI_ON, off: null, levels: null }
-    case 'kimi-k2.6':
-      return { on: KIMI_ON, off: KIMI_OFF, levels: null }
-    default:
-      return null
-  }
 }
 
 function blank(partial: Partial<ChatRequestMap>): ChatRequestMap {
@@ -275,11 +275,11 @@ export function chatRequestMap(
         reasoningEffort: rawId === 'kimi-k3' ? true : null,
       })
     case 'nvidia':
-    case 'cloudflare':
+      // reasoning_effort varies per model (kimi-k3's reference page takes
+      // low/high/max), and those pages are not read yet: unknown, not false.
       return blank({
         maxTokensField: 'max_tokens',
         developerRole: false,
-        reasoningEffort: false,
       })
     case 'grok':
       return blank({
