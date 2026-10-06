@@ -11,10 +11,12 @@
  * and nothing is averaged. Field meanings and units:
  * https://huggingface.co/docs/inference-providers/hub-api
  *
- * Prices stay null although the listing has them. The poller keeps a stored
- * card when a later poll has no price (`observePricingWrite`), so a row whose
- * providers stop agreeing would serve a stale price. Add them back once the
- * poller can tell "source failed" from "source says unsettled".
+ * A price that is not settled is `absent: cleared`, not just null: the
+ * listing was read and says so, so the poller drops a stored card once the
+ * providers stop agreeing instead of keeping it as a parser miss. A price
+ * that could not be read is never `cleared`: one odd entry makes its row's
+ * price `unavailable` (the stored card stays) and is reported as a docs
+ * failure, and a listing-wide change throws (`UNREAD_PRICE_SHARE`).
  *
  * The request schema is Hugging Face's own chat-completion JSON Schema
  * (huggingface.js `tasks`), wrapped into one OpenAPI path at sync time.
@@ -23,7 +25,10 @@
  */
 import type { Activity } from '#/db/schema.ts'
 
+import { hyperbolicListingCard } from '../catalog-prices.ts'
 import { bearerConnect } from '../connect.ts'
+import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
+import type { DocsRun } from '../model-facts.ts'
 import { fetchJson, fetchText, sha256Text } from '../types.ts'
 import type {
   FactSource,
@@ -73,9 +78,13 @@ function activityFor(output: Array<string> | null): Activity | null {
   return null
 }
 
-/** Every provider entry. Empty when the list is malformed. */
+/**
+ * Every provider entry. A list in another shape throws: read as "no
+ * providers" it would say the price is gone and clear a stored card.
+ */
 function routes(providers: unknown): Array<Row> {
-  return Array.isArray(providers) && providers.every(isRecord) ? providers : []
+  if (Array.isArray(providers) && providers.every(isRecord)) return providers
+  throw new Error('huggingface: a providers list is in an unread shape')
 }
 
 /** The one value every provider states, or null. */
@@ -91,6 +100,33 @@ function contextLength(p: Row): number | null {
   return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null
 }
 
+/** The listing carries float noise (`0.030000000000000002`). */
+const exact = (n: number) => Number(n.toPrecision(12))
+
+/**
+ * USD per million tokens, or null when the entry states no price: its
+ * `pricing` is missing or null, quotes zero, or is an `is_free` promo (not
+ * the standard price). A `pricing` in any other shape throws. Null means
+ * "unsettled" and clears a stored card, so it must never mean "could not
+ * read".
+ */
+function price(p: Row): { input: number; output: number } | null {
+  if (p.pricing == null) return null
+  const { input, output } = isRecord(p.pricing) ? p.pricing : {}
+  if (
+    typeof input !== 'number' ||
+    typeof output !== 'number' ||
+    !(input >= 0 && output >= 0)
+  ) {
+    throw new Error(
+      `huggingface: the price of provider entry ${JSON.stringify(p.provider)} is in an unread shape`,
+    )
+  }
+  return p.is_free !== true && input > 0 && output > 0
+    ? { input: exact(input), output: exact(output) }
+    : null
+}
+
 const flag = (key: string) => (p: Row) => {
   const value = p[key]
   return typeof value === 'boolean' ? value : null
@@ -100,11 +136,29 @@ function listed(path: string): FactSource {
   return { derivation: 'listing', sourceUrl: HUGGINGFACE_MODELS_URL, path }
 }
 
-function routeFacts(
-  providers: unknown,
-): Pick<ModelInfo, 'contextWindow' | 'capabilities' | 'factSources'> {
-  const route = routes(providers)
+async function routeFacts(
+  rawId: string,
+  route: Array<Row>,
+  run: DocsRun,
+): Promise<
+  Pick<
+    ModelInfo,
+    'contextWindow' | 'pricing' | 'capabilities' | 'factSources' | 'absent'
+  >
+> {
   const contextWindow = agreed(route, contextLength)
+  // One entry whose price cannot be read withholds this row's price only.
+  const read = await tryDocs(run, `${HUGGINGFACE_MODELS_URL}#${rawId}`, () =>
+    Promise.resolve().then(() => ({ quote: agreed(route, price) })),
+  )
+  const quote = read?.quote ?? null
+  const pricing = quote
+    ? await hyperbolicListingCard(
+        quote.input,
+        quote.output,
+        HUGGINGFACE_MODELS_URL,
+      )
+    : null
   // The flag list reads "absent = unsupported", so it is stored only when
   // both flags are settled.
   const tools = agreed(route, flag('supports_tools'))
@@ -121,6 +175,7 @@ function routeFacts(
   if (contextWindow !== null) {
     factSources.contextWindow = listed('providers[].context_length')
   }
+  if (pricing !== null) factSources.pricing = listed('providers[].pricing')
   if (capabilities && capabilities.length > 0) {
     factSources.capabilities = Object.fromEntries(
       capabilities.map((name) => [
@@ -133,17 +188,48 @@ function routeFacts(
       ]),
     )
   }
-  return { contextWindow, capabilities, factSources }
+  return {
+    contextWindow,
+    pricing,
+    capabilities,
+    factSources,
+    ...(pricing === null
+      ? { absent: { pricing: read ? 'cleared' : 'unavailable' } }
+      : {}),
+  }
 }
 
-export function parseHuggingFaceModels(payload: unknown): Array<ModelInfo> {
+/**
+ * When more than this share of the entries that carry a `pricing` value
+ * cannot be read, the listing has changed shape: throw, so the poll fails
+ * and no price moves. At or under it the odd entries are theirs alone.
+ */
+const UNREAD_PRICE_SHARE = 0.1
+
+export async function parseHuggingFaceModels(
+  payload: unknown,
+): Promise<Required<Pick<ListModelsResult, 'models' | 'docsFailures'>>> {
   if (!isRecord(payload) || !Array.isArray(payload.data)) {
     throw new Error('huggingface: models payload has no data array')
   }
   const models: Array<ModelInfo> = []
+  const run = docsRun()
+  let stated = 0
+  let unread = 0
+  let quotes = 0
   for (const row of payload.data) {
     if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
       continue
+    }
+    const route = routes(row.providers)
+    for (const p of route) {
+      if (p.pricing == null) continue
+      stated++
+      try {
+        if (price(p) !== null) quotes++
+      } catch {
+        unread++
+      }
     }
     const architecture = isRecord(row.architecture) ? row.architecture : null
     const input = architecture
@@ -156,8 +242,7 @@ export function parseHuggingFaceModels(payload: unknown): Array<ModelInfo> {
       rawId: row.id,
       activity: activityFor(output),
       modalities: input && output ? { input, output } : null,
-      pricing: null,
-      ...routeFacts(row.providers),
+      ...(await routeFacts(row.id, route, run)),
       releasedAt:
         typeof row.created === 'number' && row.created > 0 ? row.created : null,
     })
@@ -165,14 +250,24 @@ export function parseHuggingFaceModels(payload: unknown): Array<ModelInfo> {
   if (models.length === 0) {
     throw new Error('huggingface: models payload listed no ids')
   }
-  return models
+  // Most entries quote a price. None at all is a listing that moved its
+  // prices, not a router where every host stopped charging.
+  if (unread > stated * UNREAD_PRICE_SHARE) {
+    throw new Error(
+      `huggingface: ${String(unread)} of ${String(stated)} provider prices are in an unread shape`,
+    )
+  }
+  if (quotes === 0) {
+    throw new Error('huggingface: no provider entry states a price')
+  }
+  return { models, docsFailures: docsReport(run) }
 }
 
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
   const payload = await fetchJson(HUGGINGFACE_MODELS_URL, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
-  return { models: parseHuggingFaceModels(payload) }
+  return parseHuggingFaceModels(payload)
 }
 
 /**

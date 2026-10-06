@@ -395,16 +395,52 @@ describe('perplexity listModels', () => {
     })
   })
 
-  it('fails the poll when a docs page is an HTML error page', async () => {
+  it('still lists, and reports the page, when a docs page is an HTML error page', async () => {
     globalThis.fetch = ((url: string) =>
       Promise.resolve(
         String(url) === MODELS_URL
           ? Response.json({ data: [{ id: 'perplexity/sonar' }] })
-          : new Response('<html>Not found</html>'),
+          : String(url) === DOC_URL
+            ? new Response(MODELS_DOC)
+            : new Response('<html>Not found</html>'),
+      )) as typeof fetch
+    // One page down withholds both pages' flags: half of them would read
+    // as the other half dropped.
+    expect(
+      await provider.listModels({ PERPLEXITY_API_KEY: 'test-key' }),
+    ).toEqual({
+      models: [
+        {
+          rawId: 'perplexity/sonar',
+          releasedAt: null,
+          activity: 'chat',
+          absent: { capabilities: 'unavailable', reasoning: 'unavailable' },
+        },
+      ],
+      docsFailures: {
+        failed: 1,
+        skipped: 0,
+        first: [
+          {
+            source: PRESETS_URL,
+            error: 'perplexity: presets page lists no preset models',
+            elapsedMs: expect.any(Number) as number,
+          },
+        ],
+      },
+    })
+  })
+
+  it('fails the poll when the listing fails', async () => {
+    globalThis.fetch = ((url: string) =>
+      Promise.resolve(
+        String(url) === MODELS_URL
+          ? new Response('down', { status: 503 })
+          : new Response(String(url) === DOC_URL ? MODELS_DOC : PRESETS_DOC),
       )) as typeof fetch
     await expect(
       provider.listModels({ PERPLEXITY_API_KEY: 'test-key' }),
-    ).rejects.toThrow(/lists no/)
+    ).rejects.toThrow('503')
   })
 })
 

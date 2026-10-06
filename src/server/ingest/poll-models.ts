@@ -17,6 +17,7 @@ import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
+  emptySources,
   mergeListingAndSchema,
   modelBranchSchemas,
   requestSchemaPropertyNames,
@@ -33,6 +34,8 @@ import {
 } from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
 import type {
+  DocsFailures,
+  ModelFact,
   ModelFactSources,
   ModelInfo,
   ProviderConfig,
@@ -41,6 +44,8 @@ import { providerRegistry } from '#/server/providers/index.ts'
 import { storedAliases } from '#/server/providers/provider-aliases.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
+import { recordDocsFailing } from './docs-failing.ts'
+import type { DocsFailing } from './docs-failing.ts'
 import {
   captureIngestEvents,
   runIngestScope,
@@ -78,6 +83,12 @@ export interface PollOutcome {
    * here as well as `error` — not only the whole-provider failure.
    */
   failures: number
+  /** Docs sources that failed this poll; their rows kept stored facts. */
+  docsFailures?: DocsFailures
+  /** The provider's `docs-failing` record after this poll, while it fails. */
+  docsFailing?: DocsFailing
+  /** Price clears not applied: too many for one poll (`refusesPriceClears`). */
+  priceClearsRefused?: number
   skipped?: string
   error?: string
 }
@@ -328,6 +339,116 @@ function enrichListed(
   }
 }
 
+type StoredFact = Exclude<ModelFact, 'pricing'>
+
+/** A stored row's facts in listing shape. With no row, every fact is empty. */
+function storedFacts(
+  row: typeof models.$inferSelect | undefined,
+): Record<StoredFact, unknown> {
+  return {
+    displayName: row?.displayName ?? null,
+    activity: row?.activity ?? null,
+    contextWindow: row?.contextWindow ?? null,
+    maxOutput: row?.maxOutput ?? null,
+    modalities: row?.modalities ?? null,
+    capabilities: row?.capabilities ?? null,
+    reasoning: row?.reasoning ?? null,
+    serverTools: row?.serverTools ?? null,
+    requestMap: row?.requestMap ?? null,
+    aliases: row?.aliases ?? null,
+    schemaEndpointId: row?.schemaEndpointId ?? null,
+  }
+}
+
+const SOURCED_FACTS = [
+  'contextWindow',
+  'maxOutput',
+  'modalities',
+  'capabilities',
+  'reasoning',
+  'serverTools',
+] as const
+
+/** The facts `enrichListed` fills from the bound request schema. */
+const WALKED_FACTS = ['capabilities', 'modalities'] as const
+
+/**
+ * Apply `info.absent` (see `FactAbsence`) to every fact but pricing, which
+ * the card path owns: `unavailable` takes the stored value and its source,
+ * `cleared` takes none. It runs twice. Before the schema walks, so a row
+ * whose docs failed binds, and is checked, against its stored endpoint.
+ * Then for `WALKED_FACTS` alone after the walk, which would otherwise
+ * refill a kept or cleared fact.
+ */
+function resolveAbsent(
+  info: ModelInfo,
+  existing: typeof models.$inferSelect | undefined,
+  only?: ReadonlyArray<StoredFact>,
+): ModelInfo {
+  const absent = info.absent
+  if (!absent) return info
+  const stored = storedFacts(existing)
+  const none = storedFacts(undefined)
+  const next: ModelInfo = { ...info }
+  for (const fact of only ?? (Object.keys(none) as Array<StoredFact>)) {
+    const why = absent[fact]
+    if (!why) continue
+    Object.assign(next, {
+      [fact]: (why === 'unavailable' ? stored : none)[fact],
+    })
+  }
+  const sources: ModelFactSources = { ...info.factSources }
+  const prior = (existing?.factSources ?? {}) as ModelFactSources
+  for (const fact of SOURCED_FACTS) {
+    const why = absent[fact]
+    if (!why || (only && !only.includes(fact))) continue
+    delete sources[fact]
+    if (why === 'unavailable' && prior[fact]) {
+      Object.assign(sources, { [fact]: prior[fact] })
+    }
+  }
+  next.factSources = emptySources(sources) ? undefined : sources
+  return next
+}
+
+/**
+ * One poll may not clear most of a provider's prices. `cleared` is an
+ * adapter's word that a price is gone, and an adapter that misreads a
+ * reshaped listing would say it for every row at once. When a poll would
+ * clear at least `PRICE_CLEARS_MIN` stored cards and more than
+ * `PRICE_CLEARS_SHARE` of the priced rows it lists, none of its clears is
+ * applied: the cards stay and the poll logs one failure. Fewer than the
+ * minimum always passes, so a small provider can still lose every price.
+ * The refusal repeats every poll until the adapter or this bound changes,
+ * or the stale cards are nulled by hand in D1.
+ */
+const PRICE_CLEARS_MIN = 5
+const PRICE_CLEARS_SHARE = 0.5
+
+/** Stored cards this poll asks to clear, when that is too many to believe. */
+function refusesPriceClears(
+  listed: Array<ModelInfo>,
+  existingById: Map<string, typeof models.$inferSelect>,
+  providerId: string,
+): { clears: number; priced: number } | null {
+  const clears = listed.filter(
+    (info) =>
+      info.absent?.pricing === 'cleared' &&
+      storedCardIsPrior(
+        existingById.get(modelDbId(providerId, info.rawId))?.pricing,
+      ),
+  ).length
+  if (clears < PRICE_CLEARS_MIN) return null
+  // Of the rows this poll lists: a delisted row that still holds a card
+  // must not make room for clearing every live one.
+  const priced = listed.filter((info) =>
+    storedCardIsPrior(
+      existingById.get(modelDbId(providerId, info.rawId))?.pricing,
+    ),
+  ).length
+  return clears > priced * PRICE_CLEARS_SHARE ? { clears, priced } : null
+}
+
 export async function pollProviderModels(
   deps: SyncDeps,
   provider: ProviderConfig,
@@ -360,18 +481,69 @@ export async function pollProviderModels(
     return outcome
   }
   outcome.modelsSeen = listed.models.length
-
-  const { walks, properties } = await loadInputWalks(
-    db,
-    provider,
-    listed.models,
-  )
+  // A docs source that failed does not fail the poll: its rows carry
+  // `absent: unavailable` and keep what is stored. Every failing poll says
+  // so again, here and in the outcome, so an outage never goes quiet.
+  const docs = listed.docsFailures
+  if (docs) {
+    // Kept across polls (`docs-failing.ts`): when it began, how long.
+    // The record describes the poll; it must never be what fails it.
+    try {
+      const failing = await recordDocsFailing(db, provider.id, docs, now)
+      if (failing) outcome.docsFailing = failing
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          job: 'models-poll',
+          providerId: provider.id,
+          error: `docs-failing record not written: ${errorMessage(error)}`,
+        }),
+      )
+    }
+  }
+  if (docs && docs.failed + docs.skipped > 0) {
+    outcome.docsFailures = docs
+    outcome.failures += docs.failed + docs.skipped
+    const report = (error: string, source?: string) => {
+      console.error(
+        JSON.stringify({
+          job: 'models-poll',
+          providerId: provider.id,
+          ...(source ? { docs: source } : {}),
+          error,
+        }),
+      )
+      noteIngest(ingestFailedEvent('models-poll', provider.id, error, source))
+    }
+    for (const { source, error } of docs.first) report(error, source)
+    // The rest are a count: a whole docs host down is one line, not eighty.
+    const more = docs.failed - docs.first.length
+    if (more + docs.skipped > 0) {
+      report(
+        `docs: ${String(more)} more failed, ${String(docs.skipped)} not attempted after the failure budget`,
+      )
+    }
+  }
 
   const existingRows = await db
     .select()
     .from(models)
     .where(eq(models.providerId, provider.id))
   const existingById = new Map(existingRows.map((m) => [m.id, m]))
+  const listedModels = listed.models.map((info) =>
+    resolveAbsent(info, existingById.get(modelDbId(provider.id, info.rawId))),
+  )
+  const { walks, properties } = await loadInputWalks(db, provider, listedModels)
+  const refused = refusesPriceClears(listedModels, existingById, provider.id)
+  if (refused) {
+    const error = `refused to clear ${String(refused.clears)} of ${String(refused.priced)} stored prices in one poll`
+    console.error(
+      JSON.stringify({ job: 'models-poll', providerId: provider.id, error }),
+    )
+    noteIngest(ingestFailedEvent('models-poll', provider.id, error))
+    outcome.priceClearsRefused = refused.clears
+    outcome.failures++
+  }
   const seenIds = new Set<string>()
   const identities: Array<UpstreamIdentityWrite> = []
   // Unchanged rows only need their lastSeenAt bumped; collect them and write
@@ -385,15 +557,20 @@ export async function pollProviderModels(
   // writes would exhaust the budget mid-poll.
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
-  for (const listedModel of listed.models) {
+  for (const listedModel of listedModels) {
     const raw =
       provider.bindSyncedRoutesOnly === true &&
       listedModel.schemaEndpointId &&
       !properties.has(listedModel.schemaEndpointId)
         ? { ...listedModel, schemaEndpointId: null }
         : listedModel
-    const enriched = enrichListed(provider, raw, walks)
-    const id = modelDbId(provider.id, enriched.rawId)
+    const id = modelDbId(provider.id, raw.rawId)
+    const existing = existingById.get(id)
+    const enriched = resolveAbsent(
+      enrichListed(provider, raw, walks),
+      existing,
+      WALKED_FACTS,
+    )
     const bound = resolveSchemaEndpointId({
       providerId: provider.id,
       rawId: enriched.rawId,
@@ -401,7 +578,6 @@ export async function pollProviderModels(
       capabilities: enriched.capabilities,
       schemaEndpointId: enriched.schemaEndpointId,
     })
-    const existing = existingById.get(id)
     const existingPricing = existing?.pricing
     // A models.dev card is not a prior. A docs-extracted card, and any
     // other provider source, still is.
@@ -410,12 +586,20 @@ export async function pollProviderModels(
       raw.pricing == null &&
       pricingDerivation(existing?.factSources) === 'docs-extracted' &&
       !isModelsDevRateCard(existingPricing)
-    const incomingPricing = isModelsDevRateCard(enriched.pricing)
-      ? null
-      : enriched.pricing
+    // A refused clear is treated as a source that could not be read.
+    const absentPricing =
+      refused && raw.absent?.pricing === 'cleared'
+        ? 'unavailable'
+        : raw.absent?.pricing
+    const incomingPricing =
+      absentPricing || isModelsDevRateCard(enriched.pricing)
+        ? null
+        : enriched.pricing
     const incomingNull = incomingPricing == null
     const stored =
-      keepExtracted || (incomingNull && hadStoredCard)
+      absentPricing === 'unavailable' ||
+      (absentPricing !== 'cleared' &&
+        (keepExtracted || (incomingNull && hadStoredCard)))
         ? { card: parseStoredRateCard(existingPricing) }
         : await storeListedPricing(incomingPricing, {
             existing: existingPricing,
@@ -431,6 +615,7 @@ export async function pollProviderModels(
       incomingNull,
       hadStoredCard,
       keepExtracted,
+      absent: absentPricing,
       refused: stored.refused,
     })
     for (const event of decision.events) noteIngest(event)

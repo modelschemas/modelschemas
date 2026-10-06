@@ -263,16 +263,44 @@ describe('fal listModels', () => {
     ).toEqual({ category: 'llm' })
   })
 
-  it('throws when a chat endpoint is missing from the spec response', async () => {
+  it('lists every row and withholds chat facts when a chat spec is missing', async () => {
     vi.stubGlobal('fetch', (input: string) =>
       Promise.resolve(
         new URL(input).searchParams.has('endpoint_id')
           ? page(fixtures.slice(1))
-          : page(listed),
+          : page([image, ...listed]),
       ),
     )
-    await expect(falProvider.listModels({ FAL_KEY: 'k' })).rejects.toThrow(
-      'fal chat specs: models API left out',
+    const result = await falProvider.listModels({ FAL_KEY: 'k' })
+    expect(result.docsFailures?.first).toMatchObject([
+      {
+        source:
+          'https://api.fal.ai/v1/models?expand=openapi-3.0 (chat endpoints)',
+        error: expect.stringContaining(
+          'fal chat specs: models API left out',
+        ) as string,
+      },
+    ])
+    expect(result.models).toHaveLength(listed.length + 1)
+    for (const model of result.models) {
+      if (model.activity === 'chat') {
+        expect(model.absent).toEqual({
+          contextWindow: 'unavailable',
+          maxOutput: 'unavailable',
+          modalities: 'unavailable',
+          capabilities: 'unavailable',
+          reasoning: 'unavailable',
+        })
+      } else {
+        expect(model.absent).toBeUndefined()
+      }
+    }
+  })
+
+  it('fails the poll when the listing itself fails', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve(new Response('denied', { status: 401 })),
     )
+    await expect(falProvider.listModels({ FAL_KEY: 'k' })).rejects.toThrow()
   })
 })

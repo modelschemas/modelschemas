@@ -52,6 +52,26 @@ describe('observePricingWrite', () => {
     ).toEqual({ keepPrior: true, events: [], failure: 0 })
   })
 
+  it('obeys a stated reason quietly: cleared drops the card, unavailable keeps it', () => {
+    const lost = {
+      providerId: 'huggingface',
+      rawId: 'a/b',
+      incomingNull: true,
+      hadStoredCard: true,
+    }
+    // `cleared` beats even the FAL docs-extracted keep.
+    expect(
+      observePricingWrite({ ...lost, keepExtracted: true, absent: 'cleared' }),
+    ).toEqual({ keepPrior: false, events: [], failure: 0 })
+    expect(
+      observePricingWrite({
+        ...lost,
+        keepExtracted: false,
+        absent: 'unavailable',
+      }),
+    ).toEqual({ keepPrior: true, events: [], failure: 0 })
+  })
+
   it('emits rate_card_refused when a stored card fails the write gate', () => {
     const decision = observePricingWrite({
       providerId: 'byteplus',

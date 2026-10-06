@@ -4,14 +4,29 @@ import { eq } from 'drizzle-orm'
 
 import { getDb } from '../../db/index.ts'
 import {
+  cacheMeta,
   changes,
   endpoints,
   models,
   providers,
   schemaVersions,
 } from '../../db/schema.ts'
+import { parseHuggingFaceModels } from '../providers/adapters/huggingface.ts'
+import {
+  cachedDocs,
+  docsReport,
+  docsRun,
+  tryDocs,
+  unavailable,
+} from '../providers/model-facts.ts'
 import type { ModelInfo, ProviderConfig } from '../providers/types.ts'
-import { modelDbId, pollProviderModels } from './poll-models.ts'
+import { readDocsFailing, recordDocsFailing } from './docs-failing.ts'
+import { runIngestScope, takeIngestEvents } from './ingest-signals.ts'
+import {
+  modelDbId,
+  pollAllProviders,
+  pollProviderModels,
+} from './poll-models.ts'
 import { MODELS_DEV_API_URL } from './retire-models-dev.ts'
 import type { SyncDeps } from './sync.ts'
 
@@ -1176,5 +1191,786 @@ describe('listed request map', () => {
     // No listed map and no provider-wide case: still null.
     expect(await stored(haiku.rawId)).toBeNull()
     expect((await pollProviderModels(deps, provider)).updated).toBe(0)
+  })
+})
+
+/** One poll in its own scope, with the ingest events it noted. */
+async function pollWithEvents(deps: SyncDeps, provider: ProviderConfig) {
+  return runIngestScope(async () => {
+    const outcome = await pollProviderModels(deps, provider)
+    return { outcome, events: takeIngestEvents() }
+  })
+}
+
+async function storedRow(deps: SyncDeps, providerId: string, rawId: string) {
+  const row = await deps.db.query.models.findFirst({
+    where: eq(models.id, modelDbId(providerId, rawId)),
+  })
+  if (!row) throw new Error(`no row for ${rawId}`)
+  return row
+}
+
+async function changesFor(deps: SyncDeps, providerId: string) {
+  const rows = await deps.db
+    .select()
+    .from(changes)
+    .where(eq(changes.providerId, providerId))
+  return rows.length
+}
+
+describe('absent facts (FactAbsence)', () => {
+  const listing = { prompt: '0.0000025', completion: '0.00001' }
+
+  it('keeps a card the listing omits and drops one it clears', async () => {
+    const id = 'poll-absent-cleared'
+    const deps = await freshDeps(id)
+    const row: ModelInfo = { rawId: 'm', activity: 'chat', contextWindow: 8192 }
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...row, pricing: listing }]),
+    )
+    const before = await changesFor(deps, id)
+
+    // Omitted: could be a parser miss, so the card stays and it is logged.
+    const omitted = await pollWithEvents(deps, stubProvider(id, [row]))
+    expect(omitted.outcome).toMatchObject({ updated: 0, failures: 1 })
+    expect(omitted.events).toEqual([
+      {
+        event: 'pricing_lost',
+        properties: { providerId: id, rawId: 'm', reason: 'parser_miss' },
+      },
+    ])
+    expect((await storedRow(deps, id, 'm')).pricing).not.toBeNull()
+    expect(await changesFor(deps, id)).toBe(before)
+
+    // Cleared: the source says there is no price. One change, no failure.
+    const cleared = stubProvider(id, [
+      { ...row, absent: { pricing: 'cleared' } },
+    ])
+    const first = await pollWithEvents(deps, cleared)
+    expect(first.outcome).toMatchObject({ updated: 1, failures: 0 })
+    expect(first.events).toEqual([])
+    const after = await storedRow(deps, id, 'm')
+    expect(after.pricing).toBeNull()
+    expect(after.contextWindow).toBe(8192)
+    expect(after.factSources).toEqual({
+      contextWindow: { derivation: 'listing' },
+    })
+    expect(await changesFor(deps, id)).toBe(before + 1)
+
+    const again = await pollWithEvents(deps, cleared)
+    expect(again.outcome).toMatchObject({ updated: 0, failures: 0 })
+    expect(again.events).toEqual([])
+  })
+
+  it('writes null for any other fact, omitted or cleared alike', async () => {
+    const id = 'poll-absent-other'
+    const deps = await freshDeps(id)
+    const full: ModelInfo = {
+      rawId: 'm',
+      activity: 'chat',
+      contextWindow: 8192,
+      maxOutput: 4096,
+    }
+    await pollProviderModels(deps, stubProvider(id, [full]))
+    const { outcome, events } = await pollWithEvents(
+      deps,
+      stubProvider(id, [
+        { rawId: 'm', activity: 'chat', absent: { maxOutput: 'cleared' } },
+      ]),
+    )
+    expect(outcome).toMatchObject({ updated: 1, failures: 0 })
+    expect(events).toEqual([])
+    expect(await storedRow(deps, id, 'm')).toMatchObject({
+      contextWindow: null,
+      maxOutput: null,
+      factSources: null,
+    })
+  })
+
+  it('lets a reason win over a value the listing also carries', async () => {
+    const id = 'poll-absent-with-value'
+    const deps = await freshDeps(id)
+    const stored: ModelInfo = {
+      rawId: 'm',
+      activity: 'chat',
+      contextWindow: 8192,
+      maxOutput: 4096,
+      pricing: listing,
+    }
+    await pollProviderModels(deps, stubProvider(id, [stored]))
+    const before = await storedRow(deps, id, 'm')
+    const { outcome } = await pollWithEvents(
+      deps,
+      stubProvider(id, [
+        {
+          ...stored,
+          contextWindow: 1,
+          maxOutput: 2,
+          pricing: { prompt: '0.5', completion: '0.5' },
+          absent: {
+            contextWindow: 'unavailable',
+            pricing: 'unavailable',
+            maxOutput: 'cleared',
+          },
+        },
+      ]),
+    )
+    expect(outcome).toMatchObject({ updated: 1, failures: 0 })
+    const after = await storedRow(deps, id, 'm')
+    expect(after).toMatchObject({ contextWindow: 8192, maxOutput: null })
+    expect(after.pricing).toEqual(before.pricing)
+  })
+
+  it('keeps a stored reasoning through the write gate when it is unavailable', async () => {
+    const id = 'poll-absent-reasoning'
+    const deps = await freshDeps(id)
+    const source = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://docs.example.com/models.md',
+      sourceHash: 'h1',
+      path: 'reasoning_effort',
+    }
+    const row: ModelInfo = {
+      rawId: 'kimi-k3',
+      activity: 'chat',
+      capabilities: ['reasoning', 'reasoning_effort'],
+      reasoning: { mode: 'effort', mandatory: null, efforts: ['low', 'max'] },
+      factSources: { reasoning: source },
+    }
+    await pollProviderModels(deps, stubProvider(id, [row]))
+    const good = await storedRow(deps, id, 'kimi-k3')
+    expect(good.reasoning).toEqual(row.reasoning)
+
+    // The docs are down. A value the listing still carries, even one the
+    // gate would refuse, is not what gets judged: the stored one is kept.
+    for (const reasoning of [undefined, { mode: 'nonsense' }]) {
+      const { outcome, events } = await pollWithEvents(
+        deps,
+        stubProvider(id, [
+          {
+            rawId: 'kimi-k3',
+            activity: 'chat',
+            ...(reasoning ? { reasoning: reasoning as never } : {}),
+            ...unavailable('capabilities', 'reasoning'),
+          },
+        ]),
+      )
+      expect(outcome).toMatchObject({ updated: 0, failures: 0 })
+      expect(events).toEqual([])
+      const kept = await storedRow(deps, id, 'kimi-k3')
+      expect(kept.reasoning).toEqual(good.reasoning)
+      expect(kept.capabilities).toEqual(good.capabilities)
+      expect(kept.factSources).toEqual(good.factSources)
+    }
+  })
+
+  it('inserts a new row with nothing for an unavailable fact', async () => {
+    const id = 'poll-absent-new-row'
+    const deps = await freshDeps(id)
+    const { outcome } = await pollWithEvents(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'm',
+          activity: 'chat',
+          contextWindow: 8192,
+          capabilities: ['tools'],
+          ...unavailable('contextWindow', 'capabilities', 'pricing'),
+        },
+      ]),
+    )
+    expect(outcome).toMatchObject({ added: 1, failures: 0 })
+    expect(await storedRow(deps, id, 'm')).toMatchObject({
+      activity: 'chat',
+      contextWindow: null,
+      capabilities: null,
+      pricing: null,
+      factSources: null,
+    })
+  })
+
+  it('checks a card against the stored endpoint when the endpoint is unavailable', async () => {
+    const id = 'poll-absent-endpoint'
+    const deps = await freshDeps(id)
+    await deps.db.insert(endpoints).values({
+      id: `${id}/v1/images`,
+      providerId: id,
+      activity: 'image',
+      method: 'POST',
+      path: '/v1/images',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/v1/images:input`,
+      endpointId: `${id}/v1/images`,
+      kind: 'input',
+      contentHash: 'a'.repeat(64),
+      schema: JSON.stringify({ properties: { quality: { type: 'string' } } }),
+      derivation: 'upstream-spec',
+      createdAt: 1_781_150_000,
+    })
+    const card = {
+      inputs: { quality: { param: 'quality', kind: 'enum', values: ['high'] } },
+      tables: { rate: { high: 0.04 } },
+      price: { lookup: { table: 'rate', keys: ['quality'] } },
+      examples: [],
+      source: {
+        url: 'https://example.com/pricing',
+        hash: 'a'.repeat(64),
+        extractedAt: '2026-09-15T00:00:00Z',
+      },
+    }
+    const row: ModelInfo = { rawId: 'm', activity: 'image', pricing: card }
+    const provider = (info: ModelInfo): ProviderConfig => ({
+      ...stubProvider(id, [info]),
+      bindSyncedRoutesOnly: true,
+    })
+    await pollProviderModels(
+      deps,
+      provider({ ...row, schemaEndpointId: 'v1/images' }),
+    )
+    const good = await storedRow(deps, id, 'm')
+    expect(good.pricing).not.toBeNull()
+    expect(good.schemaEndpointId).toBe('v1/images')
+
+    // The docs that named the endpoint are down; the listing still prices.
+    const { outcome, events } = await pollWithEvents(
+      deps,
+      provider({ ...row, ...unavailable('schemaEndpointId') }),
+    )
+    expect(events).toEqual([])
+    expect(outcome).toMatchObject({ updated: 0, failures: 0 })
+    const kept = await storedRow(deps, id, 'm')
+    expect(kept.pricing).toEqual(good.pricing)
+    expect(kept.schemaEndpointId).toBe('v1/images')
+  })
+
+  it('refuses a poll that would clear most of a provider’s prices', async () => {
+    const id = 'poll-clear-breaker'
+    const deps = await freshDeps(id)
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+    const rows = (cleared: Array<string>): Array<ModelInfo> =>
+      ids.map((rawId) => ({
+        rawId,
+        activity: 'chat',
+        ...(cleared.includes(rawId)
+          ? { absent: { pricing: 'cleared' } }
+          : { pricing: listing }),
+      }))
+    await pollProviderModels(deps, stubProvider(id, rows([])))
+    const before = await changesFor(deps, id)
+    const priced = async () =>
+      (
+        await deps.db.select().from(models).where(eq(models.providerId, id))
+      ).filter((row) => row.pricing !== null).length
+
+    // Every card at once: none is cleared, and it is one loud failure.
+    for (let poll = 0; poll < 2; poll++) {
+      const all = await pollWithEvents(deps, stubProvider(id, rows(ids)))
+      expect(all.outcome).toMatchObject({
+        updated: 0,
+        failures: 1,
+        priceClearsRefused: 6,
+      })
+      expect(all.events).toEqual([
+        {
+          event: 'ingest_failed',
+          properties: {
+            job: 'models-poll',
+            providerId: id,
+            error: 'refused to clear 6 of 6 stored prices in one poll',
+          },
+        },
+      ])
+    }
+    expect(await priced()).toBe(6)
+    expect(await changesFor(deps, id)).toBe(before)
+
+    // Under the minimum: an ordinary clear.
+    const some = await pollWithEvents(
+      deps,
+      stubProvider(id, rows(['a', 'b', 'c', 'd'])),
+    )
+    expect(some.outcome).toMatchObject({ updated: 4, failures: 0 })
+    expect(some.outcome.priceClearsRefused).toBeUndefined()
+    expect(await priced()).toBe(2)
+  })
+
+  it('does not count delisted rows toward the priced rows', async () => {
+    const id = 'poll-clear-delisted'
+    const deps = await freshDeps(id)
+    const live = ['a', 'b', 'c', 'd', 'e', 'f']
+    const gone = ['g', 'h', 'i', 'j', 'k', 'l', 'm', 'n']
+    const priced = (rawId: string): ModelInfo => ({
+      rawId,
+      activity: 'chat',
+      pricing: listing,
+    })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [...live, ...gone].map(priced)),
+    )
+    // Eight rows leave the listing and keep their cards as deprecated rows.
+    await pollProviderModels(deps, stubProvider(id, live.map(priced)))
+    const { outcome } = await pollWithEvents(
+      deps,
+      stubProvider(
+        id,
+        live.map((rawId) => ({
+          rawId,
+          activity: 'chat',
+          absent: { pricing: 'cleared' },
+        })),
+      ),
+    )
+    expect(outcome).toMatchObject({
+      updated: 0,
+      failures: 1,
+      priceClearsRefused: 6,
+    })
+    expect((await storedRow(deps, id, 'a')).pricing).not.toBeNull()
+  })
+
+  it('applies clears of exactly half the priced rows', async () => {
+    const id = 'poll-clear-half'
+    const deps = await freshDeps(id)
+    const ids = Array.from({ length: 10 }, (_, i) => `m${String(i)}`)
+    await pollProviderModels(
+      deps,
+      stubProvider(
+        id,
+        ids.map((rawId) => ({ rawId, activity: 'chat', pricing: listing })),
+      ),
+    )
+    const { outcome } = await pollWithEvents(
+      deps,
+      stubProvider(
+        id,
+        ids.map((rawId, i) => ({
+          rawId,
+          activity: 'chat',
+          ...(i < 5
+            ? { absent: { pricing: 'cleared' } }
+            : { pricing: listing }),
+        })),
+      ),
+    )
+    expect(outcome).toMatchObject({ updated: 5, failures: 0 })
+  })
+})
+
+describe('docs failures (tryDocs)', () => {
+  const DOC = 'https://docs.example.com/models.md'
+  const docsSource = (path: string) => ({
+    derivation: 'docs-derived' as const,
+    sourceUrl: DOC,
+    sourceHash: 'h1',
+    path,
+  })
+  const docsFacts: Partial<ModelInfo> = {
+    contextWindow: 200_000,
+    capabilities: ['tools', 'reasoning'],
+    reasoning: { mode: 'effort', mandatory: false, efforts: ['low', 'high'] },
+    schemaEndpointId: 'v1/chat',
+    factSources: {
+      contextWindow: docsSource('contextWindow'),
+      capabilities: {
+        tools: docsSource('capabilities.tools'),
+        reasoning: docsSource('capabilities.reasoning'),
+      },
+      reasoning: docsSource('reasoning'),
+    },
+  }
+  type State = { price: string; docs: 'ok' | 'down'; listing: 'ok' | 'down' }
+
+  /** An adapter shaped like the converted ones: listing, then one docs page. */
+  function docsProvider(id: string, state: State): ProviderConfig {
+    return {
+      ...stubProvider(id, []),
+      listModels: async () => {
+        if (state.listing === 'down') throw new Error('listing 503')
+        const run = docsRun()
+        const facts = await tryDocs(run, DOC, () =>
+          state.docs === 'ok'
+            ? Promise.resolve(docsFacts)
+            : Promise.reject(new Error('page changed shape')),
+        )
+        return {
+          models: ['a', 'b'].map((rawId) => ({
+            rawId,
+            activity: 'chat' as const,
+            pricing: { prompt: state.price, completion: '0.00001' },
+            ...(facts ??
+              unavailable(
+                'contextWindow',
+                'capabilities',
+                'reasoning',
+                'schemaEndpointId',
+              )),
+          })),
+          docsFailures: docsReport(run),
+        }
+      },
+    }
+  }
+
+  it('keeps stored docs facts, lets a price update through, and stays visible', async () => {
+    const id = 'poll-docs-down'
+    const deps = await freshDeps(id)
+    const state: State = { price: '0.000001', docs: 'ok', listing: 'ok' }
+    const provider = docsProvider(id, state)
+    expect(await pollProviderModels(deps, provider)).toMatchObject({
+      added: 2,
+      failures: 0,
+    })
+    const good = await storedRow(deps, id, 'a')
+    expect(good).toMatchObject({
+      contextWindow: 200_000,
+      capabilities: ['tools', 'reasoning'],
+      schemaEndpointId: 'v1/chat',
+    })
+    const facts = (row: typeof good) => ({
+      contextWindow: row.contextWindow,
+      capabilities: row.capabilities,
+      reasoning: row.reasoning,
+      requestMap: row.requestMap,
+      schemaEndpointId: row.schemaEndpointId,
+      factSources: {
+        ...(row.factSources as Record<string, unknown>),
+        pricing: null,
+      },
+    })
+
+    // Docs down, nothing else moved: no row is written, no change fans out.
+    state.docs = 'down'
+    const before = await changesFor(deps, id)
+    const quiet = await pollWithEvents(deps, provider)
+    expect(quiet.outcome).toMatchObject({
+      updated: 0,
+      failures: 1,
+      docsFailures: {
+        failed: 1,
+        skipped: 0,
+        first: [{ source: DOC, error: 'page changed shape' }],
+      },
+    })
+    // The durable record: written by the first failing poll.
+    const began = await readDocsFailing(deps.db, id)
+    expect(began).toEqual({
+      since: expect.any(Number) as number,
+      polls: 1,
+      lastAt: began?.since,
+      failed: 1,
+      skipped: 0,
+      sources: [DOC],
+      error: 'page changed shape',
+    })
+    expect(quiet.outcome.docsFailing).toEqual(began)
+    expect(quiet.events).toEqual([
+      {
+        event: 'ingest_failed',
+        properties: {
+          job: 'models-poll',
+          providerId: id,
+          source: DOC,
+          error: 'page changed shape',
+        },
+      },
+    ])
+    expect(await changesFor(deps, id)).toBe(before)
+    expect(facts(await storedRow(deps, id, 'a'))).toEqual(facts(good))
+
+    // Docs still down and the listing reprices: the price lands, the docs
+    // facts and their provenance stay exactly as stored.
+    state.price = '0.000002'
+    const repriced = await pollWithEvents(deps, provider)
+    expect(repriced.outcome).toMatchObject({ updated: 2, failures: 1 })
+    expect(repriced.events).toHaveLength(1)
+    // The second failing poll extends the record; it began when it began.
+    const lasting = await readDocsFailing(deps.db, id)
+    expect(lasting).toMatchObject({ since: began?.since, polls: 2 })
+    expect(lasting?.lastAt).toBeGreaterThan(began?.since ?? 0)
+    const kept = await storedRow(deps, id, 'a')
+    expect(facts(kept)).toEqual(facts(good))
+    expect(kept.pricing).not.toEqual(good.pricing)
+    expect(kept.pricing).toMatchObject({
+      tables: { rate: { base: { input_tokens: 0.000002 } } },
+    })
+
+    // Docs back: nothing to repair, and the failure is gone.
+    state.docs = 'ok'
+    const back = await pollWithEvents(deps, provider)
+    expect(back.outcome).toMatchObject({ updated: 0, failures: 0 })
+    expect(back.outcome.docsFailures).toBeUndefined()
+    expect(back.outcome.docsFailing).toBeUndefined()
+    expect(back.events).toEqual([])
+    expect(await readDocsFailing(deps.db, id)).toBeNull()
+  })
+
+  it('keeps a docs-sourced price too, without calling it lost', async () => {
+    const id = 'poll-docs-down-price'
+    const deps = await freshDeps(id)
+    const priced = stubProvider(id, [
+      {
+        rawId: 'm',
+        activity: 'chat',
+        pricing: { prompt: '0.000001', completion: '0.00001' },
+      },
+    ])
+    await pollProviderModels(deps, priced)
+    const good = await storedRow(deps, id, 'm')
+    const { outcome, events } = await pollWithEvents(deps, {
+      ...priced,
+      listModels: () =>
+        Promise.resolve({
+          models: [{ rawId: 'm', activity: 'chat', ...unavailable('pricing') }],
+          docsFailures: {
+            failed: 1,
+            skipped: 0,
+            first: [{ source: DOC, error: '404', elapsedMs: 3 }],
+          },
+        }),
+    })
+    expect(outcome).toMatchObject({ updated: 0, failures: 1 })
+    expect(events.map((event) => event.event)).toEqual(['ingest_failed'])
+    const kept = await storedRow(deps, id, 'm')
+    expect(kept.pricing).toEqual(good.pricing)
+    expect(kept.factSources).toEqual(good.factSources)
+  })
+
+  it('still fails the whole poll when the listing fails', async () => {
+    const id = 'poll-listing-down'
+    const deps = await freshDeps(id)
+    const state: State = { price: '0.000001', docs: 'ok', listing: 'ok' }
+    const provider = docsProvider(id, state)
+    await pollProviderModels(deps, provider)
+    const before = await storedRow(deps, id, 'a')
+
+    state.listing = 'down'
+    state.price = '0.000009'
+    await expect(pollProviderModels(deps, provider)).rejects.toThrow(
+      'listing 503',
+    )
+    const [outcome] = await pollAllProviders(deps, [provider])
+    expect(outcome).toMatchObject({
+      providerId: id,
+      error: 'listing 503',
+      failures: 1,
+      updated: 0,
+    })
+    expect(await storedRow(deps, id, 'a')).toEqual(before)
+  })
+
+  it('polls on when the docs-failing record cannot be written or read', async () => {
+    const id = 'poll-docs-record-broken'
+    const deps = await freshDeps(id)
+    const state: State = { price: '0.000001', docs: 'ok', listing: 'ok' }
+    const provider = docsProvider(id, state)
+    // A stored row that is not a record: overwritten, never fatal.
+    await deps.db.insert(cacheMeta).values({
+      key: `docs-failing:${id}`,
+      fetchedAt: 5,
+      staleTime: 0,
+      lastError: '<html>not json',
+    })
+    expect(await readDocsFailing(deps.db, id)).toBeNull()
+    state.docs = 'down'
+    expect(await pollProviderModels(deps, provider)).toMatchObject({
+      added: 2,
+      failures: 1,
+      docsFailing: { polls: 1 },
+    })
+    const record = await readDocsFailing(deps.db, id)
+    expect(record).toMatchObject({ polls: 1 })
+    expect(record?.since).toBeGreaterThan(5)
+
+    // The table itself failing: the poll still lands, without the record.
+    const broken: SyncDeps = {
+      ...deps,
+      db: new Proxy(deps.db, {
+        get(target, prop, receiver) {
+          if (prop === 'insert' || prop === 'delete') {
+            return (table: unknown) => {
+              if (table === cacheMeta) throw new Error('D1 write refused')
+              return (
+                Reflect.get(target, prop, receiver) as (t: unknown) => unknown
+              ).call(target, table)
+            }
+          }
+          return Reflect.get(target, prop, receiver) as unknown
+        },
+      }),
+    }
+    state.price = '0.000003'
+    const outcome = await pollProviderModels(broken, provider)
+    expect(outcome).toMatchObject({ updated: 2, failures: 1 })
+    expect(outcome.docsFailing).toBeUndefined()
+    // The rows were added without docs facts; the docs coming back fills them.
+    state.docs = 'ok'
+    expect(await pollProviderModels(broken, provider)).toMatchObject({
+      updated: 2,
+      failures: 0,
+    })
+  })
+
+  it('truncates a long error in the docs-failing record', async () => {
+    const id = 'poll-docs-long-error'
+    const deps = await freshDeps(id)
+    const record = await recordDocsFailing(
+      deps.db,
+      id,
+      {
+        failed: 1,
+        skipped: 0,
+        first: [{ source: DOC, error: 'x'.repeat(5000), elapsedMs: 1 }],
+      },
+      10,
+    )
+    expect(record?.error).toHaveLength(500)
+  })
+
+  it('reports a whole docs host down as a few events and a count', async () => {
+    const id = 'poll-docs-capped'
+    const deps = await freshDeps(id)
+    const first = Array.from({ length: 5 }, (_, i) => ({
+      source: `${DOC}?${String(i)}`,
+      error: '503',
+      elapsedMs: 2500,
+    }))
+    const { outcome, events } = await pollWithEvents(deps, {
+      ...stubProvider(id, []),
+      listModels: () =>
+        Promise.resolve({
+          models: [{ rawId: 'm', activity: 'chat' }],
+          docsFailures: { failed: 48, skipped: 32, first },
+        }),
+    })
+    expect(outcome.failures).toBe(80)
+    expect(events).toHaveLength(6)
+    expect(events[5]).toMatchObject({
+      event: 'ingest_failed',
+      properties: {
+        error:
+          'docs: 43 more failed, 32 not attempted after the failure budget',
+      },
+    })
+    expect(await readDocsFailing(deps.db, id)).toMatchObject({
+      polls: 1,
+      failed: 48,
+      skipped: 32,
+      sources: first.map((failure) => failure.source),
+    })
+  })
+
+  it('counts every failure, keeps the first five, and charges overlapping loads once', async () => {
+    const run = docsRun()
+    const slow = () =>
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('down'))
+        }, 40)
+      })
+    await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        tryDocs(run, `${DOC}?${String(i)}`, slow),
+      ),
+    )
+    expect(docsReport(run)).toMatchObject({ failed: 8, skipped: 0 })
+    expect(run.first).toHaveLength(5)
+    // Eight concurrent 40 ms failures cost about 40 ms of wall clock, not 320.
+    expect(run.lostMs).toBeGreaterThanOrEqual(30)
+    expect(run.lostMs).toBeLessThan(160)
+  })
+
+  it('serves cached docs and skips the rest once failures have cost the budget', async () => {
+    const kv = env.SCHEMA_CACHE
+    const cachedUrl = `${DOC}?cached`
+    await cachedDocs(kv, cachedUrl, () => Promise.resolve({ rows: 3 }))
+    // One load that hung to its timeout.
+    const run = { ...docsRun(), failed: 1, lostMs: 60_000 }
+    let fetches = 0
+    const fetchDoc = () => {
+      fetches++
+      return Promise.resolve({ rows: 9 })
+    }
+    expect(
+      await tryDocs(run, cachedUrl, (cached) =>
+        cached(kv, cachedUrl, fetchDoc),
+      ),
+    ).toEqual({ rows: 3 })
+    const missUrl = `${DOC}?miss`
+    expect(
+      await tryDocs(run, missUrl, (cached) => cached(kv, missUrl, fetchDoc)),
+    ).toBeNull()
+    expect(fetches).toBe(0)
+    expect(docsReport(run)).toEqual({ failed: 1, skipped: 1, first: [] })
+  })
+})
+
+describe('Hugging Face prices follow provider agreement', () => {
+  const route = (name: string, input: number) => ({
+    provider: name,
+    status: 'live',
+    context_length: 8192,
+    pricing: { input, output: 0.2 },
+    supports_tools: true,
+    supports_structured_output: false,
+  })
+  const payload = (list: Array<unknown>) => ({
+    data: [
+      {
+        id: 'org/model',
+        created: 1_785_918_179,
+        architecture: {
+          input_modalities: ['text'],
+          output_modalities: ['text'],
+        },
+        providers: list,
+      },
+    ],
+  })
+
+  it('settled → unsettled → settled: card, cleared, card', async () => {
+    const id = 'poll-hf-flip'
+    const deps = await freshDeps(id)
+    let hosts: Array<unknown> = [route('nscale', 0.07)]
+    const provider: ProviderConfig = {
+      ...stubProvider(id, []),
+      listModels: () => parseHuggingFaceModels(payload(hosts)),
+    }
+    const inputRate = async () => {
+      const card = (await storedRow(deps, id, 'org/model')).pricing as {
+        tables: { rate: { base: { input_tokens: number } } }
+      } | null
+      return card?.tables.rate.base.input_tokens ?? null
+    }
+
+    expect((await pollWithEvents(deps, provider)).outcome).toMatchObject({
+      added: 1,
+      failures: 0,
+    })
+    expect(await inputRate()).toBe(0.07 / 1e6)
+
+    // A second host joins at another price: no single price holds.
+    hosts = [route('nscale', 0.07), route('novita', 0.09)]
+    const unsettled = await pollWithEvents(deps, provider)
+    expect(unsettled.outcome).toMatchObject({ updated: 1, failures: 0 })
+    expect(unsettled.events).toEqual([])
+    const row = await storedRow(deps, id, 'org/model')
+    expect(row.pricing).toBeNull()
+    expect(row.contextWindow).toBe(8192)
+    expect(row.factSources).not.toHaveProperty('pricing')
+    const quiet = await pollWithEvents(deps, provider)
+    expect(quiet.outcome).toMatchObject({ updated: 0, failures: 0 })
+
+    // They agree again, at the new price.
+    hosts = [route('nscale', 0.09), route('novita', 0.09)]
+    const settled = await pollWithEvents(deps, provider)
+    expect(settled.outcome).toMatchObject({ updated: 1, failures: 0 })
+    expect(await inputRate()).toBe(0.09 / 1e6)
+    expect((await pollWithEvents(deps, provider)).outcome).toMatchObject({
+      updated: 0,
+      failures: 0,
+    })
   })
 })

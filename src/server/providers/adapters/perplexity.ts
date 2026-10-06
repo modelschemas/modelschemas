@@ -5,7 +5,14 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { perplexityListingCard } from '../catalog-prices.ts'
-import { cachedDocs, markdownTableRows } from '../model-facts.ts'
+import {
+  cachedDocs,
+  docsReport,
+  docsRun,
+  markdownTableRows,
+  tryDocs,
+  unavailable,
+} from '../model-facts.ts'
 import {
   fetchJson,
   fetchOpenApi,
@@ -269,6 +276,18 @@ function statedFacts(
   }
 }
 
+type StatedFact = Exclude<keyof ReturnType<typeof statedFacts>, 'factSources'>
+
+/**
+ * Every fact `statedFacts` supplies; all are withheld when a page fails.
+ * Keyed by its return type, so a fact added there fails to compile here
+ * instead of going null on a docs failure.
+ */
+const STATED_FACTS: Record<StatedFact, true> = {
+  capabilities: true,
+  reasoning: true,
+}
+
 interface PerplexityModelList {
   data?: Array<{ id: string; created?: number; pricing?: unknown }>
 }
@@ -281,20 +300,29 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('perplexity', 'PERPLEXITY_API_KEY') }
   }
+  const run = docsRun()
   const [body, modelsPage, presets] = await Promise.all([
     fetchJson(PERPLEXITY_MODELS_URL, {
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     }) as Promise<PerplexityModelList>,
-    statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
-    statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, (text) => ({
-      flags: parsePerplexityPresets(text),
-    })),
+    tryDocs(run, PERPLEXITY_MODELS_DOC_URL, () =>
+      statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
+    ),
+    tryDocs(run, PERPLEXITY_PRESETS_DOC_URL, () =>
+      statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, (text) => ({
+        flags: parsePerplexityPresets(text),
+      })),
+    ),
   ])
-  const docs = [
-    { url: PERPLEXITY_MODELS_DOC_URL, doc: modelsPage },
-    { url: PERPLEXITY_PRESETS_DOC_URL, doc: presets },
-  ]
+  // Both pages or neither: one page's flags alone would drop the other's.
+  const docs =
+    modelsPage && presets
+      ? [
+          { url: PERPLEXITY_MODELS_DOC_URL, doc: modelsPage },
+          { url: PERPLEXITY_PRESETS_DOC_URL, doc: presets },
+        ]
+      : null
   const models: Array<ModelInfo> = []
   for (const m of body.data ?? []) {
     const pricing = await perplexityListingCard(
@@ -306,10 +334,12 @@ async function listModels(
       releasedAt: m.created ?? null,
       activity: 'chat' as const,
       ...(pricing ? { pricing } : {}),
-      ...statedFacts(m.id, docs),
+      ...(docs
+        ? statedFacts(m.id, docs)
+        : unavailable(...(Object.keys(STATED_FACTS) as Array<StatedFact>))),
     })
   }
-  return { models }
+  return { models, docsFailures: docsReport(run) }
 }
 
 export const provider: ProviderConfig = {

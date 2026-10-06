@@ -19,6 +19,7 @@ import { activities } from '#/db/schema.ts'
 import { extractAsyncApiSchemas } from '#/server/ingest/asyncapi.ts'
 import { contentHash } from '#/server/kv.ts'
 import { falChatFacts } from './fal-chat-facts.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from './model-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import { sha256Text, skippedResult } from './types.ts'
 import type {
@@ -372,25 +373,54 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
   const falModels = await fetchFalModels(apiKey, false)
   // The poll lists without specs (1,500 documents). Chat facts come from
   // the request schema, so fetch the few chat endpoints' specs by id. A
-  // failed fetch throws: the poll keeps the stored rows.
-  const chatIds = falModels
-    .filter((m) => falCategoryActivity(m.metadata.category) === 'chat')
-    .map((m) => m.endpoint_id)
-  const chatSpecs = new Map<string, OpenApiDocument | undefined>()
-  for (let i = 0; i < chatIds.length; i += ENDPOINT_FILTER_MAX) {
-    const page = await fetchFalModels(
-      apiKey,
-      true,
-      chatIds.slice(i, i + ENDPOINT_FILTER_MAX),
-    )
-    for (const m of page) chatSpecs.set(m.endpoint_id, m.openapi)
-  }
-  const unanswered = chatIds.filter((id) => !chatSpecs.has(id))
-  if (unanswered.length > 0) {
-    throw new Error(
-      `fal chat specs: models API left out ${unanswered.join(', ')}`,
-    )
-  }
+  // failed fetch is the chat rows' alone: they keep their stored chat
+  // facts, and the other 1,500 rows still poll.
+  const chat = falModels.filter(
+    (m) => falCategoryActivity(m.metadata.category) === 'chat',
+  )
+  const chatIds = chat.map((m) => m.endpoint_id)
+  const docs = docsRun()
+  const chatFacts = await tryDocs(
+    docs,
+    `${FAL_MODELS_URL}?expand=openapi-3.0 (chat endpoints)`,
+    async () => {
+      const chatSpecs = new Map<string, OpenApiDocument | undefined>()
+      for (let i = 0; i < chatIds.length; i += ENDPOINT_FILTER_MAX) {
+        const page = await fetchFalModels(
+          apiKey,
+          true,
+          chatIds.slice(i, i + ENDPOINT_FILTER_MAX),
+        )
+        for (const m of page) chatSpecs.set(m.endpoint_id, m.openapi)
+      }
+      const unanswered = chatIds.filter((id) => !chatSpecs.has(id))
+      if (unanswered.length > 0) {
+        throw new Error(
+          `fal chat specs: models API left out ${unanswered.join(', ')}`,
+        )
+      }
+      return new Map(
+        chat.map((m) => [
+          m.endpoint_id,
+          falChatFacts(
+            {
+              endpoint_id: m.endpoint_id,
+              description: m.metadata.description,
+              openapi: chatSpecs.get(m.endpoint_id),
+            },
+            FAL_MODELS_URL,
+          ),
+        ]),
+      )
+    },
+  )
+  const chatUnavailable = unavailable(
+    'contextWindow',
+    'maxOutput',
+    'modalities',
+    'capabilities',
+    'reasoning',
+  )
   const models: Array<ModelInfo> = falModels.map((m) => ({
     rawId: m.endpoint_id,
     displayName: m.metadata.display_name ?? null,
@@ -400,18 +430,13 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     capabilities: { category: m.metadata.category },
     // A chat row with a request schema swaps the category object for the
     // flag list every other provider's chat rows carry.
-    ...(chatSpecs.has(m.endpoint_id)
-      ? falChatFacts(
-          {
-            endpoint_id: m.endpoint_id,
-            description: m.metadata.description,
-            openapi: chatSpecs.get(m.endpoint_id),
-          },
-          FAL_MODELS_URL,
-        )
-      : {}),
+    ...(chatFacts
+      ? chatFacts.get(m.endpoint_id)
+      : chatIds.includes(m.endpoint_id)
+        ? chatUnavailable
+        : {}),
   }))
-  return { models }
+  return { models, docsFailures: docsReport(docs) }
 }
 
 export const falProvider: ProviderConfig = {

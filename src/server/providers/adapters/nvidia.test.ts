@@ -201,14 +201,28 @@ describe('nvidia', () => {
     )
   })
 
-  it('throws on a card that fails to load', async () => {
+  it('lists the ids and reports the cards when every card fails to load', async () => {
     globalThis.fetch = ((input: string) =>
       Promise.resolve(
         String(input) === NVIDIA_MODELS_URL
           ? new Response(JSON.stringify(LISTING))
           : new Response('busy', { status: 503 }),
       )) as typeof fetch
-    await expect(provider.listModels({})).rejects.toThrow('503')
+    const listed = await provider.listModels({})
+    expect(listed.models).toHaveLength(LISTING.data.length)
+    expect(listed.docsFailures).toMatchObject({
+      failed: LISTING.data.length,
+      skipped: 0,
+    })
+    expect(listed.docsFailures?.first[0]?.error).toContain('503')
+    for (const model of listed.models) {
+      expect(model.absent).toEqual({
+        activity: 'unavailable',
+        contextWindow: 'unavailable',
+        modalities: 'unavailable',
+        capabilities: 'unavailable',
+      })
+    }
   })
 
   const cards = (deplot: string) => ({
@@ -227,11 +241,22 @@ describe('nvidia', () => {
     })
   })
 
-  it('throws on any other body that is not a markdown card', async () => {
+  it('keeps the other cards when one body is not a markdown card', async () => {
     stubFetch(cards('<!DOCTYPE html><html><body>Just a moment</body></html>'))
-    await expect(provider.listModels({})).rejects.toThrow(
-      'https://build.nvidia.com/google/deplot.md is not a markdown card',
-    )
+    const listed = await provider.listModels({})
+    expect(listed.docsFailures?.first).toMatchObject([
+      {
+        source: 'https://build.nvidia.com/google/deplot.md',
+        error:
+          'nvidia: https://build.nvidia.com/google/deplot.md is not a markdown card',
+      },
+    ])
+    const byId = new Map(listed.models.map((m) => [m.rawId, m]))
+    expect(byId.get('01-ai/yi-large')).toMatchObject({ activity: 'chat' })
+    expect(byId.get('01-ai/yi-large')?.absent).toBeUndefined()
+    expect(byId.get('google/deplot')?.absent).toMatchObject({
+      activity: 'unavailable',
+    })
   })
 
   it('ignores a card whose canonical URL is another page', async () => {

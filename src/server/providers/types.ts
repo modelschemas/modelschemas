@@ -245,6 +245,57 @@ export function reasoningViolation(value: unknown): string | null {
   return null
 }
 
+/** The stored model columns a listing fills; each can be marked absent. */
+export type ModelFact =
+  | 'displayName'
+  | 'activity'
+  | 'contextWindow'
+  | 'maxOutput'
+  | 'modalities'
+  | 'pricing'
+  | 'capabilities'
+  | 'reasoning'
+  | 'serverTools'
+  | 'requestMap'
+  | 'aliases'
+  | 'schemaEndpointId'
+
+/**
+ * Why a listing carries no value for a fact, when the adapter knows why.
+ * The poller's whole contract for one fact (the table describes the code;
+ * the fills on a bare omission predate it and every provider relies on them):
+ *
+ * | listing            | poller writes                          | signal          |
+ * | ------------------ | -------------------------------------- | --------------- |
+ * | a value            | the value                              | none            |
+ * | nothing, no reason | pricing: the stored card.              | pricing only:   |
+ * |                    | capabilities, modalities: what the     | `pricing_lost`  |
+ * |                    | bound request schema states, else null.| and 1 failure   |
+ * |                    | requestMap: the provider table's map,  |                 |
+ * |                    | else null. Any other fact: null        |                 |
+ * | `cleared`          | null, and the schema does not refill   | none            |
+ * |                    | it. requestMap: still the provider     |                 |
+ * |                    | table's map (no stored "no map")       |                 |
+ * | `unavailable`      | the stored value and source            | the docs failure|
+ *
+ * - `cleared`: the source was read and has no value now (router hosts that
+ *   stopped agreeing, a price moved to a subscription). Only say it for a
+ *   value the source visibly lacks; a shape the parser cannot read must
+ *   throw. The poller refuses a poll that clears most of a provider's
+ *   prices at once (`refusesPriceClears`).
+ * - `unavailable`: the source could not be read this poll (`tryDocs`). A
+ *   new row has nothing stored, so the fact is null.
+ * - A reason wins over a value the listing also carries.
+ *
+ * Only pricing keeps its stored value on a bare omission: a parser that
+ * misses one row must not null a good price. `factSources.<fact>.path:
+ * 'silent'` is not this. It is stored provenance for a null whose page was
+ * read, and the fact is written like any omission. `deprecated` is not a
+ * fact here: a stored `deprecatedAt` cannot tell "upstream flagged it"
+ * from "it dropped off the listing".
+ */
+export type FactAbsence = 'cleared' | 'unavailable'
+
 /** Normalised model entry (maps onto the `models` table shape). */
 export interface ModelInfo {
   rawId: string
@@ -281,6 +332,8 @@ export interface ModelInfo {
    * The poller defaults untagged listing fields to `derivation: listing`.
    */
   factSources?: ModelFactSources
+  /** Facts with no value this poll for a known reason; wins over a value. */
+  absent?: Partial<Record<ModelFact, FactAbsence>>
   /**
    * Generation route (public endpoint id) when it depends on listing data
    * the read path cannot see — Gemini's `supportedGenerationMethods`.
@@ -365,8 +418,35 @@ export interface SpecFetchResult {
   asyncApiRawIds?: Array<string>
 }
 
+/** One docs source `listModels` could not read this poll. */
+export interface DocsFailure {
+  /** The document's URL. */
+  source: string
+  error: string
+  /** How long the failed load took; a timeout shows as one. */
+  elapsedMs: number
+}
+
+/** What one poll's docs loads came to (`docsReport`). */
+export interface DocsFailures {
+  /** Documents whose load or parse threw. */
+  failed: number
+  /** Documents not attempted once the failure budget was spent. */
+  skipped: number
+  /** The first few failures; `failed` is the whole count. */
+  first: Array<DocsFailure>
+}
+
 export interface ListModelsResult {
   models: Array<ModelInfo>
+  /**
+   * Docs sources that failed while the listing itself loaded (`tryDocs`).
+   * The poll goes on; rows mark the facts those sources supply
+   * `unavailable`. A failed listing still throws. An adapter that uses
+   * `tryDocs` always returns this, zeros included: that is what clears
+   * the provider's `docs-failing` record.
+   */
+  docsFailures?: DocsFailures
   /** Set when the provider was skipped (e.g. missing secret); models will be empty. */
   skipped?: string
 }

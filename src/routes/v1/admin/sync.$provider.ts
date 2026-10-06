@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers'
 import { getDb } from '#/db/index.ts'
 import { isAdminRequest, jsonError } from '#/server/admin.ts'
 import { errorMessage } from '#/server/errors.ts'
+import { readDocsFailing } from '#/server/ingest/docs-failing.ts'
 import { syncProvider } from '#/server/ingest/sync.ts'
 import { getProvider, providerRegistry } from '#/server/providers/index.ts'
 
@@ -28,11 +29,28 @@ export const Route = createFileRoute('/v1/admin/sync/$provider')({
           )
         }
         try {
+          const db = getDb(env)
           const outcome = await syncProvider(
-            { db: getDb(env), kv: env.SCHEMA_CACHE, secrets: env },
+            { db, kv: env.SCHEMA_CACHE, secrets: env },
             provider,
           )
-          return Response.json({ outcome })
+          // The models poll's record of a docs source that keeps failing;
+          // null when the provider's docs load.
+          // A record that cannot be read must not turn a finished sync
+          // into an error.
+          const docsFailing = await readDocsFailing(db, provider.id).catch(
+            (error: unknown) => {
+              console.error(
+                JSON.stringify({
+                  job: 'spec-sync',
+                  providerId: provider.id,
+                  error: `docs-failing record not read: ${errorMessage(error)}`,
+                }),
+              )
+              return null
+            },
+          )
+          return Response.json({ outcome, docsFailing })
         } catch (error) {
           return jsonError(502, 'sync_failed', errorMessage(error))
         }

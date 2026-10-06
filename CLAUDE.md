@@ -121,6 +121,23 @@ ones).
   wrapper is the one place a currency is stated, and it is not a core op so
   pre-currency evaluators refuse the card. Summaries and estimates name the
   currency; nothing converts or compares across currencies.
+  A listing that omits a price keeps the stored card
+  and logs `pricing_lost`; any other omitted fact is written null once the
+  usual fills are tried (the bound schema for capabilities and modalities,
+  the provider table for the request map). An adapter that knows why says
+  so in `ModelInfo.absent` (`FactAbsence` in `types.ts` has the exact
+  table): `cleared` writes null quietly (Hugging Face hosts that stopped
+  agreeing on a price), `unavailable` keeps the stored value. `cleared` is
+  only for a value the source visibly lacks: an unreadable shape throws,
+  and the poller refuses a poll that would clear 5 or more stored prices
+  and over half of the priced rows the provider lists (`refusesPriceClears`).
+  A refused mass clear repeats every poll until the adapter or the bound
+  changes, or the stale cards are nulled by hand in D1. Wrap a
+  docs load in `tryDocs` (`model-facts.ts`) so its throw marks rows
+  `unavailable(...)` and is reported as `docsFailures` instead of failing
+  the provider's poll; the listing itself is never wrapped. While a
+  provider's docs keep failing, `cache_meta` holds one
+  `docs-failing:<providerId>` row saying since when (`docs-failing.ts`).
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:
