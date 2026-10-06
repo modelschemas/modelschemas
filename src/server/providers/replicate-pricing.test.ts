@@ -146,3 +146,62 @@ describe('replicate prediction prices', () => {
     expect(replicatePagePricing('<p>no price</p>', SOURCE)).toEqual({})
   })
 })
+
+describe('replicate prompt-length token tiers', () => {
+  // https://replicate.com/google/gemini-3-pro billingConfig.
+  const tier = (
+    range: [number | null, number | null],
+    subtype: string,
+    input: string,
+    output: string,
+  ) => ({
+    criteria: [{ title: 'input token', type: 'range', subtype, value: range }],
+    prices: [
+      {
+        metric: 'token_input_count',
+        price: input,
+        title: 'per million input tokens',
+        type: 'per-unit',
+      },
+      {
+        metric: 'token_output_count',
+        price: output,
+        title: 'per thousand output tokens',
+        type: 'per-unit',
+      },
+    ],
+  })
+  const low = tier([null, 200000], 'open-closed', '$2', '$0.012')
+  const high = tier([200000, null], 'open', '$4', '$0.018')
+
+  it('compiles the base tier and the re-quote above the threshold', () => {
+    const card = compileReplicateBilling({ current_tiers: [low, high] }, SOURCE)
+    expect(card?.tables.rate).toEqual({
+      base: { input_tokens: 2e-6, output_tokens: 0.012 / 1000 },
+      '200000': { input_tokens: 4e-6, output_tokens: 0.018 / 1000 },
+    })
+  })
+
+  it('refuses any other range shape', () => {
+    const compile = (...tiers: Array<ReturnType<typeof tier>>) =>
+      compileReplicateBilling({ current_tiers: tiers }, SOURCE)
+    // One tier alone, a gap between the tiers, a closed upper tier.
+    expect(compile(low)).toBeNull()
+    expect(compile(high)).toBeNull()
+    expect(compile(low, tier([256000, null], 'open', '$4', '$0.018'))).toBe(
+      null,
+    )
+    expect(
+      compile(low, tier([200000, 400000], 'open-closed', '$4', '$0.018')),
+    ).toBeNull()
+    expect(compile(low, { ...high, criteria: [] })).toBeNull()
+    // A range over something other than prompt tokens.
+    const seconds = structuredClone(high)
+    if (seconds.criteria[0]) seconds.criteria[0].title = 'output second'
+    expect(compile(low, seconds)).toBeNull()
+    // A tier that prices only input tokens.
+    expect(compile(low, { ...high, prices: high.prices.slice(0, 1) })).toBe(
+      null,
+    )
+  })
+})

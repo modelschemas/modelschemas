@@ -1,8 +1,34 @@
 import { describe, expect, it } from 'vitest'
 
 import { classifyAndBundle } from '#/server/ingest/sync.ts'
+import listing from '../fixtures/replicate-models.json'
+import openapi from '../fixtures/replicate-openapi.json'
 import type { OpenApiDocument } from '../types.ts'
-import { provider } from './replicate.ts'
+import {
+  provider,
+  replicateChatFacts,
+  replicateModelSpec,
+} from './replicate.ts'
+import type { ReplicateModel } from './replicate.ts'
+
+// Rows of GET https://api.replicate.com/v1/models, trimmed to the fields read.
+const MODELS: Array<ReplicateModel> = listing
+const SPEC: OpenApiDocument = openapi
+
+function model(rawId: string): ReplicateModel {
+  const found = MODELS.find((row) => `${row.owner}/${row.name}` === rawId)
+  if (!found) throw new Error(`fixture has no ${rawId}`)
+  return structuredClone(found)
+}
+
+function inputProperties(row: ReplicateModel): Record<string, unknown> {
+  const schemas = row.latest_version?.openapi_schema?.components?.schemas as {
+    Input: { properties: Record<string, unknown> }
+  }
+  return schemas.Input.properties
+}
+
+const INPUT = '/latest_version/openapi_schema/components/schemas/Input'
 
 describe('replicate classify', () => {
   it('maps generation creates onto chat, image, video, and audio', () => {
@@ -214,5 +240,282 @@ describe('replicate seed metadata', () => {
       'https://api.replicate.com/openapi.json',
     )
     expect(provider.modelsEndpoint).toBe('https://api.replicate.com/v1/models')
+  })
+})
+
+describe('replicate chat facts from a model schema', () => {
+  it('reads a language model off its schema, not its name', () => {
+    const chat = MODELS.filter((row) => replicateChatFacts(row) !== null)
+    expect(chat.map((row) => `${row.owner}/${row.name}`).sort()).toEqual([
+      'anthropic/claude-sonnet-5',
+      'deepseek-ai/deepseek-v3.1',
+      'google/gemini-3-flash',
+      'ibm-granite/granite-4.1-8b',
+      'meta/llama-4-maverick-instruct',
+      'openai/gpt-5.4',
+      'prunaai/gpt-oss-120b-fast',
+    ])
+    // Returns an image URL, an embedding, and a trainer's text: not chat.
+    expect(replicateChatFacts(model('alibaba/qwen-image-3'))).toBeNull()
+    expect(
+      replicateChatFacts(
+        model('ibm-granite/granite-embedding-small-english-r2'),
+      ),
+    ).toBeNull()
+    expect(replicateChatFacts(model('replicate/fast-flux-trainer'))).toBeNull()
+  })
+
+  it('fills flags, modalities, and the output cap with their source', () => {
+    const facts = replicateChatFacts(model('meta/llama-4-maverick-instruct'))
+    expect(facts?.capabilities).toEqual([
+      'frequency_penalty',
+      'max_tokens',
+      'presence_penalty',
+      'temperature',
+      'top_k',
+      'top_p',
+    ])
+    expect(facts?.modalities).toEqual({ input: ['text'], output: ['text'] })
+    expect(facts?.maxOutput).toBe(131072)
+    expect(facts?.reasoning).toBeUndefined()
+    expect(facts?.schemaEndpointId).toBe(
+      'models/meta/llama-4-maverick-instruct/predictions',
+    )
+    const sourceUrl =
+      'https://api.replicate.com/v1/models/meta/llama-4-maverick-instruct'
+    expect(facts?.factSources?.maxOutput).toEqual({
+      derivation: 'listing',
+      sourceUrl,
+      path: `${INPUT}/properties/max_tokens/maximum`,
+    })
+    expect(facts?.factSources?.capabilities?.top_p).toEqual({
+      derivation: 'listing',
+      sourceUrl,
+      path: `${INPUT}/properties/top_p`,
+    })
+    expect(facts?.factSources?.modalities?.sourceUrl).toBe(sourceUrl)
+  })
+
+  it('names one modality per file input', () => {
+    expect(
+      replicateChatFacts(model('google/gemini-3-flash'))?.modalities,
+    ).toEqual({
+      input: ['text', 'image', 'audio', 'video'],
+      output: ['text'],
+    })
+    expect(replicateChatFacts(model('openai/gpt-5.4'))?.modalities).toEqual({
+      input: ['text', 'image'],
+      output: ['text'],
+    })
+  })
+
+  it('states no modalities when a file input does not say what it is', () => {
+    const row = model('openai/gpt-5.4')
+    const properties = inputProperties(row)
+    properties.attachment = properties.image_input
+    delete properties.image_input
+    const facts = replicateChatFacts(row)
+    expect(facts?.modalities).toBeUndefined()
+    expect(facts?.factSources?.modalities).toBeUndefined()
+  })
+
+  it('states no output cap without one stated maximum', () => {
+    // gpt-5.4 caps nothing; granite has two token fields and no maximum.
+    expect(replicateChatFacts(model('openai/gpt-5.4'))?.maxOutput).toBe(
+      undefined,
+    )
+    expect(
+      replicateChatFacts(model('ibm-granite/granite-4.1-8b'))?.maxOutput,
+    ).toBeUndefined()
+
+    const disagree = model('meta/llama-4-maverick-instruct')
+    inputProperties(disagree).max_completion_tokens = {
+      type: 'integer',
+      maximum: 4096,
+    }
+    expect(replicateChatFacts(disagree)?.maxOutput).toBeUndefined()
+
+    const fractional = model('meta/llama-4-maverick-instruct')
+    inputProperties(fractional).max_tokens = { type: 'integer', maximum: 0.5 }
+    expect(replicateChatFacts(fractional)?.maxOutput).toBeUndefined()
+  })
+
+  it('reads reasoning from an effort enum that accepts none', () => {
+    const gpt = replicateChatFacts(model('openai/gpt-5.4'))
+    expect(gpt?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh'],
+    })
+    expect(gpt?.factSources?.reasoning?.path).toBe(
+      `${INPUT}/properties/reasoning_effort`,
+    )
+    expect(
+      replicateChatFacts(model('deepseek-ai/deepseek-v3.1'))?.reasoning,
+    ).toEqual({ mode: 'effort', mandatory: false, efforts: ['medium', 'None'] })
+    expect(
+      replicateChatFacts(model('google/gemini-3-flash'))?.reasoning?.efforts,
+    ).toEqual(['none', 'low', 'high'])
+  })
+
+  it('states no reasoning when the enum cannot turn it off', () => {
+    // `effort` is low…max: the schema does not say reasoning is optional.
+    const facts = replicateChatFacts(model('anthropic/claude-sonnet-5'))
+    expect(facts?.capabilities).toContain('reasoning_effort')
+    expect(facts?.reasoning).toBeUndefined()
+
+    const dangling = model('openai/gpt-5.4')
+    const schemas = dangling.latest_version?.openapi_schema?.components
+      ?.schemas as Record<string, unknown>
+    delete schemas.reasoning_effort
+    expect(replicateChatFacts(dangling)?.reasoning).toBeUndefined()
+  })
+
+  it('binds a run route only for an official model', () => {
+    const facts = replicateChatFacts(model('prunaai/gpt-oss-120b-fast'))
+    expect(facts?.capabilities).toContain('max_tokens')
+    expect(facts?.schemaEndpointId).toBeUndefined()
+  })
+})
+
+describe('replicate per-model run routes', () => {
+  function stubFetch(spec: OpenApiDocument): () => void {
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const body = String(url).endsWith('/openapi.json')
+        ? spec
+        : { next: null, results: MODELS }
+      return Promise.resolve(new Response(JSON.stringify(body)))
+    }) as typeof fetch
+    return () => {
+      globalThis.fetch = original
+    }
+  }
+
+  it('syncs each official language model with its own input schema', async () => {
+    const restore = stubFetch(SPEC)
+    try {
+      const fetched = await provider.fetchSpec({ REPLICATE_API_TOKEN: 'tok' })
+      const { endpoints, warnings } = classifyAndBundle(provider, fetched)
+      expect(warnings).toEqual([])
+      expect(endpoints.map((e) => [e.dbId, e.activity])).toEqual([
+        ['replicate/models/{model_owner}/{model_name}/predictions', 'image'],
+        ['replicate/models/meta/llama-4-maverick-instruct/predictions', 'chat'],
+        ['replicate/models/deepseek-ai/deepseek-v3.1/predictions', 'chat'],
+        ['replicate/models/google/gemini-3-flash/predictions', 'chat'],
+        ['replicate/models/openai/gpt-5.4/predictions', 'chat'],
+        ['replicate/models/anthropic/claude-sonnet-5/predictions', 'chat'],
+        ['replicate/models/ibm-granite/granite-4.1-8b/predictions', 'chat'],
+      ])
+      // Every route a chat row binds is synced.
+      const synced = new Set(endpoints.map((e) => e.dbId))
+      for (const row of MODELS) {
+        const bound = replicateChatFacts(row)?.schemaEndpointId
+        if (bound) expect(synced.has(`replicate/${bound}`)).toBe(true)
+      }
+
+      const gpt = endpoints.find((e) => e.dbId.includes('gpt-5.4'))
+      expect(gpt?.source?.url).toBe(
+        'https://api.replicate.com/v1/models/openai/gpt-5.4',
+      )
+      const input = gpt?.input as {
+        required: Array<string>
+        properties: Record<string, unknown>
+        $defs: Record<string, { properties?: Record<string, unknown> }>
+      }
+      expect(input.required).toEqual(['input'])
+      expect(Object.keys(input.properties)).toContain('webhook')
+      expect(input.properties.input).toEqual({ $ref: '#/$defs/Input' })
+      expect(Object.keys(input.$defs.Input?.properties ?? {})).toContain(
+        'max_completion_tokens',
+      )
+      // gpt-5.4's schema is its own: no llama field leaks in.
+      expect(input.$defs.Input?.properties).not.toHaveProperty('top_k')
+      const output = gpt?.output as {
+        properties: Record<string, unknown>
+        $defs: Record<string, unknown>
+      }
+      expect(output.properties.output).toEqual({ $ref: '#/$defs/Output' })
+      expect(output.$defs.Output).toMatchObject({ type: 'array' })
+    } finally {
+      restore()
+    }
+  })
+
+  it('adds no route when the spec has no official run operation', async () => {
+    const reworded = structuredClone(SPEC)
+    const request = reworded.components?.schemas
+      ?.schemas_prediction_request as {
+      properties: Record<string, unknown>
+    }
+    delete request.properties.input
+    expect(replicateModelSpec(reworded, model('openai/gpt-5.4'))).toBeNull()
+    expect(replicateModelSpec({ paths: {} }, model('openai/gpt-5.4'))).toBe(
+      null,
+    )
+
+    const restore = stubFetch(reworded)
+    try {
+      const fetched = await provider.fetchSpec({ REPLICATE_API_TOKEN: 'tok' })
+      expect(fetched.specs).toHaveLength(1)
+      expect(fetched.warnings).toContain(
+        'replicate openai/gpt-5.4: no official run route in the spec',
+      )
+    } finally {
+      restore()
+    }
+  })
+})
+
+describe('replicate listModels chat rows', () => {
+  it('classifies by schema and keeps the price source beside the facts', async () => {
+    const page = `<script>{"billingConfig": {"current_tiers": [{"criteria": [], "prices": [{"metric": "token_input_count", "price": "$2.50", "title": "per million input tokens", "type": "per-unit"}, {"metric": "token_output_count", "price": "$0.015", "title": "per thousand output tokens", "type": "per-unit"}]}]}, "modelName": "x"}</script>`
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      if (href.startsWith('https://api.replicate.com/')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ next: null, results: MODELS })),
+        )
+      }
+      // One official page answers 200 with an error page.
+      return Promise.resolve(
+        new Response(
+          href.endsWith('/claude-sonnet-5')
+            ? '<html>Just a moment</html>'
+            : page,
+        ),
+      )
+    }) as typeof fetch
+    try {
+      const { models } = await provider.listModels({
+        REPLICATE_API_TOKEN: 'tok',
+      })
+      const byId = new Map(models.map((m) => [m.rawId, m]))
+      expect(byId.get('alibaba/qwen-image-3')?.activity).not.toBe('chat')
+      expect(byId.get('alibaba/qwen-image-3')?.capabilities).toEqual({
+        visibility: 'public',
+        official: true,
+      })
+      const gpt = byId.get('openai/gpt-5.4')
+      expect(gpt?.activity).toBe('chat')
+      expect(gpt?.capabilities).toEqual(['max_tokens', 'reasoning_effort'])
+      expect(gpt?.pricing).toMatchObject({
+        tables: { rate: { base: { input_tokens: 2.5e-6 } } },
+      })
+      expect(gpt?.factSources?.pricing?.sourceUrl).toBe(
+        'https://replicate.com/openai/gpt-5.4',
+      )
+      expect(gpt?.factSources?.reasoning?.derivation).toBe('listing')
+
+      const errored = byId.get('anthropic/claude-sonnet-5')
+      expect(errored?.activity).toBe('chat')
+      expect(errored?.pricing).toBeUndefined()
+      expect(errored?.maxOutput).toBe(64000)
+      // Hardware-billed community model: no page fetch, no price.
+      expect(byId.get('prunaai/gpt-oss-120b-fast')?.pricing).toBeUndefined()
+    } finally {
+      globalThis.fetch = original
+    }
   })
 })

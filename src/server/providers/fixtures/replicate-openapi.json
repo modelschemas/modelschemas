@@ -1,0 +1,222 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/models/{model_owner}/{model_name}/predictions": {
+      "post": {
+        "operationId": "models.predictions.create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_owner",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/parameters_prefer_header"
+          },
+          {
+            "$ref": "#/components/parameters/parameters_cancel_after_header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/schemas_prediction_request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/schemas_prediction_response"
+                }
+              }
+            }
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/schemas_prediction_response"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a prediction using an official model"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "schemas_prediction_request": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "object"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "webhook": {
+            "type": "string"
+          },
+          "webhook_events_filter": {
+            "items": {
+              "enum": ["start", "output", "logs", "completed"],
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "schemas_prediction_response": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "data_removed": {
+            "type": "boolean"
+          },
+          "deadline": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deployment": {
+            "type": "string"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "logs": {
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "properties": {
+              "total_time": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "model": {
+            "type": "string"
+          },
+          "output": {},
+          "source": {
+            "enum": ["web", "api"],
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "starting",
+              "processing",
+              "succeeded",
+              "failed",
+              "canceled",
+              "aborted"
+            ],
+            "type": "string"
+          },
+          "urls": {
+            "properties": {
+              "cancel": {
+                "format": "uri",
+                "type": "string"
+              },
+              "get": {
+                "format": "uri",
+                "type": "string"
+              },
+              "stream": {
+                "format": "uri",
+                "type": "string"
+              },
+              "web": {
+                "format": "uri",
+                "type": "string"
+              }
+            },
+            "required": ["web", "get", "cancel"],
+            "type": "object"
+          },
+          "version": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "enum": ["hidden"],
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "model",
+          "version",
+          "input",
+          "output",
+          "data_removed",
+          "error",
+          "status",
+          "created_at",
+          "urls"
+        ],
+        "type": "object"
+      }
+    },
+    "parameters": {
+      "parameters_cancel_after_header": {
+        "in": "header",
+        "name": "Cancel-After",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "parameters_prefer_header": {
+        "in": "header",
+        "name": "Prefer",
+        "schema": {
+          "pattern": "^wait(=([1-9]|[1-9][0-9]|60))?$",
+          "type": "string"
+        }
+      }
+    }
+  }
+}
