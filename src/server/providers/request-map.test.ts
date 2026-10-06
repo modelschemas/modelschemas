@@ -103,16 +103,52 @@ describe('chatRequestMap', () => {
   it('names max_tokens and rejects reasoning_effort where the docs do', () => {
     // Workers AI states request fields per model; its adapter reads them.
     expect(chatRequestMap('cloudflare-workers-ai', 'x', 'chat')).toBeNull()
-    for (const provider of ['moonshot', 'nvidia'] as const) {
-      const map = chatRequestMap(provider, 'some-chat', 'chat')
-      expect(map?.maxTokensField).toBe('max_tokens')
-      expect(map?.reasoningEffort).toBe(false)
-      expect(map?.developerRole).toBe(false)
-      expect(map?.thinking).toBeNull()
-    }
+    const map = chatRequestMap('nvidia', 'some-chat', 'chat')
+    expect(map?.maxTokensField).toBe('max_tokens')
+    // NVIDIA's per-model reference pages are not read yet: unknown.
+    expect(map?.reasoningEffort).toBeNull()
+    expect(map?.developerRole).toBe(false)
+    expect(map?.thinking).toBeNull()
     expect(chatRequestMap('grok', 'grok-4', 'chat')?.reasoningEffort).toBe(
       false,
     )
+  })
+
+  it('maps Kimi thinking per model, from the Moonshot chat spec', () => {
+    for (const provider of ['moonshot', 'moonshotai-cn'] as const) {
+      const k3 = chatRequestMap(provider, 'kimi-k3', 'chat')
+      expect(k3?.maxTokensField).toBeNull()
+      expect(k3?.developerRole).toBe(false)
+      expect(k3?.reasoningEffort).toBe(true)
+      expect(k3?.thinking).toEqual({
+        on: { reasoning_effort: 'high' },
+        off: null,
+        levels: {
+          off: null,
+          minimal: null,
+          low: 'low',
+          medium: null,
+          high: 'high',
+          xhigh: null,
+          max: 'max',
+        },
+      })
+      const code = chatRequestMap(provider, 'kimi-k2.7-code-highspeed', 'chat')
+      expect(code?.thinking).toEqual({
+        on: { thinking: { type: 'enabled' } },
+        off: null,
+        levels: null,
+      })
+      expect(code?.reasoningEffort).toBeNull()
+      expect(code?.maxTokensField).toBe('max_completion_tokens')
+      expect(
+        chatRequestMap(provider, 'kimi-k2.6', 'chat')?.thinking?.off,
+      ).toEqual({ thinking: { type: 'disabled' } })
+      // An id the spec does not map gets no guessed thinking body.
+      const unknown = chatRequestMap(provider, 'kimi-k9', 'chat')
+      expect(unknown?.thinking).toBeNull()
+      expect(unknown?.reasoningEffort).toBeNull()
+    }
   })
 
   it('returns null for an unverified provider, a non-chat row, and an unknown activity', () => {
