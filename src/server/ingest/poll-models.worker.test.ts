@@ -945,44 +945,6 @@ describe('models.dev residue on skip (issue #197)', () => {
   })
 })
 
-describe('reasoning and server tools (issue #77)', () => {
-  it('stores both with provenance and emits model.updated on change', async () => {
-    const id = 'poll-features'
-    const deps = await freshDeps(id)
-    const docs = 'https://example.com/tools'
-    const listed: ModelInfo = {
-      ...fable,
-      reasoning: { mode: 'adaptive', mandatory: true, efforts: ['low'] },
-      serverTools: ['web_search_20250305', 'bash_20250124'],
-      factSources: {
-        serverTools: {
-          web_search_20250305: { derivation: 'docs-derived', sourceUrl: docs },
-        },
-      },
-    }
-    await pollProviderModels(deps, stubProvider(id, [listed]))
-    const row = await deps.db.query.models.findFirst({
-      where: eq(models.id, modelDbId(id, fable.rawId)),
-    })
-    expect(row?.reasoning).toEqual(listed.reasoning)
-    expect(row?.serverTools).toEqual(listed.serverTools)
-    // Docs-tagged tools keep their source; untagged ones default to listing.
-    expect(row?.factSources).toMatchObject({
-      reasoning: { derivation: 'listing' },
-      serverTools: {
-        web_search_20250305: { derivation: 'docs-derived', sourceUrl: docs },
-        bash_20250124: { derivation: 'listing' },
-      },
-    })
-
-    const outcome = await pollProviderModels(
-      deps,
-      stubProvider(id, [{ ...listed, serverTools: ['bash_20250124'] }]),
-    )
-    expect(outcome.updated).toBe(1)
-  })
-})
-
 describe('perModelSchemaFlags', () => {
   it('keeps the named schema flags off unless the listing states them', async () => {
     const id = 'poll-per-model-flags'
@@ -1038,5 +1000,43 @@ describe('perModelSchemaFlags', () => {
       .from(models)
       .where(eq(models.id, modelDbId(id, 'thinker')))
     expect(thinker[0]?.capabilities).toEqual(['reasoning', 'temperature'])
+  })
+})
+
+describe('reasoning and server tools (issue #77)', () => {
+  it('stores both with provenance and emits model.updated on change', async () => {
+    const id = 'poll-features'
+    const deps = await freshDeps(id)
+    const docs = 'https://example.com/tools'
+    const listed: ModelInfo = {
+      ...fable,
+      reasoning: { mode: 'adaptive', mandatory: true, efforts: ['low'] },
+      serverTools: ['web_search_20250305', 'bash_20250124'],
+      factSources: {
+        serverTools: {
+          web_search_20250305: { derivation: 'docs-derived', sourceUrl: docs },
+        },
+      },
+    }
+    await pollProviderModels(deps, stubProvider(id, [listed]))
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, fable.rawId)),
+    })
+    expect(row?.reasoning).toEqual(listed.reasoning)
+    expect(row?.serverTools).toEqual(listed.serverTools)
+    // Docs-tagged tools keep their source; untagged ones default to listing.
+    expect(row?.factSources).toMatchObject({
+      reasoning: { derivation: 'listing' },
+      serverTools: {
+        web_search_20250305: { derivation: 'docs-derived', sourceUrl: docs },
+        bash_20250124: { derivation: 'listing' },
+      },
+    })
+
+    const outcome = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...listed, serverTools: ['bash_20250124'] }]),
+    )
+    expect(outcome.updated).toBe(1)
   })
 })
