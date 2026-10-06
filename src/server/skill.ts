@@ -46,8 +46,10 @@ availability and schema questions.
    \`{valid, errors:[{path,message,keyword}]}\` — or
    \`modelschemas validate anthropic/v1/messages payload.json\` (exit 2 when
    invalid).
-5. **Estimate USD.** \`POST /v1/estimate {"provider","model","request"?,"usage"?}\`
-   → \`{usd, cardSource, estimated}\`. \`estimated\` names any omitted
+5. **Estimate cost.** \`POST /v1/estimate {"provider","model","request"?,"usage"?}\`
+   → \`{amount, currency, usd?, cardSource, estimated}\`. \`amount\` is in
+   \`currency\` (ISO 4217, mostly USD; never converted) and \`usd\` repeats it
+   only for a USD card. \`estimated\` names any omitted
    usage the card filled by the source's published estimate method (empty:
    billed price). Missing levers → 422; no card → 404
    \`unknown_pricing\`. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.

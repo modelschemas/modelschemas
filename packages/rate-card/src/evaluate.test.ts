@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   RateCardError,
   bindInputs,
+  cardCurrency,
+  cardPrice,
   price,
   priceDetailed,
   verifyExamples,
 } from './evaluate.ts'
-import { rateCardSchema } from './rate-card.schema.ts'
+import { z } from 'zod'
+
+import { CORE_OPS, rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
 
 const source = {
@@ -207,6 +211,128 @@ describe('refusals', () => {
     expect(() => usd(expr)).toThrow(expect.objectContaining({ code }))
   })
 
+  const doubleX: Expr = { '*': [{ var: 'x' }, 2] }
+  const yuan = { ...cardFor(doubleX), price: { currency: ['CNY', doubleX] } }
+
+  it('prices a card in its own currency and never calls it USD', () => {
+    const parsed = rateCardSchema.parse(yuan)
+    expect(cardCurrency(parsed)).toBe('CNY')
+    expect(priceDetailed(parsed)).toEqual({
+      amount: 8,
+      currency: 'CNY',
+      estimated: [],
+    })
+    // The wrapper changes the label, never the amount.
+    expect(price(parsed)).toBe(price(cardFor(doubleX)))
+    // A bare price is USD: a card stored before currencies reads unchanged.
+    expect(cardCurrency(cardFor(1))).toBe('USD')
+    expect(priceDetailed(cardFor(1))).toMatchObject({ currency: 'USD', usd: 1 })
+  })
+
+  it.each(['yuan', 'cny', '¥', 'RMBX', ''])(
+    'schema rejects %j as a currency',
+    (currency) => {
+      const card = { ...cardFor(1), price: { currency: [currency, 1] } }
+      expect(rateCardSchema.safeParse(card).success).toBe(false)
+    },
+  )
+
+  it('schema takes the currency wrapper at the root of price only', () => {
+    const nested = { '+': [1, { currency: ['CNY', 1] }] }
+    expect(
+      rateCardSchema.safeParse({ ...cardFor(1), price: nested }).success,
+    ).toBe(false)
+    const beside = { currency: ['CNY', 1], '+': [1, 2] }
+    expect(
+      rateCardSchema.safeParse({ ...cardFor(1), price: beside }).success,
+    ).toBe(false)
+  })
+
+  it('schema refuses a top-level currency rather than read the card as USD', () => {
+    for (const currency of ['CNY', 'USD', null, 156]) {
+      expect(
+        rateCardSchema.safeParse({ ...cardFor(1), currency }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('schema refuses a USD wrapper: USD is said only by having none', () => {
+    const card = { ...cardFor(1), price: { currency: ['USD', 1] } }
+    expect(rateCardSchema.safeParse(card).success).toBe(false)
+  })
+
+  // Wrappers the schema refuses, handed to the evaluator unparsed.
+  it.each([
+    ['a lowercase code', { currency: ['cny', 1] }],
+    ['a numeric code', { currency: [156, 1] }],
+    ['USD', { currency: ['USD', 1] }],
+    ['three items', { currency: ['CNY', 1, 2] }],
+    ['a sibling op', { currency: ['CNY', 1], '+': [1, 2] }],
+    ['a bare code', { currency: 'CNY' }],
+    ['no price', undefined],
+    ['a null price', null],
+    ['a null wrapper payload', { currency: null }],
+    ['a null wrapped expression', { currency: ['CNY', null] }],
+  ])('evaluator refuses %s with its own error', (_name, bad) => {
+    const card = { ...cardFor(1), price: bad } as unknown as RateCard
+    expect(rateCardSchema.safeParse(card).success).toBe(false)
+    for (const read of [cardPrice, cardCurrency, price, priceDetailed]) {
+      expect(() => read(card)).toThrow(RateCardError)
+      expect(() => read(card)).toThrow(
+        expect.objectContaining({ code: 'unknown-op' }),
+      )
+    }
+  })
+
+  it('evaluator refuses a stray top-level currency on an unparsed card', () => {
+    const card = { ...cardFor(1), currency: 'CNY' } as unknown as RateCard
+    for (const read of [cardCurrency, price, priceDetailed]) {
+      expect(() => read(card)).toThrow(
+        expect.objectContaining({ code: 'unknown-op' }),
+      )
+    }
+  })
+
+  it('evaluator refuses a null card with its own error', () => {
+    expect(() => cardCurrency(null as unknown as RateCard)).toThrow(
+      RateCardError,
+    )
+  })
+
+  /**
+   * What @modelschemas/rate-card 0.1.0 (and a service rolled back to before
+   * currencies) does with an expression node: its schema accepts only the
+   * ops below, and its evaluator throws `unknown-op` on any other key. The
+   * op list is the published one, frozen here on purpose.
+   */
+  const OPS_0_1_0 = [
+    ...['var', 'missing', '+', '-', '*', '/', 'max', 'min', 'if'],
+    ...['==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'ceil', 'floor'],
+  ]
+  const expr010: z.ZodType = z.lazy(() =>
+    z.union([
+      z.number(),
+      z.string(),
+      z.boolean(),
+      z.strictObject({ lookup: z.unknown() }),
+      z
+        .partialRecord(z.enum(OPS_0_1_0), z.union([expr010, z.array(expr010)]))
+        .refine((ops) => Object.keys(ops).length === 1, 'one op per node'),
+    ]),
+  )
+
+  it('a pre-currency evaluator refuses a non-USD card instead of calling it dollars', () => {
+    // It reads USD cards as before, so the reproduction is not just strict.
+    expect(expr010.safeParse(doubleX).success).toBe(true)
+    expect(expr010.safeParse(yuan.price).success).toBe(false)
+    // Its evaluator would throw `unknown-op` on the root key.
+    expect(Object.keys(yuan.price)).toEqual(['currency'])
+    expect(OPS_0_1_0).not.toContain('currency')
+    // The op must never become a core op, or old schemas that are handed
+    // the new list would start reading yuan as dollars.
+    expect(CORE_OPS).toEqual(OPS_0_1_0)
+  })
+
   it('schema rejects an op outside the vocabulary', () => {
     expect(rateCardSchema.safeParse(cardFor(unknownOp)).success).toBe(false)
   })
@@ -312,12 +438,12 @@ describe('estimate', () => {
     expect(rateCardSchema.parse(card)).toEqual(card)
     expect(
       priceDetailed(card, { resolution: '480p' }, { tokens: 500 }),
-    ).toEqual({ usd: 0.5, estimated: [] })
+    ).toEqual({ amount: 0.5, currency: 'USD', usd: 0.5, estimated: [] })
   })
 
   it('labels an estimated input and binds its own inputs only then', () => {
     expect(priceDetailed(card, { resolution: '480p', seconds: 2 }, {})).toEqual(
-      { usd: 2, estimated: ['tokens'] },
+      { amount: 2, currency: 'USD', usd: 2, estimated: ['tokens'] },
     )
     expect(() => priceDetailed(card, { resolution: '480p' }, {})).toThrow(
       /tokens \(tokens\): not supplied, and cannot be estimated.*seconds.*required/,

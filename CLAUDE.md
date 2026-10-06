@@ -116,7 +116,12 @@ ones).
   at write (`src/server/rate-card.ts`), and OpenAI/Anthropic/Gemini prices
   are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
   — every parser fail-closed, a page that parses nothing throws rather than
-  nulling stored cards. A listing that omits a price keeps the stored card
+  nulling stored cards. A card is USD unless its price is wrapped
+  as `{ currency: ['CNY', expr] }` (`moonshotai-cn`, `minimax-cn`): the
+  wrapper is the one place a currency is stated, and it is not a core op so
+  pre-currency evaluators refuse the card. Summaries and estimates name the
+  currency; nothing converts or compares across currencies.
+  A listing that omits a price keeps the stored card
   and logs `pricing_lost`; any other omitted fact is written null once the
   usual fills are tried (the bound schema for capabilities and modalities,
   the provider table for the request map). An adapter that knows why says

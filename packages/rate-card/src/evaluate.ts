@@ -6,7 +6,7 @@
  * price that is not a finite positive number. A refusal is an honest
  * "unknown"; a made-up number is a wrong price.
  */
-import { CORE_OPS } from './rate-card.schema.ts'
+import { CORE_OPS, currencyWrapper } from './rate-card.schema.ts'
 import type {
   CoreOp,
   Expr,
@@ -37,6 +37,43 @@ export class RateCardError extends Error {
 }
 
 type Vars = Record<string, unknown>
+
+/**
+ * A card's currency and the expression that yields the amount in it. Safe
+ * on a card that was never parsed: a malformed wrapper, or no price at
+ * all, throws `unknown-op` rather than naming a currency it cannot vouch
+ * for.
+ */
+export function cardPrice(card: Pick<RateCard, 'price'>): {
+  currency: string
+  expr: Expr
+} {
+  const loose = card as { price?: unknown; currency?: unknown } | null
+  const raw = loose?.price
+  const wrapper = currencyWrapper(raw)
+  if (raw == null || wrapper === 'malformed') {
+    throw new RateCardError(
+      'unknown-op',
+      `price is not an expression or { currency: [code, expr] }: ${JSON.stringify(raw)}`,
+    )
+  }
+  // The schema refuses this key; an unparsed card meant as another
+  // currency must not be read as USD here either.
+  if (loose?.currency !== undefined) {
+    throw new RateCardError(
+      'unknown-op',
+      'currency is stated by wrapping price, not by a top-level key',
+    )
+  }
+  return wrapper === null
+    ? { currency: 'USD', expr: raw }
+    : { currency: wrapper.currency, expr: wrapper.expr as Expr }
+}
+
+/** The ISO-4217 code a card's amounts are in: USD unless its price says. */
+export function cardCurrency(card: Pick<RateCard, 'price'>): string {
+  return cardPrice(card).currency
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -290,7 +327,10 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
 }
 
 /**
- * USD for this call, as billed. Request-bound levers read `request`;
+ * The amount for this call, as billed, in the card's currency
+ * (`cardCurrency(card)`; USD unless the card says otherwise). Never add
+ * or compare amounts from cards in different currencies. Request-bound
+ * levers read `request`;
  * usage-bound levers read `usage`. A usage key on the request body, or a
  * request field in usage, is not read. Omit `usage` only when every
  * usage-bound input has a default (or the card has none); token cards that
@@ -305,15 +345,20 @@ export function price(
   request: Vars = {},
   usage: Vars = {},
 ): number {
-  return evaluate(card, request, usage, false).usd
+  return evaluate(card, request, usage, false).amount
 }
 
 export interface PriceResult {
-  usd: number
+  /** The price, in `currency`. */
+  amount: number
+  /** ISO-4217 code `amount` is in. */
+  currency: string
+  /** `amount` again when `currency` is USD; absent for any other currency. */
+  usd?: number
   /**
    * Params of inputs the caller omitted whose value came from the card's
    * published `estimate`. Empty means every input was supplied (or a plain
-   * default), so `usd` is the price as billed.
+   * default), so `amount` is the price as billed.
    */
   estimated: string[]
 }
@@ -384,14 +429,20 @@ function evaluate(
       )
     }
   }
-  const usd = evalExpr(card.price, vars, card.tables)
-  if (typeof usd !== 'number' || !Number.isFinite(usd) || usd <= 0) {
+  const { currency, expr } = cardPrice(card)
+  const amount = evalExpr(expr, vars, card.tables)
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     throw new RateCardError(
       'bad-result',
-      `price evaluated to ${JSON.stringify(usd)}`,
+      `price evaluated to ${JSON.stringify(amount)}`,
     )
   }
-  return { usd, estimated }
+  return {
+    amount,
+    currency,
+    ...(currency === 'USD' && { usd: amount }),
+    estimated,
+  }
 }
 
 /** Relative tolerance when reproducing a source's worked example. */

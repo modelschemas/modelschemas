@@ -387,7 +387,7 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'USD for this call, the card source, and which inputs (if any) were estimated.',
+              'The amount for this call and its currency, the card source, and which inputs (if any) were estimated.',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/EstimateResult' },
@@ -580,8 +580,14 @@ export const openApiDocument = {
         type: 'object',
         description:
           'List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.',
-        required: ['per'],
+        required: ['currency', 'per'],
         properties: {
+          currency: {
+            type: 'string',
+            pattern: '^[A-Z]{3}$',
+            description:
+              'ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.',
+          },
           per: {
             type: 'string',
             enum: ['token', 'second', 'character', 'image', 'request', 'unit'],
@@ -606,7 +612,10 @@ export const openApiDocument = {
         required: ['params', 'usd', 'quote'],
         properties: {
           params: { type: 'object' },
-          usd: { type: 'number' },
+          usd: {
+            type: 'number',
+            description: "In the card's currency; the name predates currency.",
+          },
           quote: { type: 'string' },
         },
       },
@@ -659,7 +668,8 @@ export const openApiDocument = {
           },
           tables: { type: 'object' },
           price: {
-            description: 'JSONLogic expression over the closed op set.',
+            description:
+              'JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { "currency": ["CNY", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card.',
           },
           examples: {
             type: 'array',
@@ -842,15 +852,29 @@ export const openApiDocument = {
       },
       EstimateResult: {
         type: 'object',
-        required: ['usd', 'cardSource', 'estimated'],
+        required: ['amount', 'currency', 'cardSource', 'estimated'],
         properties: {
-          usd: { type: 'number' },
+          amount: {
+            type: 'number',
+            description: 'The price, in currency. Never converted.',
+          },
+          currency: {
+            type: 'string',
+            pattern: '^[A-Z]{3}$',
+            description: "ISO-4217 code of the card's currency.",
+          },
+          usd: {
+            type: 'number',
+            deprecated: true,
+            description:
+              'Deprecated: read amount and currency. Repeats amount when currency is USD; absent for any other currency.',
+          },
           cardSource: { $ref: '#/components/schemas/RateCardSource' },
           estimated: {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Params the caller omitted that the card estimated by its published method. Empty: usd is the price as billed for the supplied request and usage.',
+              'Params the caller omitted that the card estimated by its published method. Empty: amount is the price as billed for the supplied request and usage.',
           },
         },
       },

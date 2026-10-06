@@ -12,8 +12,12 @@
  * the API ids that slug serves (`mistral-large-2512`, `mistral-large-latest`).
  * An API id named by two slugs at different rates gets no card.
  */
-import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
-import type { RateCard } from '@modelschemas/rate-card'
+import {
+  cardPrice,
+  compileTokenCard,
+  compileUnitCard,
+} from '@modelschemas/rate-card'
+import type { Expr, RateCard } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
@@ -174,6 +178,16 @@ export function parseMistralPricing(
   return out
 }
 
+/** The card's price, to compose into a larger USD one. */
+export function usdExpr(card: RateCard): Expr {
+  const { currency, expr } = cardPrice(card)
+  if (currency !== 'USD') {
+    // Composing would drop the wrapper and read the amount as dollars.
+    throw new Error(`mistral pricing: cannot extend a ${currency} card`)
+  }
+  return expr
+}
+
 /** The card `mistralModelPricing` stores. `null` when the row prices nothing. */
 export function mistralRateCard(
   row: MistralListedPrice,
@@ -212,7 +226,7 @@ export function mistralRateCard(
     },
     price: {
       '+': [
-        card.price,
+        usdExpr(card),
         ...rest.map((meter) => ({ '*': [{ var: meter.param }, meter.rate] })),
       ],
     },

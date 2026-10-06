@@ -10,6 +10,8 @@ export type {
 export {
   RateCardError,
   bindInputs,
+  cardCurrency,
+  cardPrice,
   price,
   priceDetailed,
   verifyExamples,

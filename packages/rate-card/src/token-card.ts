@@ -34,19 +34,30 @@ function usable(rates: Record<string, number>): boolean {
   return Object.values(rates).every((n) => Number.isFinite(n) && n >= 0)
 }
 
+/** USD prices stay bare; any other currency wraps the expression. */
+function inCurrency(
+  currency: string | undefined,
+  expr: Expr,
+): RateCard['price'] {
+  return currency === undefined || currency === 'USD'
+    ? expr
+    : { currency: [currency, expr] }
+}
+
 /**
  * `null` when nothing is priced: an empty, negative/NaN, or all-zero rate
  * map is "unknown", never a free card.
  *
  * `extraPromptLevers` join the threshold sum. The default set is text and
  * cache tokens; a host whose prompt length also counts audio passes those
- * levers here so other hosts stay on the default.
+ * levers here so other hosts stay on the default. `currency` is the
+ * ISO-4217 code the rates are in; omit it for USD.
  */
 export function compileTokenCard(
   base: Record<string, number>,
   tiers: Array<TokenRateTier>,
   source: RateCard['source'],
-  options?: { extraPromptLevers?: ReadonlyArray<string> },
+  options?: { extraPromptLevers?: ReadonlyArray<string>; currency?: string },
 ): RateCard | null {
   if (Object.keys(base).length === 0 || !usable(base)) return null
   if (Object.values(base).every((n) => n === 0)) return null
@@ -98,7 +109,7 @@ export function compileTokenCard(
       ]),
     ),
     tables: { rate: table },
-    price: {
+    price: inCurrency(options?.currency, {
       '+': levers.map(
         (lever): Expr => ({
           // A zero count skips the lookup, so a lever a tier leaves unpriced
@@ -115,7 +126,7 @@ export function compileTokenCard(
           ],
         }),
       ),
-    },
+    }),
     examples: [],
     source,
   }
