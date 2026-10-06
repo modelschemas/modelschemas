@@ -2,7 +2,9 @@ import type { ProviderConfig } from '#/server/providers/types.ts'
 
 import type { providers } from './schema.ts'
 
-export type ProviderSeed = typeof providers.$inferInsert
+export type ProviderSeed = typeof providers.$inferInsert & {
+  modelNamespaces?: Array<string>
+}
 
 /**
  * Seed row for any registered provider: the hand-written row for the
@@ -14,7 +16,10 @@ export type ProviderSeed = typeof providers.$inferInsert
  */
 export function seedForProvider(provider: ProviderConfig): ProviderSeed | null {
   const listed = providerSeeds.find((seed) => seed.id === provider.id)
-  if (listed) return listed
+  if (listed)
+    return provider.modelNamespaces
+      ? { ...listed, modelNamespaces: provider.modelNamespaces }
+      : listed
   return provider.specSourceUrl ? seedFromAdapter(provider) : null
 }
 
@@ -30,6 +35,9 @@ export function seedFromAdapter(provider: ProviderConfig): ProviderSeed {
     specSourceUrl,
     modelsEndpoint: provider.modelsEndpoint,
     authEnvVar: provider.authEnvVar ?? null,
+    ...(provider.modelNamespaces
+      ? { modelNamespaces: provider.modelNamespaces }
+      : {}),
   }
 }
 
@@ -73,6 +81,7 @@ export const providerSeeds: Array<ProviderSeed> = [
   },
   {
     id: 'gemini',
+    modelNamespaces: ['google', 'google-ai-studio'],
     displayName: 'Google Gemini',
     // Discovery document; converted to OpenAPI at sync time.
     specSourceUrl:
@@ -82,6 +91,7 @@ export const providerSeeds: Array<ProviderSeed> = [
   },
   {
     id: 'grok',
+    modelNamespaces: ['xai', 'x-ai'],
     displayName: 'xAI Grok',
     specSourceUrl: 'https://docs.x.ai/openapi.json',
     modelsEndpoint: 'https://api.x.ai/v1/models',

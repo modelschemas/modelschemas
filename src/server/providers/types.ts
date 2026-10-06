@@ -154,6 +154,13 @@ export interface ModelFactSources {
   serverTools?: Record<string, FactSource>
 }
 
+/** A native statement of the upstream model, retained even before it exists. */
+export interface UpstreamModelIdentity {
+  providerNamespace: string
+  rawId: string
+  source: FactSource
+}
+
 /**
  * How a model's thinking is configured (issue #77). `adaptive`: the model
  * decides (Anthropic `thinking.type: adaptive`); `budget`: a token budget
@@ -170,6 +177,7 @@ export interface ModelReasoning {
 /** Normalised model entry (maps onto the `models` table shape). */
 export interface ModelInfo {
   rawId: string
+  upstreamModelIdentity?: UpstreamModelIdentity | null
   displayName?: string | null
   activity?: Activity | null
   contextWindow?: number | null
@@ -337,6 +345,10 @@ export interface ProviderConfig {
    */
   specSourceUrl?: string
   modelsEndpoint?: string
+  /** Alternative names for this provider, seeded into the catalog database. */
+  modelNamespaces?: Array<string>
+  /** Interpret only this provider's documented upstream model-id format. */
+  upstreamModelIdentity?: (rawId: string) => UpstreamModelIdentity | null
   /**
    * Derivation recorded for this provider's endpoints unless an operation
    * carries its own {@link PROVENANCE_MARKER}. Providers that re-fetch a

@@ -66,6 +66,14 @@ assign `undefined` explicitly). Verify locally end-to-end with
 
 ## Provenance & verification
 
+Model responses include `sameAs: { provider, rawId }` when a native source
+identifies an upstream model and its catalog row exists. Ingestion stores the
+relationship as a foreign key and records the evidence in `factSources.sameAs`.
+Provider namespaces and documented model aliases resolve through the database;
+missing or ambiguous targets produce `sameAs: null`. A model's price, limits,
+and other facts continue to describe its own provider. Detail responses include
+the provenance; catalog lists include it with `?provenance=1`.
+
 You don't have to trust that a schema served here matches its upstream —
 every derivation is recorded and reproducible:
 

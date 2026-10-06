@@ -56,6 +56,13 @@ import {
 } from './retire-models-dev.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
+import {
+  persistUpstreamIdentities,
+  reconcileSameAs,
+  refreshDocumentedUpstreamIdentities,
+  retainSameAsSource,
+} from './model-identity.ts'
+import type { UpstreamIdentityWrite } from './model-identity.ts'
 
 export interface PollOutcome {
   providerId: string
@@ -317,6 +324,8 @@ export async function pollProviderModels(
       provider.id,
       now,
     )
+    await refreshDocumentedUpstreamIdentities(db, provider)
+    await reconcileSameAs(db, now)
     return outcome
   }
   outcome.modelsSeen = listed.models.length
@@ -333,6 +342,7 @@ export async function pollProviderModels(
     .where(eq(models.providerId, provider.id))
   const existingById = new Map(existingRows.map((m) => [m.id, m]))
   const seenIds = new Set<string>()
+  const identities: Array<UpstreamIdentityWrite> = []
   // Unchanged rows only need their lastSeenAt bumped; collect them and write
   // in chunked bulk UPDATEs. One-per-row writes here previously cost ~2,000
   // sequential D1 round trips per poll (~10 min wall), starving the crons.
@@ -345,7 +355,17 @@ export async function pollProviderModels(
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
   for (const raw of listed.models) {
-    const enriched = enrichListed(provider, raw, walks)
+    const enriched = enrichListed(
+      provider,
+      {
+        ...raw,
+        upstreamModelIdentity:
+          raw.upstreamModelIdentity === undefined
+            ? (provider.upstreamModelIdentity?.(raw.rawId) ?? null)
+            : raw.upstreamModelIdentity,
+      },
+      walks,
+    )
     const id = modelDbId(provider.id, enriched.rawId)
     const bound = resolveSchemaEndpointId({
       providerId: provider.id,
@@ -405,6 +425,9 @@ export async function pollProviderModels(
     }
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
+    if (info.upstreamModelIdentity || existing?.upstreamProvider != null) {
+      identities.push({ id, identity: info.upstreamModelIdentity ?? null })
+    }
 
     if (!existing) {
       await db.insert(models).values({
@@ -426,6 +449,9 @@ export async function pollProviderModels(
           info.activity ?? null,
         ),
         aliases: storedAliases(info.aliases),
+        upstreamProvider: info.upstreamModelIdentity?.providerNamespace ?? null,
+        upstreamRawId: info.upstreamModelIdentity?.rawId ?? null,
+        upstreamSource: info.upstreamModelIdentity?.source ?? null,
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
         // Providers that report a release date get it as firstSeenAt, so
@@ -506,7 +532,7 @@ export async function pollProviderModels(
           info.activity ?? null,
         ),
         aliases: storedAliases(info.aliases),
-        factSources: info.factSources ?? null,
+        factSources: retainSameAsSource(info.factSources),
         schemaEndpointId: info.schemaEndpointId ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.
@@ -582,6 +608,8 @@ export async function pollProviderModels(
     .set({ lastPolledAt: now })
     .where(eq(providers.id, provider.id))
   await markModelsDevCatalogSettled(db, provider.id, now)
+  await persistUpstreamIdentities(db, identities)
+  await reconcileSameAs(db, now)
 
   return outcome
 }

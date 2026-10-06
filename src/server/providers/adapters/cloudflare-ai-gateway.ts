@@ -3,6 +3,7 @@
  * Cloudflare AI Gateway docs do not publish a model catalog.
  * An empty model list would mark stored rows removed, so this returns skipped.
  */
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -28,6 +29,13 @@ function skippedModels(): ListModelsResult {
 
 export const provider: ProviderConfig = {
   id: 'cloudflare-ai-gateway',
+  upstreamModelIdentity: (rawId) =>
+    namespacedUpstreamIdentity(rawId, {
+      derivation: 'docs-derived',
+      sourceUrl:
+        'https://developers.cloudflare.com/ai-gateway/usage/chat-completion/',
+      path: 'provider/model identifier',
+    }),
   displayName: 'Cloudflare AI Gateway',
   specSourceUrl: 'https://developers.cloudflare.com/ai-gateway/',
   defaultDerivation: 'docs-derived',

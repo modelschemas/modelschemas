@@ -13,6 +13,7 @@ import {
   endpoints,
   models,
   providers,
+  providerModelNamespaces,
   schemaVersions,
 } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
@@ -264,9 +265,10 @@ export async function ensureProviderRow(
 ): Promise<void> {
   const seed = seedForProvider(provider)
   if (seed === null) return
+  const { modelNamespaces, ...providerRow } = seed
   await db
     .insert(providers)
-    .values(seed)
+    .values(providerRow)
     .onConflictDoUpdate({
       target: providers.id,
       set: {
@@ -276,6 +278,17 @@ export async function ensureProviderRow(
         authEnvVar: seed.authEnvVar ?? null,
       },
     })
+  if (modelNamespaces?.length) {
+    await db
+      .insert(providerModelNamespaces)
+      .values(
+        modelNamespaces.map((namespace) => ({
+          namespace,
+          providerId: seed.id,
+        })),
+      )
+      .onConflictDoNothing()
+  }
 }
 
 /** Composite map key for an endpoint's current version of one kind. */

@@ -1,5 +1,13 @@
-import { relations } from 'drizzle-orm'
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { relations, sql } from 'drizzle-orm'
+import {
+  sqliteTable,
+  text,
+  integer,
+  index,
+  check,
+  primaryKey,
+} from 'drizzle-orm/sqlite-core'
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -368,6 +376,21 @@ export const providers = sqliteTable('providers', {
     .default('active'),
 })
 
+/** Alternative provider names used in native model identifiers. */
+export const providerModelNamespaces = sqliteTable(
+  'provider_model_namespaces',
+  {
+    namespace: text('namespace').notNull(),
+    providerId: text('provider_id')
+      .notNull()
+      .references(() => providers.id, { onDelete: 'cascade' }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.namespace, table.providerId] }),
+    index('provider_model_namespaces_providerId_idx').on(table.providerId),
+  ],
+)
+
 export const models = sqliteTable(
   'models',
   {
@@ -391,6 +414,16 @@ export const models = sqliteTable(
     requestMap: text('request_map', { mode: 'json' }),
     // Caller ids that resolve to this dated row (issue #112).
     aliases: text('aliases', { mode: 'json' }).$type<Array<string> | null>(),
+    // Native upstream identity evidence can precede the target's arrival.
+    // The namespace resolves through providers / provider_model_namespaces.
+    upstreamProvider: text('upstream_provider'),
+    upstreamRawId: text('upstream_raw_id'),
+    upstreamSource: text('upstream_source', { mode: 'json' }),
+    // Resolved relationship (issue #199), independent of the row's facts.
+    sameAsModelId: text('same_as_model_id').references(
+      (): AnySQLiteColumn => models.id,
+      { onDelete: 'set null' },
+    ),
     // Per-field provenance for catalog facts (issue #53). JSON ModelFactSources.
     factSources: text('fact_sources', { mode: 'json' }),
     // Generation route decided from listing data the read path cannot see
@@ -407,6 +440,14 @@ export const models = sqliteTable(
   (table) => [
     index('models_providerId_idx').on(table.providerId),
     index('models_activity_idx').on(table.activity),
+    index('models_provider_rawId_idx').on(table.providerId, table.rawId),
+    index('models_sameAsModelId_idx').on(table.sameAsModelId),
+    check(
+      'models_upstream_identity_pair',
+      sql`(${table.upstreamProvider} IS NULL) = (${table.upstreamRawId} IS NULL)
+        AND (${table.upstreamProvider} IS NULL) = (${table.upstreamSource} IS NULL)`,
+    ),
+    check('models_sameAs_not_self', sql`${table.sameAsModelId} != ${table.id}`),
   ],
 )
 
@@ -485,6 +526,7 @@ export const changes = sqliteTable(
 
 export const providersRelations = relations(providers, ({ many }) => ({
   models: many(models),
+  modelNamespaces: many(providerModelNamespaces),
   endpoints: many(endpoints),
   changes: many(changes),
 }))
@@ -494,7 +536,22 @@ export const modelsRelations = relations(models, ({ one }) => ({
     fields: [models.providerId],
     references: [providers.id],
   }),
+  sameAsModel: one(models, {
+    fields: [models.sameAsModelId],
+    references: [models.id],
+    relationName: 'sameAs',
+  }),
 }))
+
+export const providerModelNamespacesRelations = relations(
+  providerModelNamespaces,
+  ({ one }) => ({
+    provider: one(providers, {
+      fields: [providerModelNamespaces.providerId],
+      references: [providers.id],
+    }),
+  }),
+)
 
 export const endpointsRelations = relations(endpoints, ({ one, many }) => ({
   provider: one(providers, {

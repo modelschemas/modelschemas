@@ -9,6 +9,7 @@ import type { RateCard } from '@modelschemas/rate-card'
 import type { Activity } from '#/db/schema.ts'
 
 import { fetchJson, sha256Text } from '../types.ts'
+import { namespacedUpstreamIdentity } from '../upstream-model.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -152,6 +153,12 @@ function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'vercel',
+  upstreamModelIdentity: (rawId) =>
+    namespacedUpstreamIdentity(rawId, {
+      derivation: 'listing',
+      sourceUrl: VERCEL_MODELS_URL,
+      path: 'data[].id',
+    }),
   displayName: 'Vercel AI Gateway',
   specSourceUrl: 'https://vercel.com/docs/ai-gateway',
   modelsEndpoint: VERCEL_MODELS_URL,
