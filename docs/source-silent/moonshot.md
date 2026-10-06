@@ -1,0 +1,1 @@
+- moonshot: maxOutput — output is capped by the context window and no separate limit is published: kimi-k2.7-code and kimi-k2.6 at `256*1024 - prompt_tokens` (and kimi-k3, which api.moonshot.ai does not list today, at `1024*1024 - prompt_tokens`), https://platform.kimi.ai/docs/guide/troubleshooting.md, checked 2026-10-07
