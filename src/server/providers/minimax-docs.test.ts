@@ -363,6 +363,22 @@ describe.each([
     expect(prices.size).toBe(7)
   })
 
+  it('prices nothing when an accordion is not the legacy models', () => {
+    const legacy = `<Accordion title="${c.platform.legacyAccordion}">`
+    expect(edit(legacy, '<Accordion title="Batch">').size).toBe(0)
+  })
+
+  it('refuses a base bound that does not meet the tier', () => {
+    const prices = edit('≤ 512k', '≤ 256k')
+    expect(prices.has('MiniMax-M3')).toBe(false)
+    expect(prices.size).toBe(7)
+    // A bounded base with no tier above it, and a tier over an open base.
+    const tierRow = c.page.split('\n').find((line) => line.includes(c.tier))
+    if (!tierRow) throw new Error('no tier row')
+    expect(edit(`${tierRow}\n`, '', false).has('MiniMax-M3')).toBe(false)
+    expect(edit(c.tier.replace('>', '≤'), '').has('MiniMax-M3')).toBe(false)
+  })
+
   it('prices nothing under a header it does not know', () => {
     expect(edit(c.cacheHeader, `${c.cacheHeader} (peak)`).size).toBe(0)
   })

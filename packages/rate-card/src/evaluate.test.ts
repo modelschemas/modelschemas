@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   RateCardError,
   bindInputs,
+  cardCurrency,
+  cardPrice,
   price,
   priceDetailed,
   verifyExamples,
 } from './evaluate.ts'
 import { z } from 'zod'
 
-import { CORE_OPS, cardCurrency, rateCardSchema } from './rate-card.schema.ts'
+import { CORE_OPS, rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
 
 const source = {
@@ -244,10 +246,45 @@ describe('refusals', () => {
     expect(
       rateCardSchema.safeParse({ ...cardFor(1), price: beside }).success,
     ).toBe(false)
-    // A stray top-level `currency` states nothing: the card is still USD.
-    const stray = rateCardSchema.parse({ ...cardFor(1), currency: 'CNY' })
-    expect(stray).not.toHaveProperty('currency')
-    expect(cardCurrency(stray)).toBe('USD')
+  })
+
+  it('schema refuses a top-level currency rather than read the card as USD', () => {
+    for (const currency of ['CNY', 'USD', null, 156]) {
+      expect(
+        rateCardSchema.safeParse({ ...cardFor(1), currency }).success,
+      ).toBe(false)
+    }
+  })
+
+  it('schema refuses a USD wrapper: USD is said only by having none', () => {
+    const card = { ...cardFor(1), price: { currency: ['USD', 1] } }
+    expect(rateCardSchema.safeParse(card).success).toBe(false)
+  })
+
+  // Wrappers the schema refuses, handed to the evaluator unparsed.
+  it.each([
+    ['a lowercase code', { currency: ['cny', 1] }],
+    ['a numeric code', { currency: [156, 1] }],
+    ['USD', { currency: ['USD', 1] }],
+    ['three items', { currency: ['CNY', 1, 2] }],
+    ['a sibling op', { currency: ['CNY', 1], '+': [1, 2] }],
+    ['a bare code', { currency: 'CNY' }],
+    ['no price', undefined],
+  ])('evaluator refuses %s with its own error', (_name, bad) => {
+    const card = { ...cardFor(1), price: bad } as unknown as RateCard
+    expect(rateCardSchema.safeParse(card).success).toBe(false)
+    for (const read of [cardPrice, cardCurrency, price, priceDetailed]) {
+      expect(() => read(card)).toThrow(RateCardError)
+      expect(() => read(card)).toThrow(
+        expect.objectContaining({ code: 'unknown-op' }),
+      )
+    }
+  })
+
+  it('evaluator refuses a null card with its own error', () => {
+    expect(() => cardCurrency(null as unknown as RateCard)).toThrow(
+      RateCardError,
+    )
   })
 
   /**

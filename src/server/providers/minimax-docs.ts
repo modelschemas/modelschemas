@@ -46,6 +46,8 @@ export interface MinimaxPlatform {
   priceSection: string
   /** Title of the standard-tier `<Tab>`; every other tab is dropped. */
   standardTab: string
+  /** Title of the only `<Accordion>` whose rows are standard prices. */
+  legacyAccordion: string
   /** First header cell of a price table. */
   modelHeader: string
   /** Price-table header cell → the usage lever it prices. */
@@ -86,6 +88,7 @@ export const MINIMAX: MinimaxPlatform = {
   pricingUrl: MINIMAX_PRICING_URL,
   priceSection: 'LLM',
   standardTab: 'Standard',
+  legacyAccordion: 'Legacy Models',
   modelHeader: 'Model',
   priceLevers: {
     Input: 'input_tokens',
@@ -121,6 +124,7 @@ export const MINIMAX_CN: MinimaxPlatform = {
   currency: 'CNY',
   priceSection: '语言模型',
   standardTab: '标准',
+  legacyAccordion: '历史模型',
   modelHeader: '**模型**',
   // The header carries the unit, so a reworded unit prices nothing.
   priceLevers: {
@@ -360,17 +364,22 @@ export function parseMinimaxPricing(
     .map((line) => line.trim())
     .join('\n')
   const out = new Map<string, MinimaxRates>()
-  // A tab the strip did not recognise, or a sub-heading, may hold another
-  // tier's table under the same headers.
+  // A tab the strip did not recognise, an accordion that is not the
+  // legacy models, or a sub-heading may hold another tier's table under
+  // the same headers.
   const standard = `<Tab title="${platform.standardTab}">`
+  const legacy = `<Accordion title="${platform.legacyAccordion}">`
   if (
     /<Tab(?!s>)/.test(section.replaceAll(standard, '')) ||
+    section.replaceAll(legacy, '').includes('<Accordion') ||
     /^#{1,6} /m.test(section.slice(section.indexOf('\n')))
   ) {
     return out
   }
   const refused = new Set<string>()
   const based = new Set<string>()
+  /** A base row's `≤ N` bound; the first tier must start at the same N. */
+  const baseBound = new Map<string, number | null>()
   let header: Array<string> = []
   for (const cells of markdownTableRows(section)) {
     if (cells[0] === platform.modelHeader) {
@@ -431,8 +440,18 @@ export function parseMinimaxPricing(
     else {
       entry.base = rates
       based.add(id)
+      if (bound) baseBound.set(id, tokenCount(bound[2]))
     }
     out.set(id, entry)
+  }
+  for (const [id, entry] of out) {
+    // `≤ 256k` beside `> 512k` leaves 256k–512k unpriced, and a bounded
+    // base with no tier leaves everything above it: neither is a card.
+    const tiers = entry.tiers.map((tier) => tier.minPromptTokens)
+    const first = tiers.length > 0 ? Math.min(...tiers) : undefined
+    if (baseBound.has(id) ? baseBound.get(id) !== first : first !== undefined) {
+      refused.add(id)
+    }
   }
   for (const id of refused) out.delete(id)
   return out

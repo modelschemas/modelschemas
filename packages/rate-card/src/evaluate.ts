@@ -6,7 +6,7 @@
  * price that is not a finite positive number. A refusal is an honest
  * "unknown"; a made-up number is a wrong price.
  */
-import { CORE_OPS, cardPrice } from './rate-card.schema.ts'
+import { CORE_OPS, currencyWrapper } from './rate-card.schema.ts'
 import type {
   CoreOp,
   Expr,
@@ -37,6 +37,34 @@ export class RateCardError extends Error {
 }
 
 type Vars = Record<string, unknown>
+
+/**
+ * A card's currency and the expression that yields the amount in it. Safe
+ * on a card that was never parsed: a malformed wrapper, or no price at
+ * all, throws `unknown-op` rather than naming a currency it cannot vouch
+ * for.
+ */
+export function cardPrice(card: Pick<RateCard, 'price'>): {
+  currency: string
+  expr: Expr
+} {
+  const raw: unknown = (card as { price?: unknown } | null)?.price
+  const wrapper = currencyWrapper(raw)
+  if (raw === undefined || wrapper === 'malformed') {
+    throw new RateCardError(
+      'unknown-op',
+      `price is not an expression or { currency: [code, expr] }: ${JSON.stringify(raw)}`,
+    )
+  }
+  return wrapper === null
+    ? { currency: 'USD', expr: raw as Expr }
+    : { currency: wrapper.currency, expr: wrapper.expr as Expr }
+}
+
+/** The ISO-4217 code a card's amounts are in: USD unless its price says. */
+export function cardCurrency(card: Pick<RateCard, 'price'>): string {
+  return cardPrice(card).currency
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { price } from './evaluate.ts'
+import { cardCurrency, price } from './evaluate.ts'
 import { GPT_4O } from './fixtures/gpt-4o.ts'
-import { cardCurrency, rateCardSchema } from './rate-card.schema.ts'
+import { rateCardSchema } from './rate-card.schema.ts'
 import { compileTokenCard } from './token-card.ts'
 
 const source = GPT_4O.source

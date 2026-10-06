@@ -62,7 +62,10 @@ wraps it:
 }
 ```
 
-The wrapper is the only place a card states its currency (ISO 4217).
+The wrapper is the only place a card states its currency (ISO 4217). USD
+is said only by having no wrapper: `["USD", …]` and a top-level
+`currency` key are both refused, by the schema and by the evaluator on an
+unparsed card (`unknown-op`).
 `cardCurrency(card)` reads it, `cardPrice(card)` returns
 `{ currency, expr }`, and `priceDetailed` names the currency beside
 `amount`, setting `usd` (deprecated) only for a USD card.

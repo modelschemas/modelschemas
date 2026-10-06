@@ -166,3 +166,22 @@ describe('mistral pricing page', () => {
     ])
   })
 })
+
+describe('usdExpr', () => {
+  it('throws rather than compose a non-USD card and drop its currency', async () => {
+    const { compileTokenCard } = await import('@modelschemas/rate-card')
+    const { usdExpr } = await import('./mistral-pricing.ts')
+    const source = {
+      url: 'https://example.test/pricing',
+      hash: 'a'.repeat(64),
+      extractedAt: '2026-10-07T00:00:00Z',
+    }
+    const usd = compileTokenCard({ input_tokens: 1e-6 }, [], source)
+    const yuan = compileTokenCard({ input_tokens: 1e-6 }, [], source, {
+      currency: 'CNY',
+    })
+    if (!usd || !yuan) throw new Error('did not compile')
+    expect(usdExpr(usd)).toBe(usd.price)
+    expect(() => usdExpr(yuan)).toThrow('cannot extend a CNY card')
+  })
+})

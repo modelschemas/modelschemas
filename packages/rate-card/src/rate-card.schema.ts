@@ -196,13 +196,46 @@ export type RateCardExample = z.infer<typeof rateCardExampleSchema>
  * added, compared or converted.
  */
 const priceSchema = z.union([
-  z.strictObject({
-    currency: z.tuple([z.string().regex(/^[A-Z]{3}$/), exprSchema]),
-  }),
+  z
+    .strictObject({ currency: z.tuple([z.string(), exprSchema]) })
+    .refine((price) => currencyWrapper(price) !== 'malformed'),
   exprSchema,
 ])
 
+/**
+ * The one rule for a price's currency wrapper, shared by the schema and
+ * the evaluator: `null` for a bare (USD) price, the code and inner
+ * expression for `{ currency: ['CNY', expr] }`, `'malformed'` for anything
+ * else carrying a `currency` key. The code is three capitals and never
+ * `USD`: USD is said only by having no wrapper, so a USD card can never
+ * become one that 0.1.0 refuses.
+ */
+export function currencyWrapper(
+  price: unknown,
+): { currency: string; expr: unknown } | null | 'malformed' {
+  if (typeof price !== 'object' || price === null || !('currency' in price)) {
+    return null
+  }
+  const pair = price.currency
+  if (
+    Object.keys(price).length !== 1 ||
+    !Array.isArray(pair) ||
+    pair.length !== 2 ||
+    typeof pair[0] !== 'string' ||
+    !/^[A-Z]{3}$/.test(pair[0]) ||
+    pair[0] === 'USD'
+  ) {
+    return 'malformed'
+  }
+  return { currency: pair[0], expr: pair[1] }
+}
+
 export const rateCardSchema = z.object({
+  /**
+   * Not a field. A card that states its currency here instead of wrapping
+   * `price` is refused, never read as USD.
+   */
+  currency: z.never().optional(),
   inputs: z.record(z.string(), inputSchema).superRefine((inputs, ctx) => {
     for (const [name, input] of Object.entries(inputs)) {
       if (input.kind !== 'number' || !input.estimate) continue
@@ -240,19 +273,3 @@ export const rateCardSchema = z.object({
 })
 
 export type RateCard = z.infer<typeof rateCardSchema>
-
-/** A card's currency and the expression that yields the amount in it. */
-export function cardPrice(card: Pick<RateCard, 'price'>): {
-  currency: string
-  expr: Expr
-} {
-  const { price } = card
-  return typeof price === 'object' && 'currency' in price
-    ? { currency: price.currency[0], expr: price.currency[1] }
-    : { currency: 'USD', expr: price }
-}
-
-/** The ISO-4217 code a card's amounts are in: USD unless its price says. */
-export function cardCurrency(card: Pick<RateCard, 'price'>): string {
-  return cardPrice(card).currency
-}
