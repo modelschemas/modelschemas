@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  MINIMAX_CN_MAX_COMPLETION_TOKENS,
+  MINIMAX_CN_SDK_PAGE,
   MINIMAX_MAX_COMPLETION_TOKENS,
   MINIMAX_PRICING_PAGE,
   MINIMAX_SDK_PAGE,
 } from './fixtures/minimax-docs.ts'
 import {
+  MINIMAX_CN,
   parseMinimaxContextWindows,
   parseMinimaxInputModalities,
   parseMinimaxMaxOutput,
@@ -154,5 +157,102 @@ describe('minimax docs', () => {
     // No pay-as-you-go price is published for the M Plan preview model.
     expect(prices.has('MiniMax-M3.1-Flash-Preview')).toBe(false)
     expect(prices.size).toBe(8)
+  })
+})
+
+describe('minimax-cn docs', () => {
+  it('reads every context window from the 支持的模型 table', () => {
+    const windows = parseMinimaxContextWindows(MINIMAX_CN_SDK_PAGE, MINIMAX_CN)
+    expect([...windows.keys()]).toEqual(IDS)
+    expect(windows.get('MiniMax-M3.1-Flash-Preview')).toBe(1_000_000)
+    expect(windows.get('MiniMax-M2')).toBe(204_800)
+    // The English wording reads nothing off the Chinese page, and back.
+    expect(parseMinimaxContextWindows(MINIMAX_CN_SDK_PAGE).size).toBe(0)
+    expect(parseMinimaxContextWindows(MINIMAX_SDK_PAGE, MINIMAX_CN).size).toBe(
+      0,
+    )
+  })
+
+  it('gives image and video input only to the models the table names', () => {
+    const inputs = parseMinimaxInputModalities(
+      MINIMAX_CN_SDK_PAGE,
+      IDS,
+      MINIMAX_CN,
+    )
+    expect(inputs.get('MiniMax-M3.1-Flash-Preview')).toEqual([
+      'text',
+      'image',
+      'video',
+    ])
+    expect(inputs.get('MiniMax-M3')).toEqual(['text', 'image', 'video'])
+    for (const id of IDS.slice(2)) expect(inputs.get(id)).toEqual(['text'])
+  })
+
+  it('stores no modalities when a support status is reworded', () => {
+    // `M3 不支持` names M3 as the one model without video: it must not
+    // read as the one model with it, nor leave every model text-only.
+    for (const status of ['M3 不支持', '部分支持', 'M3.1-Flash-Preview / M3']) {
+      const reworded = MINIMAX_CN_SDK_PAGE.replace(
+        '| `type="video"` | 仅 M3.1-Flash-Preview / M3 |',
+        `| \`type="video"\` | ${status} |`,
+      )
+      expect(reworded).not.toBe(MINIMAX_CN_SDK_PAGE)
+      expect(parseMinimaxInputModalities(reworded, IDS, MINIMAX_CN).size).toBe(
+        0,
+      )
+    }
+  })
+
+  it('reads thinking from the control table and efforts for M3.1 only', () => {
+    const reasoning = parseMinimaxReasoning(
+      MINIMAX_CN_SDK_PAGE,
+      IDS,
+      MINIMAX_CN,
+    )
+    expect(reasoning.get('MiniMax-M3.1-Flash-Preview')).toEqual({
+      mode: 'adaptive',
+      mandatory: true,
+      efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(reasoning.get('MiniMax-M3')).toEqual({
+      mode: 'adaptive',
+      mandatory: false,
+    })
+    for (const id of IDS.slice(2)) {
+      expect(reasoning.get(id)).toEqual({ mode: 'adaptive', mandatory: true })
+    }
+  })
+
+  it('stores no reasoning for a row whose disabled cell is reworded', () => {
+    const reworded = MINIMAX_CN_SDK_PAGE.replace(
+      '保持 thinking 关闭',
+      '可能保持 thinking 关闭',
+    ).replace('thinking 仍保持开启', 'thinking 行为不变')
+    const reasoning = parseMinimaxReasoning(reworded, IDS, MINIMAX_CN)
+    expect([...reasoning.keys()]).toEqual(['MiniMax-M3.1-Flash-Preview'])
+  })
+
+  it('reads the output cap for the named models and for the rest', () => {
+    const caps = parseMinimaxMaxOutput(
+      MINIMAX_CN_MAX_COMPLETION_TOKENS,
+      IDS,
+      MINIMAX_CN,
+    )
+    // 131072 and 65536 are the recommended values, not the caps.
+    expect(caps.get('MiniMax-M3.1-Flash-Preview')).toBe(524_288)
+    expect(caps.get('MiniMax-M3')).toBe(524_288)
+    for (const id of IDS.slice(2)) expect(caps.get(id)).toBe(204_800)
+  })
+
+  it('stores no output cap when the clause naming a model is reworded', () => {
+    const reworded = MINIMAX_CN_MAX_COMPLETION_TOKENS.replace(
+      '上限为 524288',
+      '最多 524288',
+    )
+    expect(reworded).not.toBe(MINIMAX_CN_MAX_COMPLETION_TOKENS)
+    expect(parseMinimaxMaxOutput(reworded, IDS, MINIMAX_CN).size).toBe(0)
+    expect(
+      parseMinimaxMaxOutput('其他模型上限为 204800。', IDS, MINIMAX_CN).size,
+    ).toBe(0)
   })
 })

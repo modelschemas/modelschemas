@@ -3,6 +3,10 @@
  * the context-window, thinking, and content-type tables. The chat spec
  * states the output cap. The pay-as-you-go page has the token prices, USD
  * per 1M tokens. A parse that finds no rows throws.
+ *
+ * The China platform (platform.minimaxi.com) publishes the same pages in
+ * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan,
+ * and rate cards are USD, so it reads no pricing page.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -27,6 +31,70 @@ export const MINIMAX_MESSAGES_SPEC_URL = `${DOCS}/api-reference/text/api/openapi
 
 const ID_PREFIX = 'MiniMax-'
 
+/** One platform's page URLs and the wording its tables and spec use. */
+export interface MinimaxPlatform {
+  /** Names the platform in a zero-row parse error. */
+  label: string
+  sdkUrl: string
+  chatSpecUrl: string
+  /** Null when the page quotes no USD price. */
+  pricingUrl: string | null
+  /** Header of the context-window column. */
+  contextWindow: string
+  /** `Messages Field Support` status: every model. */
+  allModels: RegExp
+  /** Status naming the only models that take the type; group 1 is the list. */
+  onlyModels: RegExp
+  /** `Thinking Control` cells. */
+  thinkingOn: RegExp
+  cannotDisable: RegExp
+  thinkingOff: RegExp
+  /** Group 1 is the effort list in the `output_config.effort` row. */
+  efforts: RegExp
+  /** Splits the `max_completion_tokens` description into clauses. */
+  clause: RegExp
+  /** Group 1 is a clause's maximum. */
+  maximum: RegExp
+  otherModels: RegExp
+}
+
+export const MINIMAX: MinimaxPlatform = {
+  label: 'minimax',
+  sdkUrl: MINIMAX_SDK_URL,
+  chatSpecUrl: MINIMAX_CHAT_SPEC_URL,
+  pricingUrl: MINIMAX_PRICING_URL,
+  contextWindow: 'Context Window',
+  allModels: /^fully supported$/i,
+  onlyModels: /^([\s\S]*)$/,
+  thinkingOn: /^thinking on$/i,
+  cannotDisable: /cannot be disabled|remains on/i,
+  thinkingOff: /\boff\b/i,
+  efforts: /Accepts ([^;.]+)/,
+  clause: /;|\.\s/,
+  maximum: /the maximum is ([\d,]+)/i,
+  otherModels: /other models/i,
+}
+
+const DOCS_CN = 'https://platform.minimaxi.com/docs'
+export const MINIMAX_CN_MESSAGES_SPEC_URL = `${DOCS_CN}/api-reference/text/api/openapi-chat-anthropic.json`
+
+export const MINIMAX_CN: MinimaxPlatform = {
+  label: 'minimax-cn',
+  sdkUrl: `${DOCS_CN}/api-reference/text-anthropic-api.md`,
+  chatSpecUrl: `${DOCS_CN}/api-reference/text/api/openapi-chat-openai.json`,
+  pricingUrl: null,
+  contextWindow: '上下文窗口',
+  allModels: /^完全支持$/,
+  onlyModels: /^仅\s*(.+)$/,
+  thinkingOn: /^开启 thinking$/,
+  cannotDisable: /thinking 无法关闭|thinking 仍保持开启/,
+  thinkingOff: /^保持 thinking 关闭$/,
+  efforts: /可取([^；。]+)/,
+  clause: /；|。/,
+  maximum: /上限为\s*([\d,]+)/,
+  otherModels: /其他模型/,
+}
+
 /** `MiniMax-M3` must not match inside `MiniMax-M3.1-Flash-Preview`. */
 function names(text: string, id: string): boolean {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -36,11 +104,12 @@ function names(text: string, id: string): boolean {
 /** The `Model Name | Context Window` table. */
 export function parseMinimaxContextWindows(
   markdown: string,
+  platform: MinimaxPlatform = MINIMAX,
 ): Map<string, number> {
   const out = new Map<string, number>()
   let column = -1
   for (const cells of markdownTableRows(markdown)) {
-    const header = cells.indexOf('Context Window')
+    const header = cells.indexOf(platform.contextWindow)
     if (header >= 0) {
       column = header
       continue
@@ -59,20 +128,25 @@ const INPUT_TYPES = new Set(['text', 'image', 'video', 'audio'])
 /**
  * The `Messages Field Support` table. A `type="image"` row is every model
  * when its status is `Fully supported`, and otherwise only the models the
- * status names (`M3.1-Flash-Preview / M3 only`).
+ * status names (`M3.1-Flash-Preview / M3 only`). Empty when a status reads
+ * as neither, so a reworded row cannot leave a model with fewer types.
  */
 export function parseMinimaxInputModalities(
   markdown: string,
   ids: Array<string>,
+  platform: MinimaxPlatform = MINIMAX,
 ): Map<string, Array<string>> {
   const out = new Map<string, Array<string>>()
   for (const cells of markdownTableRows(markdown)) {
     const type = cells[0]?.match(/^`type="(\w+)"`$/)?.[1]
     const status = cells[1] ?? ''
     if (!type || !INPUT_TYPES.has(type)) continue
-    const named = /^fully supported$/i.test(status)
+    const everyModel = platform.allModels.test(status)
+    const only = status.match(platform.onlyModels)?.[1]
+    if (!everyModel && only === undefined) return new Map()
+    const named = everyModel
       ? ids
-      : [...status.matchAll(/\bM\d[\w.-]*/g)].map(
+      : [...(only ?? '').matchAll(/\bM\d[\w.-]*/g)].map(
           (match) => `${ID_PREFIX}${match[0]}`,
         )
     for (const id of named) {
@@ -93,6 +167,7 @@ export function parseMinimaxInputModalities(
 export function parseMinimaxReasoning(
   markdown: string,
   ids: Array<string>,
+  platform: MinimaxPlatform = MINIMAX,
 ): Map<string, ModelReasoning> {
   const out = new Map<string, ModelReasoning>()
   const families: Array<[string, ModelReasoning]> = []
@@ -105,10 +180,11 @@ export function parseMinimaxReasoning(
       disabled = cells.indexOf('`{"type": "disabled"}`')
       continue
     }
-    if (adaptive < 0 || !/^thinking on$/i.test(cells[adaptive] ?? '')) continue
+    if (adaptive < 0 || !platform.thinkingOn.test(cells[adaptive] ?? ''))
+      continue
     const off = cells[disabled] ?? ''
-    const mandatory = /cannot be disabled|remains on/i.test(off)
-    if (!mandatory && !/\boff\b/i.test(off)) continue
+    const mandatory = platform.cannotDisable.test(off)
+    if (!mandatory && !platform.thinkingOff.test(off)) continue
     const reasoning: ModelReasoning = { mode: 'adaptive', mandatory }
     const model = cells[0] ?? ''
     const id = model.match(/^`([^`]+)`$/)?.[1]
@@ -126,9 +202,7 @@ export function parseMinimaxReasoning(
   const effort = rows.find((cells) => cells[0] === '`output_config.effort`')
   const description = effort?.[2] ?? ''
   const efforts = [
-    ...(description.match(/Accepts ([^;.]+)/)?.[1] ?? '').matchAll(
-      /`([a-z]+)`/g,
-    ),
+    ...(description.match(platform.efforts)?.[1] ?? '').matchAll(/`([a-z]+)`/g),
   ].flatMap((match) => (match[1] ? [match[1]] : []))
   if (efforts.length > 0) {
     for (const [id, reasoning] of out) {
@@ -148,16 +222,17 @@ export function parseMinimaxReasoning(
 export function parseMinimaxMaxOutput(
   description: string,
   ids: Array<string>,
+  platform: MinimaxPlatform = MINIMAX,
 ): Map<string, number> {
   const out = new Map<string, number>()
   let others: number | null = null
-  for (const clause of description.split(/;|\.\s/)) {
-    const max = clause.match(/the maximum is ([\d,]+)/i)?.[1]
+  for (const clause of description.split(platform.clause)) {
+    const max = clause.match(platform.maximum)?.[1]
     const tokens = max ? tokenCount(max) : null
     if (tokens === null) continue
     const named = ids.filter((id) => names(clause, id))
     for (const id of named) out.set(id, tokens)
-    if (named.length === 0 && /other models/i.test(clause)) others = tokens
+    if (named.length === 0 && platform.otherModels.test(clause)) others = tokens
   }
   const named = ids.filter((id) => names(description, id))
   if (named.length === 0 || named.some((id) => !out.has(id))) return new Map()
@@ -256,34 +331,46 @@ export function parseMinimaxPricing(
   return out
 }
 
+const FETCH_TIMEOUT_MS = 30_000
+
+function fetchPage(url: string): Promise<string> {
+  return fetchText(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+}
+
 /** Facts for one chat id; `{}` when the docs do not name it. */
 export async function minimaxModelFacts(
   kv?: KVNamespace,
+  platform: MinimaxPlatform = MINIMAX,
 ): Promise<(rawId: string) => Partial<ModelFacts>> {
-  const doc = await cachedDocs(kv, MINIMAX_SDK_URL, async () => {
+  const { label, sdkUrl, chatSpecUrl, pricingUrl } = platform
+  const doc = await cachedDocs(kv, sdkUrl, async () => {
     const [sdk, pricingPage, specText] = await Promise.all([
-      fetchText(MINIMAX_SDK_URL),
-      fetchText(MINIMAX_PRICING_URL),
-      fetchText(MINIMAX_CHAT_SPEC_URL),
+      fetchPage(sdkUrl),
+      pricingUrl ? fetchPage(pricingUrl) : null,
+      fetchPage(chatSpecUrl),
     ])
-    const windows = parseMinimaxContextWindows(sdk)
-    assertParsed(windows, 'minimax context windows')
+    const windows = parseMinimaxContextWindows(sdk, platform)
+    assertParsed(windows, `${label} context windows`)
     const ids = [...windows.keys()]
-    const inputs = parseMinimaxInputModalities(sdk, ids)
-    assertParsed(inputs, 'minimax input modalities')
-    const reasoning = parseMinimaxReasoning(sdk, ids)
-    assertParsed(reasoning, 'minimax thinking table')
+    const inputs = parseMinimaxInputModalities(sdk, ids, platform)
+    assertParsed(inputs, `${label} input modalities`)
+    const reasoning = parseMinimaxReasoning(sdk, ids, platform)
+    assertParsed(reasoning, `${label} thinking table`)
     const caps = parseMinimaxMaxOutput(
       maxCompletionTokensDescription(JSON.parse(specText) as unknown),
       ids,
+      platform,
     )
-    assertParsed(caps, 'minimax max output')
-    const prices = parseMinimaxPricing(pricingPage)
-    assertParsed(prices, 'minimax pricing page')
+    assertParsed(caps, `${label} max output`)
+    const prices =
+      pricingPage === null
+        ? new Map<string, MinimaxRates>()
+        : parseMinimaxPricing(pricingPage)
+    if (pricingPage !== null) assertParsed(prices, `${label} pricing page`)
 
     const [sdkHash, pricingHash, specHash] = await Promise.all([
       sha256Text(sdk),
-      sha256Text(pricingPage),
+      sha256Text(pricingPage ?? ''),
       sha256Text(specText),
     ])
     const extractedAt = new Date().toISOString()
@@ -297,21 +384,24 @@ export async function minimaxModelFacts(
       }
       const maxOutput = caps.get(id) ?? null
       const rates = prices.get(id)
-      const pricing = rates
-        ? compileTokenCard(rates.base, rates.tiers, {
-            url: MINIMAX_PRICING_URL,
-            hash: pricingHash,
-            extractedAt,
-          })
-        : null
+      const pricing =
+        rates && pricingUrl
+          ? compileTokenCard(rates.base, rates.tiers, {
+              url: pricingUrl,
+              hash: pricingHash,
+              extractedAt,
+            })
+          : null
       facts[id] = {
         ...fromSdk,
         maxOutput,
         pricing,
         factSources: {
-          ...tagDocsFacts(fromSdk, MINIMAX_SDK_URL, sdkHash),
-          ...tagDocsFacts({ maxOutput }, MINIMAX_CHAT_SPEC_URL, specHash),
-          ...tagDocsFacts({ pricing }, MINIMAX_PRICING_URL, pricingHash),
+          ...tagDocsFacts(fromSdk, sdkUrl, sdkHash),
+          ...tagDocsFacts({ maxOutput }, chatSpecUrl, specHash),
+          ...(pricingUrl
+            ? tagDocsFacts({ pricing }, pricingUrl, pricingHash)
+            : {}),
         },
       }
     }

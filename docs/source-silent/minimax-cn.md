@@ -1,0 +1,1 @@
+- minimax-cn: efforts — only MiniMax-M3.1-Flash-Preview takes an effort; the spec's `reasoning_effort` description says other models ignore the field (仅 `MiniMax-M3.1-Flash-Preview` 支持真正的思考深度调节，其他模型会忽略该字段), https://platform.minimaxi.com/docs/api-reference/text/api/openapi-chat-openai.json, checked 2026-10-07
