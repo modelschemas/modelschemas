@@ -132,7 +132,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // would leave those aliases unpriced for six hours.
 // v11: Grok maxOutput (#119) lands after v10 shipped; a v10 entry has no
 // maxOutput on Grok pages for six hours.
-const DOCS_CACHE_VERSION = 'v11'
+// v12: Azure rows gain `tabulated` and the price doc gains `thresholds`. A
+// v11 entry written by the PR's preview build would drop every Azure row.
+const DOCS_CACHE_VERSION = 'v12'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

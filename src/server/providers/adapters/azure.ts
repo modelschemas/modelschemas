@@ -1,52 +1,92 @@
 /**
- * Azure OpenAI — model ids from Microsoft's public models article.
- * That page names ids in `<code>` and does not name dollar amounts, so
- * prices stay null. Deployment lists on a resource need a key and are not called.
+ * Azure OpenAI. Models and their facts come from two Microsoft Learn
+ * articles, prices from the Azure Retail Prices API, and schemas from the
+ * v1 OpenAPI document in Azure's REST API specs repo. All four are public.
+ * Deployment lists on a resource need a key and are not called.
  */
-import type { Activity } from '#/db/schema.ts'
-
-import { fetchText } from '../types.ts'
+import {
+  AZURE_MODELS_URL,
+  AZURE_REASONING_URL,
+  azureModelInfo,
+  parseAzureFeatureMatrix,
+  parseAzureModels,
+} from '../azure-models.ts'
+import {
+  AZURE_PRICES_URL,
+  azureMetered,
+  azureModelPricing,
+  fetchAzurePrices,
+} from '../azure-pricing.ts'
+import { assertParsed, cachedDocs } from '../model-facts.ts'
+import { classifyOpenAiCompat } from '../openai-compat.ts'
+import { fetchOpenApi, fetchText, sha256Text } from '../types.ts'
 import type {
   ListModelsResult,
-  ModelInfo,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
 
-export const AZURE_MODELS_URL =
-  'https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models'
+export const AZURE_SPEC_URL =
+  'https://raw.githubusercontent.com/Azure/azure-rest-api-specs/main/specification/ai/data-plane/OpenAI.v1/azure-v1-v1-generated.json'
 
-const SPEC_SKIP = 'azure: no first-party OpenAPI document — skipped'
-
-/** Ids the models article puts in code tags. Request fields are not ids. */
-const MODEL_ID =
-  /^(?:gpt-|o\d|dall-e-|whisper-|tts-|text-embedding-|sora-|codex-|computer-use-|gpt-image-)/
-
-export function parseAzureModelIds(html: string): Array<ModelInfo> {
-  const ids = new Set<string>()
-  for (const match of html.matchAll(/<code>([^<]+)<\/code>/g)) {
-    const id = match[1]?.trim() ?? ''
-    if (MODEL_ID.test(id)) ids.add(id)
-  }
-  if (ids.size === 0) {
-    throw new Error('azure: models page listed no ids')
-  }
-  return [...ids].map((rawId) => ({ rawId, pricing: null }))
-}
-
-async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
-  const html = await fetchText(AZURE_MODELS_URL)
-  return { models: parseAzureModelIds(html) }
-}
-
-function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  return Promise.resolve({
-    specs: [],
-    sources: [],
-    outputStrategy: 'post-200',
-    skipped: SPEC_SKIP,
+/** A Learn article as markdown, parsed, with the hash of what was read. */
+function learnDoc<T>(
+  kv: KVNamespace | undefined,
+  url: string,
+  parse: (markdown: string) => Map<string, T>,
+): Promise<{ rows: Record<string, T>; hash: string }> {
+  return cachedDocs(kv, url, async () => {
+    const markdown = await fetchText(url, {
+      headers: { Accept: 'text/markdown' },
+    })
+    const rows = parse(markdown)
+    assertParsed(rows, `azure ${url}`)
+    return { rows: Object.fromEntries(rows), hash: await sha256Text(markdown) }
   })
+}
+
+async function listModels(
+  _env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const [models, matrix, prices] = await Promise.all([
+    learnDoc(kv, AZURE_MODELS_URL, parseAzureModels),
+    learnDoc(kv, AZURE_REASONING_URL, parseAzureFeatureMatrix),
+    cachedDocs(kv, AZURE_PRICES_URL, fetchAzurePrices),
+  ])
+  const hashes = { models: models.hash, reasoning: matrix.hash }
+  const tabulated = Object.values(models.rows)
+    .filter((row) => row.tabulated)
+    .map((row) => row.rawId)
+  return {
+    models: Object.values(models.rows)
+      .filter(
+        (row) =>
+          row.tabulated || azureMetered(prices.meters, row.rawId, tabulated),
+      )
+      .map((row) => {
+        const info = azureModelInfo(row, matrix.rows[row.rawId], hashes)
+        if (row.activity !== 'chat') return info
+        const priced = azureModelPricing(prices, row.rawId, row.version)
+        return {
+          ...info,
+          ...priced,
+          factSources: { ...info.factSources, ...priced.factSources },
+        }
+      }),
+  }
+}
+
+async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const { spec, hash } = await fetchOpenApi(AZURE_SPEC_URL)
+  return {
+    specs: [spec],
+    sources: [{ url: AZURE_SPEC_URL, hash }],
+    outputStrategy: 'post-200',
+    // Floating `main` URL: the document hash is the revision id.
+    specRevision: hash,
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -63,10 +103,10 @@ export const provider: ProviderConfig = {
     },
   }),
   displayName: 'Azure OpenAI',
-  specSourceUrl: AZURE_MODELS_URL,
+  specSourceUrl: AZURE_SPEC_URL,
   modelsEndpoint: AZURE_MODELS_URL,
-  defaultDerivation: 'docs-derived',
+  defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels,
-  classify: (_path: string): Activity | null => null,
+  classify: classifyOpenAiCompat,
 }
