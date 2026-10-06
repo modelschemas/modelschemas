@@ -31,7 +31,11 @@ import type {
 export const NVIDIA_MODELS_URL = 'https://integrate.api.nvidia.com/v1/models'
 export const NVIDIA_CARD_BASE = 'https://build.nvidia.com/'
 
-const SPEC_SKIP = 'nvidia: no first-party OpenAPI document — skipped'
+// A card renders in about ten seconds.
+const CARD_TIMEOUT_MS = 60_000
+
+const SPEC_SKIP =
+  'nvidia: per-model OpenAPI documents (docs.api.nvidia.com/nim/reference) are not synced yet — skipped'
 
 const CAPABILITY_FLAGS: Record<string, string> = {
   'Function Calling': 'tools',
@@ -136,7 +140,10 @@ async function fetchCard(
 ): Promise<{ url: string; markdown: string; hash: string } | { url: null }> {
   for (const slug of cardSlugs(rawId)) {
     const url = `${NVIDIA_CARD_BASE}${slug}`
-    const response = await fetch(`${url}.md`)
+    // Providers poll in sequence; a hung card must not stall the rest.
+    const response = await fetch(`${url}.md`, {
+      signal: AbortSignal.timeout(CARD_TIMEOUT_MS),
+    })
     if (response.status === 404) continue
     if (!response.ok) {
       throw new Error(
@@ -144,6 +151,14 @@ async function fetchCard(
       )
     }
     const markdown = await response.text()
+    if (!markdown.startsWith('---\n')) {
+      // Some cards have no markdown twin: the site answers 200 with its
+      // HTML not-found page. Any other body is a failed load, never a card.
+      if (markdown.includes('NEXT_HTTP_ERROR_FALLBACK;404')) continue
+      throw new Error(`nvidia: ${url}.md is not a markdown card`)
+    }
+    // The slug is a guess, so the card must name itself as that page.
+    if (!markdown.includes(`\ncanonical: "${url}"\n`)) continue
     return { url, markdown, hash: await sha256Text(markdown) }
   }
   return { url: null }

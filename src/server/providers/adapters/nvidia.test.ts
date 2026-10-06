@@ -64,7 +64,7 @@ GLM-5.3-Flash is a multimodal mixture-of-experts model.
 ## Capabilities
 
 - **Function Calling:** Supported
-- **Structured Output:** Not supported
+- **Structured Output:** Supported
 - **Reasoning:** Supported
 
 ${CHAT_PROTOTYPE('z-ai/glm-5.3-flash')}`
@@ -73,6 +73,7 @@ ${CHAT_PROTOTYPE('z-ai/glm-5.3-flash')}`
 const YI_CARD = `---
 title: "yi-large"
 publisher: "01-ai"
+canonical: "https://build.nvidia.com/01-ai/yi-large"
 ---
 
 # Yi-Large
@@ -91,6 +92,12 @@ const EMBED_CARD = `# NV-Embed-QA
 curl -X POST https://integrate.api.nvidia.com/v1/embeddings \\
 -d '{"input": [""], "model": "nvidia/embed-qa-4"}'
 \`\`\``
+
+/**
+ * Excerpt of https://build.nvidia.com/nvidia/nemotron-parse.md
+ * (2026-10-06): HTTP 200, text/html, for a card with no markdown twin.
+ */
+const NOT_FOUND_HTML = `<!DOCTYPE html><html id="__next_error__"><head><meta charSet="utf-8"/></head><body><script>self.__next_f.push([1,"2c:E{\\"digest\\":\\"NEXT_HTTP_ERROR_FALLBACK;404\\"}\\n"])</script></body></html>`
 
 const originalFetch = globalThis.fetch
 
@@ -119,7 +126,7 @@ describe('parseNvidiaCard', () => {
       activity: 'chat',
       contextWindow: 1048576,
       modalities: { input: ['text', 'image'], output: ['text'] },
-      capabilities: ['tools', 'reasoning'],
+      capabilities: ['tools', 'structured_outputs', 'reasoning'],
     })
   })
 
@@ -166,12 +173,16 @@ describe('nvidia', () => {
         activity: 'chat',
         contextWindow: 1048576,
         modalities: { input: ['text', 'image'], output: ['text'] },
-        capabilities: ['tools', 'reasoning'],
+        capabilities: ['tools', 'structured_outputs', 'reasoning'],
         factSources: {
           contextWindow: { ...source, path: 'contextWindow' },
           modalities: { ...source, path: 'modalities' },
           capabilities: {
             tools: { ...source, path: 'capabilities.tools' },
+            structured_outputs: {
+              ...source,
+              path: 'capabilities.structured_outputs',
+            },
             reasoning: { ...source, path: 'capabilities.reasoning' },
           },
         },
@@ -198,5 +209,36 @@ describe('nvidia', () => {
           : new Response('busy', { status: 503 }),
       )) as typeof fetch
     await expect(provider.listModels({})).rejects.toThrow('503')
+  })
+
+  const cards = (deplot: string) => ({
+    [NVIDIA_MODELS_URL]: JSON.stringify(LISTING),
+    'https://build.nvidia.com/01-ai/yi-large.md': YI_CARD,
+    'https://build.nvidia.com/google/deplot.md': deplot,
+  })
+
+  it('reads the HTML not-found page served with 200 as no card', async () => {
+    stubFetch(cards(NOT_FOUND_HTML))
+    const listed = await provider.listModels({})
+    expect(listed.models.find((m) => m.rawId === 'google/deplot')).toEqual({
+      rawId: 'google/deplot',
+      releasedAt: 735790403,
+      pricing: null,
+    })
+  })
+
+  it('throws on any other body that is not a markdown card', async () => {
+    stubFetch(cards('<!DOCTYPE html><html><body>Just a moment</body></html>'))
+    await expect(provider.listModels({})).rejects.toThrow(
+      'https://build.nvidia.com/google/deplot.md is not a markdown card',
+    )
+  })
+
+  it('ignores a card whose canonical URL is another page', async () => {
+    stubFetch(cards(YI_CARD))
+    const listed = await provider.listModels({})
+    expect(
+      listed.models.find((m) => m.rawId === 'google/deplot')?.activity,
+    ).toBeUndefined()
   })
 })

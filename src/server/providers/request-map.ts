@@ -226,8 +226,14 @@ export function chatRequestMap(
         developerRole: false,
         reasoningEffort: false,
       })
-    case 'moonshot':
     case 'nvidia':
+      // reasoning_effort varies per model (kimi-k3's reference page takes
+      // low/high/max), and those pages are not read yet: unknown, not false.
+      return blank({
+        maxTokensField: 'max_tokens',
+        developerRole: false,
+      })
+    case 'moonshot':
     case 'cloudflare':
       return blank({
         maxTokensField: 'max_tokens',

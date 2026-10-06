@@ -104,7 +104,8 @@ describe('chatRequestMap', () => {
     for (const provider of ['moonshot', 'nvidia', 'cloudflare'] as const) {
       const map = chatRequestMap(provider, 'some-chat', 'chat')
       expect(map?.maxTokensField).toBe('max_tokens')
-      expect(map?.reasoningEffort).toBe(false)
+      // NVIDIA's per-model reference pages are not read yet: unknown.
+      expect(map?.reasoningEffort).toBe(provider === 'nvidia' ? null : false)
       expect(map?.developerRole).toBe(false)
       expect(map?.thinking).toBeNull()
     }
