@@ -328,6 +328,10 @@ export function chatRequestMap(
         sessionAffinity: true,
         cacheControl: rawId.startsWith('anthropic/') ? 'anthropic' : null,
       })
+    // Hugging Face's chat-completion schema names `max_tokens` only. The
+    // rest depends on the routed provider, so it stays null.
+    case 'huggingface':
+      return blank({ maxTokensField: 'max_tokens' })
     case 'together':
       return blank({
         thinking: withLevels(
