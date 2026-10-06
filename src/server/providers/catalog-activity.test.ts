@@ -362,19 +362,21 @@ describe('issue #109 listModels', () => {
 
   it('compiles perplexity per-million quotes and rejects an untagged unit', async () => {
     await withFetch(
-      () =>
-        json({
-          data: [
-            {
-              id: 'perplexity/sonar',
-              pricing: { input: 1, output: 1, unit: 'usd_per_1m_tokens' },
-            },
-            {
-              id: 'mystery',
-              pricing: { input: 1, output: 1, unit: 'credits' },
-            },
-          ],
-        }),
+      (url) =>
+        url.endsWith('/models.md')
+          ? new Response('<Tab title="x">\n| `perplexity/sonar` | — |\n</Tab>')
+          : json({
+              data: [
+                {
+                  id: 'perplexity/sonar',
+                  pricing: { input: 1, output: 1, unit: 'usd_per_1m_tokens' },
+                },
+                {
+                  id: 'mystery',
+                  pricing: { input: 1, output: 1, unit: 'credits' },
+                },
+              ],
+            }),
       async () => {
         const { models } = await perplexity.listModels({
           PERPLEXITY_API_KEY: 'test',
@@ -388,7 +390,7 @@ describe('issue #109 listModels', () => {
             rawId: 'perplexity/sonar',
             activity: 'chat',
           }),
-        ).toBe('v1/sonar')
+        ).toBe('v1/agent')
         expect(mystery?.pricing ?? null).toBeNull()
       },
     )

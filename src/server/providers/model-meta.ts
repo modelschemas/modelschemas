@@ -421,12 +421,6 @@ export function perplexityModelActivity(): Activity {
   return 'chat'
 }
 
-export function perplexityGenerationEndpointId(rawId: string): string {
-  return rawId === 'perplexity/sonar' || rawId.endsWith('/sonar')
-    ? 'v1/sonar'
-    : 'v1/agent'
-}
-
 /**
  * Jina names output modalities. Text out is chat except rerank and
  * ColBERT, which are not the chat route.

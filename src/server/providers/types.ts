@@ -409,6 +409,12 @@ export interface ProviderConfig {
     activity: Activity
     capabilities?: unknown
   }) => string | null
+  /**
+   * Capability flags the shared request schema carries but the provider
+   * says not every model supports (Perplexity: reasoning, tools). The
+   * schema walk leaves them off; a listing that states one still sets it.
+   */
+  perModelSchemaFlags?: Array<string>
 }
 
 /** Fetch a JSON or YAML OpenAPI document and hash the raw bytes. */

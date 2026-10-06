@@ -215,6 +215,28 @@ export function chatRequestMap(
         sessionAffinity: true,
         cacheControl: rawId.startsWith('anthropic/') ? 'anthropic' : null,
       })
+    // Perplexity's Agent API body is Responses-shaped: `max_output_tokens`
+    // has no value in `maxTokensField`. Its models page states reasoning
+    // effort for kimi-k3 only: six `reasoning.effort` values and no off
+    // (docs.perplexity.ai/docs/agent-api/models). Other rows stay null.
+    case 'perplexity':
+      return rawId === 'perplexity/kimi-k3'
+        ? blank({
+            thinking: {
+              on: OPENROUTER_ON,
+              off: null,
+              levels: {
+                off: null,
+                minimal: 'minimal',
+                low: 'low',
+                medium: 'medium',
+                high: 'high',
+                xhigh: 'xhigh',
+                max: 'max',
+              },
+            },
+          })
+        : null
     case 'together':
       return blank({
         thinking: withLevels(

@@ -221,6 +221,15 @@ async function loadInputWalks(
     })
     if (walk) walks.set(publicId, walk)
   }
+  const perModel = new Set(provider.perModelSchemaFlags)
+  if (perModel.size > 0) {
+    for (const [id, walk] of walks) {
+      walks.set(id, {
+        ...walk,
+        flags: walk.flags.filter((flag) => !perModel.has(flag)),
+      })
+    }
+  }
   return { walks, properties }
 }
 
