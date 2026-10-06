@@ -405,6 +405,12 @@ export interface ProviderConfig {
    */
   classifyGets?: boolean
   /**
+   * Drop a listed `schemaEndpointId` until its route has a synced input
+   * schema. For listings that name per-model routes the daily sync creates
+   * later (Replicate): a link to an unsynced route would 404.
+   */
+  bindSyncedRoutesOnly?: boolean
+  /**
    * Canonical generation route (public endpoint id) for a listed model.
    * Grain=provider catalogs use this so a client can go model id → input
    * schema without hardcoding `v1/images/generations`. Omitted providers

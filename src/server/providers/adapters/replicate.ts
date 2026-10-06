@@ -2,8 +2,16 @@
  * Replicate — public OpenAPI at api.replicate.com/openapi.json.
  * Generation is POST /predictions (and official model run paths).
  * listModels walks the paginated public catalog; requires REPLICATE_API_TOKEN.
+ *
+ * Every listed model carries its own request schema
+ * (`latest_version.openapi_schema`). A language model is read off that
+ * schema, never off its name, and its chat facts come from the same place.
+ * Official language models also get their run route synced with that schema
+ * as the `input` object.
  */
 import type { Activity } from '#/db/schema.ts'
+import { contentHash } from '#/server/kv.ts'
+import { walkRequestSchema } from '../fact-sources.ts'
 import { cachedDocs, mapConcurrent } from '../model-facts.ts'
 import { isoToEpochSeconds } from '../release-dates.ts'
 import {
@@ -14,13 +22,18 @@ import {
   skippedResult,
 } from '../types.ts'
 import {
+  BILLING_MARKER,
   compileReplicateBilling,
   replicateBillingFromHtml,
 } from '../replicate-pricing.ts'
 import type { ReplicateBilling } from '../replicate-pricing.ts'
 import type {
+  FactSource,
   ListModelsResult,
+  ModelFactSources,
   ModelInfo,
+  ModelReasoning,
+  OpenApiDocument,
   OpenApiOperation,
   ProviderConfig,
   ProviderSecrets,
@@ -32,6 +45,24 @@ const REPLICATE_MODELS_URL = 'https://api.replicate.com/v1/models'
 
 /** Public catalog is huge; stay inside the Worker subrequest budget. */
 const MAX_MODEL_PAGES = 20
+const FETCH_TIMEOUT_MS = 20_000
+
+/** The run route the spec documents for official models. */
+const OFFICIAL_RUN_PATH = '/models/{model_owner}/{model_name}/predictions'
+/** Set on the per-model routes fetchSpec adds; classify reads it back. */
+const ACTIVITY_MARKER = 'x-modelschemas-replicate-activity'
+const INPUT_POINTER = '/latest_version/openapi_schema/components/schemas/Input'
+const SCHEMA_REF = '#/components/schemas/'
+
+const PROMPT_FIELDS = ['prompt', 'messages', 'message']
+const MAX_TOKENS_FIELD = /^max_(?:new_|completion_|output_)?tokens$/
+/**
+ * Above this a `maximum` is the model's whole window, not an output cap
+ * (Llama 4: 131072). Replicate states no context length to compare against,
+ * so this is a ceiling, not a reading. ponytail: fixed ceiling; compare with
+ * the stated window if Replicate ever publishes one.
+ */
+const MAX_OUTPUT_CEILING = 128_000
 
 function stripV1(path: string): string {
   return path.startsWith('/v1/') ? path.slice(3) : path
@@ -42,7 +73,10 @@ function stripV1(path: string): string {
  * (`/predictions`, templated `/models/{owner}/{name}/predictions`) default
  * to image — Replicate's core generation surface.
  */
-function activityFromHaystack(haystack: string): Activity | null {
+function activityFromHaystack(
+  haystack: string,
+  allowChat = true,
+): Activity | null {
   const hay = haystack.toLowerCase()
   if (
     /text-to-video|image-to-video|video-to-video|stable-video|hunyuan-video|wan-video|ltx-video|cogvideo|animate-?diff|hailuo|kling|pixverse|runway|mochi-1|luma\/|\/veo|veo-\d|video-01|\/video-/.test(
@@ -59,6 +93,7 @@ function activityFromHaystack(haystack: string): Activity | null {
     return 'audio'
   }
   if (
+    allowChat &&
     /llama|mistral|mixtral|qwen|gemma|deepseek|gpt-oss|phi-[34]|dbrx|nemotron|granite|arctic|\byi-|vicuna|wizardlm|zephyr|command-r|\bllm\b|instruct|\bchat\b/.test(
       hay,
     )
@@ -82,28 +117,30 @@ function isGenerationCreate(path: string): boolean {
   return /^\/models\/[^/]+\/[^/]+\/predictions$/.test(bare)
 }
 
-function classify(path: string, _op: OpenApiOperation): Activity | null {
+function classify(path: string, op: OpenApiOperation): Activity | null {
+  if (op[ACTIVITY_MARKER] === 'chat') return 'chat'
   if (!isGenerationCreate(path)) return null
   return activityFromHaystack(path) ?? 'image'
 }
 
-async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const { spec, hash } = await fetchOpenApi(REPLICATE_OPENAPI_URL)
-  return {
-    specs: [spec],
-    sources: [{ url: REPLICATE_OPENAPI_URL, hash }],
-    outputStrategy: 'post-200',
-  }
+type Json = Record<string, unknown>
+
+function isRecord(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-interface ReplicateModel {
+export interface ReplicateModel {
   owner?: string
   name?: string
   description?: string | null
   visibility?: string
   created_at?: string
   is_official?: boolean
-  latest_version?: { created_at?: string }
+  latest_version?: {
+    created_at?: string
+    /** The model's own request and response schema (Cog). */
+    openapi_schema?: { components?: { schemas?: unknown } }
+  }
   /** Present when the models API includes the prediction price. */
   billing_config?: ReplicateBilling | null
   billingConfig?: ReplicateBilling | null
@@ -125,6 +162,321 @@ function isSafeModelsUrl(url: string): boolean {
   } catch {
     return false
   }
+}
+
+function modelSchemas(model: ReplicateModel): Json | null {
+  const schemas = model.latest_version?.openapi_schema?.components?.schemas
+  return isRecord(schemas) ? schemas : null
+}
+
+/** Cog writes an enum field as `allOf: [{ $ref }]`. */
+function deref(schemas: Json, node: unknown): Json | null {
+  if (!isRecord(node)) return null
+  const only =
+    Array.isArray(node.allOf) && node.allOf.length === 1
+      ? (node.allOf[0] as unknown)
+      : node
+  if (!isRecord(only)) return null
+  if (typeof only.$ref !== 'string') return only
+  const target = schemas[only.$ref.replace(SCHEMA_REF, '')]
+  return isRecord(target) ? target : null
+}
+
+function isText(node: unknown): boolean {
+  return isRecord(node) && node.type === 'string' && node.format === undefined
+}
+
+/**
+ * Input properties of a language model, null for anything else. The model's
+ * schema decides: it returns text, takes a prompt, and caps output tokens.
+ * A name like `qwen-image` says nothing about what a model returns.
+ */
+function chatInputProperties(model: ReplicateModel): Json | null {
+  const schemas = modelSchemas(model)
+  const output = schemas?.Output
+  const input = schemas?.Input
+  if (!isRecord(output) || !isRecord(input) || !isRecord(input.properties)) {
+    return null
+  }
+  if (!isText(output) && !(output.type === 'array' && isText(output.items))) {
+    return null
+  }
+  const names = Object.keys(input.properties)
+  if (!PROMPT_FIELDS.some((name) => names.includes(name))) return null
+  if (!names.some((name) => MAX_TOKENS_FIELD.test(name))) return null
+  return input.properties
+}
+
+/** A number or a switch (`video_fps`, `max_image_resolution`) carries no media. */
+function isScalarSetting(node: unknown): boolean {
+  return (
+    isRecord(node) &&
+    ['integer', 'number', 'boolean'].includes(String(node.type))
+  )
+}
+
+/**
+ * `text` plus one modality per file input. The whole fact is unstated when
+ * a file input's name does not say what it carries, or when an input named
+ * for a medium is not declared a file (`image_input: string[]`): text-only
+ * would be a wrong claim there.
+ */
+function inputModalities(properties: Json): Array<string> | null {
+  const media = ['image', 'audio', 'video']
+  const found = new Set<string>()
+  for (const [name, node] of Object.entries(properties)) {
+    const file = JSON.stringify(node).includes('"format":"uri"')
+    const kind = media.find((word) => name.includes(word))
+    if (!file && (!kind || isScalarSetting(node))) continue
+    if (!file || !kind) return null
+    found.add(kind)
+  }
+  // Fixed order: a reordered schema must not read as a changed model.
+  return ['text', ...media.filter((kind) => found.has(kind))]
+}
+
+/**
+ * The stated maximum of the output-token field. Null when the schema states
+ * none, when two such fields disagree, or when it is too large to be an
+ * output cap.
+ */
+function maxOutputField(
+  properties: Json,
+): { name: string; maximum: number } | null {
+  const fields = Object.keys(properties).filter((name) =>
+    MAX_TOKENS_FIELD.test(name),
+  )
+  const maxima = new Set(
+    fields.map((name) => {
+      const node = properties[name]
+      return isRecord(node) ? node.maximum : undefined
+    }),
+  )
+  const [name] = fields
+  const [maximum] = [...maxima]
+  if (!name || maxima.size !== 1) return null
+  if (typeof maximum !== 'number' || !Number.isInteger(maximum)) return null
+  return maximum > 0 && maximum <= MAX_OUTPUT_CEILING ? { name, maximum } : null
+}
+
+/**
+ * `reasoning_effort` whose enum accepts `none`: reasoning that can be turned
+ * off. Nothing is stated for an enum without `none`, or for another field
+ * (`thinking_level`, `thinking`, `effort`), where `none` reads as "unset".
+ */
+function effortField(
+  schemas: Json,
+  properties: Json,
+): { name: string; reasoning: ModelReasoning } | null {
+  const name = 'reasoning_effort'
+  const values = deref(schemas, properties[name])?.enum
+  if (!Array.isArray(values)) return null
+  const efforts = values.filter((value) => typeof value === 'string')
+  if (efforts.length !== values.length) return null
+  if (!efforts.includes('none')) return null
+  return { name, reasoning: { mode: 'effort', mandatory: false, efforts } }
+}
+
+function runPath(owner: string, name: string): string {
+  return `/models/${owner}/${name}/predictions`
+}
+
+type ChatFacts = Pick<
+  ModelInfo,
+  | 'capabilities'
+  | 'modalities'
+  | 'maxOutput'
+  | 'reasoning'
+  | 'schemaEndpointId'
+  | 'factSources'
+>
+
+/**
+ * Chat facts read from one model's own Input schema; null when the model is
+ * not a language model. Schemas are never merged across models.
+ */
+export function replicateChatFacts(model: ReplicateModel): ChatFacts | null {
+  const schemas = modelSchemas(model)
+  const properties = chatInputProperties(model)
+  if (!schemas || !properties || !model.owner || !model.name) return null
+  const sourceUrl = `${REPLICATE_MODELS_URL}/${model.owner}/${model.name}`
+  const source = (pointer: string): FactSource => ({
+    derivation: 'listing',
+    sourceUrl,
+    path: `${INPUT_POINTER}${pointer}`,
+  })
+  const facts: ChatFacts = {}
+  const factSources: ModelFactSources = {}
+
+  const flags =
+    walkRequestSchema(schemas.Input, { derivation: 'listing', endpointId: '' })
+      ?.sources.capabilities ?? {}
+  // Sorted: a reordered schema must not read as a changed model.
+  facts.capabilities =
+    Object.keys(flags).length > 0 ? Object.keys(flags).sort() : null
+  if (facts.capabilities) {
+    factSources.capabilities = Object.fromEntries(
+      Object.entries(flags).map(([flag, at]) => [flag, source(at.path ?? '')]),
+    )
+  }
+
+  const input = inputModalities(properties)
+  if (input) {
+    facts.modalities = { input, output: ['text'] }
+    factSources.modalities = source('/properties')
+  }
+
+  const cap = maxOutputField(properties)
+  if (cap) {
+    facts.maxOutput = cap.maximum
+    factSources.maxOutput = source(`/properties/${cap.name}/maximum`)
+  }
+
+  const effort = effortField(schemas, properties)
+  if (effort) {
+    facts.reasoning = effort.reasoning
+    factSources.reasoning = source(`/properties/${effort.name}`)
+  }
+
+  // Only official models have a run route of their own. The poller drops
+  // this until the route is synced (`bindSyncedRoutesOnly`).
+  if (model.is_official === true) {
+    facts.schemaEndpointId = runPath(model.owner, model.name).slice(1)
+  }
+  return { ...facts, factSources }
+}
+
+function refName(node: unknown): string | null {
+  if (!isRecord(node) || typeof node.$ref !== 'string') return null
+  return node.$ref.startsWith(SCHEMA_REF)
+    ? node.$ref.slice(SCHEMA_REF.length)
+    : null
+}
+
+function jsonBody(node: unknown): unknown {
+  if (!isRecord(node) || !isRecord(node.content)) return undefined
+  const media = node.content['application/json']
+  return isRecord(media) ? media.schema : undefined
+}
+
+/**
+ * One official language model's run route: the spec's official-model
+ * operation with `input` (and the response's `output`) narrowed to the
+ * model's own schemas. Null when the spec no longer has that shape.
+ */
+export function replicateModelSpec(
+  spec: OpenApiDocument,
+  model: ReplicateModel,
+): OpenApiDocument | null {
+  const operation = spec.paths?.[OFFICIAL_RUN_PATH]?.post
+  const shared = spec.components?.schemas
+  const own = modelSchemas(model)
+  if (!operation || !shared || !own || !model.owner || !model.name) return null
+  const requestName = refName(jsonBody(operation.requestBody))
+  const request = requestName ? shared[requestName] : null
+  if (!requestName || !isRecord(request) || !isRecord(request.properties)) {
+    return null
+  }
+  if (!('input' in request.properties)) return null
+
+  const schemas: Json = {
+    ...shared,
+    ...own,
+    [requestName]: {
+      ...request,
+      properties: {
+        ...request.properties,
+        input: { $ref: `${SCHEMA_REF}Input` },
+      },
+    },
+  }
+  const responses = isRecord(operation.responses) ? operation.responses : {}
+  const responseName = refName(
+    Object.values(responses).map(jsonBody).find(Boolean),
+  )
+  const response = responseName ? shared[responseName] : null
+  if (responseName && isRecord(response) && isRecord(response.properties)) {
+    schemas[responseName] = {
+      ...response,
+      properties: {
+        ...response.properties,
+        output: { $ref: `${SCHEMA_REF}Output` },
+      },
+    }
+  }
+  return {
+    openapi: spec.openapi,
+    paths: {
+      [runPath(model.owner, model.name)]: {
+        post: { ...operation, [ACTIVITY_MARKER]: 'chat' },
+      },
+    },
+    components: { schemas },
+  }
+}
+
+/** The first pages of the public catalog, one entry per `owner/name`. */
+async function listCatalog(key: string): Promise<Array<ReplicateModel>> {
+  const headers = { Authorization: `Bearer ${key}` }
+  const listed = new Map<string, ReplicateModel>()
+  let url: string | null = REPLICATE_MODELS_URL
+  for (let page = 0; url && page < MAX_MODEL_PAGES; page++) {
+    // A short walk would read as routes removed: fail instead.
+    if (!isSafeModelsUrl(url)) {
+      throw new Error(`replicate: unexpected catalog page url ${url}`)
+    }
+    const body = (await fetchJson(url, {
+      headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })) as ReplicateModelPage
+    for (const row of body.results ?? []) {
+      if (!row.owner || !row.name) continue
+      const rawId = `${row.owner}/${row.name}`
+      if (!listed.has(rawId)) listed.set(rawId, row)
+    }
+    url =
+      typeof body.next === 'string' && body.next.length > 0 ? body.next : null
+  }
+  return [...listed.values()]
+}
+
+/**
+ * The public spec, plus one route per official language model in the
+ * catalog. A missing token skips the sync and a failed catalog read fails
+ * it: stale routes are better than half of them.
+ */
+async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
+  const key = env.REPLICATE_API_TOKEN
+  if (!key) {
+    return {
+      specs: [],
+      sources: [],
+      outputStrategy: 'post-200',
+      ...skippedResult('replicate', 'REPLICATE_API_TOKEN'),
+    }
+  }
+  const { spec, hash } = await fetchOpenApi(REPLICATE_OPENAPI_URL)
+  const result: SpecFetchResult = {
+    specs: [spec],
+    sources: [{ url: REPLICATE_OPENAPI_URL, hash }],
+    outputStrategy: 'post-200',
+  }
+  const warnings: Array<string> = []
+  for (const model of await listCatalog(key)) {
+    if (!replicateChatFacts(model)?.schemaEndpointId) continue
+    const rawId = `${model.owner}/${model.name}`
+    const document = replicateModelSpec(spec, model)
+    if (!document) {
+      warnings.push(`replicate ${rawId}: no official run route in the spec`)
+      continue
+    }
+    result.specs.push(document)
+    result.sources.push({
+      url: `${REPLICATE_MODELS_URL}/${rawId}`,
+      hash: await contentHash(model.latest_version?.openapi_schema),
+    })
+  }
+  return warnings.length > 0 ? { ...result, warnings } : result
 }
 
 function modelPageUrl(owner: string, name: string): string {
@@ -165,6 +517,7 @@ async function withPredictionPrice(
       ...info,
       pricing,
       factSources: {
+        ...info.factSources,
         pricing: {
           derivation: 'docs-derived',
           sourceUrl: pageUrl,
@@ -177,7 +530,14 @@ async function withPredictionPrice(
   if (model.is_official !== true) return info
   try {
     const doc = await cachedDocs(kv, pageUrl, async () => {
-      const html = await fetchText(pageUrl)
+      const html = await fetchText(pageUrl, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      })
+      // Every official model page embeds this. A 200 without it is an error
+      // or challenge page: throw, so it is neither priced nor cached.
+      if (!html.includes(BILLING_MARKER)) {
+        throw new Error(`replicate: ${pageUrl} has no billing config`)
+      }
       return {
         billing: replicateBillingFromHtml(html),
         hash: await sha256Text(html),
@@ -195,6 +555,7 @@ async function withPredictionPrice(
       ...info,
       pricing,
       factSources: {
+        ...info.factSources,
         pricing: {
           derivation: 'docs-derived',
           sourceUrl: pageUrl,
@@ -214,10 +575,13 @@ function toModelInfo(model: ReplicateModel): ModelInfo | null {
   }
   if (model.owner.length === 0 || model.name.length === 0) return null
   const rawId = `${model.owner}/${model.name}`
+  const chat = replicateChatFacts(model)
   return {
     rawId,
     displayName: model.name,
-    activity: activityFromHaystack(`${rawId} ${model.description ?? ''}`),
+    activity: chat
+      ? 'chat'
+      : activityFromHaystack(`${rawId} ${model.description ?? ''}`, false),
     releasedAt:
       isoToEpochSeconds(model.created_at) ??
       isoToEpochSeconds(model.latest_version?.created_at),
@@ -225,6 +589,8 @@ function toModelInfo(model: ReplicateModel): ModelInfo | null {
       visibility: model.visibility,
       official: model.is_official,
     },
+    // A chat row carries request flags instead of the listing object.
+    ...chat,
   }
 }
 
@@ -236,22 +602,10 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('replicate', 'REPLICATE_API_TOKEN') }
   }
-  const headers = { Authorization: `Bearer ${key}` }
-  const listed: Array<{ info: ModelInfo; model: ReplicateModel }> = []
-  const seen = new Set<string>()
-  let url: string | null = REPLICATE_MODELS_URL
-  for (let page = 0; url && page < MAX_MODEL_PAGES; page++) {
-    if (!isSafeModelsUrl(url)) break
-    const body = (await fetchJson(url, { headers })) as ReplicateModelPage
-    for (const row of body.results ?? []) {
-      const info = toModelInfo(row)
-      if (!info || seen.has(info.rawId)) continue
-      seen.add(info.rawId)
-      listed.push({ info, model: row })
-    }
-    url =
-      typeof body.next === 'string' && body.next.length > 0 ? body.next : null
-  }
+  const listed = (await listCatalog(key)).flatMap((model) => {
+    const info = toModelInfo(model)
+    return info ? [{ info, model }] : []
+  })
   return {
     models: await mapConcurrent(listed, 8, ({ info, model }) =>
       withPredictionPrice(model, info, kv),
@@ -266,6 +620,7 @@ export const provider: ProviderConfig = {
   specSourceUrl: REPLICATE_OPENAPI_URL,
   modelsEndpoint: REPLICATE_MODELS_URL,
   defaultDerivation: 'upstream-spec',
+  bindSyncedRoutesOnly: true,
   fetchSpec,
   listModels,
   classify,

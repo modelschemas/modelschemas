@@ -1,0 +1,1235 @@
+[
+  {
+    "owner": "replicate",
+    "name": "fast-flux-trainer",
+    "description": "Train subjects or styles faster than ever",
+    "visibility": "public",
+    "is_official": false,
+    "created_at": "2025-05-16T00:37:16.915460Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "required": ["replicate_weights", "txt"],
+              "properties": {
+                "txt": {
+                  "type": "string",
+                  "title": "Txt",
+                  "x-order": 1,
+                  "description": "some words"
+                },
+                "replicate_weights": {
+                  "type": "string",
+                  "title": "Replicate Weights",
+                  "format": "uri",
+                  "x-order": 0,
+                  "description": "replicate weights"
+                }
+              }
+            },
+            "Output": {
+              "type": "string",
+              "title": "Output"
+            },
+            "lora_type": {
+              "enum": ["subject", "style"],
+              "type": "string",
+              "title": "lora_type",
+              "description": "An enumeration."
+            },
+            "TrainingInput": {
+              "type": "object",
+              "title": "TrainingInput",
+              "properties": {
+                "seed": {
+                  "type": "integer",
+                  "title": "Seed",
+                  "default": null,
+                  "x-order": 4,
+                  "nullable": true,
+                  "description": "The seed for the random number generator. This is used to ensure that the same lora weights are used for the same input images. If you want to train the same input images multiple times, you should use the same seed each time."
+                },
+                "hf_token": {
+                  "type": "string",
+                  "title": "Hf Token",
+                  "format": "password",
+                  "default": null,
+                  "x-order": 6,
+                  "nullable": true,
+                  "writeOnly": true,
+                  "description": "Hugging Face access token for uploading. Leave blank to skip upload.",
+                  "x-cog-secret": true
+                },
+                "lora_type": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/lora_type"
+                    }
+                  ],
+                  "default": "subject",
+                  "x-order": 3,
+                  "description": "Are your images of a particular subject (i.e. a person, dog, or other object), or do they convey a style (i.e. cyberpunk, anime, etc)?"
+                },
+                "hf_repo_id": {
+                  "type": "string",
+                  "title": "Hf Repo Id",
+                  "default": null,
+                  "x-order": 5,
+                  "nullable": true,
+                  "description": "Hugging Face repo name (e.g. user/model) to upload the LoRA weights. Leave blank to skip upload."
+                },
+                "input_images": {
+                  "type": "string",
+                  "title": "Input Images",
+                  "format": "uri",
+                  "default": null,
+                  "x-order": 0,
+                  "nullable": true,
+                  "description": "A zip file containing the images that will be used for training. We recommend a minimum of 10 images. If you include captions, include them as one .txt file per image, e.g. my-photo.jpg should have a caption file named my-photo.txt. If you don't include captions, we will generate them for you."
+                },
+                "trigger_word": {
+                  "type": "string",
+                  "title": "Trigger Word",
+                  "default": "TOK",
+                  "x-order": 1,
+                  "description": "The trigger word refers to the object, style or concept you are training on. Pick a string that isn't a real word, like TOK or something related to what's being trained, like CYBRPNK. The trigger word you specify here will be associated with all images during training. Then when you use your LoRA, you can include the trigger word in prompts to help activate the LoRA."
+                },
+                "training_steps": {
+                  "type": "integer",
+                  "title": "Training Steps",
+                  "default": 1000,
+                  "x-order": 2,
+                  "description": "The number of training steps. Leave alone unless you know what you're doing. This is an integer."
+                }
+              }
+            },
+            "TrainingOutput": {
+              "type": "object",
+              "title": "Output",
+              "required": ["weights"],
+              "properties": {
+                "weights": {
+                  "type": "string",
+                  "title": "Weights",
+                  "format": "uri"
+                },
+                "validation_images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "title": "Validation Images",
+                  "nullable": true
+                }
+              }
+            },
+            "TrainingRequest": {
+              "type": "object",
+              "title": "TrainingRequest",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "title": "Id"
+                },
+                "input": {
+                  "$ref": "#/components/schemas/TrainingInput"
+                }
+              }
+            },
+            "TrainingResponse": {
+              "type": "object",
+              "title": "TrainingResponse",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "title": "Id"
+                },
+                "logs": {
+                  "type": "string",
+                  "title": "Logs"
+                },
+                "error": {
+                  "type": "string",
+                  "title": "Error"
+                },
+                "input": {
+                  "$ref": "#/components/schemas/TrainingInput"
+                },
+                "output": {
+                  "$ref": "#/components/schemas/TrainingOutput"
+                },
+                "status": {
+                  "type": "string",
+                  "title": "Status"
+                },
+                "metrics": {
+                  "type": "object",
+                  "title": "Metrics"
+                },
+                "version": {
+                  "type": "string",
+                  "title": "Version"
+                },
+                "created_at": {
+                  "type": "string",
+                  "title": "Created At",
+                  "format": "date-time"
+                },
+                "started_at": {
+                  "type": "string",
+                  "title": "Started At",
+                  "format": "date-time"
+                },
+                "completed_at": {
+                  "type": "string",
+                  "title": "Completed At",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "meta",
+    "name": "llama-4-maverick-instruct",
+    "description": "A 17 billion parameter model with 128 experts",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2025-04-05T22:52:08.124556Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "properties": {
+                "top_k": {
+                  "type": "integer",
+                  "title": "Top K",
+                  "default": 50,
+                  "x-order": 6,
+                  "description": "The number of highest probability tokens to consider for generating the output. If > 0, only keep the top k tokens with highest probability (top-k filtering)."
+                },
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "default": 0.9,
+                  "x-order": 5,
+                  "description": "A probability threshold for generating the output. If < 1.0, only keep the top tokens with cumulative probability >= top_p (nucleus filtering). Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)."
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "default": "",
+                  "x-order": 0,
+                  "description": "Prompt"
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "title": "Max Tokens",
+                  "default": 4096,
+                  "maximum": 131072,
+                  "minimum": 0,
+                  "x-order": 3,
+                  "description": "The maximum number of tokens the model should generate as output."
+                },
+                "min_tokens": {
+                  "type": "integer",
+                  "title": "Min Tokens",
+                  "default": 0,
+                  "x-order": 2,
+                  "description": "The minimum number of tokens the model should generate as output."
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "default": 0.6,
+                  "x-order": 4,
+                  "description": "The value used to modulate the next token probabilities."
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "default": "You are a helpful assistant.",
+                  "x-order": 1,
+                  "description": "System prompt to send to the model. This is prepended to the prompt and helps guide system behavior. Ignored for non-chat models."
+                },
+                "stop_sequences": {
+                  "type": "string",
+                  "title": "Stop Sequences",
+                  "default": "",
+                  "x-order": 9,
+                  "description": "A comma-separated list of sequences to stop generation at. For example, '<end>,<stop>' will stop generation at the first instance of 'end' or '<stop>'."
+                },
+                "prompt_template": {
+                  "type": "string",
+                  "title": "Prompt Template",
+                  "default": "",
+                  "x-order": 10,
+                  "description": "A template to format the prompt with. If not provided, the default prompt template will be used."
+                },
+                "presence_penalty": {
+                  "type": "number",
+                  "title": "Presence Penalty",
+                  "default": 0,
+                  "x-order": 7,
+                  "description": "Presence penalty"
+                },
+                "frequency_penalty": {
+                  "type": "number",
+                  "title": "Frequency Penalty",
+                  "default": 0,
+                  "x-order": 8,
+                  "description": "Frequency penalty"
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "meta",
+    "name": "llama-guard-4-12b",
+    "description": null,
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2025-06-23T20:57:12.658042Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "required": ["prompt", "system_prompt"],
+              "properties": {
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "default": 1,
+                  "maximum": 1,
+                  "minimum": 0,
+                  "x-order": 5,
+                  "description": "Nucleus sampling parameter - the model considers the results of the tokens with top_p probability mass. (0.1 means only the tokens comprising the top 10% probability mass are considered.)"
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "description": "The prompt to send to the model. Do not use if using messages."
+                },
+                "image_input": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Image Input",
+                  "default": [],
+                  "x-order": 2,
+                  "description": "List of images to send to the model"
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "default": 1,
+                  "maximum": 2,
+                  "minimum": 0,
+                  "x-order": 3,
+                  "description": "Sampling temperature between 0 and 2"
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "x-order": 1,
+                  "description": "System prompt to set the assistant's behavior"
+                },
+                "presence_penalty": {
+                  "type": "number",
+                  "title": "Presence Penalty",
+                  "default": 0,
+                  "maximum": 2,
+                  "minimum": -2,
+                  "x-order": 7,
+                  "description": "Presence penalty parameter - positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics."
+                },
+                "frequency_penalty": {
+                  "type": "number",
+                  "title": "Frequency Penalty",
+                  "default": 0,
+                  "maximum": 2,
+                  "minimum": -2,
+                  "x-order": 6,
+                  "description": "Frequency penalty parameter - positive values penalize the repetition of tokens."
+                },
+                "max_completion_tokens": {
+                  "type": "integer",
+                  "title": "Max Completion Tokens",
+                  "default": 512,
+                  "maximum": 1024,
+                  "minimum": 1,
+                  "x-order": 4,
+                  "description": "Maximum number of completion tokens to generate"
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "ibm-granite",
+    "name": "granite-embedding-small-english-r2",
+    "description": "Granite-embedding-small-english-r2 is a 47M parameter dense biencoder embedding model from the Granite Embeddings collection that can be used to generate high quality text embeddings.",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2026-04-23T19:54:11.770951Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "properties": {
+                "texts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Texts",
+                  "default": [],
+                  "x-order": 0,
+                  "description": "A list of text strings to embed."
+                },
+                "normalize": {
+                  "type": "boolean",
+                  "title": "Normalize",
+                  "default": true,
+                  "x-order": 1,
+                  "description": "Normalize the embeddings."
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "title": "Output"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "deepseek-ai",
+    "name": "deepseek-v3.1",
+    "description": "Latest hybrid thinking model from Deepseek",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2025-08-25T18:41:12.219732Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "properties": {
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "default": 1,
+                  "x-order": 4,
+                  "description": "Top-p (nucleus) sampling"
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "default": "Why are you better than Deepseek v3?",
+                  "x-order": 1,
+                  "description": "Prompt"
+                },
+                "thinking": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/thinking"
+                    }
+                  ],
+                  "default": "None",
+                  "x-order": 0,
+                  "description": "Reasoning effort level for DeepSeek models. Use 'medium' for enhanced reasoning or leave as None for default behavior."
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "title": "Max Tokens",
+                  "default": 1024,
+                  "x-order": 2,
+                  "description": "The maximum number of tokens the model should generate as output."
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "default": 0.1,
+                  "x-order": 3,
+                  "description": "The value used to modulate the next token probabilities."
+                },
+                "presence_penalty": {
+                  "type": "number",
+                  "title": "Presence Penalty",
+                  "default": 0,
+                  "x-order": 5,
+                  "description": "Presence penalty"
+                },
+                "frequency_penalty": {
+                  "type": "number",
+                  "title": "Frequency Penalty",
+                  "default": 0,
+                  "x-order": 6,
+                  "description": "Frequency penalty"
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            },
+            "thinking": {
+              "enum": ["medium", "None"],
+              "type": "string",
+              "title": "thinking",
+              "description": "An enumeration."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "google",
+    "name": "gemini-3-flash",
+    "description": "Google's most intelligent model built for speed with frontier intelligence, superior search, and grounding",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2026-01-26T20:21:37.491629Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "required": ["prompt"],
+              "properties": {
+                "audio": {
+                  "type": "string",
+                  "title": "Audio",
+                  "format": "uri",
+                  "default": null,
+                  "x-order": 4,
+                  "nullable": true,
+                  "description": "Input audio to send with the prompt (max 1 audio file, up to 8.4 hours)"
+                },
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "default": 0.95,
+                  "maximum": 1,
+                  "minimum": 0,
+                  "x-order": 8,
+                  "description": "Nucleus sampling parameter - the model considers the results of the tokens with top_p probability mass"
+                },
+                "images": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "title": "Images",
+                  "default": [],
+                  "x-order": 1,
+                  "description": "Input images to send with the prompt (max 10 images, each up to 7MB)"
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "description": "The text prompt to send to the model"
+                },
+                "videos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "title": "Videos",
+                  "default": [],
+                  "x-order": 2,
+                  "description": "Input videos to send with the prompt (max 10 videos, each up to 45 minutes)"
+                },
+                "video_fps": {
+                  "type": "number",
+                  "title": "Video Fps",
+                  "default": null,
+                  "maximum": 60,
+                  "minimum": 0.1,
+                  "x-order": 3,
+                  "nullable": true,
+                  "description": "Frame rate (frames per second) at which to sample input videos. Higher values give the model more frames to reason over (useful for fast-moving footage) but consume more tokens. Omit to use the default sampling rate (1 fps)."
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "default": 1,
+                  "maximum": 2,
+                  "minimum": 0,
+                  "x-order": 7,
+                  "description": "Sampling temperature between 0 and 2"
+                },
+                "thinking_level": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/thinking_level"
+                    }
+                  ],
+                  "default": "none",
+                  "x-order": 6,
+                  "nullable": true,
+                  "description": "Thinking level for reasoning (low or high). Replaces thinking_budget for Gemini 3 models."
+                },
+                "max_output_tokens": {
+                  "type": "integer",
+                  "title": "Max Output Tokens",
+                  "default": 65535,
+                  "maximum": 65535,
+                  "minimum": 1,
+                  "x-order": 9,
+                  "description": "Maximum number of tokens to generate"
+                },
+                "system_instruction": {
+                  "type": "string",
+                  "title": "System Instruction",
+                  "default": null,
+                  "x-order": 5,
+                  "nullable": true,
+                  "description": "System instruction to guide the model's behavior"
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            },
+            "thinking_level": {
+              "enum": ["none", "low", "high"],
+              "type": "string",
+              "title": "thinking_level",
+              "description": "An enumeration."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "openai",
+    "name": "gpt-5.4",
+    "description": "OpenAI's most capable frontier model for complex professional work, coding, and multi-step reasoning.",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2026-03-05T20:03:24.763570Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "properties": {
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "nullable": true,
+                  "description": "The prompt to send to the model. Do not use if using messages."
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Messages",
+                  "default": [],
+                  "x-order": 2,
+                  "description": "A JSON string representing a list of messages. For example: [{\"role\": \"user\", \"content\": \"Hello, how are you?\"}]. If provided, prompt and system_prompt are ignored."
+                },
+                "verbosity": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/verbosity"
+                    }
+                  ],
+                  "default": "medium",
+                  "x-order": 5,
+                  "description": "Constrains the verbosity of the model's response. Lower values will result in more concise responses, while higher values will result in more verbose responses. Currently supported values are low, medium, and high. GPT-5 supports this parameter to help control whether answers are short and to the point or long and comprehensive."
+                },
+                "image_input": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "title": "Image Input",
+                  "default": [],
+                  "x-order": 3,
+                  "description": "List of images to send to the model"
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "x-order": 1,
+                  "nullable": true,
+                  "description": "System prompt to set the assistant's behavior"
+                },
+                "reasoning_effort": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/reasoning_effort"
+                    }
+                  ],
+                  "default": "none",
+                  "x-order": 4,
+                  "description": "Constrains effort on reasoning for GPT-5.4. Supported values are none, low, medium, high, and xhigh. The default none provides fast, low-latency responses similar to GPT-4.1 in speed. Higher reasoning efforts produce more thorough answers but use more tokens and take longer. For higher reasoning efforts you may need to increase your max_completion_tokens to avoid empty responses (where all the tokens are used on reasoning)."
+                },
+                "max_completion_tokens": {
+                  "type": "integer",
+                  "title": "Max Completion Tokens",
+                  "x-order": 6,
+                  "nullable": true,
+                  "description": "Maximum number of completion tokens to generate. For higher reasoning efforts you may need to increase your max_completion_tokens to avoid empty responses (where all the tokens are used on reasoning)."
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            },
+            "verbosity": {
+              "enum": ["low", "medium", "high"],
+              "type": "string",
+              "title": "verbosity",
+              "description": "An enumeration."
+            },
+            "reasoning_effort": {
+              "enum": ["none", "low", "medium", "high", "xhigh"],
+              "type": "string",
+              "title": "reasoning_effort",
+              "description": "An enumeration."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "prunaai",
+    "name": "gpt-oss-120b-fast",
+    "description": "This is a version of GPT-OSS-120B that is optimised by Pruna AI.",
+    "visibility": "public",
+    "is_official": false,
+    "created_at": "2026-02-09T08:52:42.394910Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "properties": {
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "default": 0.95,
+                  "maximum": 1,
+                  "minimum": 0,
+                  "x-order": 4,
+                  "description": "Nucleus sampling: only consider tokens with cumulative probability up to this value"
+                },
+                "message": {
+                  "type": "string",
+                  "title": "Message",
+                  "default": "Explain vLLM in one sentence",
+                  "x-order": 0,
+                  "description": "The user message to send to the model"
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "title": "Max Tokens",
+                  "default": 2048,
+                  "maximum": 16384,
+                  "minimum": 1,
+                  "x-order": 2,
+                  "description": "Maximum number of tokens to generate"
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "default": 0.7,
+                  "maximum": 2,
+                  "minimum": 0,
+                  "x-order": 3,
+                  "description": "Sampling temperature (higher = more creative, lower = more deterministic)"
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "x-order": 1,
+                  "nullable": true,
+                  "description": "Optional system prompt to set the model's behavior"
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "alibaba",
+    "name": "qwen-image-3",
+    "description": "Qwen-Image-3.0 generates and edits images with accurate text rendering, complex layouts, and photographic detail.",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2026-08-21T00:31:47.801504Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "required": ["prompt"],
+              "properties": {
+                "seed": {
+                  "type": "integer",
+                  "title": "Seed",
+                  "default": null,
+                  "x-order": 6,
+                  "nullable": true,
+                  "description": "Random seed for reproducible generation. Range: 0-2147483647"
+                },
+                "image": {
+                  "type": "string",
+                  "title": "Image",
+                  "format": "uri",
+                  "default": null,
+                  "x-order": 1,
+                  "nullable": true,
+                  "description": "Optional reference image for image editing, style transfer, or image-to-image generation"
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "description": "Text prompt for image generation or editing"
+                },
+                "aspect_ratio": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/aspect_ratio"
+                    }
+                  ],
+                  "default": "1:1",
+                  "x-order": 3,
+                  "description": "Aspect ratio of the generated image"
+                },
+                "negative_prompt": {
+                  "type": "string",
+                  "title": "Negative Prompt",
+                  "default": "",
+                  "x-order": 5,
+                  "description": "Negative prompt to specify elements to avoid in the generated image"
+                },
+                "match_input_image": {
+                  "type": "boolean",
+                  "title": "Match Input Image",
+                  "default": false,
+                  "x-order": 2,
+                  "description": "When true and an image is provided, use the input image's aspect ratio and resolution instead of the aspect_ratio parameter"
+                },
+                "enable_prompt_expansion": {
+                  "type": "boolean",
+                  "title": "Enable Prompt Expansion",
+                  "default": true,
+                  "x-order": 4,
+                  "description": "Automatically expand and optimize the prompt for better results"
+                }
+              }
+            },
+            "Output": {
+              "type": "string",
+              "title": "Output",
+              "format": "uri"
+            },
+            "aspect_ratio": {
+              "enum": [
+                "1:1",
+                "16:9",
+                "9:16",
+                "4:3",
+                "3:4",
+                "3:2",
+                "2:3",
+                "2:1",
+                "1:2"
+              ],
+              "type": "string",
+              "title": "aspect_ratio",
+              "description": "An enumeration."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "anthropic",
+    "name": "claude-sonnet-5",
+    "description": "Anthropic's most agentic Sonnet model, bringing frontier-level coding and tool use at Sonnet's speed and price",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2026-07-24T15:03:19.778306Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "required": ["prompt"],
+              "properties": {
+                "image": {
+                  "type": "string",
+                  "title": "Image",
+                  "format": "uri",
+                  "default": null,
+                  "x-order": 1,
+                  "nullable": true,
+                  "description": "Optional input image. Images are priced as (width px * height px)/750 input tokens"
+                },
+                "effort": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/effort"
+                    }
+                  ],
+                  "default": "low",
+                  "x-order": 4,
+                  "description": "How much thinking Claude does before responding. Higher effort improves quality on hard coding and agentic tasks, but is slower and uses more output tokens. 'low' disables thinking for the fastest, cheapest responses."
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "description": "Input prompt"
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "title": "Max Tokens",
+                  "default": 8192,
+                  "maximum": 64000,
+                  "minimum": 1024,
+                  "x-order": 3,
+                  "description": "Maximum number of output tokens"
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "default": "",
+                  "x-order": 2,
+                  "description": "System prompt"
+                },
+                "max_image_resolution": {
+                  "type": "number",
+                  "title": "Max Image Resolution",
+                  "default": 0.5,
+                  "maximum": 2,
+                  "minimum": 0.001,
+                  "x-order": 5,
+                  "description": "Maximum image resolution in megapixels. Scales down image before sending it to Claude, to save time and money."
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            },
+            "effort": {
+              "enum": ["low", "medium", "high", "xhigh", "max"],
+              "type": "string",
+              "title": "effort",
+              "description": "An enumeration."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "owner": "ibm-granite",
+    "name": "granite-4.1-8b",
+    "description": "Granite-4.1-8B is a 8B parameter long-context instruct model finetuned from Granite-4.1-8B-Base using a combination of open source instruction datasets with permissive license and internally collected synthetic datasets.",
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2026-04-22T18:15:20.118515Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "properties": {
+                "seed": {
+                  "type": "integer",
+                  "title": "Seed",
+                  "x-order": 20,
+                  "nullable": true,
+                  "description": "Random seed. Leave unspecified to randomize the seed."
+                },
+                "stop": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Stop",
+                  "x-order": 19,
+                  "nullable": true,
+                  "description": "A list of sequences to stop generation at. For example, [\"<end>\",\"<stop>\"] will stop generation at the first instance of \"<end>\" or \"<stop>\"."
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Tools",
+                  "x-order": 3,
+                  "nullable": true,
+                  "description": "Tools for request. Passed to the chat template."
+                },
+                "top_k": {
+                  "type": "integer",
+                  "title": "Top K",
+                  "x-order": 15,
+                  "nullable": true,
+                  "description": "The number of highest probability tokens to consider for generating the output. If > 0, only keep the top k tokens with highest probability (top-k filtering)."
+                },
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "x-order": 14,
+                  "nullable": true,
+                  "description": "A probability threshold for generating the output. If < 1.0, only keep the top tokens with cumulative probability >= top_p (nucleus filtering). Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)."
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "nullable": true,
+                  "description": "Completion API user prompt."
+                },
+                "stream": {
+                  "type": "boolean",
+                  "title": "Stream",
+                  "x-order": 21,
+                  "nullable": true,
+                  "description": "Request streaming response."
+                },
+                "messages": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Messages",
+                  "x-order": 1,
+                  "nullable": true,
+                  "description": "Chat completion API messages."
+                },
+                "documents": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Documents",
+                  "x-order": 2,
+                  "nullable": true,
+                  "description": "Documents for request. Passed to the chat template."
+                },
+                "max_tokens": {
+                  "type": "integer",
+                  "title": "Max Tokens",
+                  "x-order": 11,
+                  "nullable": true,
+                  "deprecated": true,
+                  "description": "max_tokens is deprecated in favor of the max_completion_tokens field."
+                },
+                "min_tokens": {
+                  "type": "integer",
+                  "title": "Min Tokens",
+                  "default": 0,
+                  "x-order": 10,
+                  "description": "The minimum number of tokens the model should generate as output."
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "x-order": 13,
+                  "nullable": true,
+                  "description": "The value used to modulate the next token probabilities."
+                },
+                "tool_choice": {
+                  "type": "string",
+                  "title": "Tool Choice",
+                  "x-order": 4,
+                  "nullable": true,
+                  "description": "Tool choice for request. If the choice is a specific function, this should be specified as a JSON string."
+                },
+                "chat_template": {
+                  "type": "string",
+                  "title": "Chat Template",
+                  "x-order": 7,
+                  "nullable": true,
+                  "description": "A template to format the prompt with. If not specified, the chat template provided by the model will be used."
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "x-order": 6,
+                  "nullable": true,
+                  "description": "Completion API system prompt. The chat template provides a good default."
+                },
+                "response_format": {
+                  "type": "object",
+                  "title": "Response Format",
+                  "x-order": 5,
+                  "nullable": true,
+                  "description": "An object specifying the format that the model must output."
+                },
+                "presence_penalty": {
+                  "type": "number",
+                  "title": "Presence Penalty",
+                  "x-order": 16,
+                  "nullable": true,
+                  "description": "Presence penalty"
+                },
+                "frequency_penalty": {
+                  "type": "number",
+                  "title": "Frequency Penalty",
+                  "x-order": 17,
+                  "nullable": true,
+                  "description": "Frequency penalty"
+                },
+                "repetition_penalty": {
+                  "type": "number",
+                  "title": "Repetition Penalty",
+                  "x-order": 18,
+                  "nullable": true,
+                  "description": "Repetition penalty"
+                },
+                "chat_template_kwargs": {
+                  "type": "object",
+                  "title": "Chat Template Kwargs",
+                  "x-order": 9,
+                  "nullable": true,
+                  "description": "Additional arguments to be passed to the chat template."
+                },
+                "add_generation_prompt": {
+                  "type": "boolean",
+                  "title": "Add Generation Prompt",
+                  "default": true,
+                  "x-order": 8,
+                  "description": "Add generation prompt. Passed to the chat template. Defaults to True."
+                },
+                "max_completion_tokens": {
+                  "type": "integer",
+                  "title": "Max Completion Tokens",
+                  "x-order": 12,
+                  "nullable": true,
+                  "description": "An upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens."
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            }
+          }
+        }
+      }
+    }
+  }
+]

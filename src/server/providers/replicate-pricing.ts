@@ -3,10 +3,11 @@
  * `billingConfig` for the price of one prediction. Hardware-timed community
  * models publish no such config and stay null. A tier that depends on a
  * request field we cannot name, or a price unit this does not know, is
- * not a card.
+ * not a card. Token prices that step up above a prompt length are the one
+ * range tier read.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
-import type { RateCard, UnitKey } from '@modelschemas/rate-card'
+import type { RateCard, TokenRateTier, UnitKey } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import type { ModelInfo } from './types.ts'
@@ -14,7 +15,9 @@ import type { ModelInfo } from './types.ts'
 interface ReplicateCriterion {
   title?: string
   type?: string
-  value?: string
+  subtype?: string
+  /** A string for `equals`, `[from, to]` for `range`. */
+  value?: unknown
 }
 
 interface ReplicatePrice {
@@ -88,9 +91,73 @@ function leaf(price: ReplicatePrice, key?: Leaf['key']): Leaf | null {
   if (!param || dollars === null || scale === null) return null
   // Duration titles ("per minute") quote several seconds; token and image
   // titles ("per thousand") quote that many billed units. Both are USD / scale.
-  const rate = dollars / scale
+  // toPrecision: `$0.015` per thousand is 0.000015, not 0.0000149999….
+  const rate = Number((dollars / scale).toPrecision(12))
   if (!(rate > 0)) return null
   return { param, rate, ...(key ? { key } : {}) }
+}
+
+function tokenRates(
+  prices: Array<ReplicatePrice>,
+): Record<string, number> | null {
+  const rates: Record<string, number> = {}
+  for (const price of prices) {
+    const row = leaf(price)
+    if (!row || !row.param.endsWith('_tokens') || row.param in rates) {
+      return null
+    }
+    rates[row.param] = row.rate
+  }
+  return 'input_tokens' in rates && 'output_tokens' in rates ? rates : null
+}
+
+/**
+ * Token prices by prompt length: one `≤ N` tier (the base) and one `> N`
+ * tier that re-quotes above it. Any other range shape is not a card.
+ */
+function compilePromptTiers(
+  tiers: Array<ReplicateTier>,
+  source: RateCard['source'],
+): RateCard | null {
+  let base: { rates: Record<string, number>; upTo: number } | null = null
+  let above: TokenRateTier | null = null
+  for (const tier of tiers) {
+    const [criterion, ...more] = tier.criteria ?? []
+    const rates = tokenRates(tier.prices ?? [])
+    const range = criterion?.value
+    if (
+      !criterion ||
+      more.length > 0 ||
+      !rates ||
+      criterion.type !== 'range' ||
+      criterion.title !== 'input token' ||
+      !Array.isArray(range) ||
+      range.length !== 2
+    ) {
+      return null
+    }
+    const bounds: Array<unknown> = range
+    const [from, to] = bounds
+    if (
+      from === null &&
+      typeof to === 'number' &&
+      criterion.subtype === 'open-closed' &&
+      !base
+    ) {
+      base = { rates, upTo: to }
+    } else if (
+      typeof from === 'number' &&
+      to === null &&
+      criterion.subtype === 'open' &&
+      !above
+    ) {
+      above = { minPromptTokens: from, rates }
+    } else {
+      return null
+    }
+  }
+  if (!base || !above || base.upTo !== above.minPromptTokens) return null
+  return compileTokenCard(base.rates, [above], source)
 }
 
 /**
@@ -103,6 +170,9 @@ export function compileReplicateBilling(
 ): RateCard | null {
   const tiers = billing?.current_tiers
   if (!tiers || tiers.length === 0) return null
+  if (tiers.some((tier) => tier.criteria?.some((c) => c.type === 'range'))) {
+    return compilePromptTiers(tiers, source)
+  }
 
   const leaves: Array<Leaf> = []
   for (const tier of tiers) {
@@ -177,12 +247,14 @@ export function compileReplicateBilling(
   )
 }
 
+/** Opens the JSON every official model page embeds. */
+export const BILLING_MARKER = '{"billingConfig":'
+
 /** `billingConfig` JSON embedded in a public model page, if the page has one. */
 export function replicateBillingFromHtml(
   html: string,
 ): ReplicateBilling | null {
-  const marker = '{"billingConfig":'
-  const start = html.indexOf(marker)
+  const start = html.indexOf(BILLING_MARKER)
   if (start < 0) return null
   const parsed = parseJsonObject(html, start)
   if (!parsed || typeof parsed !== 'object') return null
