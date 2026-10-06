@@ -64,7 +64,48 @@ describe('chatRequestMap', () => {
     expect(map?.maxTokensField).toBe('max_tokens')
     expect(map?.developerRole).toBe(false)
     expect(map?.toolStream).toBe(true)
-    expect(map?.reasoningEffort).toBe(false)
+    expect(map?.reasoningEffort).toBe(true)
+  })
+
+  it('leaves GLM flags the Z.AI spec does not state as null', () => {
+    const flash = chatRequestMap('zai', 'glm-5.3-flashx', 'chat')
+    expect(flash?.thinking?.levels).toMatchObject({
+      low: 'low',
+      medium: null,
+      high: 'high',
+      max: 'max',
+    })
+    expect(flash?.reasoningEffort).toBe(true)
+    expect(flash?.toolStream).toBe(true)
+    // GLM-5.3 and GLM-5.3-FLASH "can only be enabled": there is no off body.
+    expect(flash?.thinking?.off).toBeNull()
+    expect(chatRequestMap('zai', 'glm-5.3', 'chat')?.thinking?.off).toBeNull()
+    // Every other thinking model takes `thinking.type: disabled`.
+    for (const id of ['glm-5.2', 'glm-5', 'glm-4.7-flash', 'glm-4.6v']) {
+      expect(chatRequestMap('zai', id, 'chat')?.thinking?.off).toEqual({
+        thinking: { type: 'disabled' },
+      })
+    }
+
+    // glm-5 is not glm-5.2: no effort field, but it is a tool_stream series.
+    const five = chatRequestMap('zai', 'glm-5', 'chat')
+    expect(five?.thinking?.levels).toBeNull()
+    expect(five?.reasoningEffort).toBeNull()
+    expect(five?.toolStream).toBe(true)
+
+    const air = chatRequestMap('zai', 'glm-4.5-air', 'chat')
+    expect(air?.thinking?.on).toEqual({
+      thinking: { type: 'enabled', clear_thinking: false },
+    })
+    expect(air?.toolStream).toBeNull()
+    expect(air?.reasoningEffort).toBeNull()
+
+    // glm-4.6v is not the glm-4.6 series.
+    expect(chatRequestMap('zai', 'glm-4.6v', 'chat')?.toolStream).toBeNull()
+
+    const legacy = chatRequestMap('zai', 'glm-4-32b-0414-128k', 'chat')
+    expect(legacy?.thinking).toBeNull()
+    expect(legacy?.maxTokensField).toBe('max_tokens')
   })
 
   it('sends Qwen enable_thinking and the vLLM kwargs body', () => {

@@ -135,6 +135,25 @@ describe('mergeListingAndSchema', () => {
     )
   })
 
+  it('adds no schema flags to an exact capability list', () => {
+    const walk = walkRequestSchema(chatSchema, {
+      derivation: 'upstream-spec',
+      endpointId: 'chat/completions',
+    })
+    const merged = mergeListingAndSchema(
+      {
+        rawId: 'glm-4.5v',
+        capabilities: ['temperature'],
+        exactCapabilities: true,
+      },
+      walk,
+    )
+    expect(merged.capabilities).toEqual(['temperature'])
+    expect(Object.keys(merged.factSources?.capabilities ?? {})).toEqual([
+      'temperature',
+    ])
+  })
+
   it('does not turn a host-native capabilities object into flags', () => {
     const walk = walkRequestSchema(chatSchema, {
       derivation: 'upstream-spec',

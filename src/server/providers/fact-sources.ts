@@ -313,7 +313,7 @@ export interface MergedFacts {
 /**
  * Listing/docs win on a field they stated. Schema fills remaining
  * capability flags and null modalities. Host-native capability objects
- * are left alone.
+ * and `exactCapabilities` listings are left alone.
  */
 export function mergeListingAndSchema(
   listing: ModelInfo,
@@ -321,12 +321,13 @@ export function mergeListingAndSchema(
 ): MergedFacts {
   const listed = listingSources(listing)
   const capabilitiesIsObject = isRecord(listing.capabilities)
+  const closed = capabilitiesIsObject || listing.exactCapabilities === true
 
   let capabilities: unknown = listing.capabilities ?? null
   const capSources: Record<string, FactSource> = {
     ...(listed.capabilities ?? {}),
   }
-  if (!capabilitiesIsObject && walk && walk.flags.length > 0) {
+  if (!closed && walk && walk.flags.length > 0) {
     const have = new Set(isStringArray(capabilities) ? capabilities : [])
     for (const flag of walk.flags) {
       if (have.has(flag)) continue
