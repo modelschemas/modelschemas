@@ -7,6 +7,8 @@ import type { Activity } from '#/db/schema.ts'
 import { perplexityListingCard } from '../catalog-prices.ts'
 import {
   cachedDocs,
+  docsReport,
+  docsRun,
   markdownTableRows,
   tryDocs,
   unavailable,
@@ -19,7 +21,6 @@ import {
   skippedResult,
 } from '../types.ts'
 import type {
-  DocsFailure,
   FactSource,
   ListModelsResult,
   ModelInfo,
@@ -215,6 +216,15 @@ function statedFacts(
   return { capabilities, factSources: { capabilities: sources } }
 }
 
+type StatedFact = Exclude<keyof ReturnType<typeof statedFacts>, 'factSources'>
+
+/**
+ * Every fact `statedFacts` supplies; all are withheld when a page fails.
+ * Keyed by its return type, so a fact added there fails to compile here
+ * instead of going null on a docs failure.
+ */
+const STATED_FACTS: Record<StatedFact, true> = { capabilities: true }
+
 interface PerplexityModelList {
   data?: Array<{ id: string; created?: number; pricing?: unknown }>
 }
@@ -227,16 +237,16 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('perplexity', 'PERPLEXITY_API_KEY') }
   }
-  const docsFailures: Array<DocsFailure> = []
+  const run = docsRun()
   const [body, modelsPage, presets] = await Promise.all([
     fetchJson(PERPLEXITY_MODELS_URL, {
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     }) as Promise<PerplexityModelList>,
-    tryDocs(docsFailures, PERPLEXITY_MODELS_DOC_URL, () =>
+    tryDocs(run, PERPLEXITY_MODELS_DOC_URL, () =>
       statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
     ),
-    tryDocs(docsFailures, PERPLEXITY_PRESETS_DOC_URL, () =>
+    tryDocs(run, PERPLEXITY_PRESETS_DOC_URL, () =>
       statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, parsePerplexityPresets),
     ),
   ])
@@ -259,10 +269,12 @@ async function listModels(
       releasedAt: m.created ?? null,
       activity: 'chat' as const,
       ...(pricing ? { pricing } : {}),
-      ...(docs ? statedFacts(m.id, docs) : unavailable('capabilities')),
+      ...(docs
+        ? statedFacts(m.id, docs)
+        : unavailable(...(Object.keys(STATED_FACTS) as Array<StatedFact>))),
     })
   }
-  return { models, docsFailures }
+  return { models, docsFailures: docsReport(run) }
 }
 
 export const provider: ProviderConfig = {

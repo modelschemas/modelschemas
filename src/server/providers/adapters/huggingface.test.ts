@@ -253,6 +253,7 @@ describe('huggingface listing', () => {
         model('zero/quote', [
           host('novita', { pricing: { input: 0, output: 0 } }),
         ]),
+        ...FIXTURE.data,
       ],
     })
     expect(zero).toMatchObject({
@@ -261,37 +262,69 @@ describe('huggingface listing', () => {
     })
   })
 
-  it('settles nothing from a reshaped providers list', async () => {
+  // `cleared` drops a stored card, so nothing the parser cannot read may
+  // come out as "no price".
+  it('throws on a reshaped price or providers list instead of clearing', async () => {
+    const replay = (edit: (json: string) => string) =>
+      parseHuggingFaceModels(JSON.parse(edit(JSON.stringify(FIXTURE))))
+    // The listing with its price keys renamed, then with numbers as strings.
+    await expect(
+      replay((json) =>
+        json
+          .replaceAll('"input":', '"prompt":')
+          .replaceAll('"output":', '"completion":'),
+      ),
+    ).rejects.toThrow('a provider price is in an unread shape')
+    await expect(
+      replay((json) => json.replace(/"(input|output)":([\d.]+)/g, '"$1":"$2"')),
+    ).rejects.toThrow('a provider price is in an unread shape')
+    // Prices moved out of the entries altogether.
+    await expect(
+      replay((json) => json.replaceAll('"pricing":', '"rates":')),
+    ).rejects.toThrow('no provider entry states a price')
+
     const ranked = host('nscale', {
       context_length: 40960,
       pricing: { input: 0.07, output: 0.2 },
-      supports_tools: true,
-      supports_structured_output: true,
-      throughput: 79.9,
     })
-    const reshaped = [
+    for (const providers of [
       { nscale: ranked },
       [ranked, 'featherless-ai'],
-      [
-        {
-          ...ranked,
-          context_length: '40960',
-          pricing: { prompt: 0.07, completion: 0.2 },
-          supports_tools: 'yes',
-        },
-      ],
-    ]
-    for (const providers of reshaped) {
-      const [row] = await parseHuggingFaceModels({
-        data: [model('x/y', providers)],
-      })
-      expect(row).toMatchObject({
-        contextWindow: null,
-        pricing: null,
-        capabilities: null,
-        factSources: {},
-      })
+      undefined,
+    ]) {
+      await expect(
+        parseHuggingFaceModels({
+          data: [...FIXTURE.data, model('x/y', providers)],
+        }),
+      ).rejects.toThrow('a providers list is in an unread shape')
     }
+    for (const pricing of [
+      null,
+      0.07,
+      { input: 0.07 },
+      { input: -1, output: 1 },
+    ]) {
+      await expect(
+        parseHuggingFaceModels({
+          data: [...FIXTURE.data, model('x/y', [{ ...ranked, pricing }])],
+        }),
+      ).rejects.toThrow('a provider price is in an unread shape')
+    }
+  })
+
+  it('leaves context and flags null when their fields change type', async () => {
+    const [row] = await parseHuggingFaceModels({
+      data: [
+        model('x/y', [
+          host('nscale', {
+            context_length: '40960',
+            pricing: { input: 0.07, output: 0.2 },
+            supports_tools: 'yes',
+          }),
+        ]),
+      ],
+    })
+    expect(row).toMatchObject({ contextWindow: null, capabilities: null })
   })
 
   it('throws on a payload that lists nothing', async () => {

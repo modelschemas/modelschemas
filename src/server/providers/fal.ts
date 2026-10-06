@@ -19,12 +19,11 @@ import { activities } from '#/db/schema.ts'
 import { extractAsyncApiSchemas } from '#/server/ingest/asyncapi.ts'
 import { contentHash } from '#/server/kv.ts'
 import { falChatFacts } from './fal-chat-facts.ts'
-import { tryDocs, unavailable } from './model-facts.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from './model-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import { sha256Text, skippedResult } from './types.ts'
 import type {
   BundledEndpoint,
-  DocsFailure,
   ListModelsResult,
   ModelInfo,
   OpenApiDocument,
@@ -380,9 +379,9 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     (m) => falCategoryActivity(m.metadata.category) === 'chat',
   )
   const chatIds = chat.map((m) => m.endpoint_id)
-  const docsFailures: Array<DocsFailure> = []
+  const docs = docsRun()
   const chatFacts = await tryDocs(
-    docsFailures,
+    docs,
     `${FAL_MODELS_URL}?expand=openapi-3.0 (chat endpoints)`,
     async () => {
       const chatSpecs = new Map<string, OpenApiDocument | undefined>()
@@ -437,7 +436,7 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
         ? chatUnavailable
         : {}),
   }))
-  return { models, docsFailures }
+  return { models, docsFailures: docsReport(docs) }
 }
 
 export const falProvider: ProviderConfig = {

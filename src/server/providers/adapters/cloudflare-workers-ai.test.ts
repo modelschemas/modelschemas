@@ -198,7 +198,7 @@ describe('cloudflare-workers-ai listing', () => {
         ...(apertus === undefined ? {} : { [APERTUS_URL]: apertus }),
       })
       const listed = await provider.listModels({})
-      expect(listed.docsFailures).toMatchObject([
+      expect(listed.docsFailures?.first).toMatchObject([
         { source: APERTUS_URL, error: expect.stringMatching(error) as string },
       ])
       const [glm, failed] = listed.models

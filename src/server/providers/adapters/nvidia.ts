@@ -14,7 +14,8 @@ import type { Activity } from '#/db/schema.ts'
 import { tagDocsFacts } from '../fact-sources.ts'
 import {
   assertParsed,
-  cachedDocs,
+  docsReport,
+  docsRun,
   mapConcurrent,
   markdownSection,
   tokenCount,
@@ -23,7 +24,6 @@ import {
 } from '../model-facts.ts'
 import { fetchJson, sha256Text } from '../types.ts'
 import type {
-  DocsFailure,
   ListModelsResult,
   ModelInfo,
   ProviderConfig,
@@ -183,14 +183,14 @@ async function listModels(
   // (misses included) keeps that off most polls.
   // A card that fails to load is that model's alone: its row keeps the
   // stored card facts and the next poll retries.
-  const docsFailures: Array<DocsFailure> = []
+  const docs = docsRun()
   const models = await mapConcurrent(
     listed,
     8,
     async (model): Promise<ModelInfo> => {
       const source = `${NVIDIA_CARD_BASE}${model.rawId}.md`
-      const patch = await tryDocs(docsFailures, source, async () => {
-        const card = await cachedDocs(kv, source, () => fetchCard(model.rawId))
+      const patch = await tryDocs(docs, source, async (cached) => {
+        const card = await cached(kv, source, () => fetchCard(model.rawId))
         if (card.url === null) return {}
         const facts = parseNvidiaCard(card.markdown)
         return {
@@ -206,10 +206,10 @@ async function listModels(
   )
   // Zero rows with every card loaded is a reshaped site. With cards
   // failing it is the outage `docsFailures` already reports.
-  if (parsed.size > 0 || docsFailures.length === 0) {
+  if (parsed.size > 0 || docs.failed + docs.skipped === 0) {
     assertParsed(parsed, 'nvidia model cards')
   }
-  return { models, docsFailures }
+  return { models, docsFailures: docsReport(docs) }
 }
 
 function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {

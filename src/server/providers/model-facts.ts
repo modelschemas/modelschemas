@@ -8,7 +8,7 @@ import { errorMessage } from '#/server/errors.ts'
 import { noteIngest, parseRowsEvent } from '#/server/ingest/ingest-signals.ts'
 import { getJson, putJson } from '#/server/kv.ts'
 
-import type { DocsFailure, ModelFact, ModelInfo } from './types.ts'
+import type { DocsFailures, ModelFact, ModelInfo } from './types.ts'
 
 export type ModelFacts = Pick<
   ModelInfo,
@@ -160,37 +160,79 @@ export async function cachedDocs<T>(
 }
 
 /**
- * Once failed loads have cost this long in one poll, the rest are not
- * attempted: a docs host that hangs would otherwise spend a timeout per
- * document (an NVIDIA card allows 60 s) and stall every provider polled
- * after it. Pages that fail fast (a 404, a changed shape) never get here,
- * so a few broken pages do not stop the healthy ones from loading.
+ * Once one provider's failed docs loads have cost this much wall-clock time
+ * in a poll, nothing more is fetched for it: a docs host that is down would
+ * otherwise spend a timeout per document and stall every provider polled
+ * after it. Loads that overlap count once, so eight concurrent failures of
+ * 2.5 s cost 2.5 s. A host that hangs still costs one full round of its
+ * timeout (60 s for an NVIDIA card) before this can trip. A few pages that
+ * fail fast never reach it, so they do not stop the healthy ones loading.
  */
 const DOCS_FAILURE_BUDGET_MS = 15_000
 
+/** Failures kept in full per provider per poll; the rest are only counted. */
+const DOCS_FAILURES_KEPT = 5
+
+/** One provider's docs loads in one poll. Make it with `docsRun()`. */
+export interface DocsRun extends DocsFailures {
+  /** Wall-clock time lost to failed loads so far. */
+  lostMs: number
+  /** When the latest failed load ended; where the next one's cost starts. */
+  lostUntil: number
+}
+
+export function docsRun(): DocsRun {
+  return { failed: 0, skipped: 0, first: [], lostMs: 0, lostUntil: 0 }
+}
+
+/** `ListModelsResult.docsFailures` for a finished run. */
+export function docsReport(run: DocsRun): DocsFailures {
+  return { failed: run.failed, skipped: run.skipped, first: run.first }
+}
+
+class DocsSkipped extends Error {}
+
+/** `cachedDocs` that serves a KV hit and refuses to fetch. */
+const cachedOnly: typeof cachedDocs = (kv, url) =>
+  cachedDocs(kv, url, () => Promise.reject(new DocsSkipped()))
+
 /**
- * Load and parse one docs source for `listModels`. A throw is recorded in
- * `failures` and returns null, so the listing and the other sources still
- * poll. The caller gives the rows that source feeds `unavailable(...)` and
- * returns `failures` as `docsFailures`. Parsers stay strict: they throw,
- * and only this catches. Never wrap the listing itself.
+ * Load and parse one docs source for `listModels`. A throw is counted in
+ * `run` and returns null, so the listing and the other sources still poll.
+ * The caller gives the rows that source feeds `unavailable(...)` and
+ * returns `docsReport(run)` as `docsFailures`. Parsers stay strict: they
+ * throw, and only this catches. Never wrap the listing itself.
+ *
+ * `load` must fetch through the `cached` it is handed: once the failure
+ * budget is spent that one serves KV hits only, and a miss is counted as
+ * skipped rather than fetched.
  */
 export async function tryDocs<T>(
-  failures: Array<DocsFailure>,
+  run: DocsRun,
   source: string,
-  load: () => Promise<T>,
+  load: (cached: typeof cachedDocs) => Promise<T>,
 ): Promise<T | null> {
-  const spent = failures.reduce((sum, failure) => sum + failure.elapsedMs, 0)
-  if (spent >= DOCS_FAILURE_BUDGET_MS) return null
   const started = Date.now()
   try {
-    return await load()
+    return await load(
+      run.lostMs >= DOCS_FAILURE_BUDGET_MS ? cachedOnly : cachedDocs,
+    )
   } catch (error) {
-    failures.push({
-      source,
-      error: errorMessage(error),
-      elapsedMs: Date.now() - started,
-    })
+    if (error instanceof DocsSkipped) {
+      run.skipped++
+      return null
+    }
+    const ended = Date.now()
+    run.lostMs += Math.max(0, ended - Math.max(started, run.lostUntil))
+    run.lostUntil = Math.max(run.lostUntil, ended)
+    run.failed++
+    if (run.first.length < DOCS_FAILURES_KEPT) {
+      run.first.push({
+        source,
+        error: errorMessage(error),
+        elapsedMs: ended - started,
+      })
+    }
     return null
   }
 }

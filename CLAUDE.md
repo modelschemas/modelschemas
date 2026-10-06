@@ -117,13 +117,20 @@ ones).
   are parsed from their pricing pages (`*-pricing.ts`, `openai-model-docs.ts`)
   — every parser fail-closed, a page that parses nothing throws rather than
   nulling stored cards. A listing that omits a price keeps the stored card
-  and logs `pricing_lost`; any other omitted fact is written null. An
-  adapter that knows why says so in `ModelInfo.absent` (`FactAbsence` in
-  `types.ts` has the table): `cleared` writes null quietly (Hugging Face
-  hosts that stopped agreeing on a price), `unavailable` keeps the stored
-  value. Wrap a docs load in `tryDocs` (`model-facts.ts`) so its throw marks
-  rows `unavailable(...)` and is reported as `docsFailures` instead of
-  failing the provider's poll; the listing itself is never wrapped.
+  and logs `pricing_lost`; any other omitted fact is written null once the
+  usual fills are tried (the bound schema for capabilities and modalities,
+  the provider table for the request map). An adapter that knows why says
+  so in `ModelInfo.absent` (`FactAbsence` in `types.ts` has the exact
+  table): `cleared` writes null quietly (Hugging Face hosts that stopped
+  agreeing on a price), `unavailable` keeps the stored value. `cleared` is
+  only for a value the source visibly lacks: an unreadable shape throws,
+  and the poller refuses a poll that would clear 5 or more stored prices
+  and over half of a provider's priced rows (`refusesPriceClears`). Wrap a
+  docs load in `tryDocs` (`model-facts.ts`) so its throw marks rows
+  `unavailable(...)` and is reported as `docsFailures` instead of failing
+  the provider's poll; the listing itself is never wrapped. While a
+  provider's docs keep failing, `cache_meta` holds one
+  `docs-failing:<providerId>` row saying since when (`docs-failing.ts`).
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:

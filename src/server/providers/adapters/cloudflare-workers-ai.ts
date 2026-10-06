@@ -16,7 +16,8 @@ import type { RateCard } from '@modelschemas/rate-card'
 import type { Activity } from '#/db/schema.ts'
 
 import {
-  cachedDocs,
+  docsReport,
+  docsRun,
   mapConcurrent,
   tryDocs,
   unavailable,
@@ -30,7 +31,6 @@ import type {
 } from '../request-map.ts'
 import { fetchText, sha256Text } from '../types.ts'
 import type {
-  DocsFailure,
   FactSource,
   ListModelsResult,
   ModelFact,
@@ -376,7 +376,7 @@ async function listModels(
   const listed = await fetchListing()
   // One unreadable file is that model's alone: its row keeps the stored
   // catalog facts and the next poll retries. The page's prices still land.
-  const docsFailures: Array<DocsFailure> = []
+  const docs = docsRun()
   const models = await mapConcurrent(
     listed,
     CATALOG_CONCURRENCY,
@@ -384,8 +384,8 @@ async function listModels(
       const { model } = card
       if (model.activity !== 'chat') return model
       const url = requireCatalogUrl(card)
-      const facts = await tryDocs(docsFailures, url, async () => {
-        const doc = await cachedDocs(kv, url, async (): Promise<CatalogDoc> => {
+      const facts = await tryDocs(docs, url, async (cached) => {
+        const doc = await cached(kv, url, async (): Promise<CatalogDoc> => {
           const text = await fetchPage(url)
           const parsed = parseCatalogModel(text, model.rawId, url)
           return {
@@ -400,7 +400,7 @@ async function listModels(
       return { ...model, ...(facts ?? unavailable(...CATALOG_FACTS)) }
     },
   )
-  return { models, docsFailures }
+  return { models, docsFailures: docsReport(docs) }
 }
 
 /** One document per text-generation model that publishes a request schema. */

@@ -210,8 +210,11 @@ describe('nvidia', () => {
       )) as typeof fetch
     const listed = await provider.listModels({})
     expect(listed.models).toHaveLength(LISTING.data.length)
-    expect(listed.docsFailures).toHaveLength(LISTING.data.length)
-    expect(listed.docsFailures?.[0]?.error).toContain('503')
+    expect(listed.docsFailures).toMatchObject({
+      failed: LISTING.data.length,
+      skipped: 0,
+    })
+    expect(listed.docsFailures?.first[0]?.error).toContain('503')
     for (const model of listed.models) {
       expect(model.absent).toEqual({
         activity: 'unavailable',
@@ -241,7 +244,7 @@ describe('nvidia', () => {
   it('keeps the other cards when one body is not a markdown card', async () => {
     stubFetch(cards('<!DOCTYPE html><html><body>Just a moment</body></html>'))
     const listed = await provider.listModels({})
-    expect(listed.docsFailures).toMatchObject([
+    expect(listed.docsFailures?.first).toMatchObject([
       {
         source: 'https://build.nvidia.com/google/deplot.md',
         error:

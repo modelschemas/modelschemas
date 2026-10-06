@@ -373,13 +373,17 @@ describe('perplexity listModels', () => {
           absent: { capabilities: 'unavailable' },
         },
       ],
-      docsFailures: [
-        {
-          source: PRESETS_URL,
-          error: 'perplexity: presets page lists no preset models',
-          elapsedMs: expect.any(Number) as number,
-        },
-      ],
+      docsFailures: {
+        failed: 1,
+        skipped: 0,
+        first: [
+          {
+            source: PRESETS_URL,
+            error: 'perplexity: presets page lists no preset models',
+            elapsedMs: expect.any(Number) as number,
+          },
+        ],
+      },
     })
   })
 

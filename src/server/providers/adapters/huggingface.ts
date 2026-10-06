@@ -73,9 +73,13 @@ function activityFor(output: Array<string> | null): Activity | null {
   return null
 }
 
-/** Every provider entry. Empty when the list is malformed. */
+/**
+ * Every provider entry. A list in another shape throws: read as "no
+ * providers" it would say the price is gone and clear a stored card.
+ */
 function routes(providers: unknown): Array<Row> {
-  return Array.isArray(providers) && providers.every(isRecord) ? providers : []
+  if (Array.isArray(providers) && providers.every(isRecord)) return providers
+  throw new Error('huggingface: a providers list is in an unread shape')
 }
 
 /** The one value every provider states, or null. */
@@ -94,12 +98,23 @@ function contextLength(p: Row): number | null {
 /** The listing carries float noise (`0.030000000000000002`). */
 const exact = (n: number) => Number(n.toPrecision(12))
 
-/** USD per million tokens. `is_free` is a promo, not the standard price. */
+/**
+ * USD per million tokens, or null when the entry states no price: it has no
+ * `pricing` key, quotes zero, or is an `is_free` promo (not the standard
+ * price). A `pricing` in any other shape throws. Null means "unsettled" and
+ * clears a stored card, so it must never mean "could not read".
+ */
 function price(p: Row): { input: number; output: number } | null {
-  if (p.is_free === true || !isRecord(p.pricing)) return null
-  const { input, output } = p.pricing
-  if (typeof input !== 'number' || typeof output !== 'number') return null
-  return input > 0 && output > 0
+  if (p.pricing === undefined) return null
+  const { input, output } = isRecord(p.pricing) ? p.pricing : {}
+  if (
+    typeof input !== 'number' ||
+    typeof output !== 'number' ||
+    !(input >= 0 && output >= 0)
+  ) {
+    throw new Error('huggingface: a provider price is in an unread shape')
+  }
+  return p.is_free !== true && input > 0 && output > 0
     ? { input: exact(input), output: exact(output) }
     : null
 }
@@ -114,14 +129,13 @@ function listed(path: string): FactSource {
 }
 
 async function routeFacts(
-  providers: unknown,
+  route: Array<Row>,
 ): Promise<
   Pick<
     ModelInfo,
     'contextWindow' | 'pricing' | 'capabilities' | 'factSources' | 'absent'
   >
 > {
-  const route = routes(providers)
   const contextWindow = agreed(route, contextLength)
   const quote = agreed(route, price)
   const pricing = quote
@@ -176,10 +190,13 @@ export async function parseHuggingFaceModels(
     throw new Error('huggingface: models payload has no data array')
   }
   const models: Array<ModelInfo> = []
+  let quotes = 0
   for (const row of payload.data) {
     if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
       continue
     }
+    const route = routes(row.providers)
+    quotes += route.filter((p) => price(p) !== null).length
     const architecture = isRecord(row.architecture) ? row.architecture : null
     const input = architecture
       ? stringList(architecture.input_modalities)
@@ -191,13 +208,18 @@ export async function parseHuggingFaceModels(
       rawId: row.id,
       activity: activityFor(output),
       modalities: input && output ? { input, output } : null,
-      ...(await routeFacts(row.providers)),
+      ...(await routeFacts(route)),
       releasedAt:
         typeof row.created === 'number' && row.created > 0 ? row.created : null,
     })
   }
   if (models.length === 0) {
     throw new Error('huggingface: models payload listed no ids')
+  }
+  // Most entries quote a price. None at all is a listing that moved its
+  // prices, not a router where every host stopped charging.
+  if (quotes === 0) {
+    throw new Error('huggingface: no provider entry states a price')
   }
   return models
 }

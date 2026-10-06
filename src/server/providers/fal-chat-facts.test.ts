@@ -272,7 +272,7 @@ describe('fal listModels', () => {
       ),
     )
     const result = await falProvider.listModels({ FAL_KEY: 'k' })
-    expect(result.docsFailures).toMatchObject([
+    expect(result.docsFailures?.first).toMatchObject([
       {
         source:
           'https://api.fal.ai/v1/models?expand=openapi-3.0 (chat endpoints)',
