@@ -88,6 +88,29 @@ describe('gap report scoring', () => {
     expect(quiet.score).toBe(1)
   })
 
+  it('scores chat rows 1 when every needed fact is on the ledger', () => {
+    const all = parseLedger(
+      [
+        'contextWindow',
+        'maxOutput',
+        'modalities',
+        'priced',
+        'cacheRead',
+        'capabilities',
+        'requestMap',
+        'endpoint',
+      ]
+        .map((fact) => `- bare: ${fact} — not published`)
+        .join('\n'),
+    )
+    const bare = buildReport(
+      [{ provider: 'bare', activity: 'chat' }],
+      all,
+      new Date(0),
+    )
+    expect(bare.providers[0]).toMatchObject({ chat: 1, score: 1 })
+  })
+
   it('treats rows with no chat rows as a gap', () => {
     const images = provider('images')
     expect(images).toMatchObject({ rows: 2, chat: 0, noActivity: 1, score: 0 })
