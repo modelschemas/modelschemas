@@ -87,7 +87,7 @@ describe('gap report scoring', () => {
         ...complete,
         pricing: {
           ...complete.pricing,
-          currency: 'CNY',
+          price: { currency: ['CNY', 0] },
         } as ModelRow['pricing'],
       },
     ])

@@ -241,6 +241,133 @@ describe('minimax-cn pricing', () => {
   })
 })
 
+/**
+ * Page shapes that once stored a wrong number with no throw. Each must
+ * leave the model unpriced (or the page empty) on both platforms.
+ */
+describe.each([
+  {
+    name: 'minimax',
+    platform: MINIMAX,
+    page: MINIMAX_PRICING_PAGE,
+    tier: '> 512k input tokens',
+    tierRewordings: [
+      'over 512k input tokens',
+      '512k+ input tokens',
+      '＞ 512k input tokens',
+      '> 51.2万 input tokens',
+    ],
+    priority: '<Tab title="Priority*">',
+    row: '| **MiniMax-M2.7** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
+    batchRow:
+      '| **MiniMax-M2.7** | \\$0.15 / M tokens | \\$0.6 / M tokens | \\$0.03 / M tokens | \\$0.1875 / M tokens |',
+    header:
+      '| Model | Input | Output | Prompt caching Read | Prompt caching Write |',
+    cacheHeader: 'Prompt caching Read',
+    cacheCell: ['\\$0.06 / M tokens | \\$0.375', 'free | \\$0.375'],
+    base: { input_tokens: 0.3 / 1e6, output_tokens: 1.2 / 1e6 },
+  },
+  {
+    name: 'minimax-cn',
+    platform: MINIMAX_CN,
+    page: MINIMAX_CN_PRICING_PAGE,
+    tier: '> 512k 输入 tokens',
+    tierRewordings: [
+      '超过 512k 输入 tokens',
+      '512k 以上',
+      '＞ 512k 输入 tokens',
+      '> 51.2万 输入 tokens',
+    ],
+    priority: '<Tab title="优先*">',
+    row: '| **MiniMax-M2.7** | 2.1 | 8.4 | 0.42 | 2.625 |',
+    batchRow: '| **MiniMax-M2.7** | 1.05 | 4.2 | 0.21 | 1.3125 |',
+    header:
+      '| **模型** | **输入价格**<br /> 元/百万 tokens | **输出价格**<br /> 元/百万 tokens | **缓存读取**<br /> 元/百万 tokens | **缓存写入**<br /> 元/百万 tokens |',
+    cacheHeader: '**缓存读取**<br /> 元/百万 tokens',
+    cacheCell: ['| 2.1 | 8.4 | 0.42 |', '| 2.1 | 8.4 | 免费 |'],
+    base: { input_tokens: 2.1 / 1e6, output_tokens: 8.4 / 1e6 },
+  },
+])('$name pricing refuses what it cannot attribute', (c) => {
+  const parse = (page: string) => parseMinimaxPricing(page, c.platform)
+  const edit = (from: string, to: string, all = true) => {
+    const page = all ? c.page.replaceAll(from, to) : c.page.replace(from, to)
+    expect(page).not.toBe(c.page)
+    return parse(page)
+  }
+
+  it('reads the page as published', () => {
+    const prices = parse(c.page)
+    expect(prices.size).toBe(8)
+    expect(prices.get('MiniMax-M3')?.tiers).toHaveLength(1)
+    expect(prices.get('MiniMax-M2.7')?.base).toMatchObject(c.base)
+  })
+
+  it.each(c.tierRewordings)(
+    'a tier bound reworded to %j is never the base price',
+    (reworded) => {
+      const prices = edit(c.tier, reworded)
+      expect(prices.has('MiniMax-M3')).toBe(false)
+      expect(prices.size).toBe(7)
+    },
+  )
+
+  it.each([
+    ['an extra attribute', (tag: string) => tag.replace('>', ' icon="bolt">')],
+    ['single quotes', (tag: string) => tag.replaceAll('"', "'")],
+  ])('prices nothing when the priority tab tag has %s', (_name, mutate) => {
+    expect(edit(c.priority, mutate(c.priority)).size).toBe(0)
+  })
+
+  it('refuses the model when tabs become headings and both tiers show', () => {
+    const page = c.page
+      .replace(/<Tab title="[^"]*">/g, '**tier**')
+      .replaceAll('</Tab>', '')
+    expect(page).not.toBe(c.page)
+    const prices = parse(page)
+    expect(prices.has('MiniMax-M3')).toBe(false)
+    expect(prices.size).toBe(7)
+  })
+
+  it('prices nothing under a sub-heading it cannot attribute', () => {
+    expect(edit(c.header, `### Batch\n\n${c.header}`, false).size).toBe(0)
+  })
+
+  it('refuses a model a second table prices again', () => {
+    const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow].join(
+      '\n',
+    )
+    const prices = edit(c.row, `${c.row}\n\n**Batch**\n\n${batch}`, false)
+    expect(prices.has('MiniMax-M2.7')).toBe(false)
+    expect(prices.size).toBe(7)
+  })
+
+  it('refuses a model whose tier threshold repeats', () => {
+    const tierRow = c.page.split('\n').find((line) => line.includes(c.tier))
+    if (!tierRow) throw new Error('no tier row')
+    const prices = edit(tierRow, `${tierRow}\n${tierRow}`, false)
+    expect(prices.has('MiniMax-M3')).toBe(false)
+  })
+
+  it('refuses a row with a qualifier beside the id', () => {
+    const prices = edit(
+      '**MiniMax-M2.7** |',
+      '**MiniMax-M2.7** (batch) |',
+      false,
+    )
+    expect(prices.has('MiniMax-M2.7')).toBe(false)
+  })
+
+  it('refuses a row whose cache cell does not read, rather than drop the lever', () => {
+    const prices = edit(c.cacheCell[0] ?? '', c.cacheCell[1] ?? '', false)
+    expect(prices.has('MiniMax-M2.7')).toBe(false)
+    expect(prices.size).toBe(7)
+  })
+
+  it('prices nothing under a header it does not know', () => {
+    expect(edit(c.cacheHeader, `${c.cacheHeader} (peak)`).size).toBe(0)
+  })
+})
+
 describe('minimax-cn docs', () => {
   it('reads every context window from the 支持的模型 table', () => {
     const windows = parseMinimaxContextWindows(MINIMAX_CN_SDK_PAGE, MINIMAX_CN)

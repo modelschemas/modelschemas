@@ -337,6 +337,12 @@ export interface MinimaxRates {
  * The `## LLM` tables, standard tier only: the `Priority` tab is dropped.
  * A `> 512k input tokens` row is a tier over the same model's base row.
  * Rates are per token, in the platform's currency.
+ *
+ * What it cannot attribute it refuses. Nothing is priced when a `<Tab`
+ * other than the standard one survives, or the section holds a heading
+ * of its own. A model gets no price when a row of its has text beside the
+ * id that is not a bound or the permanent badge, a price cell that does
+ * not read, a second base row, or a repeated tier threshold.
  */
 export function parseMinimaxPricing(
   markdown: string,
@@ -354,7 +360,17 @@ export function parseMinimaxPricing(
     .map((line) => line.trim())
     .join('\n')
   const out = new Map<string, MinimaxRates>()
+  // A tab the strip did not recognise, or a sub-heading, may hold another
+  // tier's table under the same headers.
+  const standard = `<Tab title="${platform.standardTab}">`
+  if (
+    /<Tab(?!s>)/.test(section.replaceAll(standard, '')) ||
+    /^#{1,6} /m.test(section.slice(section.indexOf('\n')))
+  ) {
+    return out
+  }
   const refused = new Set<string>()
+  const based = new Set<string>()
   let header: Array<string> = []
   for (const cells of markdownTableRows(section)) {
     if (cells[0] === platform.modelHeader) {
@@ -363,7 +379,7 @@ export function parseMinimaxPricing(
     }
     const model = cells[0]?.match(/^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/)
     const id = model?.[1]
-    if (!id || cells.length !== header.length) continue
+    if (!id) continue
     // A struck price without a `Permanent` badge may be a promotion that
     // ends: the model gets no card.
     const struck = cells.some((cell) => cell.includes('~~'))
@@ -372,21 +388,50 @@ export function parseMinimaxPricing(
       continue
     }
     const rates: Record<string, number> = {}
-    header.forEach((name, index) => {
+    // Every column beside the model is a price this must read: an unknown
+    // header or a cell that does not parse refuses the model, so a lever
+    // is never dropped from a card that still prices the rest.
+    let unread = cells.length !== header.length
+    header.slice(1).forEach((name, index) => {
       const lever = platform.priceLevers[name]
       const amount = lever
-        ? perMillion(cells[index] ?? '', platform.price)
+        ? perMillion(cells[index + 1] ?? '', platform.price)
         : null
       if (lever && amount !== null) rates[lever] = amount / 1e6
+      else unread = true
     })
-    if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
-      continue
-    }
-    const entry = out.get(id) ?? { base: {}, tiers: [] }
     const bound = model[2]?.match(platform.inputBound)
     const above = bound?.[1] === '>' ? tokenCount(bound[2]) : null
+    // Beside the id: a bound, the permanent badge, a footnote mark. Any
+    // other text qualifies the price in a way this does not read.
+    const qualifier = (model[2] ?? '')
+      .replace(/<span[^>]*>[^<]*<\/span>/g, (span) =>
+        platform.permanent.test(span) ? '' : span,
+      )
+      .replace(bound?.[0] ?? '', '')
+      .replace(/<br \/>|\\\*/g, '')
+      .trim()
+    const entry = out.get(id) ?? { base: {}, tiers: [] }
+    const repeated =
+      above === null
+        ? based.has(id)
+        : entry.tiers.some((tier) => tier.minPromptTokens === above)
+    if (
+      unread ||
+      rates.input_tokens === undefined ||
+      rates.output_tokens === undefined ||
+      qualifier !== '' ||
+      (bound && bound[1] === '>' && above === null) ||
+      repeated
+    ) {
+      refused.add(id)
+      continue
+    }
     if (above !== null) entry.tiers.push({ minPromptTokens: above, rates })
-    else entry.base = rates
+    else {
+      entry.base = rates
+      based.add(id)
+    }
     out.set(id, entry)
   }
   for (const id of refused) out.delete(id)

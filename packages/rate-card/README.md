@@ -43,18 +43,39 @@ const tokenCard = compileOpenRouterPricing(model.pricing, {
 A number input may carry an `estimate`: the source's published way to
 derive it when the caller omits it (Seedance `completion_tokens` from
 resolution × ratio × duration), with its own `inputs` and `source`.
-`priceDetailed` returns `{ amount, currency, usd?, estimated }`; `estimated` lists the params
-that were filled that way, so an estimate is never mistaken for the billed
+`priceDetailed` returns `{ amount, currency, usd?, estimated }`;
+`estimated` lists the params that were filled that way, so an estimate is never mistaken for the billed
 price. Supplying the real value skips the estimate and its inputs. `price`
 never estimates: it throws `required` for the omitted input instead.
 
-A card is in one currency. `card.currency` is an ISO-4217 code and absent
-means USD, so cards written before the field read unchanged;
-`cardCurrency(card)` gives the code either way. `priceDetailed` names it
-beside `amount`, and sets `usd` only for a USD card. Nothing converts:
-never add or compare amounts from cards in different currencies.
-`compileTokenCard(rates, tiers, source, { currency: 'CNY' })` labels a
-compiled card.
+## Currency
+
+A card is in one currency. A USD card's `price` is a bare expression,
+exactly as before cards had a currency. A card in any other currency
+wraps it:
+
+```json
+{
+  "price": {
+    "currency": ["CNY", { "*": [{ "var": "input_tokens" }, 0.00002] }]
+  }
+}
+```
+
+The wrapper is the only place a card states its currency (ISO 4217).
+`cardCurrency(card)` reads it, `cardPrice(card)` returns
+`{ currency, expr }`, and `priceDetailed` names the currency beside
+`amount`, setting `usd` (deprecated) only for a USD card.
+`compileTokenCard(rates, tiers, source, { currency: 'CNY' })` compiles a
+wrapped card; the amounts are the same with and without the wrapper.
+Nothing converts: never add or compare amounts from cards in different
+currencies.
+
+`currency` is not a core op, on purpose. **0.1.0 cannot read a non-USD
+card: `rateCardSchema` rejects it and `price()` throws `unknown-op`.**
+That is the intended failure: an evaluator that knows no currencies
+refuses a yuan price instead of returning it as dollars. Upgrade to read
+these cards. USD cards are unchanged and read the same in every version.
 
 Token counts on compiled OpenRouter cards are disjoint: `input_tokens`
 excludes `cache_read_tokens` / `cache_write_tokens`, `output_tokens`

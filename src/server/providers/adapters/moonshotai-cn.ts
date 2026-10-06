@@ -10,7 +10,7 @@
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import { classifyOpenAiCompat } from '../openai-compat.ts'
-import { cachedDocs } from '../model-facts.ts'
+import { cachedDocs, markdownSection } from '../model-facts.ts'
 import { compatGenerationEndpointId } from '../model-meta.ts'
 import { REASONING_SOURCE_SILENT } from '../reasoning-config.ts'
 import { fetchText, sha256Text } from '../types.ts'
@@ -69,7 +69,12 @@ export function parseMoonshotCnModels(markdown: string): Array<ModelInfo> {
   return models
 }
 
-/** Price column title → the usage lever it prices. */
+/**
+ * Price column title → the usage lever it prices. A cache write is billed
+ * by its TTL, but Chat Completions reports one `cache_write_tokens` count
+ * whatever the TTL: a caller on the 1h TTL passes that count as
+ * `cache_write_1h_tokens`.
+ */
 const PRICE_COLUMNS: Record<string, string> = {
   '缓存写入（TTL 5min）': 'cache_write_tokens',
   '缓存写入（TTL 1h）': 'cache_write_1h_tokens',
@@ -81,49 +86,58 @@ const UNIT_COLUMN = '计费单位'
 const OTHER_COLUMNS = new Set(['模型', UNIT_COLUMN, '上下文窗口'])
 
 /**
- * Model id → yuan per token, by lever. Columns are read by title, so a
- * table with a title this does not know prices nothing. A row is priced
- * only when its unit is `1M tokens` and every price cell is a bare
- * `¥12.50`: a unit suffix, a struck price or a range leaves the model
- * unpriced, and so does an id two rows price. Throws when no row is priced.
+ * Model id → yuan per token, by lever, from the `### … 系列模型` tables
+ * of `## 模型定价`. Columns are read by title. A row is priced only when
+ * its unit is `1M tokens` and every price cell is a bare `¥12.50`. Any
+ * other row naming the model leaves it unpriced: a unit suffix, a struck
+ * price, a range, a table with a title this does not know, a table under
+ * another heading (a batch price), or a second row for the same id.
+ * Throws when no row is priced.
  */
 export function parseMoonshotCnPricing(
   markdown: string,
 ): Map<string, Record<string, number>> {
   const out = new Map<string, Record<string, number>>()
   const refused = new Set<string>()
-  for (const table of markdown.matchAll(
-    /columns=\{\[([\s\S]*?)\]\}\s*rows=\{\[([\s\S]*?)\]\}/g,
-  )) {
-    const titles = [...(table[1] ?? '').matchAll(/title:\s*"([^"]*)"/g)].map(
-      (match) => match[1] ?? '',
-    )
-    if (titles.some((t) => !(t in PRICE_COLUMNS) && !OTHER_COLUMNS.has(t))) {
-      continue
-    }
-    for (const row of (table[2] ?? '').matchAll(/\[("[^\]]*")\]/g)) {
-      const cells = [...(row[1] ?? '').matchAll(/"([^"]*)"/g)].map(
+  const chunks = markdownSection(markdown, '模型定价').split(/^### /m)
+  for (const chunk of chunks) {
+    const series = /^[^\n]*系列模型\s*\n/.test(chunk)
+    for (const table of chunk.matchAll(
+      /columns=\{\[([\s\S]*?)\]\}\s*rows=\{\[([\s\S]*?)\]\}/g,
+    )) {
+      const titles = [...(table[1] ?? '').matchAll(/title:\s*"([^"]*)"/g)].map(
         (match) => match[1] ?? '',
       )
-      const id = cells[0]
-      if (!id || cells.length !== titles.length) continue
-      if (cells[titles.indexOf(UNIT_COLUMN)] !== '1M tokens') continue
-      const rates: Record<string, number> = {}
-      titles.forEach((title, index) => {
-        const lever = PRICE_COLUMNS[title]
-        const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?)$/)?.[1]
-        if (lever && amount !== undefined) rates[lever] = Number(amount) / 1e6
-      })
-      const priceColumns = titles.filter((title) => title in PRICE_COLUMNS)
-      if (
-        Object.keys(rates).length !== priceColumns.length ||
-        rates.input_tokens === undefined ||
-        rates.output_tokens === undefined
-      ) {
-        continue
+      const known =
+        series &&
+        titles.every((t) => t in PRICE_COLUMNS || OTHER_COLUMNS.has(t))
+      for (const row of (table[2] ?? '').matchAll(/\[("[^\]]*")\]/g)) {
+        const cells = [...(row[1] ?? '').matchAll(/"([^"]*)"/g)].map(
+          (match) => match[1] ?? '',
+        )
+        const id = cells[0]
+        if (!id) continue
+        const rates: Record<string, number> = {}
+        titles.forEach((title, index) => {
+          const lever = PRICE_COLUMNS[title]
+          const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?)$/)?.[1]
+          if (lever && amount !== undefined) rates[lever] = Number(amount) / 1e6
+        })
+        const priceColumns = titles.filter((title) => title in PRICE_COLUMNS)
+        if (
+          !known ||
+          out.has(id) ||
+          cells.length !== titles.length ||
+          cells[titles.indexOf(UNIT_COLUMN)] !== '1M tokens' ||
+          Object.keys(rates).length !== priceColumns.length ||
+          rates.input_tokens === undefined ||
+          rates.output_tokens === undefined
+        ) {
+          refused.add(id)
+          continue
+        }
+        out.set(id, rates)
       }
-      if (out.has(id)) refused.add(id)
-      out.set(id, rates)
     }
   }
   for (const id of refused) out.delete(id)

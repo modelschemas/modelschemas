@@ -6,7 +6,7 @@
  * price that is not a finite positive number. A refusal is an honest
  * "unknown"; a made-up number is a wrong price.
  */
-import { CORE_OPS, cardCurrency } from './rate-card.schema.ts'
+import { CORE_OPS, cardPrice } from './rate-card.schema.ts'
 import type {
   CoreOp,
   Expr,
@@ -392,14 +392,14 @@ function evaluate(
       )
     }
   }
-  const amount = evalExpr(card.price, vars, card.tables)
+  const { currency, expr } = cardPrice(card)
+  const amount = evalExpr(expr, vars, card.tables)
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     throw new RateCardError(
       'bad-result',
       `price evaluated to ${JSON.stringify(amount)}`,
     )
   }
-  const currency = cardCurrency(card)
   return {
     amount,
     currency,

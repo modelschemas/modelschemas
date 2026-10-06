@@ -6,7 +6,9 @@ import {
   priceDetailed,
   verifyExamples,
 } from './evaluate.ts'
-import { rateCardSchema } from './rate-card.schema.ts'
+import { z } from 'zod'
+
+import { CORE_OPS, cardCurrency, rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
 
 const source = {
@@ -207,28 +209,80 @@ describe('refusals', () => {
     expect(() => usd(expr)).toThrow(expect.objectContaining({ code }))
   })
 
+  const doubleX: Expr = { '*': [{ var: 'x' }, 2] }
+  const yuan = { ...cardFor(doubleX), price: { currency: ['CNY', doubleX] } }
+
   it('prices a card in its own currency and never calls it USD', () => {
-    const yuan = cardFor({ '*': [{ var: 'x' }, 2] }, { currency: 'CNY' })
-    expect(rateCardSchema.parse(yuan).currency).toBe('CNY')
-    expect(priceDetailed(yuan)).toEqual({
+    const parsed = rateCardSchema.parse(yuan)
+    expect(cardCurrency(parsed)).toBe('CNY')
+    expect(priceDetailed(parsed)).toEqual({
       amount: 8,
       currency: 'CNY',
       estimated: [],
     })
-    expect(price(yuan)).toBe(8)
-    // No `currency` is USD: a card stored before the field reads unchanged.
-    expect(rateCardSchema.parse(cardFor(1)).currency).toBeUndefined()
+    // The wrapper changes the label, never the amount.
+    expect(price(parsed)).toBe(price(cardFor(doubleX)))
+    // A bare price is USD: a card stored before currencies reads unchanged.
+    expect(cardCurrency(cardFor(1))).toBe('USD')
     expect(priceDetailed(cardFor(1))).toMatchObject({ currency: 'USD', usd: 1 })
   })
 
   it.each(['yuan', 'cny', '¥', 'RMBX', ''])(
     'schema rejects %j as a currency',
     (currency) => {
-      expect(rateCardSchema.safeParse(cardFor(1, { currency })).success).toBe(
-        false,
-      )
+      const card = { ...cardFor(1), price: { currency: [currency, 1] } }
+      expect(rateCardSchema.safeParse(card).success).toBe(false)
     },
   )
+
+  it('schema takes the currency wrapper at the root of price only', () => {
+    const nested = { '+': [1, { currency: ['CNY', 1] }] }
+    expect(
+      rateCardSchema.safeParse({ ...cardFor(1), price: nested }).success,
+    ).toBe(false)
+    const beside = { currency: ['CNY', 1], '+': [1, 2] }
+    expect(
+      rateCardSchema.safeParse({ ...cardFor(1), price: beside }).success,
+    ).toBe(false)
+    // A stray top-level `currency` states nothing: the card is still USD.
+    const stray = rateCardSchema.parse({ ...cardFor(1), currency: 'CNY' })
+    expect(stray).not.toHaveProperty('currency')
+    expect(cardCurrency(stray)).toBe('USD')
+  })
+
+  /**
+   * What @modelschemas/rate-card 0.1.0 (and a service rolled back to before
+   * currencies) does with an expression node: its schema accepts only the
+   * ops below, and its evaluator throws `unknown-op` on any other key. The
+   * op list is the published one, frozen here on purpose.
+   */
+  const OPS_0_1_0 = [
+    ...['var', 'missing', '+', '-', '*', '/', 'max', 'min', 'if'],
+    ...['==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'ceil', 'floor'],
+  ]
+  const expr010: z.ZodType = z.lazy(() =>
+    z.union([
+      z.number(),
+      z.string(),
+      z.boolean(),
+      z.strictObject({ lookup: z.unknown() }),
+      z
+        .partialRecord(z.enum(OPS_0_1_0), z.union([expr010, z.array(expr010)]))
+        .refine((ops) => Object.keys(ops).length === 1, 'one op per node'),
+    ]),
+  )
+
+  it('a pre-currency evaluator refuses a non-USD card instead of calling it dollars', () => {
+    // It reads USD cards as before, so the reproduction is not just strict.
+    expect(expr010.safeParse(doubleX).success).toBe(true)
+    expect(expr010.safeParse(yuan.price).success).toBe(false)
+    // Its evaluator would throw `unknown-op` on the root key.
+    expect(Object.keys(yuan.price)).toEqual(['currency'])
+    expect(OPS_0_1_0).not.toContain('currency')
+    // The op must never become a core op, or old schemas that are handed
+    // the new list would start reading yuan as dollars.
+    expect(CORE_OPS).toEqual(OPS_0_1_0)
+  })
 
   it('schema rejects an op outside the vocabulary', () => {
     expect(rateCardSchema.safeParse(cardFor(unknownOp)).success).toBe(false)

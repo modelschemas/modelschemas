@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { NANO_BANANA_2 } from '../../packages/rate-card/src/fixtures/nano-banana-2.ts'
 import {
+  cardCurrency,
   compileOpenRouterPricing,
   compileTokenCard,
   compileUnitCard,
@@ -268,7 +269,8 @@ describe('projectTokenPricing', () => {
       outputPerMillion: 100,
     })
     // The currency survives the stored-card parse, so it is never USD.
-    expect(parseStoredRateCard(card)?.currency).toBe('CNY')
+    const stored = parseStoredRateCard(JSON.parse(JSON.stringify(card)))
+    expect(stored && cardCurrency(stored)).toBe('CNY')
   })
 
   // Per-token rates whose `× 1e6` is not the published figure in a double.

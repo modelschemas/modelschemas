@@ -183,16 +183,26 @@ const rateCardExampleSchema = z.object({
 
 export type RateCardExample = z.infer<typeof rateCardExampleSchema>
 
+/**
+ * JSONLogic yielding the amount for one request: USD, or, wrapped as
+ * `{ currency: ['CNY', expr] }`, the ISO-4217 currency named. The wrapper
+ * is the only place a card states a currency, so a USD card is exactly
+ * what it was before cards had one.
+ *
+ * `currency` is deliberately not a core op. An evaluator that predates it
+ * (0.1.0, or a rolled-back service) fails to parse the card and throws
+ * `unknown-op` on its price, so it refuses a yuan amount instead of
+ * reporting it as dollars. Amounts in different currencies are never
+ * added, compared or converted.
+ */
+const priceSchema = z.union([
+  z.strictObject({
+    currency: z.tuple([z.string().regex(/^[A-Z]{3}$/), exprSchema]),
+  }),
+  exprSchema,
+])
+
 export const rateCardSchema = z.object({
-  /**
-   * ISO-4217 code of the currency `price` yields. Absent means USD, so a
-   * card written before the field existed reads unchanged. Amounts in
-   * different currencies are never added, compared or converted.
-   */
-  currency: z
-    .string()
-    .regex(/^[A-Z]{3}$/)
-    .optional(),
   inputs: z.record(z.string(), inputSchema).superRefine((inputs, ctx) => {
     for (const [name, input] of Object.entries(inputs)) {
       if (input.kind !== 'number' || !input.estimate) continue
@@ -215,8 +225,7 @@ export const rateCardSchema = z.object({
     }
   }),
   tables: z.record(z.string(), tableSchema),
-  /** JSONLogic yielding the amount for one request, in `currency`. */
-  price: exprSchema,
+  price: priceSchema,
   examples: z.array(rateCardExampleSchema),
   source: z.object({
     url: z.string().url(),
@@ -232,7 +241,18 @@ export const rateCardSchema = z.object({
 
 export type RateCard = z.infer<typeof rateCardSchema>
 
-/** The currency a card's amounts are in: its `currency`, or USD. */
-export function cardCurrency(card: { currency?: string }): string {
-  return card.currency ?? 'USD'
+/** A card's currency and the expression that yields the amount in it. */
+export function cardPrice(card: Pick<RateCard, 'price'>): {
+  currency: string
+  expr: Expr
+} {
+  const { price } = card
+  return typeof price === 'object' && 'currency' in price
+    ? { currency: price.currency[0], expr: price.currency[1] }
+    : { currency: 'USD', expr: price }
+}
+
+/** The ISO-4217 code a card's amounts are in: USD unless its price says. */
+export function cardCurrency(card: Pick<RateCard, 'price'>): string {
+  return cardPrice(card).currency
 }

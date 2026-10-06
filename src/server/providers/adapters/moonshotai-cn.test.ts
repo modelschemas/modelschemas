@@ -13,6 +13,10 @@ import {
 
 /** Excerpt of platform.kimi.com/docs/pricing/chat.md (2026-10-06). Prices are yuan. */
 const PRICING = `
+## 模型定价
+
+### K3 系列模型
+
 <DocTable
   columns={[
 { title: "模型", width: "12%" },
@@ -28,6 +32,9 @@ const PRICING = `
 ["kimi-k3", "1M tokens", "¥20.00", "¥40.00", "¥2.00", "¥20.00", "¥100.00", "1,048,576 tokens"],
 ]}
 />
+
+### K2 系列模型
+
 <DocTable
   columns={[
 { title: "模型", width: "24%" },
@@ -44,6 +51,8 @@ const PRICING = `
 ["kimi-unmapped", "1M tokens", "¥1.00", "¥2.00", "¥3.00", "8,192 tokens"],
 ]}
 />
+
+## 计费基本概念
 `
 
 /** Chat path and its schema closure from platform.kimi.com/docs/openapi.json (2026-10-06). */
@@ -180,7 +189,7 @@ describe('moonshotai-cn', () => {
       capabilities: ['reasoning'],
       // ¥20 in, ¥100 out, ¥2 cache hit, ¥20 / ¥40 cache write per 1M.
       pricing: {
-        currency: 'CNY',
+        price: { currency: ['CNY', expect.anything() as unknown] },
         tables: {
           rate: {
             base: {
@@ -206,7 +215,9 @@ describe('moonshotai-cn', () => {
       sourceUrl: MOONSHOT_CN_PRICING_URL,
     })
     for (const model of models) {
-      expect(model.pricing).toMatchObject({ currency: 'CNY' })
+      expect(model.pricing).toMatchObject({
+        price: { currency: ['CNY', expect.anything() as unknown] },
+      })
     }
     // A priced id the chat spec does not map stays unclassified.
     expect(models[4]?.activity).toBeUndefined()
@@ -273,6 +284,41 @@ describe('parseMoonshotCnPricing', () => {
     )
     expect(page).not.toBe(PRICING)
     expect([...parseMoonshotCnPricing(page).keys()]).toEqual(['kimi-k3'])
+  })
+
+  it('never stores a batch table as the standard price', () => {
+    const batch = PRICING.replace(
+      '## 计费基本概念',
+      `### 批量价格
+
+<DocTable
+  columns={[
+{ title: "模型" },
+{ title: "计费单位" },
+{ title: "输入价格（缓存命中）" },
+{ title: "输入价格（缓存未命中）" },
+{ title: "输出价格" },
+{ title: "上下文窗口" },
+]}
+  rows={[
+["kimi-k2.6", "1M tokens", "¥0.55", "¥3.25", "¥13.50", "262,144 tokens"],
+]}
+/>
+
+## 计费基本概念`,
+    )
+    expect(batch).not.toBe(PRICING)
+    // Beside the standard row, and with the standard table retitled.
+    expect(parseMoonshotCnPricing(batch).has('kimi-k2.6')).toBe(false)
+    const retitled = batch.replace(
+      '"输出价格", width: "14%"',
+      '"输出价格（标准）", width: "14%"',
+    )
+    expect([...parseMoonshotCnPricing(retitled).keys()]).toEqual(['kimi-k3'])
+    // The same tables outside `## 模型定价` are not prices at all.
+    expect(() =>
+      parseMoonshotCnPricing(PRICING.replace('## 模型定价', '## 批量定价')),
+    ).toThrow('priced no ids')
   })
 
   it('refuses an id two rows price', () => {

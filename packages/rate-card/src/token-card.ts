@@ -34,6 +34,16 @@ function usable(rates: Record<string, number>): boolean {
   return Object.values(rates).every((n) => Number.isFinite(n) && n >= 0)
 }
 
+/** USD prices stay bare; any other currency wraps the expression. */
+function inCurrency(
+  currency: string | undefined,
+  expr: Expr,
+): RateCard['price'] {
+  return currency === undefined || currency === 'USD'
+    ? expr
+    : { currency: [currency, expr] }
+}
+
 /**
  * `null` when nothing is priced: an empty, negative/NaN, or all-zero rate
  * map is "unknown", never a free card.
@@ -85,7 +95,6 @@ export function compileTokenCard(
   }
 
   return {
-    ...(options?.currency && { currency: options.currency }),
     inputs: Object.fromEntries(
       levers.map((lever) => [
         lever,
@@ -100,7 +109,7 @@ export function compileTokenCard(
       ]),
     ),
     tables: { rate: table },
-    price: {
+    price: inCurrency(options?.currency, {
       '+': levers.map(
         (lever): Expr => ({
           // A zero count skips the lookup, so a lever a tier leaves unpriced
@@ -117,7 +126,7 @@ export function compileTokenCard(
           ],
         }),
       ),
-    },
+    }),
     examples: [],
     source,
   }

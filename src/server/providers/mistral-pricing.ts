@@ -12,7 +12,11 @@
  * the API ids that slug serves (`mistral-large-2512`, `mistral-large-latest`).
  * An API id named by two slugs at different rates gets no card.
  */
-import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
+import {
+  cardPrice,
+  compileTokenCard,
+  compileUnitCard,
+} from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
@@ -212,7 +216,7 @@ export function mistralRateCard(
     },
     price: {
       '+': [
-        card.price,
+        cardPrice(card).expr,
         ...rest.map((meter) => ({ '*': [{ var: meter.param }, meter.rate] })),
       ],
     },

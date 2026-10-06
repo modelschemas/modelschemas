@@ -111,10 +111,6 @@ export type RateCardInput = {
 }
 
 export type RateCard = {
-  /**
-   * ISO-4217 code of the currency price yields. Absent means USD.
-   */
-  currency?: string
   inputs: {
     [key: string]: RateCardInput
   }
@@ -122,7 +118,7 @@ export type RateCard = {
     [key: string]: unknown
   }
   /**
-   * JSONLogic expression over the closed op set.
+   * JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { "currency": ["CNY", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card.
    */
   price: unknown
   examples: Array<RateCardExample>
@@ -249,7 +245,9 @@ export type EstimateResult = {
    */
   currency: string
   /**
-   * amount again when currency is USD. Absent for any other currency.
+   * Deprecated: read amount and currency. Repeats amount when currency is USD; absent for any other currency.
+   *
+   * @deprecated
    */
   usd?: number
   cardSource: RateCardSource

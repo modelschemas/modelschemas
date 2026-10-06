@@ -112,7 +112,7 @@ describe('minimax-cn', () => {
       reasoning: { mode: 'adaptive', mandatory: false },
       // The pay-as-you-go page quotes yuan: 2.10 in, 8.40 out, 0.42 cached.
       pricing: {
-        currency: 'CNY',
+        price: { currency: ['CNY', expect.anything() as unknown] },
         tables: {
           rate: {
             base: {

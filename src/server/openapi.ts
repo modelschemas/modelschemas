@@ -584,6 +584,7 @@ export const openApiDocument = {
         properties: {
           currency: {
             type: 'string',
+            pattern: '^[A-Z]{3}$',
             description:
               'ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.',
           },
@@ -659,12 +660,6 @@ export const openApiDocument = {
         type: 'object',
         required: ['inputs', 'tables', 'price', 'examples', 'source'],
         properties: {
-          currency: {
-            type: 'string',
-            pattern: '^[A-Z]{3}$',
-            description:
-              'ISO-4217 code of the currency price yields. Absent means USD.',
-          },
           inputs: {
             type: 'object',
             additionalProperties: {
@@ -673,7 +668,8 @@ export const openApiDocument = {
           },
           tables: { type: 'object' },
           price: {
-            description: 'JSONLogic expression over the closed op set.',
+            description:
+              'JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { "currency": ["CNY", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card.',
           },
           examples: {
             type: 'array',
@@ -864,12 +860,14 @@ export const openApiDocument = {
           },
           currency: {
             type: 'string',
+            pattern: '^[A-Z]{3}$',
             description: "ISO-4217 code of the card's currency.",
           },
           usd: {
             type: 'number',
+            deprecated: true,
             description:
-              'amount again when currency is USD. Absent for any other currency.',
+              'Deprecated: read amount and currency. Repeats amount when currency is USD; absent for any other currency.',
           },
           cardSource: { $ref: '#/components/schemas/RateCardSource' },
           estimated: {
