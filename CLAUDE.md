@@ -71,7 +71,7 @@ register→execute), `bun scripts/client-smoke.ts` (typed client),
 (re-derive schema content hashes from the upstream spec — no service/db;
 shares `classifyAndBundle` with the sync engine), `bun run gap:report --table`
 (per-provider score for the chat facts `@tanstack/ai-models` needs; one
-`/v1/models` request; `docs/source-silent.md` lists facts a provider does not
+`/v1/models` request; `docs/source-silent/<provider>.md` lists facts a provider does not
 publish; `--check` exits 1 below `--target`). Admin sync:
 `curl -X POST localhost:3100/v1/admin/sync/openrouter -H "X-Admin-Key: $ADMIN_KEY"`.
 
