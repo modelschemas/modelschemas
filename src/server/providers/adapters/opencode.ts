@@ -7,7 +7,7 @@
  * row, and its Pricing table quotes USD per 1M tokens. The route is not
  * stored: no OpenAPI document exists for `schemaEndpointId` to bind to.
  * Context window, output cap, modalities, capabilities, and reasoning are
- * published nowhere (docs/source-silent.md).
+ * published nowhere (docs/source-silent/opencode.md).
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
