@@ -153,6 +153,24 @@ const GLM_53_LEVELS: EffortLevelMap = {
 }
 
 /**
+ * `zhipuai-coding-plan/glm-5.3` and `glm-5.3-flash`: each level is sent as
+ * the level Zhipu says a Coding Plan request runs it at: `minimal` and `low`
+ * as low, `medium` and `high` as high, `xhigh` and `max` as max
+ * (docs.bigmodel.cn/cn/guide/capabilities/thinking, "在 Coding Plan 请求中").
+ * Those three are also the bound schema's whole enum. `none` runs as low
+ * too, so nothing stops thinking.
+ */
+const GLM_CODING_PLAN_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: 'low',
+  low: 'low',
+  medium: 'high',
+  high: 'high',
+  xhigh: 'max',
+  max: 'max',
+}
+
+/**
  * Series the Z.AI spec names under `tool_stream`
  * (docs.z.ai/openapi.json, ChatCompletionTextRequest). The vision request
  * has no such field; for `glm-5.3-flash` and `glm-5.3-flashx` the source is
@@ -280,6 +298,23 @@ export function chatRequestMap(
         // `reasoning_effort` is "supported by GLM-5.2 and above"; the spec
         // does not say what older models do with it.
         reasoningEffort: levelsFor(providerId, rawId) === null ? null : true,
+      })
+    // From Zhipu's China chat spec (docs.bigmodel.cn/openapi/openapi.json)
+    // and docs, not probed, for the two ids that spec lists. That spec is
+    // the general platform's; the plan's own effort mapping picks the levels.
+    // `tool_stream` is the spec's for the GLM-5.3 series; for
+    // `glm-5.3-flash` the source is
+    // docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash ("同时开启
+    // `stream: true` 和 `tool_stream: true`"). `glm-5.3-flash[1m]` is a
+    // Claude Code model name the chat spec does not list: no map.
+    case 'zhipuai-coding-plan':
+      if (rawId !== 'glm-5.3' && rawId !== 'glm-5.3-flash') return null
+      return blank({
+        thinking: { on: GLM_ON, off: null, levels: GLM_CODING_PLAN_LEVELS },
+        maxTokensField: 'max_tokens',
+        developerRole: false,
+        toolStream: true,
+        reasoningEffort: true,
       })
     case 'qwen':
       return blank({
