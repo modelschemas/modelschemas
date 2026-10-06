@@ -334,7 +334,7 @@ function enrichListed(
 
 type StoredFact = Exclude<ModelFact, 'pricing'>
 
-/** A stored row as listing facts; no row is every fact empty. */
+/** A stored row's facts in listing shape. With no row, every fact is empty. */
 function storedFacts(
   row: typeof models.$inferSelect | undefined,
 ): Record<StoredFact, unknown> {
