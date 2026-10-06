@@ -193,8 +193,9 @@ export function buildReport(
       fromModelsDev: group.filter(isModelsDev).length,
       facts,
       silent,
-      // No chat rows is a gap, not a pass.
-      score: need === 0 ? 0 : have / need,
+      // No chat rows is a gap, not a pass. Chat rows with every needed fact
+      // on the ledger have nothing left to fill.
+      score: need === 0 ? (chat.length > 0 ? 1 : 0) : have / need,
     }
   })
 
