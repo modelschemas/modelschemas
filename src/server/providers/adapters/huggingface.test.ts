@@ -31,7 +31,7 @@ const host = (name: string, rest: Record<string, unknown>) => ({
   is_model_author: false,
   ...rest,
 })
-/** featherless-ai publishes no figures, so it cannot be the fastest route. */
+/** featherless-ai is live but publishes no figures. */
 const SILENT = host('featherless-ai', {})
 
 const model = (id: string, providers: unknown, output = ['text']) => ({
@@ -45,7 +45,6 @@ const model = (id: string, providers: unknown, output = ['text']) => ({
 const FIXTURE = {
   object: 'list',
   data: [
-    // Both ranked providers agree on everything.
     model('agree/all', [
       host('nscale', {
         context_length: 40960,
@@ -61,7 +60,44 @@ const FIXTURE = {
         supports_structured_output: false,
         throughput: 15.2,
       }),
+    ]),
+    // A provider that states nothing settles nothing, not even a "no".
+    model('agree/but-one-silent', [
+      host('nscale', {
+        context_length: 40960,
+        pricing: { input: 0.07, output: 0.2 },
+        supports_tools: false,
+        supports_structured_output: false,
+        throughput: 79.9,
+      }),
       SILENT,
+    ]),
+    // inclusionAI/Ling-3.0-flash and tencent/Hy4-preview: the same price
+    // with float noise on one side.
+    model('agree/float-noise', [
+      host('novita', {
+        context_length: 131072,
+        pricing: { input: 0.06, output: 2.501 },
+        supports_tools: true,
+        supports_structured_output: true,
+        throughput: 60,
+      }),
+      host('deepinfra', {
+        context_length: 131072,
+        pricing: { input: 0.060000000000000005, output: 2.5010000000000003 },
+        supports_tools: true,
+        supports_structured_output: true,
+      }),
+    ]),
+    // ibm-granite/granite-4.2-3b: one provider, noisy figures.
+    model('single/float-noise', [
+      host('deepinfra', {
+        context_length: 131072,
+        pricing: { input: 0.030000000000000002, output: 0.12000000000000001 },
+        supports_tools: true,
+        supports_structured_output: true,
+        throughput: 60,
+      }),
     ]),
     // deepseek-ai/DeepSeek-V4.1-Flash: same context, different prices, one
     // provider with no price, structured output split.
@@ -127,7 +163,7 @@ afterEach(() => {
 })
 
 describe('huggingface listing', () => {
-  it('stores a fact only when every ranked provider agrees on it', async () => {
+  it('stores a fact only when every provider states it and agrees', async () => {
     const models = await parseHuggingFaceModels(FIXTURE)
     const byId = Object.fromEntries(models.map((m) => [m.rawId, m]))
 
@@ -148,6 +184,27 @@ describe('huggingface listing', () => {
         pricing: { ...listing, path: 'providers[].pricing' },
         capabilities: {
           tools: { ...listing, path: 'providers[].supports_tools' },
+        },
+      },
+    })
+
+    expect(byId['agree/but-one-silent']).toMatchObject({
+      contextWindow: null,
+      pricing: null,
+      capabilities: null,
+      factSources: {},
+    })
+    expect(byId['agree/float-noise']?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: { input_tokens: 0.06 / 1e6, output_tokens: 2.501 / 1e6 },
+        },
+      },
+    })
+    expect(byId['single/float-noise']?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: { input_tokens: 0.03 / 1e6, output_tokens: 0.12 / 1e6 },
         },
       },
     })
@@ -196,7 +253,6 @@ describe('huggingface listing', () => {
     const reshaped = [
       { nscale: ranked },
       [ranked, 'featherless-ai'],
-      [{ ...ranked, throughput: '79.9' }],
       [
         {
           ...ranked,
@@ -271,6 +327,12 @@ describe('huggingface spec', () => {
         /^huggingface: /,
       )
     }
+  })
+
+  it('throws on an HTML body served for either schema file', () => {
+    const html = '<!doctype html><html><body>Not found</body></html>'
+    expect(() => buildHuggingFaceSpec(html, OUTPUT)).toThrow('is not JSON')
+    expect(() => buildHuggingFaceSpec(INPUT, html)).toThrow('is not JSON')
   })
 
   it('fetches the listing and both schema files', async () => {

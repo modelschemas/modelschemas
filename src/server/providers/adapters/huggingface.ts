@@ -2,12 +2,13 @@
  * Hugging Face Inference Providers — the public router model list.
  *
  * A router row is served by several hosts, each with its own context
- * length, price, and tool support. Hugging Face documents the default route
- * as `:fastest`: the provider with the highest `throughput`, a probe figure
- * that reorders between polls. So a fact is stored only when every provider
- * that publishes a throughput states it and they all agree — the value then
- * holds whichever of them is fastest. Anything else stays null; no provider
- * is picked, and nothing is averaged. Field meanings and units:
+ * length, price, and tool support. The default route is the fastest one by
+ * a live probe figure, and a caller can also ask for the cheapest, their
+ * preferred, or a named provider. So a fact is stored only when every entry
+ * in `providers[]` states it and they all agree — the value then holds on
+ * any route. A provider that states nothing (a missing figure means no
+ * probe data, not unroutable) leaves the fact null. No provider is picked,
+ * and nothing is averaged. Field meanings and units:
  * https://huggingface.co/docs/inference-providers/hub-api
  *
  * The request schema is Hugging Face's own chat-completion JSON Schema
@@ -68,16 +69,12 @@ function activityFor(output: Array<string> | null): Activity | null {
   return null
 }
 
-/**
- * Providers the default route can land on: the ones with a published
- * throughput. Empty when the list is malformed, so nothing is settled.
- */
-function defaultRoute(providers: unknown): Array<Row> {
-  if (!Array.isArray(providers) || !providers.every(isRecord)) return []
-  return providers.filter((p) => typeof p.throughput === 'number')
+/** Every provider entry. Empty when the list is malformed. */
+function routes(providers: unknown): Array<Row> {
+  return Array.isArray(providers) && providers.every(isRecord) ? providers : []
 }
 
-/** The one value every route provider states, or null. */
+/** The one value every provider states, or null. */
 function agreed<T>(route: Array<Row>, read: (p: Row) => T | null): T | null {
   const [first, ...rest] = route.map(read)
   if (first === undefined || first === null) return null
@@ -90,12 +87,17 @@ function contextLength(p: Row): number | null {
   return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : null
 }
 
+/** The listing carries float noise (`0.030000000000000002`). */
+const exact = (n: number) => Number(n.toPrecision(12))
+
 /** USD per million tokens. `is_free` is a promo, not the standard price. */
 function price(p: Row): { input: number; output: number } | null {
   if (p.is_free === true || !isRecord(p.pricing)) return null
   const { input, output } = p.pricing
   if (typeof input !== 'number' || typeof output !== 'number') return null
-  return input > 0 && output > 0 ? { input, output } : null
+  return input > 0 && output > 0
+    ? { input: exact(input), output: exact(output) }
+    : null
 }
 
 const flag = (key: string) => (p: Row) => {
@@ -112,7 +114,7 @@ async function routeFacts(
 ): Promise<
   Pick<ModelInfo, 'contextWindow' | 'pricing' | 'capabilities' | 'factSources'>
 > {
-  const route = defaultRoute(providers)
+  const route = routes(providers)
   const contextWindow = agreed(route, contextLength)
   const quote = agreed(route, price)
   const pricing = quote
