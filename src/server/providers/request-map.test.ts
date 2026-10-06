@@ -108,6 +108,27 @@ describe('chatRequestMap', () => {
     expect(legacy?.maxTokensField).toBe('max_tokens')
   })
 
+  it('maps the Zhipu Coding Plan ids its chat spec lists', () => {
+    for (const id of ['glm-5.3', 'glm-5.3-flash']) {
+      expect(chatRequestMap('zhipuai-coding-plan', id, 'chat')).toMatchObject({
+        thinking: {
+          on: { thinking: { type: 'enabled', clear_thinking: false } },
+          // A Coding Plan request runs `none` as low: there is no off body.
+          off: null,
+          levels: { off: null, minimal: 'minimal', medium: 'medium' },
+        },
+        maxTokensField: 'max_tokens',
+        developerRole: false,
+        toolStream: true,
+        reasoningEffort: true,
+      })
+    }
+    // Claude Code's `[1m]` name and an id not on the plan today get no map.
+    for (const id of ['glm-5.3-flash[1m]', 'glm-5.2', 'glm-5.3-flashx']) {
+      expect(chatRequestMap('zhipuai-coding-plan', id, 'chat')).toBeNull()
+    }
+  })
+
   it('sends Qwen enable_thinking and the vLLM kwargs body', () => {
     expect(chatRequestMap('qwen', 'qwen3', 'chat')?.thinking?.on).toEqual({
       enable_thinking: true,

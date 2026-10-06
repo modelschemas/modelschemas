@@ -42,6 +42,43 @@ export const ZAI_THINKING_URL =
 const FETCH_TIMEOUT_MS = 30_000
 const MODEL_ID = /^(?:glm|cog)[a-z0-9._-]*$/
 
+/**
+ * How one docs site words the prose these parsers read. Z.AI writes
+ * English. Zhipu's China docs state the same facts in the same shapes in
+ * Chinese (`zhipuai-coding-plan.ts`).
+ */
+export interface GlmWording {
+  /** Header cells of the overview table's model and context columns. */
+  modelColumn: string
+  contextColumn: string
+  /** Sits between a `max_tokens` clause's models and its cap. */
+  supports: RegExp
+  /** The cap, at the start of what follows `supports`. Group 1 is the size. */
+  cap: RegExp
+  /** Ends a list of models that are series, not single ids. */
+  series: RegExp
+  /** List filler between model names, as a pattern source. */
+  filler: string
+  /** A description's "only these models" clause. Group 1 is the model list. */
+  supportedBy: RegExp
+  /** Says the clause names a version floor, not a list. */
+  floor: RegExp
+  /** Filler in a version-floor clause, as a pattern source. */
+  floorFiller: string
+}
+
+export const ZAI_WORDING: GlmWording = {
+  modelColumn: 'Model',
+  contextColumn: 'Context',
+  supports: /\bsupports\b/,
+  cap: /^\s+(?:a maximum output length of\s+)?(\d+(?:\.\d+)?[KM])\b(?:\s+maximum output\b)?/,
+  series: /\bseries\s*$/,
+  filler: '\\b(?:the|and|series)\\b',
+  supportedBy: /supported by (.+?)(?:\.\s|\.$|$)/is,
+  floor: /\b(?:higher|above)\b/i,
+  floorFiller: '\\b(?:series|and|higher|above|models?|versions?)\\b',
+}
+
 /** One fetched source document. */
 export interface ZaiDoc {
   url: string
@@ -56,7 +93,7 @@ interface TokenPrice {
 }
 
 /** What the docs say about some models, named one by one or as a series. */
-interface ModelNames {
+export interface ModelNames {
   names: Array<string>
   /** True when a name also covers its variants (`glm-4.7` → `glm-4.7-flash`). */
   series: boolean
@@ -98,7 +135,7 @@ function money(cell: string): number | null {
 
 const MODEL_NAME = /(?:auto)?glm-[a-z0-9.-]*[a-z0-9]/gi
 
-function modelNames(text: string): Array<string> {
+export function modelNames(text: string): Array<string> {
   return (text.match(MODEL_NAME) ?? []).map((name) => name.toLowerCase())
 }
 
@@ -106,7 +143,7 @@ function modelNames(text: string): Array<string> {
  * The row that names this id. The longest name wins, and a series name must
  * end where the version does, so `glm-5.3-flash` is `glm-5.3`, never `glm-5`.
  */
-function namedBy<T extends ModelNames>(
+export function namedBy<T extends ModelNames>(
   rawId: string,
   rows: Array<T>,
 ): T | null {
@@ -182,9 +219,14 @@ export function parseZaiTokenPrices(markdown: string): Map<string, TokenPrice> {
 
 /**
  * The `Context` column of the overview page's model tables, keyed by the
- * model cell lowercased. `/` means the model has no context window.
+ * model cell lowercased. `/` means the model has no context window. With
+ * `only`, the other rows are not read.
  */
-export function parseZaiContextWindows(markdown: string): Map<string, number> {
+export function parseZaiContextWindows(
+  markdown: string,
+  wording: GlmWording = ZAI_WORDING,
+  only?: (name: string) => boolean,
+): Map<string, number> {
   const windows = new Map<string, number>()
   let header: Array<string> = []
   let column = -1
@@ -200,13 +242,18 @@ export function parseZaiContextWindows(markdown: string): Map<string, number> {
       .slice(1, -1)
       .map((cell) => cell.trim())
     if (cells.every((cell) => /^:?-+:?$/.test(cell))) {
-      column = header[0] === 'Model' ? header.indexOf('Context') : -1
+      column =
+        header[0] === wording.modelColumn
+          ? header.indexOf(wording.contextColumn)
+          : -1
       continue
     }
     header = cells
-    const name = cells[0]
+    // The China docs link each model name to its page.
+    const name = cells[0]?.replace(/^\[([^\]]+)\]\(.*\)$/, '$1')
     const cell = cells[column]
     if (column < 0 || !name || cell === '/') continue
+    if (only && !only(name.toLowerCase())) continue
     const tokens = /^\d+(?:\.\d+)?[KM]$/.test(cell ?? '')
       ? tokenCount(cell)
       : null
@@ -226,7 +273,7 @@ export function parseZaiContextWindows(markdown: string): Map<string, number> {
 /** True when `text`, its model names aside, is only list filler. */
 function onlyNames(text: string, filler: string): boolean {
   const rest = text.replace(MODEL_NAME, ' ')
-  return new RegExp(`^(?:[\\s,.\`]|\\b(?:${filler})\\b)*$`, 'i').test(rest)
+  return new RegExp(`^(?:[\\s,.\`]|${filler})*$`, 'i').test(rest)
 }
 
 /**
@@ -235,8 +282,11 @@ function onlyNames(text: string, filler: string): boolean {
  * with another verb would otherwise be read as part of the next clause's
  * subject and take its cap, so anything left over throws.
  */
-export function parseZaiOutputCaps(description: string): Array<OutputCap> {
-  const [first = '', ...rest] = description.split(/\bsupports\b/)
+export function parseZaiOutputCaps(
+  description: string,
+  wording: GlmWording = ZAI_WORDING,
+): Array<OutputCap> {
+  const [first = '', ...rest] = description.split(wording.supports)
   if (rest.length === 0) {
     throw new Error('zai: max_tokens description states no output cap')
   }
@@ -244,22 +294,20 @@ export function parseZaiOutputCaps(description: string): Array<OutputCap> {
   // The opening sentence runs up to the first model name.
   let subject = first.slice(Math.max(first.search(MODEL_NAME), 0))
   for (const part of rest) {
-    const cap = part.match(
-      /^\s+(?:a maximum output length of\s+)?(\d+(?:\.\d+)?[KM])\b(?:\s+maximum output\b)?/,
-    )
+    const cap = part.match(wording.cap)
     const names = modelNames(subject)
     const tokens = tokenCount(cap?.[1])
     if (
       !cap ||
       tokens === null ||
       names.length === 0 ||
-      !onlyNames(subject, 'the|and|series')
+      !onlyNames(subject, wording.filler)
     ) {
       throw new Error(
         `zai: unreadable output cap: ${subject.trim()} supports${part}`,
       )
     }
-    caps.push({ names, series: /\bseries\s*$/.test(subject), tokens })
+    caps.push({ names, series: wording.series.test(subject), tokens })
     subject = part.slice(cap[0].length)
   }
   if (modelNames(subject).length > 0) {
@@ -276,25 +324,26 @@ export function parseZaiOutputCaps(description: string): Array<OutputCap> {
 export function zaiSupportedBy(
   description: string,
   rawId: string,
+  wording: GlmWording = ZAI_WORDING,
 ): boolean | null {
-  const clause = description.match(/supported by (.+?)(?:\.\s|\.$|$)/is)?.[1]
+  const clause = description.match(wording.supportedBy)?.[1]
   if (clause === undefined) return null
   const names = modelNames(clause)
   if (names.length === 0) return false
-  if (/\b(?:higher|above)\b/i.test(clause)) {
+  if (wording.floor.test(clause)) {
     const version = (id: string) => id.match(/^glm-(\d+(?:\.\d+)?)/)?.[1]
     const floor = version(names[0] ?? '')
     const own = version(rawId)
     return (
       names.length === 1 &&
-      onlyNames(clause, 'series|and|higher|above|models?|versions?') &&
+      onlyNames(clause, wording.floorFiller) &&
       floor !== undefined &&
       own !== undefined &&
       Number(own) >= Number(floor)
     )
   }
   return (
-    onlyNames(clause, 'the|and|series') &&
+    onlyNames(clause, wording.filler) &&
     namedBy(rawId, [{ names, series: true }]) !== null
   )
 }
@@ -378,7 +427,11 @@ function userInputs(spec: unknown, messages: unknown): Array<string> {
     list(at(spec, message, 'properties', 'role', 'enum')).includes('user'),
   )
   const inputs = new Set<string>()
-  for (const shape of list(at(spec, user, 'properties', 'content', 'oneOf'))) {
+  // The China document writes a text-only content as a bare string schema.
+  const content = at(spec, user, 'properties', 'content')
+  const shapes = at(spec, content, 'oneOf')
+  const bare = content === undefined ? [] : [content]
+  for (const shape of Array.isArray(shapes) ? shapes : bare) {
     if (at(spec, shape, 'type') === 'string') {
       inputs.add('text')
       continue
@@ -413,6 +466,7 @@ function variantCapabilities(
   props: Record<string, unknown>,
   rawId: string,
   meta: Parameters<typeof walkRequestSchema>[1],
+  wording: GlmWording,
 ): Record<string, FactSource> {
   const walked = walkRequestSchema({ properties: props }, meta)
   const kept = Object.entries(walked?.sources.capabilities ?? {}).filter(
@@ -421,7 +475,7 @@ function variantCapabilities(
       const description = at(spec, props[property], 'description')
       return (
         typeof description !== 'string' ||
-        zaiSupportedBy(description, rawId) !== false
+        zaiSupportedBy(description, rawId, wording) !== false
       )
     },
   )
@@ -432,16 +486,26 @@ function variantCapabilities(
 
 /**
  * Route and request-body facts for each id a generation path's request
- * lists under `model`. The first path that lists an id binds it.
+ * lists under `model`. The first path that lists an id binds it. With
+ * `only`, a request variant that lists none of those ids is not read.
  */
 export function zaiSpecFacts(
   spec: unknown,
   source: { url: string; hash: string } = { url: ZAI_OPENAPI_URL, hash: '' },
+  {
+    wording = ZAI_WORDING,
+    classify = classifyZaiPath,
+    only,
+  }: {
+    wording?: GlmWording
+    classify?: (path: string) => Activity | null
+    only?: (id: string) => boolean
+  } = {},
 ): Map<string, SpecFacts> {
   const facts = new Map<string, SpecFacts>()
   const paths = at(spec, spec, 'paths')
   for (const [path, item] of Object.entries(isRecord(paths) ? paths : {})) {
-    const activity = classifyZaiPath(path)
+    const activity = classify(path)
     if (activity === null) continue
     const schemaEndpointId = path.replace(/^\//, '')
     const content = at(spec, item, 'post', 'requestBody', 'content')
@@ -455,7 +519,8 @@ export function zaiSpecFacts(
           if (isRecord(own)) Object.assign(props, own)
         }
         const ids = list(at(spec, props.model, 'enum')).filter(
-          (id): id is string => typeof id === 'string' && MODEL_ID.test(id),
+          (id): id is string =>
+            typeof id === 'string' && MODEL_ID.test(id) && (only?.(id) ?? true),
         )
         if (ids.length === 0) continue
         const chat =
@@ -463,6 +528,7 @@ export function zaiSpecFacts(
             ? {
                 caps: parseZaiOutputCaps(
                   String(at(spec, props.max_tokens, 'description') ?? ''),
+                  wording,
                 ),
                 input: userInputs(spec, props.messages),
               }
@@ -487,12 +553,18 @@ export function zaiSpecFacts(
             modalities: chat ? { input: chat.input, output: ['text'] } : null,
             efforts,
             capabilities: chat
-              ? variantCapabilities(spec, props, id, {
-                  derivation: 'upstream-spec',
-                  endpointId: schemaEndpointId,
-                  sourceUrl: source.url,
-                  sourceHash: source.hash,
-                })
+              ? variantCapabilities(
+                  spec,
+                  props,
+                  id,
+                  {
+                    derivation: 'upstream-spec',
+                    endpointId: schemaEndpointId,
+                    sourceUrl: source.url,
+                    sourceHash: source.hash,
+                  },
+                  wording,
+                )
               : null,
           })
         }
@@ -605,7 +677,7 @@ export function parseZaiModels(
   })
 }
 
-async function fetchDoc(url: string): Promise<ZaiDoc> {
+export async function fetchZaiDoc(url: string): Promise<ZaiDoc> {
   const text = await fetchText(url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
@@ -618,10 +690,10 @@ async function fetchDoc(url: string): Promise<ZaiDoc> {
 
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
   const [spec, pricing, overview, thinking] = await Promise.all([
-    fetchDoc(ZAI_OPENAPI_URL),
-    fetchDoc(ZAI_PRICING_URL),
-    fetchDoc(ZAI_OVERVIEW_URL),
-    fetchDoc(ZAI_THINKING_URL),
+    fetchZaiDoc(ZAI_OPENAPI_URL),
+    fetchZaiDoc(ZAI_PRICING_URL),
+    fetchZaiDoc(ZAI_OVERVIEW_URL),
+    fetchZaiDoc(ZAI_THINKING_URL),
   ])
   return {
     models: parseZaiModels(
