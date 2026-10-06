@@ -1,17 +1,16 @@
 /**
  * Zhipu AI Coding Plan — model ids named on the Coding Plan docs.
  * The overview lists the models every plan can call. The switch guide names
- * the ids, including the `[1m]` context suffix. Point coefficients are
- * not USD, so prices stay null.
+ * the ids. Its `glm-5.3-flash[1m]` is a model-name suffix Claude Code reads
+ * to enable a 1M context, not a model id, so it is not listed. Point
+ * coefficients are not USD, so prices stay null.
  *
  * Each model's facts come from Zhipu's China docs. Those are Z.AI's docs in
  * Chinese, so the Z.AI parsers read them with a Chinese wording: the chat
  * request that lists the id in the OpenAPI document gives the route, output
  * cap, input modalities and flags; the model overview table gives the
  * context window; the Deep Thinking page's "Coding Plan request" list gives
- * reasoning. A fact is looked up by the exact id. `glm-5.3-flash[1m]` is a
- * Claude Code setting none of those documents name, so it gets only what
- * the switch guide says of it: its context window.
+ * reasoning. A fact is looked up by the exact id.
  *
  * The OpenAPI document is the general platform's (`…/api/paas/v4`), and the
  * endpoint id is that pay-as-you-go path. The plan's OpenAI base URL is
@@ -21,7 +20,6 @@
  */
 import type { Activity } from '#/db/schema.ts'
 
-import { tokenCount } from '../model-facts.ts'
 import type {
   FactSource,
   ListModelsResult,
@@ -77,8 +75,7 @@ interface ReasoningRow extends ModelNames {
   reasoning: ModelReasoning
 }
 
-const WIRE_ID =
-  /`((?:glm)-[a-z0-9.-]+(?:\[1m\])?)`|"((?:glm)-[a-z0-9.-]+(?:\[1m\])?)"/g
+const WIRE_ID = /`((?:glm)-[a-z0-9.-]+)`|"((?:glm)-[a-z0-9.-]+)"/g
 
 function zhipuCodingIds(overview: string, latest: string): Array<string> {
   const ids = new Set<string>()
@@ -156,32 +153,6 @@ export function parseZhipuCodingReasoning(
   return rows
 }
 
-/**
- * The switch guide's one statement about a suffixed name: "开启 GLM 1M
- * 上下文需要模型后缀加上 `[1m]` ，即 `glm-5.3-flash[1m]`". The size, the
- * suffix and the name must agree, or nothing is read.
- */
-export function parseZhipuSuffixContexts(
-  markdown: string,
-): Map<string, number> {
-  const windows = new Map<string, number>()
-  const statement =
-    /开启 GLM (\d+(?:\.\d+)?[KM]) 上下文需要模型后缀加上 `(\[[^`]+\])`\s*，即 `([^`]+)`/g
-  for (const [, size = '', suffix = '', name = ''] of markdown.matchAll(
-    statement,
-  )) {
-    const tokens = tokenCount(size)
-    if (
-      tokens !== null &&
-      suffix === `[${size.toLowerCase()}]` &&
-      name.endsWith(suffix)
-    ) {
-      windows.set(name, tokens)
-    }
-  }
-  return windows
-}
-
 export function classifyZhipuCodingPath(path: string): Activity | null {
   return path === CHAT_PATH ? 'chat' : null
 }
@@ -201,7 +172,6 @@ export function parseZhipuCodingModels(docs: {
     only,
   })
   const windows = parseZaiContextWindows(docs.models.text, ZHIPU_WORDING, only)
-  const suffixed = parseZhipuSuffixContexts(docs.latest.text)
   const reasonings = parseZhipuCodingReasoning(docs.thinking.text)
   const from = (
     doc: ZaiDoc,
@@ -215,7 +185,7 @@ export function parseZhipuCodingModels(docs: {
   })
   return ids.map((rawId) => {
     const fact = facts.get(rawId)
-    const contextWindow = windows.get(rawId) ?? suffixed.get(rawId) ?? null
+    const contextWindow = windows.get(rawId) ?? null
     const reasoning = namedBy(rawId, reasonings)?.reasoning ?? null
     // No effort list for the model means no `reasoning_effort` flag either.
     const capabilities = fact?.capabilities
@@ -227,11 +197,7 @@ export function parseZhipuCodingModels(docs: {
       : null
     const factSources: ModelFactSources = {
       ...(contextWindow !== null
-        ? {
-            contextWindow: windows.has(rawId)
-              ? from(docs.models, 'docs-derived', '上下文')
-              : from(docs.latest, 'docs-derived', '1M 上下文'),
-          }
+        ? { contextWindow: from(docs.models, 'docs-derived', '上下文') }
         : {}),
       ...(reasoning
         ? {

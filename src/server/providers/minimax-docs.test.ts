@@ -12,6 +12,7 @@ import {
   fetchMinimaxPage,
   MINIMAX,
   MINIMAX_CN,
+  minimaxModelFacts,
   parseMinimaxContextWindows,
   parseMinimaxInputModalities,
   parseMinimaxMaxOutput,
@@ -732,4 +733,69 @@ describe('fetchMinimaxPage', () => {
       fetchMinimaxPage(MINIMAX.chatSpecUrl, MINIMAX),
     ).rejects.toThrow('minimax: ')
   })
+})
+
+describe('a maximum equal to the context window is not an output cap', () => {
+  const originalFetch = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  const PLATFORMS = [
+    {
+      platform: MINIMAX,
+      sdk: MINIMAX_SDK_PAGE,
+      pricing: MINIMAX_PRICING_PAGE,
+      description: MINIMAX_MAX_COMPLETION_TOKENS,
+    },
+    {
+      platform: MINIMAX_CN,
+      sdk: MINIMAX_CN_SDK_PAGE,
+      pricing: MINIMAX_CN_PRICING_PAGE,
+      description: MINIMAX_CN_MAX_COMPLETION_TOKENS,
+    },
+  ]
+
+  for (const { platform, sdk, pricing, description } of PLATFORMS) {
+    const facts = (text: string) => {
+      const pages: Record<string, string> = {
+        [platform.sdkUrl]: sdk,
+        [platform.pricingUrl]: pricing,
+        [platform.chatSpecUrl]: JSON.stringify({
+          max_completion_tokens: { description: text },
+        }),
+      }
+      globalThis.fetch = ((url: string) =>
+        Promise.resolve(new Response(pages[String(url)]))) as typeof fetch
+      return minimaxModelFacts(undefined, platform)
+    }
+
+    it(`${platform.label}: stores no cap for the M2 rows, 524288 for M3`, async () => {
+      const of = await facts(description)
+      for (const id of IDS.slice(0, 2)) {
+        expect(of(id).contextWindow).toBe(1_000_000)
+        expect(of(id).maxOutput).toBe(524_288)
+        expect(of(id).factSources?.maxOutput?.sourceUrl).toBe(
+          platform.chatSpecUrl,
+        )
+      }
+      expect(IDS.slice(2)).toHaveLength(7)
+      for (const id of IDS.slice(2)) {
+        expect(of(id).contextWindow).toBe(204_800)
+        expect(of(id).maxOutput).toBeNull()
+        expect(of(id).factSources?.maxOutput).toBeUndefined()
+      }
+    })
+
+    it(`${platform.label}: stores an M2 cap that differs from the window`, async () => {
+      const of = await facts(description.replace('204800', '131072'))
+      for (const id of IDS.slice(2)) {
+        expect(of(id).maxOutput).toBe(131_072)
+        expect(of(id).factSources?.maxOutput?.sourceUrl).toBe(
+          platform.chatSpecUrl,
+        )
+      }
+      expect(of('MiniMax-M3').maxOutput).toBe(524_288)
+    })
+  }
 })

@@ -5,7 +5,6 @@ import { parseZaiContextWindows, zaiSpecFacts, zaiSupportedBy } from './zai.ts'
 import {
   classifyZhipuCodingPath,
   parseZhipuCodingReasoning,
-  parseZhipuSuffixContexts,
   provider,
   ZHIPU_CODING_MODELS_URL,
   ZHIPU_CODING_OVERVIEW_URL,
@@ -268,15 +267,10 @@ describe('zhipuai-coding-plan', () => {
     expect(models.map((model) => model.rawId)).toEqual([
       'glm-5.3',
       'glm-5.3-flash',
-      'glm-5.3-flash[1m]',
     ])
     expect(models.every((model) => model.pricing == null)).toBe(true)
-    // The chat request lists two of them. `[1m]` stays unclassified.
-    expect(models.map((model) => model.activity)).toEqual([
-      'chat',
-      'chat',
-      undefined,
-    ])
+    // The guide's `glm-5.3-flash[1m]` is a Claude Code name suffix, not an id.
+    expect(models.map((model) => model.activity)).toEqual(['chat', 'chat'])
     expect(urls).toEqual([
       ZHIPU_CODING_OVERVIEW_URL,
       ZHIPU_CODING_MODELS_URL,
@@ -340,42 +334,6 @@ describe('zhipuai-coding-plan', () => {
     expect(byId.get('glm-5.3-flash')?.capabilities).not.toContain(
       'response_format',
     )
-  })
-
-  it('gives the [1m] id only the context window the switch guide states', async () => {
-    const suffixed = (await listed()).get('glm-5.3-flash[1m]')
-
-    // Nothing is inherited from `glm-5.3-flash` by dropping the suffix.
-    expect(suffixed).toEqual({
-      rawId: 'glm-5.3-flash[1m]',
-      pricing: null,
-      contextWindow: 1_000_000,
-      factSources: {
-        contextWindow: expect.objectContaining({
-          derivation: 'docs-derived',
-          sourceUrl: ZHIPU_CODING_MODELS_URL,
-        }) as unknown,
-      },
-    })
-    expect(
-      chatRequestMap('zhipuai-coding-plan', 'glm-5.3-flash[1m]', null),
-    ).toBe(null)
-  })
-
-  it('reads a suffix context only when size, suffix and name agree', () => {
-    const line =
-      '注意开启 GLM 1M 上下文需要模型后缀加上 `[1m]` ，即 `glm-5.3-flash[1m]`'
-    expect(parseZhipuSuffixContexts(line)).toEqual(
-      new Map([['glm-5.3-flash[1m]', 1_000_000]]),
-    )
-    for (const reworded of [
-      line.replace('GLM 1M', 'GLM 2M'),
-      line.replace('即 `glm-5.3-flash[1m]`', '即 `glm-5.3-flash`'),
-      line.replace('需要模型后缀加上', '可以在模型后加上'),
-      line.replace('1M 上下文', '长上下文'),
-    ]) {
-      expect(parseZhipuSuffixContexts(reworded).size).toBe(0)
-    }
   })
 
   it('sends only effort levels the bound request variant lists', () => {

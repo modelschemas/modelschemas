@@ -1974,3 +1974,38 @@ describe('Hugging Face prices follow provider agreement', () => {
     })
   })
 })
+
+describe('raw ids that slug to one row', () => {
+  it('keeps the first spelling and skips the second before any check', async () => {
+    const id = 'poll-duplicate-slug'
+    const deps = await freshDeps(id)
+    // Mistral lists both spellings; only one carries the price.
+    const provider = stubProvider(id, [
+      {
+        rawId: 'medium-3-5',
+        activity: 'chat',
+        pricing: { prompt: '0.0000025', completion: '0.00001' },
+      },
+      { rawId: 'medium-3.5', activity: 'chat' },
+    ])
+    expect(modelDbId(id, 'medium-3-5')).toBe(modelDbId(id, 'medium-3.5'))
+
+    const first = await pollWithEvents(deps, provider)
+    expect(first.outcome).toMatchObject({ modelsSeen: 2, added: 1 })
+    // The second poll is the one that used to see the stored card.
+    const second = await pollWithEvents(deps, provider)
+    for (const { outcome, events } of [first, second]) {
+      expect(outcome.failures).toBe(0)
+      expect(events).toEqual([])
+    }
+    expect(second.outcome).toMatchObject({ added: 0, updated: 0, removed: 0 })
+
+    const rows = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, id))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.rawId).toBe('medium-3-5')
+    expect(rows[0]?.pricing).not.toBeNull()
+  })
+})

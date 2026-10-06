@@ -545,7 +545,11 @@ export async function minimaxModelFacts(
         modalities: input ? { input, output: ['text'] } : null,
         reasoning: reasoning.get(id) ?? null,
       }
-      const maxOutput = caps.get(id) ?? null
+      // A maximum equal to the model's whole context window is the context
+      // bound, not an output cap: nothing is stored for it.
+      const cap = caps.get(id)
+      const maxOutput =
+        cap === undefined || cap === fromSdk.contextWindow ? null : cap
       const rates = prices.get(id)
       const pricing = rates
         ? compileTokenCard(
