@@ -374,6 +374,16 @@ is token-auth only and is not used for releases.
      `src/db/seed-providers.ts`) against the provider's docs.
    - Dangling-`$ref` warnings → the upstream spec changed shape; see
      `src/server/ingest/bundle.ts`.
+   - `docsFailing` on a `/v1/status` provider (a `docs` marker on the home
+     page) → a docs page stopped loading or changed shape. Polls go on and
+     `status` stays as it was; the docs-derived facts are frozen at their
+     stored values. `sources` and `error` name the page: fix its parser in
+     the provider's adapter. The next poll whose docs all load clears it.
+   - `priceClearsRefused` on a `/v1/status` provider (a `prices` marker) →
+     a poll asked to clear `refused` of `priced` stored prices and none was
+     cleared. Either the adapter misreads a reshaped listing (fix it), or
+     the prices really are gone (null the stale cards by hand in D1). The
+     next poll that refuses nothing clears it.
 4. One provider failing never sinks the run (per-provider isolation); fix
    and re-trigger with the admin sync endpoint. Schema history is preserved
    across failures — superseded versions stay queryable via

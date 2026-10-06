@@ -20,6 +20,64 @@ export type ServiceStatus = {
     status?: 'active' | 'degraded' | 'disabled' | 'pending'
     lastPolledAt?: number | null
     lastSyncedAt?: number | null
+    /**
+     * Present only while the provider docs pages fail to load. Polls go on and models keep their stored docs-derived facts, which may be stale. Does not change status.
+     */
+    docsFailing?: {
+      /**
+       * Epoch seconds of the first failing poll.
+       */
+      since: number
+      /**
+       * Consecutive failing polls.
+       */
+      polls: number
+      /**
+       * Epoch seconds of the latest failing poll.
+       */
+      lastAt: number
+      /**
+       * Documents that failed in the latest poll.
+       */
+      failed: number
+      /**
+       * Documents not attempted after the failure budget.
+       */
+      skipped: number
+      /**
+       * The first few failing documents.
+       */
+      sources: Array<string>
+      /**
+       * First error of the latest poll, at most 500 characters.
+       */
+      error: string
+    }
+    /**
+     * Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.
+     */
+    priceClearsRefused?: {
+      /**
+       * Epoch seconds of the first refusing poll.
+       */
+      since: number
+      /**
+       * Consecutive refusing polls.
+       */
+      polls: number
+      /**
+       * Epoch seconds of the latest refusing poll.
+       */
+      lastAt: number
+      /**
+       * Stored prices the latest poll asked to clear; none was cleared.
+       */
+      refused: number
+      /**
+       * Listed models holding a stored price at that poll.
+       */
+      priced: number
+    }
     counts?: {
       models?: number
       /**

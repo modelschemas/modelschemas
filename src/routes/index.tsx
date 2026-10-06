@@ -70,6 +70,9 @@ const fmt = new Intl.NumberFormat('en-US')
 const pct = (part: number, whole: number) =>
   whole > 0 ? Math.round((part / whole) * 100) : null
 const showPct = (value: number | null) => (value === null ? '—' : `${value}%`)
+/** "2026-10-07 05:15Z (3 polls)" for a status marker's tooltip. */
+const since = (record: { since: number; polls: number }) =>
+  `${new Date(record.since * 1000).toISOString().slice(0, 16).replace('T', ' ')}Z (${record.polls} ${record.polls === 1 ? 'poll' : 'polls'})`
 
 function Landing() {
   const { status, changes } = Route.useLoaderData()
@@ -266,6 +269,22 @@ function Landing() {
                     </td>
                     <td>
                       <StatusDot status={p.status} />
+                      {p.docsFailing && (
+                        <span
+                          className="ml-2 cursor-help text-xs text-tok-amber"
+                          title={`docs failing since ${since(p.docsFailing)}: ${p.docsFailing.sources[0] ?? p.docsFailing.error}`}
+                        >
+                          docs
+                        </span>
+                      )}
+                      {p.priceClearsRefused && (
+                        <span
+                          className="ml-2 cursor-help text-xs text-tok-amber"
+                          title={`price clears refused since ${since(p.priceClearsRefused)}: ${p.priceClearsRefused.refused} of ${p.priceClearsRefused.priced} stored prices kept`}
+                        >
+                          prices
+                        </span>
+                      )}
                     </td>
                     <td className="num" data-label="models">
                       {fmt.format(p.counts.models)}

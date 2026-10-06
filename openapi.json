@@ -934,6 +934,85 @@
                     "null"
                   ]
                 },
+                "docsFailing": {
+                  "type": "object",
+                  "description": "Present only while the provider docs pages fail to load. Polls go on and models keep their stored docs-derived facts, which may be stale. Does not change status.",
+                  "required": [
+                    "since",
+                    "polls",
+                    "lastAt",
+                    "failed",
+                    "skipped",
+                    "sources",
+                    "error"
+                  ],
+                  "properties": {
+                    "since": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the first failing poll."
+                    },
+                    "polls": {
+                      "type": "integer",
+                      "description": "Consecutive failing polls."
+                    },
+                    "lastAt": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the latest failing poll."
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "description": "Documents that failed in the latest poll."
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "description": "Documents not attempted after the failure budget."
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The first few failing documents."
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "First error of the latest poll, at most 500 characters."
+                    }
+                  }
+                },
+                "priceClearsRefused": {
+                  "type": "object",
+                  "description": "Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.",
+                  "required": [
+                    "since",
+                    "polls",
+                    "lastAt",
+                    "refused",
+                    "priced"
+                  ],
+                  "properties": {
+                    "since": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the first refusing poll."
+                    },
+                    "polls": {
+                      "type": "integer",
+                      "description": "Consecutive refusing polls."
+                    },
+                    "lastAt": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the latest refusing poll."
+                    },
+                    "refused": {
+                      "type": "integer",
+                      "description": "Stored prices the latest poll asked to clear; none was cleared."
+                    },
+                    "priced": {
+                      "type": "integer",
+                      "description": "Listed models holding a stored price at that poll."
+                    }
+                  }
+                },
                 "counts": {
                   "type": "object",
                   "properties": {

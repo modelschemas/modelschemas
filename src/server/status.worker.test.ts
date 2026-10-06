@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
 
 import { getDb } from '../db/index.ts'
-import { endpoints, models, providers, schemaVersions } from '../db/schema.ts'
+import {
+  cacheMeta,
+  endpoints,
+  models,
+  providers,
+  schemaVersions,
+} from '../db/schema.ts'
 import { providerRegistry } from '../server/providers/index.ts'
 import { getServiceStatus } from './status.ts'
 
@@ -141,5 +147,69 @@ describe('getServiceStatus', () => {
         },
       })
     }
+  })
+
+  it('carries docs-failing and refused-clears records, and only those', async () => {
+    const db = getDb(env)
+    const ids = ['rec-none', 'rec-docs', 'rec-corrupt', 'rec-clears']
+    await db.insert(providers).values(
+      ids.map((id) => ({
+        id,
+        displayName: id,
+        specSourceUrl: 'https://example.com/spec.json',
+      })),
+    )
+    const docsFailing = {
+      since: NOW - 1800,
+      polls: 3,
+      lastAt: NOW,
+      failed: 2,
+      skipped: 1,
+      sources: ['https://example.com/docs/a', 'https://example.com/docs/b'],
+      error: 'page changed shape',
+    }
+    const priceClearsRefused = {
+      since: NOW - 900,
+      polls: 2,
+      lastAt: NOW,
+      refused: 6,
+      priced: 8,
+    }
+    const row = (key: string, lastError: string | null) => ({
+      key,
+      fetchedAt: NOW,
+      staleTime: 0,
+      lastError,
+    })
+    await db.insert(cacheMeta).values([
+      row('docs-failing:rec-docs', JSON.stringify(docsFailing)),
+      row(
+        'price-clears-refused:rec-clears',
+        JSON.stringify(priceClearsRefused),
+      ),
+      // Not JSON, JSON of the wrong shape, and no body at all.
+      row('docs-failing:rec-corrupt', '{not json'),
+      row('price-clears-refused:rec-corrupt', '"a string"'),
+      row('docs-failing:rec-none', null),
+      // Another cache_meta row is not a record.
+      row('schema:rec-none', JSON.stringify(docsFailing)),
+    ])
+
+    const status = await getServiceStatus(db, NOW)
+    const [none, docs, corrupt, clears] = ids.map((id) =>
+      status.providers.find((p) => p.id === id),
+    )
+    expect(docs?.docsFailing).toEqual(docsFailing)
+    expect(docs).not.toHaveProperty('priceClearsRefused')
+    expect(clears?.priceClearsRefused).toEqual(priceClearsRefused)
+    expect(clears).not.toHaveProperty('docsFailing')
+    for (const healthy of [none, corrupt]) {
+      expect(healthy).toMatchObject({ status: 'active' })
+      expect(healthy).not.toHaveProperty('docsFailing')
+      expect(healthy).not.toHaveProperty('priceClearsRefused')
+    }
+    // Neither record moves `status`.
+    expect(docs?.status).toBe('active')
+    expect(clears?.status).toBe('active')
   })
 })

@@ -2,6 +2,11 @@ import { count, eq, isNull, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import { endpoints, models, providers, schemaVersions } from '#/db/schema.ts'
+import { readIngestRecords } from '#/server/ingest/docs-failing.ts'
+import type {
+  DocsFailing,
+  PriceClearsRefused,
+} from '#/server/ingest/docs-failing.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 
 export interface ProviderStatus {
@@ -11,6 +16,16 @@ export interface ProviderStatus {
   status: 'active' | 'degraded' | 'disabled' | 'pending'
   lastPolledAt: number | null
   lastSyncedAt: number | null
+  /**
+   * Present while the provider's docs pages fail to load: polls go on and
+   * rows keep their stored docs-derived facts. Does not change `status`.
+   */
+  docsFailing?: DocsFailing
+  /**
+   * Present while polls refuse a mass price clear: the stored prices stay.
+   * Does not change `status`.
+   */
+  priceClearsRefused?: PriceClearsRefused
   counts: {
     models: number
     /** Models with a stored rate card. */
@@ -42,9 +57,11 @@ export async function getServiceStatus(
   db: Db,
   now = Math.floor(Date.now() / 1000),
 ): Promise<ServiceStatus> {
-  const [providerRows, modelCounts, endpointCounts, schemaCounts] =
+  const [providerRows, records, modelCounts, endpointCounts, schemaCounts] =
     await Promise.all([
       db.select().from(providers),
+      // One statement for every provider's docs-failing / refused-clears row.
+      readIngestRecords(db),
       // count(column) skips NULLs, so one pass yields every model tally.
       db
         .select({
@@ -83,6 +100,7 @@ export async function getServiceStatus(
       status: p.status,
       lastPolledAt: p.lastPolledAt,
       lastSyncedAt: p.lastSyncedAt,
+      ...records.get(p.id),
       counts: {
         models: modelsBy.get(p.id)?.models ?? 0,
         priced: modelsBy.get(p.id)?.priced ?? 0,

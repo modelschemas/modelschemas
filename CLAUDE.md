@@ -137,7 +137,11 @@ ones).
   `unavailable(...)` and is reported as `docsFailures` instead of failing
   the provider's poll; the listing itself is never wrapped. While a
   provider's docs keep failing, `cache_meta` holds one
-  `docs-failing:<providerId>` row saying since when (`docs-failing.ts`).
+  `docs-failing:<providerId>` row saying since when (`docs-failing.ts`); a
+  refused mass clear holds a `price-clears-refused:<providerId>` row the
+  same way. `GET /v1/status` serves both per provider (`docsFailing`,
+  `priceClearsRefused`), the home page marks the row, and neither changes
+  `status`.
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:
