@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
+import { Validator } from '@cfworker/json-schema'
 
+import type { Schema } from '@cfworker/json-schema'
 import { getDb } from './../db/index.ts'
 import type { Db } from './../db/index.ts'
 import { models, providers } from '../db/schema.ts'
@@ -12,6 +14,7 @@ import {
   listProviderModels,
   listProvidersCatalog,
 } from './catalog.ts'
+import { openApiDocument } from './openapi.ts'
 
 const NOW = 1_781_150_000
 let db: Db
@@ -39,6 +42,7 @@ beforeAll(async () => {
       displayName: 'Chatty One',
       contextWindow: 100_000,
       capabilities: ['tools', 'vision'],
+      reasoning: { mode: 'toggle', mandatory: false },
       firstSeenAt: NOW,
       lastSeenAt: NOW,
     },
@@ -58,6 +62,7 @@ beforeAll(async () => {
       activity: 'chat',
       displayName: 'Beta Chatter',
       capabilities: ['tools'],
+      reasoning: { mode: 'effort', mandatory: null, efforts: ['low', 'max'] },
       firstSeenAt: NOW,
       lastSeenAt: NOW,
     },
@@ -175,6 +180,39 @@ describe('provider-scoped queries', () => {
     expect(byRaw?.factSources).toBeNull()
     expect(byRaw?.discrepancies).toEqual([])
     expect(await getModelDetail(db, 'cat-beta', 'missing')).toBeNull()
+  })
+
+  it('serves a toggle and an unstated mandatory as stored, on list and detail', async () => {
+    const toggle = { mode: 'toggle', mandatory: false }
+    // null is "the source does not say": it must not come back as false.
+    const unstated = {
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'max'],
+    }
+    const listed = async (provider: string, id: string) =>
+      (await listModelsCatalog(db, { provider })).models.find(
+        (model) => model.id === id,
+      )?.reasoning
+    const rows = [
+      await listed('cat-alpha', 'cat-alpha-chatty'),
+      (await getModelDetail(db, 'cat-alpha', 'chatty-1'))?.reasoning,
+      await listed('cat-beta', 'cat-beta-chatter'),
+      (await getModelDetail(db, 'cat-beta', 'beta/chatter'))?.reasoning,
+    ]
+    expect(rows).toEqual([toggle, toggle, unstated, unstated])
+
+    const schema = openApiDocument.components.schemas.Model.properties.reasoning
+    const validator = new Validator(
+      schema as unknown as Schema,
+      '2020-12',
+      false,
+    )
+    for (const row of rows) expect(validator.validate(row).errors).toEqual([])
+    expect(validator.validate({ mode: 'switch', mandatory: false }).valid).toBe(
+      false,
+    )
+    expect(validator.validate({ mode: 'toggle' }).valid).toBe(false)
   })
 
   it('omits factSources on the list unless provenance is requested', async () => {

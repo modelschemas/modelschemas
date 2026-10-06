@@ -53,6 +53,7 @@ beforeAll(async () => {
     rawId: 'modelzilla',
     activity: 'chat',
     displayName: 'Modelzilla',
+    reasoning: { mode: 'toggle', mandatory: true },
     pricing: GPT_4O,
     firstSeenAt: NOW,
     lastSeenAt: NOW,
@@ -131,6 +132,10 @@ describe('MCP endpoint', () => {
     expect((model.data as { displayName: string }).displayName).toBe(
       'Modelzilla',
     )
+    expect((model.data as { reasoning: unknown }).reasoning).toEqual({
+      mode: 'toggle',
+      mandatory: true,
+    })
 
     const valid = await callTool('validate_payload', {
       provider: 'mcp-prov',

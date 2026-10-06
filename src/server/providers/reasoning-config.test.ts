@@ -1,12 +1,121 @@
 import { describe, expect, it } from 'vitest'
 
+import { takeIngestEvents } from '../ingest/ingest-signals.ts'
 import {
+  keepValidReasoning,
   openRouterReasoning,
   parseByteplusReasoning,
   parseCohereReasoning,
   parseGroqReasoning,
   parseMistralReasoning,
 } from './reasoning-config.ts'
+import { reasoningViolation } from './types.ts'
+
+describe('reasoningViolation', () => {
+  it.each([
+    { mode: 'effort', mandatory: true },
+    { mode: 'effort', mandatory: null, efforts: ['low', 'max'] },
+    { mode: 'effort', mandatory: false, efforts: ['none', 'low'] },
+    { mode: 'adaptive', mandatory: false },
+    // One prod budget row carries efforts; that is allowed.
+    { mode: 'budget', mandatory: false, efforts: ['low'] },
+    { mode: 'toggle', mandatory: false },
+    { mode: 'toggle', mandatory: true },
+  ])('accepts %j', (value) => {
+    expect(reasoningViolation(value)).toBeNull()
+  })
+
+  it.each([
+    ['a non-object', 'effort', 'not an object'],
+    ['an unknown mode', { mode: 'switch', mandatory: false }, 'unknown mode'],
+    ['a missing mandatory', { mode: 'effort' }, 'mandatory is not'],
+    ['a string mandatory', { mode: 'effort', mandatory: 'no' }, 'mandatory'],
+    [
+      'a toggle with an unstated mandatory',
+      { mode: 'toggle', mandatory: null },
+      'a toggle needs a stated mandatory',
+    ],
+    [
+      'efforts on a toggle',
+      { mode: 'toggle', mandatory: false, efforts: ['low'] },
+      'a toggle takes no efforts',
+    ],
+    [
+      'empty efforts',
+      { mode: 'effort', mandatory: true, efforts: [] },
+      'efforts',
+    ],
+    [
+      'a non-string effort',
+      { mode: 'effort', mandatory: true, efforts: ['low', 1] },
+      'efforts',
+    ],
+    [
+      'null efforts',
+      { mode: 'effort', mandatory: true, efforts: null },
+      'efforts',
+    ],
+  ])('refuses %s', (_case, value, reason) => {
+    expect(reasoningViolation(value)).toContain(reason)
+  })
+})
+
+describe('keepValidReasoning', () => {
+  const source = { derivation: 'listing' as const, sourceUrl: 'https://x.test' }
+
+  it('passes a valid or absent object through untouched', () => {
+    const valid = {
+      rawId: 'm',
+      reasoning: { mode: 'toggle', mandatory: false },
+    }
+    expect(keepValidReasoning('p', valid as never)).toBe(valid)
+    const none = { rawId: 'm', reasoning: null }
+    expect(keepValidReasoning('p', none)).toBe(none)
+    expect(takeIngestEvents()).toEqual([])
+  })
+
+  it('keeps the prior value and source, and reports the refusal', () => {
+    const prior = {
+      reasoning: { mode: 'effort', mandatory: true },
+      factSources: { reasoning: { ...source, path: 'old' } },
+    }
+    const kept = keepValidReasoning(
+      'prov',
+      {
+        rawId: 'm-1',
+        reasoning: { mode: 'toggle', mandatory: null },
+        factSources: { reasoning: source, contextWindow: source },
+      },
+      prior,
+    )
+    expect(kept.reasoning).toEqual(prior.reasoning)
+    expect(kept.factSources).toEqual({
+      contextWindow: source,
+      reasoning: prior.factSources.reasoning,
+    })
+    expect(takeIngestEvents()).toEqual([
+      {
+        event: 'ingest_failed',
+        properties: {
+          job: 'models-poll',
+          providerId: 'prov',
+          error: 'm-1: reasoning not stored: a toggle needs a stated mandatory',
+        },
+      },
+    ])
+  })
+
+  it('stores nothing on a new row', () => {
+    const kept = keepValidReasoning('prov', {
+      rawId: 'm-2',
+      reasoning: { mode: 'toggle', mandatory: null },
+      factSources: { reasoning: source },
+    })
+    expect(kept.reasoning).toBeNull()
+    expect(kept.factSources).toBeUndefined()
+    takeIngestEvents()
+  })
+})
 
 const MISTRAL = `
 # Reasoning
