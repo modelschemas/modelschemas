@@ -91,6 +91,33 @@ const GLM_52_LEVELS: EffortLevelMap = {
   max: 'max',
 }
 
+/**
+ * `zai/glm-5.3` and `glm-5.3-flash`: only low, high, and max; any other
+ * value is an error (docs.z.ai/guides/capabilities/thinking).
+ */
+const GLM_53_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: null,
+  low: 'low',
+  medium: null,
+  high: 'high',
+  xhigh: null,
+  max: 'max',
+}
+
+/**
+ * Series the Z.AI spec names under `tool_stream`
+ * (docs.z.ai/openapi.json, ChatCompletionTextRequest).
+ */
+const GLM_TOOL_STREAM = [
+  'glm-5.3',
+  'glm-5.2',
+  'glm-5.1',
+  'glm-5',
+  'glm-4.7',
+  'glm-4.6',
+]
+
 function blank(partial: Partial<ChatRequestMap>): ChatRequestMap {
   return {
     thinking: null,
@@ -122,11 +149,9 @@ function levelsFor(providerId: string, rawId: string): EffortLevelMap | null {
   if (providerId === 'deepseek' && matches(rawId, 'deepseek-flash')) {
     return DEEPSEEK_FLASH_LEVELS
   }
-  if (
-    (providerId === 'zai' || providerId === 'glm') &&
-    matches(rawId, 'glm-5.2')
-  ) {
-    return GLM_52_LEVELS
+  if (providerId === 'zai' || providerId === 'glm') {
+    if (matches(rawId, 'glm-5.2')) return GLM_52_LEVELS
+    if (matches(rawId, 'glm-5.3')) return GLM_53_LEVELS
   }
   return null
 }
@@ -177,15 +202,22 @@ export function chatRequestMap(
     case 'zai':
     case 'glm':
       return blank({
-        thinking: withLevels(
-          { on: GLM_ON, off: null, levels: null },
-          providerId,
-          rawId,
-        ),
+        // The spec's `thinking` is "GLM-4.5 series and higher" only.
+        thinking: matches(rawId, 'glm-4-32b')
+          ? null
+          : withLevels(
+              { on: GLM_ON, off: null, levels: null },
+              providerId,
+              rawId,
+            ),
         maxTokensField: 'max_tokens',
         developerRole: false,
-        toolStream: true,
-        reasoningEffort: false,
+        toolStream: GLM_TOOL_STREAM.some((name) => matches(rawId, name))
+          ? true
+          : null,
+        // `reasoning_effort` is "supported by GLM-5.2 and above"; the spec
+        // does not say what older models do with it.
+        reasoningEffort: levelsFor(providerId, rawId) === null ? null : true,
       })
     case 'qwen':
       return blank({
