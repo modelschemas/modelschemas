@@ -55,6 +55,7 @@ const QWEN_ON = { enable_thinking: true }
 const VLLM_QWEN_ON = {
   chat_template_kwargs: { enable_thinking: true, preserve_thinking: true },
 }
+const MINIMAX_ON = { thinking: { type: 'adaptive' } }
 const OPENROUTER_ON = { reasoning: { effort: 'high' } }
 const TOGETHER_ON = { reasoning: { enabled: true } }
 
@@ -225,6 +226,15 @@ export function chatRequestMap(
         maxTokensField: 'max_tokens',
         developerRole: false,
         reasoningEffort: false,
+      })
+    // From MiniMax's chat spec, not probed: `max_tokens` is deprecated, the
+    // role enum has no `developer`, and every model takes adaptive thinking.
+    case 'minimax':
+      return blank({
+        thinking: { on: MINIMAX_ON, off: null, levels: null },
+        maxTokensField: 'max_completion_tokens',
+        developerRole: false,
+        reasoningEffort: true,
       })
     case 'moonshot':
     case 'nvidia':

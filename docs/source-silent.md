@@ -13,3 +13,4 @@ The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 
 - grok: maxOutput — xAI's spec states only a 128k default, no per-model cap (#75, checked 2026-09-26)
 - mistral: maxOutput — Mistral caps output by the context length and publishes no separate limit (#75, checked 2026-09-26)
+- minimax: efforts — only MiniMax-M3.1-Flash-Preview takes an effort; the docs say every other model ignores `reasoning_effort` and `output_config.effort`, https://platform.minimax.io/docs/api-reference/text-anthropic-api.md, checked 2026-10-06

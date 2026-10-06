@@ -113,6 +113,20 @@ describe('chatRequestMap', () => {
     )
   })
 
+  it('sends MiniMax adaptive thinking and max_completion_tokens', () => {
+    const map = chatRequestMap('minimax', 'MiniMax-M3', 'chat')
+    expect(map?.thinking).toEqual({
+      on: { thinking: { type: 'adaptive' } },
+      off: null,
+      levels: null,
+    })
+    expect(map?.maxTokensField).toBe('max_completion_tokens')
+    expect(map?.developerRole).toBe(false)
+    expect(map?.reasoningEffort).toBe(true)
+    // The China host is a separate provider and is not mapped here.
+    expect(chatRequestMap('minimax-cn', 'MiniMax-M3', 'chat')).toBeNull()
+  })
+
   it('returns null for an unverified provider, a non-chat row, and an unknown activity', () => {
     expect(chatRequestMap('fal', 'fal-ai/flux', 'chat')).toBeNull()
     expect(chatRequestMap('byteplus', 'glm-5-2-260617', 'chat')).toBeNull()
