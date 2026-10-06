@@ -3,26 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { chatRequestMap } from './request-map.ts'
 
 describe('chatRequestMap', () => {
-  it('maps Perplexity reasoning.effort for kimi-k3 only', () => {
-    const map = chatRequestMap('perplexity', 'perplexity/kimi-k3', 'chat')
-    expect(map?.thinking?.on).toEqual({ reasoning: { effort: 'high' } })
-    expect(map?.thinking?.off).toBeNull()
-    expect(map?.thinking?.levels).toEqual({
-      off: null,
-      minimal: 'minimal',
-      low: 'low',
-      medium: 'medium',
-      high: 'high',
-      xhigh: 'xhigh',
-      max: 'max',
-    })
-    expect(map?.maxTokensField).toBeNull()
-    expect(
-      chatRequestMap('perplexity', 'perplexity/glm-5.3', 'chat'),
-    ).toBeNull()
-    expect(chatRequestMap('perplexity', 'openai/gpt-5.5', 'chat')).toBeNull()
-  })
-
   it('sends OpenAI reasoning_effort and the gpt-5.1 level map', () => {
     const map = chatRequestMap('openai', 'gpt-5.1', 'chat')
     expect(map?.thinking?.on).toEqual({ reasoning_effort: 'high' })

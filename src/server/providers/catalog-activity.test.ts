@@ -365,18 +365,22 @@ describe('issue #109 listModels', () => {
       (url) =>
         url.endsWith('/models.md')
           ? new Response('<Tab title="x">\n| `perplexity/sonar` | — |\n</Tab>')
-          : json({
-              data: [
-                {
-                  id: 'perplexity/sonar',
-                  pricing: { input: 1, output: 1, unit: 'usd_per_1m_tokens' },
-                },
-                {
-                  id: 'mystery',
-                  pricing: { input: 1, output: 1, unit: 'credits' },
-                },
-              ],
-            }),
+          : url.endsWith('/presets.md')
+            ? new Response(
+                '<Accordion title="x — current preset values">\n* **Model:** `a/b`\n* **Tools:** `web_search`\n</Accordion>',
+              )
+            : json({
+                data: [
+                  {
+                    id: 'perplexity/sonar',
+                    pricing: { input: 1, output: 1, unit: 'usd_per_1m_tokens' },
+                  },
+                  {
+                    id: 'mystery',
+                    pricing: { input: 1, output: 1, unit: 'credits' },
+                  },
+                ],
+              }),
       async () => {
         const { models } = await perplexity.listModels({
           PERPLEXITY_API_KEY: 'test',
