@@ -6,11 +6,10 @@
  * current. Rate limiting happens once per request in the worker fetch
  * wrapper, so a held request still costs one rate-limit token.
  */
-import { desc } from 'drizzle-orm'
+import { desc, max } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import { changes } from '#/db/schema.ts'
-import { getServiceStatus } from '#/server/status.ts'
+import { changes, providers } from '#/db/schema.ts'
 
 export const MAX_WAIT_SECONDS = 60
 export const POLL_INTERVAL_MS = 2_000
@@ -62,12 +61,16 @@ export async function waitForNewChange(
   )
 }
 
+// Asked every ~2s while a request is held: two columns, not the whole
+// status with its counts and completeness score.
 async function latestStatusAt(db: Db): Promise<number> {
-  const status = await getServiceStatus(db)
-  return status.providers.reduce(
-    (max, p) => Math.max(max, p.lastPolledAt ?? 0, p.lastSyncedAt ?? 0),
-    0,
-  )
+  const [row] = await db
+    .select({
+      polled: max(providers.lastPolledAt),
+      synced: max(providers.lastSyncedAt),
+    })
+    .from(providers)
+  return Math.max(row?.polled ?? 0, row?.synced ?? 0)
 }
 
 /** Holds until any provider polls/syncs past the baseline (or expiry). */

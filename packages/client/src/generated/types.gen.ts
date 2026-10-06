@@ -78,8 +78,40 @@ export type ServiceStatus = {
        */
       priced: number
     }
+    /**
+     * The gap-report score over the live chat models of the provider: the share filled of the ten chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint). Summed per model, each fact counted only where it applies. May lag a poll by a few minutes.
+     */
+    completeness?: {
+      /**
+       * filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models: nothing to score, not a score of zero.
+       */
+      score: number | null
+      /**
+       * Live chat models scored.
+       */
+      chat: number
+      /**
+       * Facts carried, summed over those models; silent facts left out.
+       */
+      filled: number
+      /**
+       * Facts that apply, summed over those models; silent facts left out.
+       */
+      needed: number
+      /**
+       * Facts the provider does not publish, left out of the score.
+       */
+      silent: Array<string>
+    }
+    /**
+     * Model tallies count live models only: what GET /v1/models lists by default. Deprecated models are in deprecated and nowhere else.
+     */
     counts?: {
       models?: number
+      /**
+       * Models no longer listed upstream (GET /v1/models?deprecated=true).
+       */
+      deprecated?: number
       /**
        * Models with a stored rate card. priced / models is the price score.
        */

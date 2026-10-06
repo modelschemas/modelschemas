@@ -8,6 +8,7 @@ import type { SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 
 import type { Db } from '#/db/index.ts'
+import type { SwrDeps } from '#/server/cache.ts'
 import { models, providers } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
 import { halGet } from '#/server/hal.ts'
@@ -190,8 +191,8 @@ function toApiModel(
 export type ApiModel = ReturnType<typeof toApiModel>
 
 /** GET /v1/providers — status, counts, spec grain, and links. */
-export async function listProvidersCatalog(db: Db) {
-  const status = await getServiceStatus(db)
+export async function listProvidersCatalog(db: Db, cache?: SwrDeps) {
+  const status = await getServiceStatus(db, undefined, { cache })
   return {
     providers: status.providers.map((p) => {
       const openapi = openApiLink(p.id)

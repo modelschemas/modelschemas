@@ -141,7 +141,11 @@ ones).
   refused mass clear holds a `price-clears-refused:<providerId>` row the
   same way. `GET /v1/status` serves both per provider (`docsFailing`,
   `priceClearsRefused`), the home page marks the row, and neither changes
-  `status`.
+  `status`. `/v1/status` model counts are live rows only (`counts.deprecated`
+  holds the rest), and `completeness` there is the gap-report score:
+  `src/lib/completeness.ts` is the one scorer, shared with
+  `scripts/gap-report.ts`; the Worker bundles `docs/source-silent/*.md`
+  (`source-silent.ts`) and serves the score from the SWR cache (5 min).
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:

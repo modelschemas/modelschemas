@@ -9,7 +9,10 @@ import {
   providers,
   schemaVersions,
 } from '../db/schema.ts'
+import { FACT_KEYS, buildReport } from '../lib/completeness.ts'
+import type { Ledger, ModelRow } from '../lib/completeness.ts'
 import { providerRegistry } from '../server/providers/index.ts'
+import { listModelsCatalog } from './catalog.ts'
 import { getServiceStatus } from './status.ts'
 
 const NOW = 1_781_150_000
@@ -211,5 +214,179 @@ describe('getServiceStatus', () => {
     // Neither record moves `status`.
     expect(docs?.status).toBe('active')
     expect(clears?.status).toBe('active')
+  })
+
+  const provider = (id: string) => ({
+    id,
+    displayName: id,
+    specSourceUrl: 'https://example.com/spec.json',
+  })
+  const model = (
+    providerId: string,
+    rawId: string,
+    facts: Partial<typeof models.$inferInsert> = {},
+  ) => ({
+    id: `${providerId}-${rawId}`,
+    providerId,
+    rawId,
+    activity: 'chat' as const,
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+    ...facts,
+  })
+  const card = {
+    inputs: {},
+    tables: { rate: { base: { input_tokens: 1e-6, output_tokens: 2e-6 } } },
+    price: 1,
+    examples: [],
+    source: {
+      url: 'https://docs.example.com/pricing',
+      hash: 'a'.repeat(64),
+      extractedAt: '2026-01-01T00:00:00.000Z',
+    },
+  }
+
+  it('counts live rows only, and deprecated rows apart', async () => {
+    const db = getDb(env)
+    await db.insert(providers).values([provider('gone'), provider('part')])
+    const retired = { deprecatedAt: NOW - 10, pricing: card }
+    await db
+      .insert(models)
+      .values([
+        model('gone', 'a', retired),
+        model('gone', 'b', { ...retired, reasoning: { mode: 'toggle' } }),
+        model('part', 'old', retired),
+        model('part', 'live', { pricing: card }),
+        model('part', 'image', { activity: 'image' }),
+      ])
+
+    const status = await getServiceStatus(db, NOW)
+    const gone = status.providers.find((p) => p.id === 'gone')
+    const part = status.providers.find((p) => p.id === 'part')
+    // Every row retired: what `/v1/models?provider=gone` lists is nothing.
+    expect(gone?.counts).toMatchObject({
+      models: 0,
+      priced: 0,
+      reasoning: 0,
+      chat: 0,
+      deprecated: 2,
+    })
+    expect(gone?.completeness).toMatchObject({ score: null, chat: 0 })
+    expect(part?.counts).toMatchObject({
+      models: 2,
+      priced: 1,
+      reasoning: 0,
+      chat: 1,
+      deprecated: 1,
+    })
+    expect(part?.completeness.chat).toBe(1)
+    expect((await listModelsCatalog(db, { provider: 'part' })).count).toBe(
+      part?.counts.models,
+    )
+  })
+
+  it('scores completeness as the gap report does', async () => {
+    const db = getDb(env)
+    const ids = ['no-chat', 'all-silent', 'mixed']
+    await db.insert(providers).values(ids.map(provider))
+    await db.insert(models).values([
+      model('no-chat', 'image', { activity: 'image', pricing: card }),
+      model('all-silent', 'bare'),
+      model('mixed', 'full', {
+        contextWindow: 200_000,
+        maxOutput: 64_000,
+        modalities: { input: ['text'], output: ['text'] },
+        pricing: card,
+        capabilities: ['reasoning', 'tools'],
+        reasoning: { mode: 'effort', efforts: ['low', 'high'] },
+        requestMap: { maxTokensField: 'max_tokens' },
+        schemaEndpointId: 'v1/chat/completions',
+      }),
+      // Claims reasoning and stores none; a card that does not parse is
+      // served as null, so it is no price here either.
+      model('mixed', 'thin', {
+        contextWindow: 8000,
+        capabilities: ['reasoning'],
+        pricing: { tables: card.tables },
+      }),
+      // A models.dev price does not count.
+      model('mixed', 'borrowed', {
+        pricing: {
+          ...card,
+          source: { ...card.source, url: 'https://models.dev/api.json' },
+        },
+      }),
+      // Retired and of another activity: neither is scored.
+      model('mixed', 'retired', { deprecatedAt: NOW, contextWindow: 1 }),
+      model('mixed', 'image', { activity: 'image' }),
+    ])
+    const ledger: Ledger = new Map([
+      ['all-silent', new Set(FACT_KEYS)],
+      ['mixed', new Set(['cacheRead'] as const)],
+    ])
+
+    const status = await getServiceStatus(db, NOW, { ledger })
+    const [noChat, allSilent, mixed] = ids.map(
+      (id) => status.providers.find((p) => p.id === id)?.completeness,
+    )
+    // Nothing to score is not a score of zero.
+    expect(noChat).toEqual({
+      score: null,
+      chat: 0,
+      filled: 0,
+      needed: 0,
+      silent: [],
+    })
+    // Chat rows with every fact on the ledger have nothing left to fill.
+    expect(allSilent).toEqual({
+      score: 1,
+      chat: 1,
+      filled: 0,
+      needed: 0,
+      silent: [...FACT_KEYS],
+    })
+    // full: 9 of 9. thin: contextWindow, capabilities of 8. borrowed: 0 of 7.
+    expect(mixed).toEqual({
+      score: 11 / 24,
+      chat: 3,
+      filled: 11,
+      needed: 24,
+      silent: ['cacheRead'],
+    })
+
+    // The same rows as `bun run gap:report` reads them, off the API.
+    const served = await listModelsCatalog(db, { pricing: true })
+    const report = buildReport(served.models as Array<ModelRow>, ledger)
+    for (const id of ['all-silent', 'mixed']) {
+      const scored = report.providers.find((p) => p.provider === id)
+      const listed = status.providers.find((p) => p.id === id)
+      expect(listed?.completeness.score).toBe(scored?.score)
+      expect(listed?.completeness.chat).toBe(scored?.chat)
+    }
+  })
+
+  it('serves completeness from the cache when given one', async () => {
+    const db = getDb(env)
+    const cache = {
+      db,
+      kv: env.SCHEMA_CACHE,
+      waitUntil: () => undefined,
+      now: () => NOW,
+    }
+    await db.insert(providers).values(provider('cached'))
+    await db.insert(models).values(model('cached', 'a'))
+    const first = await getServiceStatus(db, NOW, { cache })
+    await db.insert(models).values(model('cached', 'b'))
+    const second = await getServiceStatus(db, NOW, { cache })
+    const of = (status: typeof first) =>
+      status.providers.find((p) => p.id === 'cached')
+    // The score is the cached one; the counts are read every time.
+    expect(of(second)?.completeness).toEqual(of(first)?.completeness)
+    expect(of(first)?.completeness.chat).toBe(1)
+    expect(of(second)?.counts.chat).toBe(2)
+    // A cached score does not outlive the provider's last live chat row.
+    await db.update(models).set({ deprecatedAt: NOW })
+    const third = await getServiceStatus(db, NOW, { cache })
+    expect(of(third)?.completeness).toMatchObject({ score: null, chat: 0 })
   })
 })

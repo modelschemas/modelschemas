@@ -33,14 +33,16 @@ interface DashboardData {
 
 const getDashboardData = createServerFn({ method: 'GET' }).handler(
   async (): Promise<DashboardData> => {
-    const { env } = await import('cloudflare:workers')
+    const { env, waitUntil } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')
     const { getServiceStatus } = await import('#/server/status.ts')
     const { listChanges } = await import('#/server/changes-api.ts')
 
     const db = getDb(env)
     const [status, changesOutcome] = await Promise.all([
-      getServiceStatus(db),
+      getServiceStatus(db, undefined, {
+        cache: { db, kv: env.SCHEMA_CACHE, waitUntil },
+      }),
       listChanges(db, { limit: 8 }),
     ])
     return {
@@ -248,9 +250,9 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Share of chat models with known reasoning controls: mode, whether it can be turned off, effort levels"
+                    title="Share of the chat facts @tanstack/ai-models needs that are filled: context window, max output, modalities, price, cache price, capabilities, reasoning, effort levels, request map, endpoint. Facts the provider does not publish are left out."
                   >
-                    reasoning controls
+                    completeness
                   </th>
                   <th className="num">polled</th>
                   <th className="num">synced</th>
@@ -307,8 +309,18 @@ function Landing() {
                     <td className="num" data-label="priced">
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
-                    <td className="num" data-label="reasoning controls">
-                      {showPct(pct(p.counts.reasoning, p.counts.chat))}
+                    <td className="num" data-label="completeness">
+                      {p.completeness.score === null ? (
+                        '—'
+                      ) : (
+                        <a
+                          className="text-ink hover:text-tok-blue"
+                          href={`/models?provider=${p.id}&activity=chat`}
+                          title={`${p.completeness.filled} of ${p.completeness.needed} facts filled across ${p.completeness.chat} chat models`}
+                        >
+                          {showPct(Math.round(p.completeness.score * 100))}
+                        </a>
+                      )}
                     </td>
                     <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt)}

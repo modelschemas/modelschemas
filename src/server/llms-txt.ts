@@ -23,9 +23,10 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
   at the base rate, or \`{currency, per: 'second' | 'character' | 'image' | …}\`
   for a card billed by unit. \`currency\` is ISO 4217 (mostly USD; nothing
   is converted, so compare only like with like); \`?pricing=1\` returns
-  the full card. \`/v1/status\` counts \`priced\` models per provider, and a
-  provider there carries \`docsFailing\` or \`priceClearsRefused\` while its
-  stored docs facts or prices may be stale.
+  the full card. \`/v1/status\` counts live \`priced\` models per provider
+  and scores \`completeness\` (the share of chat facts filled; \`score\` is
+  null with no chat models). A provider there carries \`docsFailing\` or
+  \`priceClearsRefused\` while its stored docs facts or prices may be stale.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as \`{endpointId}\`: it aliases onto that

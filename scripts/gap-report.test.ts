@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildReport, failing, parseLedger } from './gap-report.ts'
+import { sourceSilentLedger } from '../src/server/source-silent.ts'
+import { buildReport, failing, parseLedger, readLedger } from './gap-report.ts'
 import type { ModelRow } from './gap-report.ts'
 
 const complete: ModelRow = {
@@ -184,5 +185,13 @@ describe('gap report scoring', () => {
     expect(() => parseLedger('- grok: maxOutputs — typo')).toThrow(
       /unknown fact/,
     )
+  })
+})
+
+describe('source-silent ledger', () => {
+  it('is the same bundled into the Worker as read from disk', () => {
+    const onDisk = readLedger()
+    expect(onDisk?.size).toBeGreaterThan(0)
+    expect(sourceSilentLedger).toEqual(onDisk)
   })
 })

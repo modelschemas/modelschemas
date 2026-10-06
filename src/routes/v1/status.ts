@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { env } from 'cloudflare:workers'
+import { env, waitUntil } from 'cloudflare:workers'
 
 import { getDb } from '#/db/index.ts'
 import { halGet } from '#/server/hal.ts'
@@ -15,8 +15,11 @@ export const Route = createFileRoute('/v1/status')({
         if (waitSeconds > 0) {
           await waitForStatusChange(getDb(env), waitSeconds)
         }
+        const db = getDb(env)
         return Response.json({
-          ...(await getServiceStatus(getDb(env))),
+          ...(await getServiceStatus(db, undefined, {
+            cache: { db, kv: env.SCHEMA_CACHE, waitUntil },
+          })),
           _links: {
             self: halGet('/v1/status'),
             index: halGet('/v1'),
