@@ -14,4 +14,4 @@ The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 - grok: maxOutput — xAI's spec states only a 128k default, no per-model cap (#75, checked 2026-09-26)
 - mistral: maxOutput — Mistral caps output by the context length and publishes no separate limit (#75, checked 2026-09-26)
 - replicate: cacheRead — Replicate bills language models per input token and per output token only; no model's billing config or the pricing page states a cached-input price, https://replicate.com/pricing, checked 2026-10-06
-- replicate: requestMap — Replicate has no shared chat wire: a prediction's `input` is the model's own schema ("The input schema depends on what model you are running"), so the provider-wide request map has no field to state, https://api.replicate.com/openapi.json, checked 2026-10-06
+- replicate: requestMap — not applicable rather than unpublished: Replicate publishes each model's request fields, but under the prediction's `input` object ("The input schema depends on what model you are running"), which `ChatRequestMap` (an OpenAI-style top-level body) cannot express, https://api.replicate.com/openapi.json, checked 2026-10-06

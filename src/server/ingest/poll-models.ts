@@ -351,7 +351,13 @@ export async function pollProviderModels(
   // writes would exhaust the budget mid-poll.
   const backdates: Array<{ id: string; firstSeenAt: number }> = []
 
-  for (const raw of listed.models) {
+  for (const listedModel of listed.models) {
+    const raw =
+      provider.bindSyncedRoutesOnly === true &&
+      listedModel.schemaEndpointId &&
+      !properties.has(listedModel.schemaEndpointId)
+        ? { ...listedModel, schemaEndpointId: null }
+        : listedModel
     const enriched = enrichListed(provider, raw, walks)
     const id = modelDbId(provider.id, enriched.rawId)
     const bound = resolveSchemaEndpointId({

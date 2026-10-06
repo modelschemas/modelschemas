@@ -206,11 +206,22 @@ describe('replicate fetchSpec', () => {
     const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
       urls.push(String(url))
-      return Promise.resolve(new Response(JSON.stringify(spec)))
+      const body = String(url).endsWith('/openapi.json') ? spec : {}
+      return Promise.resolve(new Response(JSON.stringify(body)))
     }) as typeof fetch
     try {
-      const fetched = await provider.fetchSpec({})
-      expect(urls).toEqual(['https://api.replicate.com/openapi.json'])
+      // No token: skipped whole, never a sync with the model routes missing.
+      const keyless = await provider.fetchSpec({})
+      expect(keyless.skipped).toBe(
+        'replicate: REPLICATE_API_TOKEN not set — skipped',
+      )
+      expect(urls).toEqual([])
+
+      const fetched = await provider.fetchSpec({ REPLICATE_API_TOKEN: 'tok' })
+      expect(urls).toEqual([
+        'https://api.replicate.com/openapi.json',
+        'https://api.replicate.com/v1/models',
+      ])
       expect(fetched.outputStrategy).toBe('post-200')
       expect(fetched.skipped).toBeUndefined()
       expect(fetched.sources[0]?.url).toBe(
@@ -252,6 +263,7 @@ describe('replicate chat facts from a model schema', () => {
       'google/gemini-3-flash',
       'ibm-granite/granite-4.1-8b',
       'meta/llama-4-maverick-instruct',
+      'meta/llama-guard-4-12b',
       'openai/gpt-5.4',
       'prunaai/gpt-oss-120b-fast',
     ])
@@ -276,17 +288,18 @@ describe('replicate chat facts from a model schema', () => {
       'top_p',
     ])
     expect(facts?.modalities).toEqual({ input: ['text'], output: ['text'] })
-    expect(facts?.maxOutput).toBe(131072)
     expect(facts?.reasoning).toBeUndefined()
     expect(facts?.schemaEndpointId).toBe(
       'models/meta/llama-4-maverick-instruct/predictions',
     )
     const sourceUrl =
       'https://api.replicate.com/v1/models/meta/llama-4-maverick-instruct'
-    expect(facts?.factSources?.maxOutput).toEqual({
+    const guard = replicateChatFacts(model('meta/llama-guard-4-12b'))
+    expect(guard?.maxOutput).toBe(1024)
+    expect(guard?.factSources?.maxOutput).toEqual({
       derivation: 'listing',
-      sourceUrl,
-      path: `${INPUT}/properties/max_tokens/maximum`,
+      sourceUrl: 'https://api.replicate.com/v1/models/meta/llama-guard-4-12b',
+      path: `${INPUT}/properties/max_completion_tokens/maximum`,
     })
     expect(facts?.factSources?.capabilities?.top_p).toEqual({
       derivation: 'listing',
@@ -319,6 +332,28 @@ describe('replicate chat facts from a model schema', () => {
     expect(facts?.factSources?.modalities).toBeUndefined()
   })
 
+  it('states no modalities for a media input that is not declared a file', () => {
+    // `image_input: string[]` with no `format: uri`: text-only would be wrong.
+    const guard = replicateChatFacts(model('meta/llama-guard-4-12b'))
+    expect(guard?.modalities).toBeUndefined()
+    expect(guard?.factSources?.modalities).toBeUndefined()
+    // `max_image_resolution` (integer) and `video_fps` (number) are settings.
+    expect(
+      replicateChatFacts(model('anthropic/claude-sonnet-5'))?.modalities,
+    ).toEqual({ input: ['text', 'image'], output: ['text'] })
+  })
+
+  it('states no output cap when the maximum is the whole window', () => {
+    // Llama 4: max_tokens.maximum 131072 is the 128k window.
+    const llama = replicateChatFacts(model('meta/llama-4-maverick-instruct'))
+    expect(llama?.maxOutput).toBeUndefined()
+    expect(llama?.factSources?.maxOutput).toBeUndefined()
+
+    const atCeiling = model('meta/llama-4-maverick-instruct')
+    inputProperties(atCeiling).max_tokens = { type: 'integer', maximum: 128000 }
+    expect(replicateChatFacts(atCeiling)?.maxOutput).toBe(128000)
+  })
+
   it('states no output cap without one stated maximum', () => {
     // gpt-5.4 caps nothing; granite has two token fields and no maximum.
     expect(replicateChatFacts(model('openai/gpt-5.4'))?.maxOutput).toBe(
@@ -328,14 +363,14 @@ describe('replicate chat facts from a model schema', () => {
       replicateChatFacts(model('ibm-granite/granite-4.1-8b'))?.maxOutput,
     ).toBeUndefined()
 
-    const disagree = model('meta/llama-4-maverick-instruct')
+    const disagree = model('anthropic/claude-sonnet-5')
     inputProperties(disagree).max_completion_tokens = {
       type: 'integer',
       maximum: 4096,
     }
     expect(replicateChatFacts(disagree)?.maxOutput).toBeUndefined()
 
-    const fractional = model('meta/llama-4-maverick-instruct')
+    const fractional = model('anthropic/claude-sonnet-5')
     inputProperties(fractional).max_tokens = { type: 'integer', maximum: 0.5 }
     expect(replicateChatFacts(fractional)?.maxOutput).toBeUndefined()
   })
@@ -350,12 +385,18 @@ describe('replicate chat facts from a model schema', () => {
     expect(gpt?.factSources?.reasoning?.path).toBe(
       `${INPUT}/properties/reasoning_effort`,
     )
-    expect(
-      replicateChatFacts(model('deepseek-ai/deepseek-v3.1'))?.reasoning,
-    ).toEqual({ mode: 'effort', mandatory: false, efforts: ['medium', 'None'] })
-    expect(
-      replicateChatFacts(model('google/gemini-3-flash'))?.reasoning?.efforts,
-    ).toEqual(['none', 'low', 'high'])
+  })
+
+  it('states no reasoning where none means unset, not off', () => {
+    // `thinking_level` ["none","low","high"], default "none": "Thinking
+    // level for reasoning (low or high)".
+    const gemini = replicateChatFacts(model('google/gemini-3-flash'))
+    expect(gemini?.reasoning).toBeUndefined()
+    expect(gemini?.factSources?.reasoning).toBeUndefined()
+    // `thinking` ["medium","None"]: "leave as None for default behavior".
+    const deepseek = replicateChatFacts(model('deepseek-ai/deepseek-v3.1'))
+    expect(deepseek?.capabilities).toContain('reasoning')
+    expect(deepseek?.reasoning).toBeUndefined()
   })
 
   it('states no reasoning when the enum cannot turn it off', () => {
@@ -401,6 +442,7 @@ describe('replicate per-model run routes', () => {
       expect(endpoints.map((e) => [e.dbId, e.activity])).toEqual([
         ['replicate/models/{model_owner}/{model_name}/predictions', 'image'],
         ['replicate/models/meta/llama-4-maverick-instruct/predictions', 'chat'],
+        ['replicate/models/meta/llama-guard-4-12b/predictions', 'chat'],
         ['replicate/models/deepseek-ai/deepseek-v3.1/predictions', 'chat'],
         ['replicate/models/google/gemini-3-flash/predictions', 'chat'],
         ['replicate/models/openai/gpt-5.4/predictions', 'chat'],
@@ -467,6 +509,28 @@ describe('replicate per-model run routes', () => {
   })
 })
 
+describe('replicate catalog walk', () => {
+  it('fails on a next link that leaves the models API', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            next: 'https://example.com/v1/models',
+            results: [],
+          }),
+        ),
+      )
+    try {
+      await expect(
+        provider.listModels({ REPLICATE_API_TOKEN: 'tok' }),
+      ).rejects.toThrow('unexpected catalog page url')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
 describe('replicate listModels chat rows', () => {
   it('classifies by schema and keeps the price source beside the facts', async () => {
     const page = `<script>{"billingConfig": {"current_tiers": [{"criteria": [], "prices": [{"metric": "token_input_count", "price": "$2.50", "title": "per million input tokens", "type": "per-unit"}, {"metric": "token_output_count", "price": "$0.015", "title": "per thousand output tokens", "type": "per-unit"}]}]}, "modelName": "x"}</script>`
@@ -501,7 +565,9 @@ describe('replicate listModels chat rows', () => {
       expect(gpt?.activity).toBe('chat')
       expect(gpt?.capabilities).toEqual(['max_tokens', 'reasoning_effort'])
       expect(gpt?.pricing).toMatchObject({
-        tables: { rate: { base: { input_tokens: 2.5e-6 } } },
+        tables: {
+          rate: { base: { input_tokens: 2.5e-6, output_tokens: 1.5e-5 } },
+        },
       })
       expect(gpt?.factSources?.pricing?.sourceUrl).toBe(
         'https://replicate.com/openai/gpt-5.4',

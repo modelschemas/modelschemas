@@ -307,6 +307,105 @@
     }
   },
   {
+    "owner": "meta",
+    "name": "llama-guard-4-12b",
+    "description": null,
+    "visibility": "public",
+    "is_official": true,
+    "created_at": "2025-06-23T20:57:12.658042Z",
+    "latest_version": {
+      "openapi_schema": {
+        "components": {
+          "schemas": {
+            "Input": {
+              "type": "object",
+              "title": "Input",
+              "required": ["prompt", "system_prompt"],
+              "properties": {
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "default": 1,
+                  "maximum": 1,
+                  "minimum": 0,
+                  "x-order": 5,
+                  "description": "Nucleus sampling parameter - the model considers the results of the tokens with top_p probability mass. (0.1 means only the tokens comprising the top 10% probability mass are considered.)"
+                },
+                "prompt": {
+                  "type": "string",
+                  "title": "Prompt",
+                  "x-order": 0,
+                  "description": "The prompt to send to the model. Do not use if using messages."
+                },
+                "image_input": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Image Input",
+                  "default": [],
+                  "x-order": 2,
+                  "description": "List of images to send to the model"
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "default": 1,
+                  "maximum": 2,
+                  "minimum": 0,
+                  "x-order": 3,
+                  "description": "Sampling temperature between 0 and 2"
+                },
+                "system_prompt": {
+                  "type": "string",
+                  "title": "System Prompt",
+                  "x-order": 1,
+                  "description": "System prompt to set the assistant's behavior"
+                },
+                "presence_penalty": {
+                  "type": "number",
+                  "title": "Presence Penalty",
+                  "default": 0,
+                  "maximum": 2,
+                  "minimum": -2,
+                  "x-order": 7,
+                  "description": "Presence penalty parameter - positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics."
+                },
+                "frequency_penalty": {
+                  "type": "number",
+                  "title": "Frequency Penalty",
+                  "default": 0,
+                  "maximum": 2,
+                  "minimum": -2,
+                  "x-order": 6,
+                  "description": "Frequency penalty parameter - positive values penalize the repetition of tokens."
+                },
+                "max_completion_tokens": {
+                  "type": "integer",
+                  "title": "Max Completion Tokens",
+                  "default": 512,
+                  "maximum": 1024,
+                  "minimum": 1,
+                  "x-order": 4,
+                  "description": "Maximum number of completion tokens to generate"
+                }
+              }
+            },
+            "Output": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "title": "Output",
+              "x-cog-array-type": "iterator",
+              "x-cog-array-display": "concatenate"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
     "owner": "ibm-granite",
     "name": "granite-embedding-small-english-r2",
     "description": "Granite-embedding-small-english-r2 is a 47M parameter dense biencoder embedding model from the Granite Embeddings collection that can be used to generate high quality text embeddings.",

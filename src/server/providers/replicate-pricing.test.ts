@@ -177,8 +177,8 @@ describe('replicate prompt-length token tiers', () => {
   it('compiles the base tier and the re-quote above the threshold', () => {
     const card = compileReplicateBilling({ current_tiers: [low, high] }, SOURCE)
     expect(card?.tables.rate).toEqual({
-      base: { input_tokens: 2e-6, output_tokens: 0.012 / 1000 },
-      '200000': { input_tokens: 4e-6, output_tokens: 0.018 / 1000 },
+      base: { input_tokens: 2e-6, output_tokens: 1.2e-5 },
+      '200000': { input_tokens: 4e-6, output_tokens: 1.8e-5 },
     })
   })
 

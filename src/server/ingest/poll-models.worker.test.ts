@@ -373,6 +373,70 @@ describe('pollProviderModels', () => {
     })
   })
 
+  it('binds a listed route only once its input schema is synced', async () => {
+    const id = 'poll-synced-routes'
+    const deps = await freshDeps(id)
+    const provider = {
+      ...stubProvider(id, [
+        {
+          rawId: 'acme/llm',
+          activity: 'chat',
+          schemaEndpointId: 'models/acme/llm/predictions',
+        },
+      ]),
+      bindSyncedRoutesOnly: true,
+    }
+    const stored = async () =>
+      (
+        await deps.db
+          .select()
+          .from(models)
+          .where(eq(models.id, modelDbId(id, 'acme/llm')))
+      )[0]?.schemaEndpointId
+
+    // Poll before the sync has created the route: no link to a 404.
+    await pollProviderModels(deps, provider)
+    expect(await stored()).toBeNull()
+
+    await deps.db.insert(endpoints).values({
+      id: `${id}/models/acme/llm/predictions`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/models/acme/llm/predictions',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/models/acme/llm/predictions:input`,
+      endpointId: `${id}/models/acme/llm/predictions`,
+      kind: 'input',
+      contentHash: 'b'.repeat(64),
+      schema: JSON.stringify({ properties: { input: { type: 'object' } } }),
+      derivation: 'upstream-spec',
+      createdAt: 1_781_150_000,
+    })
+    await pollProviderModels(deps, provider)
+    expect(await stored()).toBe('models/acme/llm/predictions')
+
+    // Without the flag a listed route is stored as listed.
+    const plain = 'poll-listed-routes'
+    const plainDeps = await freshDeps(plain)
+    await pollProviderModels(
+      plainDeps,
+      stubProvider(plain, [
+        {
+          rawId: 'acme/llm',
+          activity: 'chat',
+          schemaEndpointId: 'v1/unsynced',
+        },
+      ]),
+    )
+    const row = await plainDeps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(plain, 'acme/llm')))
+    expect(row[0]?.schemaEndpointId).toBe('v1/unsynced')
+  })
+
   it('does not walk generated specs onto catalog rows', async () => {
     const id = 'poll-generated'
     const deps = await freshDeps(id)

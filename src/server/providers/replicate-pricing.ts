@@ -91,7 +91,8 @@ function leaf(price: ReplicatePrice, key?: Leaf['key']): Leaf | null {
   if (!param || dollars === null || scale === null) return null
   // Duration titles ("per minute") quote several seconds; token and image
   // titles ("per thousand") quote that many billed units. Both are USD / scale.
-  const rate = dollars / scale
+  // toPrecision: `$0.015` per thousand is 0.000015, not 0.0000149999….
+  const rate = Number((dollars / scale).toPrecision(12))
   if (!(rate > 0)) return null
   return { param, rate, ...(key ? { key } : {}) }
 }

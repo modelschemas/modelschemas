@@ -56,12 +56,13 @@ const SCHEMA_REF = '#/components/schemas/'
 
 const PROMPT_FIELDS = ['prompt', 'messages', 'message']
 const MAX_TOKENS_FIELD = /^max_(?:new_|completion_|output_)?tokens$/
-const EFFORT_FIELDS = [
-  'reasoning_effort',
-  'effort',
-  'thinking_level',
-  'thinking',
-]
+/**
+ * Above this a `maximum` is the model's whole window, not an output cap
+ * (Llama 4: 131072). Replicate states no context length to compare against,
+ * so this is a ceiling, not a reading. ponytail: fixed ceiling; compare with
+ * the stated window if Replicate ever publishes one.
+ */
+const MAX_OUTPUT_CEILING = 128_000
 
 function stripV1(path: string): string {
   return path.startsWith('/v1/') ? path.slice(3) : path
@@ -206,17 +207,28 @@ function chatInputProperties(model: ReplicateModel): Json | null {
   return input.properties
 }
 
+/** A number or a switch (`video_fps`, `max_image_resolution`) carries no media. */
+function isScalarSetting(node: unknown): boolean {
+  return (
+    isRecord(node) &&
+    ['integer', 'number', 'boolean'].includes(String(node.type))
+  )
+}
+
 /**
- * `text` plus one modality per file input. A file input whose name does not
- * say what it carries leaves the whole fact unstated.
+ * `text` plus one modality per file input. The whole fact is unstated when
+ * a file input's name does not say what it carries, or when an input named
+ * for a medium is not declared a file (`image_input: string[]`): text-only
+ * would be a wrong claim there.
  */
 function inputModalities(properties: Json): Array<string> | null {
   const media = ['image', 'audio', 'video']
   const found = new Set<string>()
   for (const [name, node] of Object.entries(properties)) {
-    if (!JSON.stringify(node).includes('"format":"uri"')) continue
+    const file = JSON.stringify(node).includes('"format":"uri"')
     const kind = media.find((word) => name.includes(word))
-    if (!kind) return null
+    if (!file && (!kind || isScalarSetting(node))) continue
+    if (!file || !kind) return null
     found.add(kind)
   }
   // Fixed order: a reordered schema must not read as a changed model.
@@ -225,7 +237,8 @@ function inputModalities(properties: Json): Array<string> | null {
 
 /**
  * The stated maximum of the output-token field. Null when the schema states
- * none, or when two such fields disagree.
+ * none, when two such fields disagree, or when it is too large to be an
+ * output cap.
  */
 function maxOutputField(
   properties: Json,
@@ -243,25 +256,24 @@ function maxOutputField(
   const [maximum] = [...maxima]
   if (!name || maxima.size !== 1) return null
   if (typeof maximum !== 'number' || !Number.isInteger(maximum)) return null
-  return maximum > 0 ? { name, maximum } : null
+  return maximum > 0 && maximum <= MAX_OUTPUT_CEILING ? { name, maximum } : null
 }
 
 /**
- * An effort field whose enum accepts `none`, so reasoning can be turned off.
- * Without `none` the schema does not say whether it can; nothing is stated.
+ * `reasoning_effort` whose enum accepts `none`: reasoning that can be turned
+ * off. Nothing is stated for an enum without `none`, or for another field
+ * (`thinking_level`, `thinking`, `effort`), where `none` reads as "unset".
  */
 function effortField(
   schemas: Json,
   properties: Json,
 ): { name: string; reasoning: ModelReasoning } | null {
-  const fields = EFFORT_FIELDS.filter((field) => field in properties)
-  const [name] = fields
-  if (!name || fields.length !== 1) return null
+  const name = 'reasoning_effort'
   const values = deref(schemas, properties[name])?.enum
   if (!Array.isArray(values)) return null
   const efforts = values.filter((value) => typeof value === 'string')
   if (efforts.length !== values.length) return null
-  if (!efforts.some((value) => value.toLowerCase() === 'none')) return null
+  if (!efforts.includes('none')) return null
   return { name, reasoning: { mode: 'effort', mandatory: false, efforts } }
 }
 
@@ -326,7 +338,8 @@ export function replicateChatFacts(model: ReplicateModel): ChatFacts | null {
     factSources.reasoning = source(`/properties/${effort.name}`)
   }
 
-  // Only official models have a run route of their own.
+  // Only official models have a run route of their own. The poller drops
+  // this until the route is synced (`bindSyncedRoutesOnly`).
   if (model.is_official === true) {
     facts.schemaEndpointId = runPath(model.owner, model.name).slice(1)
   }
@@ -408,7 +421,10 @@ async function listCatalog(key: string): Promise<Array<ReplicateModel>> {
   const listed = new Map<string, ReplicateModel>()
   let url: string | null = REPLICATE_MODELS_URL
   for (let page = 0; url && page < MAX_MODEL_PAGES; page++) {
-    if (!isSafeModelsUrl(url)) break
+    // A short walk would read as routes removed: fail instead.
+    if (!isSafeModelsUrl(url)) {
+      throw new Error(`replicate: unexpected catalog page url ${url}`)
+    }
     const body = (await fetchJson(url, {
       headers,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -426,18 +442,25 @@ async function listCatalog(key: string): Promise<Array<ReplicateModel>> {
 
 /**
  * The public spec, plus one route per official language model in the
- * catalog. A failed catalog read fails the sync: stale routes are better
- * than half of them.
+ * catalog. A missing token skips the sync and a failed catalog read fails
+ * it: stale routes are better than half of them.
  */
 async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
+  const key = env.REPLICATE_API_TOKEN
+  if (!key) {
+    return {
+      specs: [],
+      sources: [],
+      outputStrategy: 'post-200',
+      ...skippedResult('replicate', 'REPLICATE_API_TOKEN'),
+    }
+  }
   const { spec, hash } = await fetchOpenApi(REPLICATE_OPENAPI_URL)
   const result: SpecFetchResult = {
     specs: [spec],
     sources: [{ url: REPLICATE_OPENAPI_URL, hash }],
     outputStrategy: 'post-200',
   }
-  const key = env.REPLICATE_API_TOKEN
-  if (!key) return result
   const warnings: Array<string> = []
   for (const model of await listCatalog(key)) {
     if (!replicateChatFacts(model)?.schemaEndpointId) continue
@@ -597,6 +620,7 @@ export const provider: ProviderConfig = {
   specSourceUrl: REPLICATE_OPENAPI_URL,
   modelsEndpoint: REPLICATE_MODELS_URL,
   defaultDerivation: 'upstream-spec',
+  bindSyncedRoutesOnly: true,
   fetchSpec,
   listModels,
   classify,
