@@ -101,7 +101,9 @@ describe('chatRequestMap', () => {
   })
 
   it('names max_tokens and rejects reasoning_effort where the docs do', () => {
-    for (const provider of ['moonshot', 'nvidia', 'cloudflare'] as const) {
+    // Workers AI states request fields per model; its adapter reads them.
+    expect(chatRequestMap('cloudflare-workers-ai', 'x', 'chat')).toBeNull()
+    for (const provider of ['moonshot', 'nvidia'] as const) {
       const map = chatRequestMap(provider, 'some-chat', 'chat')
       expect(map?.maxTokensField).toBe('max_tokens')
       expect(map?.reasoningEffort).toBe(false)

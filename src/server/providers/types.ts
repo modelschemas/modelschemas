@@ -189,6 +189,13 @@ export interface ModelInfo {
   modalities?: unknown
   pricing?: unknown
   capabilities?: unknown
+  /**
+   * True when `capabilities` is the model's whole flag list, read from its
+   * own branch of a request body other models share. The bound request
+   * schema then adds no flags: walked whole, it would give each model its
+   * siblings' fields.
+   */
+  exactCapabilities?: boolean
   /** Thinking configuration; null when the model does not reason or docs are silent. */
   reasoning?: ModelReasoning | null
   /**
@@ -199,6 +206,8 @@ export interface ModelInfo {
   /**
    * Chat request wire map (issue #95). The poller fills this from
    * `chatRequestMap`; listings do not invent it. Null when unverified.
+   * A listing sets it only from the model's own published request schema
+   * (Workers AI); the poller then keeps that map.
    */
   requestMap?: ChatRequestMap | null
   /**
@@ -397,6 +406,12 @@ export interface ProviderConfig {
    * video URL comes back.
    */
   classifyGets?: boolean
+  /**
+   * Drop a listed `schemaEndpointId` until its route has a synced input
+   * schema. For listings that name per-model routes the daily sync creates
+   * later (Replicate): a link to an unsynced route would 404.
+   */
+  bindSyncedRoutesOnly?: boolean
   /**
    * Canonical generation route (public endpoint id) for a listed model.
    * Grain=provider catalogs use this so a client can go model id → input

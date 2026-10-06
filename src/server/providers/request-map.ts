@@ -228,7 +228,6 @@ export function chatRequestMap(
       })
     case 'moonshot':
     case 'nvidia':
-    case 'cloudflare':
       return blank({
         maxTokensField: 'max_tokens',
         developerRole: false,
