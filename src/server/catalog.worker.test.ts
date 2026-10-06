@@ -385,6 +385,15 @@ describe('stored sameAs relationships', () => {
         lastSeenAt: NOW,
       },
       {
+        // A link reconcile has not caught up with: the evidence is gone.
+        id: 'sameas-stale',
+        providerId: 'cat-reseller',
+        rawId: 'stale',
+        sameAsModelId: 'sameas-maker',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
         id: 'sameas-normalized',
         providerId: 'cat-reseller',
         rawId: 'dotted',
@@ -410,7 +419,7 @@ describe('stored sameAs relationships', () => {
     })
     expect(linked?.contextWindow).toBe(1234)
     expect(linked?.pricing).toBeNull()
-    for (const rawId of ['cat-maker/native-1', 'unresolved']) {
+    for (const rawId of ['cat-maker/native-1', 'unresolved', 'stale']) {
       const unlinked = await getModelDetail(db, 'cat-reseller', rawId)
       expect(unlinked?.sameAs).toBeNull()
       expect(unlinked?.factSources).toBeNull()

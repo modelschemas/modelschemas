@@ -98,21 +98,31 @@ interface UpstreamRow {
   aliases: Array<string> | null
 }
 
-// The link's provenance is the stored evidence, served only once it
-// resolves: a source with no link would read as a claim.
-function modelFactSources(
+// The stored link is only as fresh as the last reconcile, so it is served
+// only while the row's current evidence still names that target. The
+// evidence is its provenance: a link with no source, or a source with no
+// link, would each read as a claim nobody made.
+function linkMatch(
   row: ModelRow,
   upstream: UpstreamRow | null | undefined,
+): 'published' | 'normalized' | null {
+  const stated = row.upstreamRawId
+  if (!upstream || stated === null || !row.upstreamSource) return null
+  const ids = [upstream.rawId, ...(upstream.aliases ?? [])]
+  if (ids.includes(stated)) return 'published'
+  return ids.includes(stated.replaceAll('.', '-')) ? 'normalized' : null
+}
+
+function modelFactSources(
+  row: ModelRow,
+  match: ReturnType<typeof linkMatch>,
 ): ModelFactSources | null {
   const stored = (row.factSources as ModelFactSources | null) ?? null
-  const source = row.upstreamSource as FactSource | null
-  if (!upstream || !source || row.upstreamRawId === null) return stored
-  const asPublished =
-    upstream.rawId === row.upstreamRawId ||
-    (upstream.aliases ?? []).includes(row.upstreamRawId)
+  if (match === null) return stored
+  const source = row.upstreamSource as FactSource
   return {
     ...stored,
-    sameAs: asPublished ? source : { ...source, normalized: true },
+    sameAs: match === 'published' ? source : { ...source, normalized: true },
   }
 }
 
@@ -143,13 +153,15 @@ function toApiModel(
     schemaPath === null
       ? undefined
       : halGet(schemaPath, { example: `${schemaPath}?kind=input` })
+  const match = linkMatch(row, opts.upstream)
   return {
     id: row.id,
     provider: row.providerId,
     rawId: row.rawId,
-    sameAs: opts.upstream
-      ? { provider: opts.upstream.provider, rawId: opts.upstream.rawId }
-      : null,
+    sameAs:
+      match && opts.upstream
+        ? { provider: opts.upstream.provider, rawId: opts.upstream.rawId }
+        : null,
     activity: row.activity,
     displayName: row.displayName,
     schemaEndpointId,
@@ -166,7 +178,7 @@ function toApiModel(
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
     ...(opts.includeFactSources
-      ? { factSources: modelFactSources(row, opts.upstream) }
+      ? { factSources: modelFactSources(row, match) }
       : {}),
     _links: {
       ...modelLinks(row.providerId),

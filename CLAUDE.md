@@ -127,19 +127,21 @@ ones).
   Models API + thinking table; Anthropic tools are a hand-written table
   in `anthropic-features.ts` (re-verify on each Claude launch).
 - **sameAs links** (issue #199, `src/server/ingest/model-identity.ts`): a
-  reseller row links to the upstream row its own provider names — never a
-  name match, and never a copied fact. Adapters state the upstream with
-  `ProviderConfig.upstreamModelIdentity` (OpenRouter, Vercel, Azure); polls
-  store it as evidence (`models.upstream_provider`/`upstream_raw_id`/
-  `upstream_source`). Names gateways use for a provider (`google` → gemini)
-  are rows in `provider_model_namespaces`, mirrored from `modelNamespaces`
-  on each poll by `ensureProviderRow`. `reconcileSameAs` runs once per poll run,
-  across all providers, and resolves evidence to `same_as_model_id`: exact
-  id, then alias, then dots-as-hyphens; ambiguous or missing → null. Each
-  link change emits `model.updated`. The catalog serves the evidence as
-  `factSources.sameAs` only while the link resolves. Cloudflare AI Gateway
-  is held until it has its own listing. Migration `0012` is hand-written
-  (in-place `ALTER TABLE`, no rebuild).
+  reseller row links to the upstream row its own provider names — never
+  inferred from a similar name alone, and never a copied fact. Adapters
+  state the upstream with `ProviderConfig.upstreamModelIdentity`
+  (OpenRouter, Vercel, Azure); polls store it as evidence
+  (`models.upstream_provider`/`upstream_raw_id`/`upstream_source`), writing
+  only what changed. Names gateways use for a provider (`google` → gemini)
+  are rows in `provider_model_namespaces`, mirrored from
+  `ProviderConfig.modelNamespaces` on each poll by `ensureProviderRow`.
+  `reconcileSameAs` runs once per poll run, across all providers, and
+  resolves evidence to `same_as_model_id`: exact id, then alias, then
+  dots-as-hyphens; ambiguous or missing → null. Each link change emits
+  `model.updated`. The catalog serves the link, with the evidence as
+  `factSources.sameAs`, only while the row's current evidence still names
+  that target. Cloudflare AI Gateway is held until it has its own listing.
+  Migration `0012` is hand-written (in-place `ALTER TABLE`, no rebuild).
 - **API** (`src/routes/v1/`): catalog, schema reads (SWR via
   `src/server/cache.ts`, ETag/304 via `http-cache.ts`), `POST /v1/validate`
   (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),

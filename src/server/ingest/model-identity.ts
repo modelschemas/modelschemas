@@ -10,28 +10,35 @@ export interface UpstreamIdentityWrite {
   identity: UpstreamModelIdentity | null
 }
 
-/** Write changed identity evidence in batches; reconcileSameAs owns the link. */
+/** Whether a row's stored evidence already says what the provider states. */
+export function sameEvidence(
+  row: typeof models.$inferSelect | undefined,
+  identity: UpstreamModelIdentity | null,
+): boolean {
+  return (
+    (row?.upstreamProvider ?? null) === (identity?.providerNamespace ?? null) &&
+    (row?.upstreamRawId ?? null) === (identity?.rawId ?? null) &&
+    stableStringify(row?.upstreamSource ?? null) ===
+      stableStringify(identity?.source ?? null)
+  )
+}
+
+/** Write identity evidence in batches; reconcileSameAs owns the link. */
 export async function persistUpstreamIdentities(
   db: Db,
   identities: readonly UpstreamIdentityWrite[],
 ): Promise<void> {
   for (let i = 0; i < identities.length; i += 30) {
-    const statements = identities.slice(i, i + 30).map(({ id, identity }) => {
-      const provider = identity?.providerNamespace ?? null
-      const rawId = identity?.rawId ?? null
-      const source = stableStringify(identity?.source ?? null)
-      return db.update(models).set({
-        upstreamProvider: provider,
-        upstreamRawId: rawId,
-        upstreamSource: identity ? sql`json(${source})` : null,
-      }).where(sql`
-        ${models.id} = ${id} AND (
-          ${models.upstreamProvider} IS NOT ${provider}
-          OR ${models.upstreamRawId} IS NOT ${rawId}
-          OR coalesce(${models.upstreamSource}, 'null') != ${source}
-        )
-      `)
-    })
+    const statements = identities.slice(i, i + 30).map(({ id, identity }) =>
+      db
+        .update(models)
+        .set({
+          upstreamProvider: identity?.providerNamespace ?? null,
+          upstreamRawId: identity?.rawId ?? null,
+          upstreamSource: identity?.source ?? null,
+        })
+        .where(eq(models.id, id)),
+    )
     const [first, ...rest] = statements
     if (first) await db.batch([first, ...rest])
   }

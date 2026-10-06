@@ -14,7 +14,11 @@ import { provider as azure } from '#/server/providers/adapters/azure.ts'
 import { namespacedUpstreamIdentity } from '#/server/providers/upstream-model.ts'
 import type { ModelInfo, ProviderConfig } from '#/server/providers/types.ts'
 import { GPT_4O } from '../../../packages/rate-card/src/fixtures/gpt-4o.ts'
-import { modelDbId, pollProviderModels } from './poll-models.ts'
+import {
+  modelDbId,
+  pollAllProviders,
+  pollProviderModels,
+} from './poll-models.ts'
 import type { SyncDeps } from './sync.ts'
 import { reconcileSameAs } from './model-identity.ts'
 
@@ -278,6 +282,38 @@ describe('sameAs links', () => {
         .from(changes)
         .where(eq(changes.providerId, 'identity-bulk-host')),
     ).toHaveLength(12 * 2) // model.added + the link
+  })
+
+  it('resolves links at the end of a poll run, whatever order providers poll in', async () => {
+    const d = deps()
+    const outcomes = await pollAllProviders(d, [
+      stub('identity-run-host', [{ rawId: 'identity-run-maker/m' }], gateway),
+      stub('identity-run-maker', [{ rawId: 'm' }]),
+    ])
+    expect(outcomes.map((outcome) => outcome.failures)).toEqual([0, 0])
+    const rowId = modelDbId('identity-run-host', 'identity-run-maker/m')
+    const row = await d.db.query.models.findFirst({
+      where: eq(models.id, rowId),
+    })
+    expect(row?.sameAsModelId).toBe(modelDbId('identity-run-maker', 'm'))
+    expect(await linkChanges(d, rowId)).toHaveLength(1)
+  })
+
+  it("keeps a failed reconcile out of the providers' poll outcomes", async () => {
+    // The clock is read once per provider poll, then once by the reconcile
+    // step, so failing the second read fails only the reconcile.
+    let reads = 0
+    const d: SyncDeps = {
+      ...deps(),
+      now: () => {
+        if (++reads > 1) throw new Error('reconcile failed')
+        return NOW
+      },
+    }
+    const outcomes = await pollAllProviders(d, [
+      stub('identity-run-solo', [{ rawId: 'm' }]),
+    ])
+    expect(outcomes).toMatchObject([{ failures: 0, added: 1 }])
   })
 
   it('enforces the target foreign key and rejects a self link', async () => {

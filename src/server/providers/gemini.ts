@@ -351,6 +351,7 @@ async function listModels(
 
 export const geminiProvider: ProviderConfig = {
   id: 'gemini',
+  modelNamespaces: ['google', 'google-ai-studio'],
   displayName: 'Google Gemini',
   authEnvVar: 'GEMINI_API_KEY',
   defaultDerivation: 'upstream-spec',

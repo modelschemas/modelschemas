@@ -255,7 +255,8 @@ async function applyAsyncApiCatalogFlags(
 /**
  * Upsert the provider's row from its registry config: refreshes the seeded
  * config columns, preserves runtime state (lastPolledAt/lastSyncedAt/status).
- * Same semantics as `scripts/seed.ts`, run automatically so a newly
+ * Same provider row as `scripts/seed.ts`, plus the provider's namespaces
+ * (which only this writes), run automatically so a newly
  * registered provider self-heals into the DB on its first sync/poll instead
  * of waiting on a manual seed against prod.
  */
@@ -265,39 +266,44 @@ export async function ensureProviderRow(
 ): Promise<void> {
   const seed = seedForProvider(provider)
   if (seed === null) return
-  const { modelNamespaces = [], ...providerRow } = seed
-  await db
-    .insert(providers)
-    .values(providerRow)
-    .onConflictDoUpdate({
-      target: providers.id,
-      set: {
-        displayName: seed.displayName,
-        specSourceUrl: seed.specSourceUrl,
-        modelsEndpoint: seed.modelsEndpoint ?? null,
-        authEnvVar: seed.authEnvVar ?? null,
-      },
-    })
-  // The table mirrors config: a namespace dropped from a seed stops resolving.
-  await db
-    .delete(providerModelNamespaces)
-    .where(
-      and(
-        eq(providerModelNamespaces.providerId, seed.id),
-        notInArray(providerModelNamespaces.namespace, modelNamespaces),
+  const namespaces = provider.modelNamespaces ?? []
+  // One batch: the namespace table mirrors config (a dropped name stops
+  // resolving) without a second round trip on every poll.
+  await db.batch([
+    db
+      .insert(providers)
+      .values(seed)
+      .onConflictDoUpdate({
+        target: providers.id,
+        set: {
+          displayName: seed.displayName,
+          specSourceUrl: seed.specSourceUrl,
+          modelsEndpoint: seed.modelsEndpoint ?? null,
+          authEnvVar: seed.authEnvVar ?? null,
+        },
+      }),
+    db
+      .delete(providerModelNamespaces)
+      .where(
+        and(
+          eq(providerModelNamespaces.providerId, seed.id),
+          notInArray(providerModelNamespaces.namespace, namespaces),
+        ),
       ),
-    )
-  if (modelNamespaces.length) {
-    await db
-      .insert(providerModelNamespaces)
-      .values(
-        modelNamespaces.map((namespace) => ({
-          namespace,
-          providerId: seed.id,
-        })),
-      )
-      .onConflictDoNothing()
-  }
+    ...(namespaces.length
+      ? [
+          db
+            .insert(providerModelNamespaces)
+            .values(
+              namespaces.map((namespace) => ({
+                namespace,
+                providerId: seed.id,
+              })),
+            )
+            .onConflictDoNothing(),
+        ]
+      : []),
+  ])
 }
 
 /** Composite map key for an endpoint's current version of one kind. */

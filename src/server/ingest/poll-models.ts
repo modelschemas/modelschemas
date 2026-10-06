@@ -56,7 +56,11 @@ import {
 } from './retire-models-dev.ts'
 import { ensureProviderRow } from './sync.ts'
 import type { SyncDeps } from './sync.ts'
-import { persistUpstreamIdentities, reconcileSameAs } from './model-identity.ts'
+import {
+  persistUpstreamIdentities,
+  reconcileSameAs,
+  sameEvidence,
+} from './model-identity.ts'
 import type { UpstreamIdentityWrite } from './model-identity.ts'
 
 export interface PollOutcome {
@@ -409,9 +413,8 @@ export async function pollProviderModels(
     if (seenIds.has(id)) continue // defensive: provider returned a dup
     seenIds.add(id)
     const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null
-    if (identity || existing?.upstreamProvider != null) {
-      identities.push({ id, identity })
-    }
+    // Only changed evidence is written: most rows restate it every poll.
+    if (!sameEvidence(existing, identity)) identities.push({ id, identity })
 
     if (!existing) {
       await db.insert(models).values({
@@ -597,9 +600,10 @@ export async function pollProviderModels(
 /** Poll every registered provider with per-provider failure isolation. */
 export async function pollAllProviders(
   deps: SyncDeps,
+  registry: ReadonlyArray<ProviderConfig> = providerRegistry,
 ): Promise<Array<PollOutcome>> {
   const outcomes: Array<PollOutcome> = []
-  for (const provider of providerRegistry) {
+  for (const provider of registry) {
     await runIngestScope(async () => {
       try {
         outcomes.push(await pollProviderModels(deps, provider))
@@ -631,7 +635,7 @@ export async function pollAllProviders(
     })
   }
   // Links span providers, so resolve them once per run, outside any one
-  // provider's outcome: a failure here must not read as fifty failed polls.
+  // provider's outcome: a failure here must not read as every poll failing.
   await runIngestScope(async () => {
     try {
       await reconcileSameAs(

@@ -557,6 +557,7 @@ async function listModels(
 
 export const grokProvider: ProviderConfig = {
   id: 'grok',
+  modelNamespaces: ['xai', 'x-ai'],
   displayName: 'xAI Grok',
   authEnvVar: 'XAI_API_KEY',
   defaultDerivation: 'upstream-spec',

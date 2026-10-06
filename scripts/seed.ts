@@ -60,14 +60,6 @@ ON CONFLICT(id) DO UPDATE SET
   auth_env_var = excluded.auth_env_var;`,
 )
 
-for (const p of seeds) {
-  for (const namespace of p.modelNamespaces ?? []) {
-    statements.push(
-      `INSERT INTO provider_model_namespaces (namespace, provider_id) VALUES (${sqlLiteral(namespace)}, ${sqlLiteral(p.id)}) ON CONFLICT(namespace, provider_id) DO NOTHING;`,
-    )
-  }
-}
-
 const sqlFile = join(
   mkdtempSync(join(tmpdir(), 'modelschemas-seed-')),
   'seed.sql',
