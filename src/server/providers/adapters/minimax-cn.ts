@@ -9,11 +9,12 @@ import type { Activity } from '#/db/schema.ts'
 
 import { tagDocsFacts } from '../fact-sources.ts'
 import {
+  fetchMinimaxPage,
   MINIMAX_CN,
   MINIMAX_CN_MESSAGES_SPEC_URL,
   minimaxModelFacts,
 } from '../minimax-docs.ts'
-import { fetchText, sha256Text } from '../types.ts'
+import { sha256Text } from '../types.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -30,7 +31,7 @@ const SPEC_URLS = [MINIMAX_CN.chatSpecUrl, MINIMAX_CN_MESSAGES_SPEC_URL]
 const CHAT_ENDPOINT = 'v1/chat/completions'
 
 function fetchPage(url: string): Promise<string> {
-  return fetchText(url, { signal: AbortSignal.timeout(30_000) })
+  return fetchMinimaxPage(url, MINIMAX_CN)
 }
 
 const SECTION_ACTIVITY: Array<[RegExp, Activity | null]> = [
@@ -87,7 +88,7 @@ async function listModels(
       const fact = facts(model.rawId)
       // An id the docs pages do not name gets no facts and no route.
       if (Object.keys(fact).length === 0) return model
-      // The spec says only the model with an effort list acts on
+      // The chat spec says only the model with an effort list acts on
       // `reasoning_effort`, so the shared schema does not set the flag.
       const capabilities = fact.reasoning?.efforts ? ['reasoning_effort'] : null
       return {
@@ -99,8 +100,8 @@ async function listModels(
           ...fact.factSources,
           ...tagDocsFacts(
             { capabilities },
-            MINIMAX_CN.sdkUrl,
-            fact.factSources?.reasoning?.sourceHash,
+            MINIMAX_CN.chatSpecUrl,
+            fact.factSources?.maxOutput?.sourceHash,
           ),
         },
       }

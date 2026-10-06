@@ -20,7 +20,7 @@ import {
   tokenCount,
 } from './model-facts.ts'
 import type { ModelFacts } from './model-facts.ts'
-import { fetchText, sha256Text } from './types.ts'
+import { sha256Text } from './types.ts'
 import type { ModelReasoning } from './types.ts'
 
 const DOCS = 'https://platform.minimax.io/docs'
@@ -35,6 +35,8 @@ const ID_PREFIX = 'MiniMax-'
 export interface MinimaxPlatform {
   /** Names the platform in a zero-row parse error. */
   label: string
+  /** Hosts allowed to answer a page fetch, redirects included. */
+  hosts: Array<string>
   sdkUrl: string
   chatSpecUrl: string
   /** Null when the page quotes no USD price. */
@@ -43,9 +45,12 @@ export interface MinimaxPlatform {
   contextWindow: string
   /** `Messages Field Support` status: every model. */
   allModels: RegExp
-  /** Status naming the only models that take the type; group 1 is the list. */
+  /**
+   * Status naming the only models that take the type: group 1 is the
+   * `M3.1-Flash-Preview / M3` list and nothing else may follow it.
+   */
   onlyModels: RegExp
-  /** `Thinking Control` cells. */
+  /** `Thinking Control` cells, each anchored to the end of the cell. */
   thinkingOn: RegExp
   cannotDisable: RegExp
   thinkingOff: RegExp
@@ -53,22 +58,23 @@ export interface MinimaxPlatform {
   efforts: RegExp
   /** Splits the `max_completion_tokens` description into clauses. */
   clause: RegExp
-  /** Group 1 is a clause's maximum. */
+  /** Group 1 is a clause's maximum, a plain token count. */
   maximum: RegExp
   otherModels: RegExp
 }
 
 export const MINIMAX: MinimaxPlatform = {
   label: 'minimax',
+  hosts: ['platform.minimax.io'],
   sdkUrl: MINIMAX_SDK_URL,
   chatSpecUrl: MINIMAX_CHAT_SPEC_URL,
   pricingUrl: MINIMAX_PRICING_URL,
   contextWindow: 'Context Window',
   allModels: /^fully supported$/i,
-  onlyModels: /^([\s\S]*)$/,
+  onlyModels: /^(M\d[\w.-]*(?:\s*\/\s*M\d[\w.-]*)*) only$/i,
   thinkingOn: /^thinking on$/i,
-  cannotDisable: /cannot be disabled|remains on/i,
-  thinkingOff: /\boff\b/i,
+  cannotDisable: /(?:^|[—;,] )thinking (?:cannot be disabled|remains on)$/i,
+  thinkingOff: /^thinking stays off$/i,
   efforts: /Accepts ([^;.]+)/,
   clause: /;|\.\s/,
   maximum: /the maximum is ([\d,]+)/i,
@@ -80,18 +86,21 @@ export const MINIMAX_CN_MESSAGES_SPEC_URL = `${DOCS_CN}/api-reference/text/api/o
 
 export const MINIMAX_CN: MinimaxPlatform = {
   label: 'minimax-cn',
+  // platform.minimaxi.com answers 302 to the same path on platform.minimax.cn.
+  hosts: ['platform.minimaxi.com', 'platform.minimax.cn'],
   sdkUrl: `${DOCS_CN}/api-reference/text-anthropic-api.md`,
   chatSpecUrl: `${DOCS_CN}/api-reference/text/api/openapi-chat-openai.json`,
   pricingUrl: null,
   contextWindow: '上下文窗口',
   allModels: /^完全支持$/,
-  onlyModels: /^仅\s*(.+)$/,
+  onlyModels: /^仅\s*(M\d[\w.-]*(?:\s*\/\s*M\d[\w.-]*)*)$/,
   thinkingOn: /^开启 thinking$/,
-  cannotDisable: /thinking 无法关闭|thinking 仍保持开启/,
+  cannotDisable: /(?:^|，)thinking (?:无法关闭|仍保持开启)$/,
   thinkingOff: /^保持 thinking 关闭$/,
   efforts: /可取([^；。]+)/,
   clause: /；|。/,
-  maximum: /上限为\s*([\d,]+)/,
+  // `推荐值上限为` is a cap on the recommended value, not on output.
+  maximum: /(?<!推荐值)上限为\s*([\d,]+)/,
   otherModels: /其他模型/,
 }
 
@@ -129,7 +138,8 @@ const INPUT_TYPES = new Set(['text', 'image', 'video', 'audio'])
  * The `Messages Field Support` table. A `type="image"` row is every model
  * when its status is `Fully supported`, and otherwise only the models the
  * status names (`M3.1-Flash-Preview / M3 only`). Empty when a status reads
- * as neither, so a reworded row cannot leave a model with fewer types.
+ * as neither or names a model the page does not list, so a reworded row
+ * (`M2.x not supported`) cannot move a type between models.
  */
 export function parseMinimaxInputModalities(
   markdown: string,
@@ -149,8 +159,8 @@ export function parseMinimaxInputModalities(
       : [...(only ?? '').matchAll(/\bM\d[\w.-]*/g)].map(
           (match) => `${ID_PREFIX}${match[0]}`,
         )
+    if (named.some((id) => !ids.includes(id))) return new Map()
     for (const id of named) {
-      if (!ids.includes(id)) continue
       out.set(id, [...(out.get(id) ?? []), type])
     }
   }
@@ -217,7 +227,9 @@ export function parseMinimaxReasoning(
  * maximum is N; for other models … the maximum is M`. The `other models`
  * number goes only to ids the description never names. Empty unless every
  * id it does name got a maximum from its own clause, so a reworded clause
- * cannot hand a named model the catch-all.
+ * cannot hand a named model the catch-all. Also empty when one clause
+ * holds two maximums or names ids beside `other models` (the clauses ran
+ * together), or when a maximum carries a unit (`512K`) or a decimal.
  */
 export function parseMinimaxMaxOutput(
   description: string,
@@ -227,10 +239,17 @@ export function parseMinimaxMaxOutput(
   const out = new Map<string, number>()
   let others: number | null = null
   for (const clause of description.split(platform.clause)) {
-    const max = clause.match(platform.maximum)?.[1]
-    const tokens = max ? tokenCount(max) : null
+    const maximums = [...clause.matchAll(new RegExp(platform.maximum, 'g'))]
+    const [found] = maximums
+    if (!found) continue
+    const after = clause.slice(found.index + found[0].length)
+    if (maximums.length > 1 || /^(?:\.\d|\s*[kKmM万千亿])/.test(after)) {
+      return new Map()
+    }
+    const tokens = tokenCount(found[1])
     if (tokens === null) continue
     const named = ids.filter((id) => names(clause, id))
+    if (named.length > 0 && platform.otherModels.test(clause)) return new Map()
     for (const id of named) out.set(id, tokens)
     if (named.length === 0 && platform.otherModels.test(clause)) others = tokens
   }
@@ -333,8 +352,28 @@ export function parseMinimaxPricing(
 
 const FETCH_TIMEOUT_MS = 30_000
 
-function fetchPage(url: string): Promise<string> {
-  return fetchText(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+/**
+ * One docs page. Throws when a redirect lands on a host that is not the
+ * platform's own: the two platforms publish the same paths, so a redirect
+ * across them would hand one platform the other's document.
+ */
+export async function fetchMinimaxPage(
+  url: string,
+  platform: MinimaxPlatform,
+): Promise<string> {
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  })
+  if (!response.ok) {
+    throw new Error(
+      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
+    )
+  }
+  const host = new URL(response.url || url).host
+  if (!platform.hosts.includes(host)) {
+    throw new Error(`${platform.label}: ${url} was answered by ${host}`)
+  }
+  return response.text()
 }
 
 /** Facts for one chat id; `{}` when the docs do not name it. */
@@ -343,6 +382,7 @@ export async function minimaxModelFacts(
   platform: MinimaxPlatform = MINIMAX,
 ): Promise<(rawId: string) => Partial<ModelFacts>> {
   const { label, sdkUrl, chatSpecUrl, pricingUrl } = platform
+  const fetchPage = (url: string) => fetchMinimaxPage(url, platform)
   const doc = await cachedDocs(kv, sdkUrl, async () => {
     const [sdk, pricingPage, specText] = await Promise.all([
       fetchPage(sdkUrl),

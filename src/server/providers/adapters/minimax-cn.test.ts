@@ -129,7 +129,8 @@ describe('minimax-cn', () => {
     )
     expect(flash?.capabilities).toEqual(['reasoning_effort'])
     expect(flash?.factSources?.capabilities).toMatchObject({
-      reasoning_effort: { sourceUrl: MINIMAX_CN.sdkUrl },
+      // The chat spec is the page that names `reasoning_effort`.
+      reasoning_effort: { sourceUrl: MINIMAX_CN.chatSpecUrl },
     })
     // An id the docs pages do not name gets no facts and no route.
     expect(listed.models.find((model) => model.rawId === 'MiniMax-M9')).toEqual(
