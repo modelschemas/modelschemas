@@ -3,6 +3,7 @@
  * (public). Models list requires COHERE_API_KEY.
  */
 import type { Activity } from '#/db/schema.ts'
+import { cohereModelDocFacts } from '../cohere-model-docs.ts'
 import { cohereModelPricing } from '../cohere-pricing.ts'
 import { openAiCompatModelFacts } from '../openai-compat.ts'
 import {
@@ -13,6 +14,7 @@ import {
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -21,6 +23,8 @@ import type {
 const COHERE_OPENAPI_URL =
   'https://raw.githubusercontent.com/cohere-ai/cohere-developer-experience/main/cohere-openapi.yaml'
 const COHERE_MODELS_URL = 'https://api.cohere.com/v1/models'
+/** Public id of the synced `POST /v2/chat` schema. */
+const COHERE_CHAT_ENDPOINT = 'v2/chat'
 
 /**
  * Chat (v1/v2 + legacy generate/summarize) and embed. Audio transcriptions
@@ -51,7 +55,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-interface CohereModel {
+export interface CohereModel {
   name?: string
   is_deprecated?: boolean
   endpoints?: Array<string>
@@ -79,6 +83,50 @@ function activityFromEndpoints(
   return null
 }
 
+/**
+ * Facts one listing row states. For a chat row `features` is the model's
+ * own list, so its flags are exact: every chat row binds the one `/v2/chat`
+ * body, and walking that would stamp `thinking` and `tools` on models that
+ * reject them. A row with no `features` states no flags and no modalities.
+ */
+export function listedFacts(m: CohereModel, rawId: string): ModelInfo {
+  const activity = activityFromEndpoints(m.endpoints)
+  const facts = openAiCompatModelFacts({
+    id: rawId,
+    context_length: m.context_length,
+    features: m.features ?? undefined,
+  })
+  const base: ModelInfo = {
+    rawId,
+    activity,
+    deprecated: m.is_deprecated ?? false,
+    ...facts,
+  }
+  if (activity !== 'chat') return base
+  const chat: ModelInfo = {
+    ...base,
+    exactCapabilities: true,
+    schemaEndpointId: m.endpoints?.includes('chat')
+      ? COHERE_CHAT_ENDPOINT
+      : null,
+  }
+  if (!m.features) return chat
+  const listed: Array<unknown> = Array.isArray(facts.capabilities)
+    ? facts.capabilities
+    : []
+  const flags = m.features.includes('logprobs')
+    ? [...listed, 'logprobs']
+    : listed
+  return {
+    ...chat,
+    ...(flags.length > 0 ? { capabilities: flags } : {}),
+    modalities: {
+      input: m.features.includes('vision') ? ['text', 'image'] : ['text'],
+      output: ['text'],
+    },
+  }
+}
+
 async function listModels(
   env: ProviderSecrets,
   kv?: KVNamespace,
@@ -87,7 +135,8 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('cohere', 'COHERE_API_KEY') }
   }
-  const [pricing, reasoning] = await Promise.all([
+  const [docs, pricing, reasoning] = await Promise.all([
+    cohereModelDocFacts(kv),
     cohereModelPricing(kv),
     cohereModelReasoning(kv),
   ])
@@ -99,24 +148,17 @@ async function listModels(
     if (pageToken) url.searchParams.set('page_token', pageToken)
     const body = (await fetchJson(url.toString(), {
       headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(30_000),
     })) as CohereModelList
     for (const m of body.models ?? []) {
       if (typeof m.name !== 'string' || m.name.length === 0) continue
-      const facts = openAiCompatModelFacts({
-        id: m.name,
-        context_length: m.context_length,
-        features: m.features ?? undefined,
-      })
+      const listed = listedFacts(m, m.name)
       models.push(
         overlayModelFacts(
-          {
-            rawId: m.name,
-            activity: activityFromEndpoints(m.endpoints),
-            deprecated: m.is_deprecated ?? false,
-            ...facts,
-          },
+          listed,
+          docs(m.name),
           pricing(m.name),
-          reasoning(m.name, listsReasoning(facts.capabilities)),
+          reasoning(m.name, listsReasoning(listed.capabilities)),
         ),
       )
     }

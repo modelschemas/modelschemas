@@ -193,6 +193,24 @@ describe('parseCohereReasoning', () => {
       parseCohereReasoning(COHERE_SILENT).get('command-r-08-2024'),
     ).toBeUndefined()
   })
+
+  it('covers every reasoning model only while the guide calls them hybrid', () => {
+    // The sentence as https://docs.cohere.com/docs/reasoning.md had it on
+    // 2026-10-07.
+    const hybrid = `Cohere's reasoning models are *hybrid*, meaning reasoning can be enabled (in which case they generate internal reasoning processes before delivering their final responses) or disabled (in which case they function the way any other LLM would).`
+    expect(parseCohereReasoning(COHERE).has('*')).toBe(false)
+    expect(parseCohereReasoning(`${hybrid}\n${COHERE}`).get('*')).toEqual({
+      mode: 'budget',
+      mandatory: false,
+    })
+    expect(
+      parseCohereReasoning(
+        `${hybrid.replace('or disabled', 'but not disabled')}\n${COHERE}`,
+      ).has('*'),
+    ).toBe(false)
+    // Without the budget knob the sentence configures nothing.
+    expect(parseCohereReasoning(`${hybrid}\n${COHERE_SILENT}`).size).toBe(0)
+  })
 })
 
 describe('parseByteplusReasoning', () => {

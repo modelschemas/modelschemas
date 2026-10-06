@@ -245,7 +245,14 @@ export function parseGroqReasoning(
  * Cohere's reasoning guide. `thinking.token_budget` is budget mode, and
  * thinking can be turned off, so it is not mandatory. No effort names are
  * published. A page that does not state `token_budget` configures nothing.
+ *
+ * The guide names one model in its examples but says "Cohere's reasoning
+ * models are hybrid", enabled or disabled. While it says so, the same
+ * configuration is kept under `COHERE_ANY_REASONING` for the other models
+ * the listing flags `reasoning` (Command A+, North Mini Code).
  */
+export const COHERE_ANY_REASONING = '*'
+
 export function parseCohereReasoning(
   markdown: string,
 ): Map<string, ModelReasoning> {
@@ -260,6 +267,13 @@ export function parseCohereReasoning(
   }
   for (const match of markdown.matchAll(/model="([^"]+)"/g)) {
     if (match[1]) ids.add(match[1])
+  }
+  if (
+    /Cohere's reasoning models are \*hybrid\*, meaning reasoning can be enabled \([^)]*\) or disabled/.test(
+      markdown,
+    )
+  ) {
+    ids.add(COHERE_ANY_REASONING)
   }
   for (const id of ids) {
     out.set(id, { mode: 'budget', mandatory: false })
@@ -431,7 +445,14 @@ export async function cohereModelReasoning(kv?: KVNamespace) {
     'cohere reasoning page',
     parseCohereReasoning,
   )
-  return lookup(doc)
+  const any = COHERE_ANY_REASONING in doc.byId
+  return (rawId: string, capability: boolean): Partial<ModelInfo> =>
+    reasoningFactsFor(
+      capability && any && !(rawId in doc.byId) ? COHERE_ANY_REASONING : rawId,
+      doc.byId,
+      doc,
+      capability,
+    )
 }
 
 export async function byteplusModelReasoning(kv?: KVNamespace) {
