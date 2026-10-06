@@ -13,3 +13,5 @@ The fact is a gap-report key (`contextWindow`, `maxOutput`, `modalities`,
 
 - grok: maxOutput — xAI's spec states only a 128k default, no per-model cap (#75, checked 2026-09-26)
 - mistral: maxOutput — Mistral caps output by the context length and publishes no separate limit (#75, checked 2026-09-26)
+- huggingface: maxOutput — the router listing states only `context_length` per provider, no output cap, https://huggingface.co/docs/inference-providers/hub-api, checked 2026-10-06
+- huggingface: cacheRead — the router listing prices only `input` and `output`, https://huggingface.co/docs/inference-providers/hub-api, checked 2026-10-06
