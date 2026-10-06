@@ -36,7 +36,8 @@ Do not merge, deploy, or close issues. The user does that.
 
 ## Filler brief
 
-Give the agent the provider id, its row from the gap report, and this:
+Give the agent the provider id, its row from the gap report, a dev-server
+port no other agent has (3101, 3102, 3103), and this:
 
 - **Find the source.** For each missing fact, find where the provider
   publishes it: the model listing API, the docs, the pricing page, the
@@ -72,13 +73,20 @@ Give the agent the provider id, its row from the gap report, and this:
 checked <date>`.
 - **Do not change the DB schema or the API shape.** If a fact has no
   field, stop and say so.
-- **Verify locally.** Start `bun run dev`, then:
+- **Verify locally.** Other agents run at the same time, each in its own
+  worktree, so do not use `bun run dev`: it binds port 3100. Use the port
+  the orchestrator gave you. A new worktree has no `node_modules` and no
+  `.env.local`.
 
   ```bash
-  curl -X POST localhost:3100/v1/admin/sync/<provider> -H "X-Admin-Key: $ADMIN_KEY"
-  curl "localhost:3100/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*"   # model poll
-  bun run gap:report --base http://localhost:3100 --check --providers <provider>
+  bun install && bun run secrets:pull && bun run db:migrate && bun run seed
+  bunx vite dev --port <port> &
+  curl -X POST localhost:<port>/v1/admin/sync/<provider> -H "X-Admin-Key: $ADMIN_KEY"
+  curl "localhost:<port>/cdn-cgi/handler/scheduled?cron=*/15+*+*+*+*"   # model poll
+  bun run gap:report --base http://localhost:<port> --check --providers <provider>
   ```
+
+  Stop the dev server when done.
 
   Then `bun run test`, `bun run typecheck`, and `bun --bun run lint`. Add a
   unit test with a fixture of the source for each new parser or extractor.
@@ -89,9 +97,10 @@ checked <date>`.
 
 ## Checker brief
 
-Give the agent the PR number and this:
+Give the agent the PR number, a free dev-server port, and this:
 
-- Check out the PR and run the local verify steps above.
+- Check out the PR in your own worktree and run the local verify steps
+  above on the port the orchestrator gave you.
 - Pick 10 filled rows at random. Open each fact's source URL and confirm
   the stored value against the page. For a model-extracted fact, confirm
   the value is on the page, not only plausible.
