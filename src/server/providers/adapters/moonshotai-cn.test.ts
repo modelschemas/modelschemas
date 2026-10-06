@@ -7,6 +7,7 @@ import {
   MOONSHOT_CN_OPENAPI_URL,
   MOONSHOT_CN_PRICING_URL,
   moonshotCnChatFacts,
+  moonshotThinkingToggle,
   parseMoonshotCnPricing,
   provider,
 } from './moonshotai-cn.ts'
@@ -116,10 +117,23 @@ describe('moonshotCnChatFacts', () => {
       reasoning: effortSource,
     })
     // The K2 schemas take an on/off `thinking`; the walk flags that itself.
+    // kimi-k2.6 lists `disabled` in its own enum. kimi-k2.7-code lists only
+    // `enabled`, and its description says "该模型始终开启思考".
+    expect(facts['kimi-k2.6']?.reasoning).toEqual({
+      mode: 'toggle',
+      mandatory: false,
+    })
+    for (const id of ['kimi-k2.7-code', 'kimi-k2.7-code-highspeed']) {
+      expect(facts[id]?.reasoning).toEqual({ mode: 'toggle', mandatory: true })
+    }
     for (const id of ['kimi-k2.7-code', 'kimi-k2.6']) {
-      expect(facts[id]?.reasoning).toBeUndefined()
       expect(facts[id]?.capabilities).toBeUndefined()
-      expect(facts[id]?.factSources.reasoning?.path).toBe('silent')
+      expect(facts[id]?.factSources.reasoning).toEqual({
+        derivation: 'upstream-spec',
+        sourceUrl: MOONSHOT_CN_OPENAPI_URL,
+        sourceHash: 'h',
+        path: 'thinking.type',
+      })
       expect(facts[id]?.modalities).toEqual({
         input: ['text', 'image', 'video'],
         output: ['text'],
@@ -129,6 +143,81 @@ describe('moonshotCnChatFacts', () => {
     for (const model of Object.values(facts)) {
       expect(model).not.toHaveProperty('maxOutput')
     }
+  })
+
+  it('stores no toggle when the switch does not state its off position', () => {
+    type Thinking = {
+      description: string
+      properties: { type: { enum: Array<string> } }
+    }
+    const thinkingOf = (spec: OpenApiDocument, name: string) =>
+      (
+        spec.components?.schemas?.[name] as {
+          allOf: Array<{ properties?: { thinking?: Thinking } }>
+        }
+      ).allOf[1]?.properties?.thinking as Thinking
+    const k27 = (edit: (thinking: Thinking) => void) =>
+      moonshotCnChatFacts(
+        mutated((spec) => edit(thinkingOf(spec, 'KimiK27CodeChatRequest'))),
+        'h',
+      )['kimi-k2.7-code']
+    // Reworded: "always on" is gone, and `[enabled]` alone is not a statement.
+    const reworded = k27((thinking) => {
+      thinking.description = thinking.description.replace(
+        '该模型始终开启思考',
+        '该模型默认开启思考',
+      )
+    })
+    expect(reworded?.reasoning).toBeUndefined()
+    expect(reworded?.factSources.reasoning?.path).toBe('silent')
+    // A third position is not an on/off switch.
+    const auto = k27((thinking) => {
+      thinking.properties.type.enum = ['enabled', 'disabled', 'auto']
+    })
+    expect(auto?.reasoning).toBeUndefined()
+    expect(auto?.factSources.reasoning?.path).toBe('silent')
+    // The statement wins over a `disabled` the enum still lists.
+    expect(
+      k27((thinking) => {
+        thinking.properties.type.enum = ['enabled', 'disabled']
+      })?.reasoning,
+    ).toEqual({ mode: 'toggle', mandatory: true })
+    // kimi-k2.6 without `disabled` and without a statement: nothing.
+    const k26 = moonshotCnChatFacts(
+      mutated((spec) => {
+        thinkingOf(spec, 'KimiK26ChatRequest').properties.type.enum = [
+          'enabled',
+        ]
+      }),
+      'h',
+    )['kimi-k2.6']
+    expect(k26?.reasoning).toBeUndefined()
+    expect(k26?.factSources.reasoning?.path).toBe('silent')
+  })
+
+  it('reads the statement in both hosts’ words', () => {
+    // platform.kimi.ai/docs/openapi.json, KimiK27CodeChatRequest (2026-10-07).
+    const english =
+      '- `type` only accepts `"enabled"`. Unlike kimi-k2.6, `"disabled"` is NOT supported — passing it returns an error. Thinking is always on for this model.'
+    expect(moonshotThinkingToggle(['enabled'], english)).toEqual({
+      mode: 'toggle',
+      mandatory: true,
+    })
+    expect(
+      moonshotThinkingToggle(
+        ['enabled'],
+        '- `type` 仅支持 `"enabled"`。与 kimi-k2.6 不同，不支持 `"disabled"` — 传入会报错。该模型始终开启思考。',
+      ),
+    ).toEqual({ mode: 'toggle', mandatory: true })
+    expect(
+      moonshotThinkingToggle(['enabled'], 'Thinking is on by default.'),
+    ).toBeNull()
+    expect(moonshotThinkingToggle(['enabled'], undefined)).toBeNull()
+    expect(
+      moonshotThinkingToggle(['enabled', 'disabled'], 'Enable or disable.'),
+    ).toEqual({ mode: 'toggle', mandatory: false })
+    expect(moonshotThinkingToggle(['disabled'], undefined)).toBeNull()
+    expect(moonshotThinkingToggle([], undefined)).toBeNull()
   })
 
   it('claims no reasoning when the branch drops reasoning_effort', () => {

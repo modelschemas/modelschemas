@@ -7,8 +7,10 @@
  * body lists it) and, for chat ids, the output cap (`max_tokens`
  * description) and input modalities (user message content parts). Context
  * windows come from the overview page's model tables, reasoning efforts
- * from the Deep Thinking page. Each parser throws on a shape it does not
- * know rather than guess.
+ * from the Deep Thinking page. A model with no effort list is a toggle:
+ * the request's `thinking.type` switch, whose description names the models
+ * that cannot turn it off. Each parser throws on a shape it does not know
+ * rather than guess.
  *
  * The chat body is a `oneOf` of a text and a vision request, split by
  * `model` enum with no discriminator, and several properties say in prose
@@ -117,6 +119,8 @@ interface SpecFacts {
   modalities: { input: Array<string>; output: Array<string> } | null
   /** The `reasoning_effort` enum of the request variant that lists the id. */
   efforts: Array<string>
+  /** The variant's `thinking.type` schema, unread; undefined when it has none. */
+  thinkingType: unknown
   /** Chat only: flag → where the variant's own request states it. */
   capabilities: Record<string, FactSource> | null
 }
@@ -358,8 +362,9 @@ export function zaiSupportedBy(
 /**
  * The "In the API request" bullets under `reasoning_effort` on the Deep
  * Thinking page: "For <models>, only | the supported options are <values>."
- * The page and the spec both speak of these names as series. A model that
- * accepts `none` can stop thinking; one that does not cannot.
+ * The page and the spec both speak of these names as series. `mandatory`
+ * here is inferred from the list (no `none` reads as true), which predates
+ * the stated-only rule on `ModelReasoning`.
  */
 export function parseZaiReasoning(markdown: string): Array<ReasoningRow> {
   const block = markdown.match(
@@ -395,6 +400,40 @@ export function parseZaiReasoning(markdown: string): Array<ReasoningRow> {
     throw new Error('zai: Deep Thinking page lists no reasoning_effort values')
   }
   return rows
+}
+
+/**
+ * The `thinking.type` description: "Whether to enable the chain of
+ * thought(<models> series can only be enabled, …; for other models, when
+ * enabled, …), default: enabled". Group 1 is the models that reject
+ * `disabled`; every other model the switch covers may send either value.
+ */
+const THINKING_TYPE =
+  /^Whether to enable the chain of thought\((.+?) series can only be enabled\b[^;]*; for other models, when enabled, [^)]*\), default: enabled$/
+
+/**
+ * The models whose `thinking.type` cannot be `disabled`, from the switch's
+ * own schema. Throws unless the enum is exactly `enabled | disabled` and
+ * the description has the shape above: a third value or a reworded
+ * sentence is a switch this cannot read.
+ */
+export function parseZaiThinkingSwitch(type: unknown): ModelNames {
+  const node = isRecord(type) ? type : {}
+  const values = list(node.enum).map(String).sort().join()
+  const locked =
+    typeof node.description === 'string'
+      ? node.description.match(THINKING_TYPE)?.[1]
+      : undefined
+  const names = modelNames(locked ?? '')
+  if (
+    values !== 'disabled,enabled' ||
+    locked === undefined ||
+    names.length === 0 ||
+    !onlyNames(locked, ZAI_WORDING.filler)
+  ) {
+    throw new Error('zai: unreadable thinking.type switch')
+  }
+  return { names, series: true }
 }
 
 /** Follow `$ref`s, then walk `keys`; undefined when the path is not there. */
@@ -567,6 +606,7 @@ export function zaiSpecFacts(
             maxOutput: chat ? exact(namedBy(id, chat.caps)?.tokens) : null,
             modalities: chat ? { input: chat.input, output: ['text'] } : null,
             efforts,
+            thinkingType: at(spec, props.thinking, 'properties', 'type'),
             capabilities: chat
               ? variantCapabilities(
                   spec,
@@ -634,33 +674,48 @@ export function parseZaiModels(
       : null
     const fact = facts.get(rawId)
     const contextWindow = windows.get(rawId) ?? null
-    const reasoning = namedBy(rawId, reasonings)?.reasoning ?? null
+    const effort = namedBy(rawId, reasonings)?.reasoning ?? null
     // The thinking page names series. Cite the request variant instead when
     // its own enum is the same list, as it is for `glm-5.3-flashx`.
     const specEfforts =
-      reasoning?.efforts !== undefined &&
-      [...reasoning.efforts].sort().join() ===
+      effort?.efforts !== undefined &&
+      [...effort.efforts].sort().join() ===
         [...(fact?.efforts ?? [])].sort().join()
     // No effort list for the model means no `reasoning_effort` flag either.
     const capabilities = fact?.capabilities
       ? Object.fromEntries(
           Object.entries(fact.capabilities).filter(
-            ([flag]) => flag !== 'reasoning_effort' || reasoning !== null,
+            ([flag]) => flag !== 'reasoning_effort' || effort !== null,
           ),
         )
       : null
+    // No effort list, and `thinking` covers the model: the switch is all
+    // there is. The request variant is shared, so its `disabled` states
+    // nothing; the description says which models may send it.
+    const toggle: ModelReasoning | null =
+      effort === null && capabilities && 'reasoning' in capabilities
+        ? {
+            mode: 'toggle',
+            mandatory:
+              namedBy(rawId, [parseZaiThinkingSwitch(fact?.thinkingType)]) !==
+              null,
+          }
+        : null
+    const reasoning = effort ?? toggle
     const factSources: ModelFactSources = {
       ...(card ? { pricing: from(pricing, 'docs-derived', 'Pricing') } : {}),
       ...(contextWindow !== null
         ? { contextWindow: from(overview, 'docs-derived', 'Context') }
         : {}),
-      ...(reasoning
+      ...(effort
         ? {
             reasoning: specEfforts
               ? from(spec, 'upstream-spec', 'reasoning_effort')
               : from(thinking, 'docs-derived', 'reasoning_effort'),
           }
-        : {}),
+        : toggle
+          ? { reasoning: from(spec, 'upstream-spec', 'thinking.type') }
+          : {}),
       ...(capabilities && Object.keys(capabilities).length > 0
         ? { capabilities }
         : {}),

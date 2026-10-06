@@ -259,22 +259,86 @@ function maxOutputField(
   return maximum > 0 && maximum <= MAX_OUTPUT_CEILING ? { name, maximum } : null
 }
 
+/** The names Replicate models give a level field. A model has at most one. */
+const EFFORT_FIELDS = [
+  'reasoning_effort',
+  'thinking_level',
+  'effort',
+  'thinking',
+]
+
+/** Values of a field named `thinking` that make it a switch, not a level. */
+const SWITCH_VALUES = ['enabled', 'disabled', 'true', 'false', 'on', 'off']
+
+/** A description naming the level that turns thinking off, in group 1 or 2. */
+const STATED_OFF = /'([^']+)' disables thinking|\b[Uu]se '([^']+)' to disable\b/
+
 /**
- * `reasoning_effort` whose enum accepts `none`: reasoning that can be turned
- * off. Nothing is stated for an enum without `none`, or for another field
- * (`thinking_level`, `thinking`, `effort`), where `none` reads as "unset".
+ * The model's own thinking control, read off its Input schema; null when it
+ * has none this can read. Every schema here is one model's own.
+ *
+ * - A level enum is `effort`. `mandatory` is false when the description
+ *   says a level turns thinking off ("'low' disables thinking", "Use 'none'
+ *   to disable"), or when `reasoning_effort` accepts `none`. Otherwise it is
+ *   unstated. On any other field a `none` that is the default is "unset",
+ *   not a level ("leave as None for default behavior"): it is left out.
+ * - An integer `thinking_budget` is `budget`; "0 to disable thinking" in its
+ *   description says it can be turned off.
+ * - A boolean `enable_thinking` and nothing else is a `toggle` with an off
+ *   position.
  */
-function effortField(
+function reasoningField(
   schemas: Json,
   properties: Json,
 ): { name: string; reasoning: ModelReasoning } | null {
-  const name = 'reasoning_effort'
-  const values = deref(schemas, properties[name])?.enum
-  if (!Array.isArray(values)) return null
-  const efforts = values.filter((value) => typeof value === 'string')
-  if (efforts.length !== values.length) return null
-  if (!efforts.includes('none')) return null
-  return { name, reasoning: { mode: 'effort', mandatory: false, efforts } }
+  const names = EFFORT_FIELDS.filter((field) => field in properties)
+  const [name] = names
+  if (names.length > 1) return null
+  if (name !== undefined) {
+    const field = properties[name]
+    const values = deref(schemas, field)?.enum
+    if (!Array.isArray(values)) return null
+    const listed = values.filter((value) => typeof value === 'string')
+    if (listed.length !== values.length) return null
+    if (listed.some((value) => SWITCH_VALUES.includes(value))) return null
+    const described = isRecord(field) ? field.description : undefined
+    const description = typeof described === 'string' ? described : ''
+    const stated = description.match(STATED_OFF)
+    const off = listed.includes(stated?.[1] ?? stated?.[2] ?? '')
+    if (off || (name === 'reasoning_effort' && listed.includes('none'))) {
+      return {
+        name,
+        reasoning: { mode: 'effort', mandatory: false, efforts: listed },
+      }
+    }
+    const unset = isRecord(field) ? field.default : undefined
+    const efforts = listed.filter(
+      (value) => !(value === unset && value.toLowerCase() === 'none'),
+    )
+    if (efforts.length === 0) return null
+    return { name, reasoning: { mode: 'effort', mandatory: null, efforts } }
+  }
+
+  const budget = properties.thinking_budget
+  if (isRecord(budget)) {
+    if (budget.type !== 'integer') return null
+    const stated =
+      typeof budget.description === 'string' &&
+      /\b0 to disable thinking\b/.test(budget.description)
+    return {
+      name: 'thinking_budget',
+      reasoning: { mode: 'budget', mandatory: stated ? false : null },
+    }
+  }
+
+  const toggle = properties.enable_thinking
+  if (isRecord(toggle) && toggle.type === 'boolean' && !('enum' in toggle)) {
+    return {
+      name: 'enable_thinking',
+      reasoning: { mode: 'toggle', mandatory: false },
+    }
+  }
+  return null
 }
 
 function runPath(owner: string, name: string): string {
@@ -332,10 +396,10 @@ export function replicateChatFacts(model: ReplicateModel): ChatFacts | null {
     factSources.maxOutput = source(`/properties/${cap.name}/maximum`)
   }
 
-  const effort = effortField(schemas, properties)
-  if (effort) {
-    facts.reasoning = effort.reasoning
-    factSources.reasoning = source(`/properties/${effort.name}`)
+  const control = reasoningField(schemas, properties)
+  if (control) {
+    facts.reasoning = control.reasoning
+    factSources.reasoning = source(`/properties/${control.name}`)
   }
 
   // Only official models have a run route of their own. The poller drops

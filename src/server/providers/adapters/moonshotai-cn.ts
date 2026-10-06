@@ -31,7 +31,20 @@ export const MOONSHOT_CN_PRICING_URL =
 export const MOONSHOT_CN_OPENAPI_URL =
   'https://platform.kimi.com/docs/openapi.json'
 
-const CN_SERVER = 'https://api.moonshot.cn'
+/** One Moonshot region: its docs host publishes its own copy of the spec. */
+export interface MoonshotHost {
+  /** Provider id that prefixes an error. */
+  label: string
+  /** The API server the spec must name, or it is another region's. */
+  server: string
+  specUrl: string
+}
+
+const CN_HOST: MoonshotHost = {
+  label: 'moonshotai-cn',
+  server: 'https://api.moonshot.cn',
+  specUrl: MOONSHOT_CN_OPENAPI_URL,
+}
 const CHAT_PATH = '/v1/chat/completions'
 const FETCH_TIMEOUT_MS = 20_000
 
@@ -226,15 +239,41 @@ export type MoonshotChatFacts = Pick<
 > & { factSources: ModelFactSources }
 
 /**
- * Per-model facts from the chat request union, keyed by the ids in its
- * `model` discriminator. Throws when the document is not the CN chat spec.
+ * A `thinking` description that says the model cannot stop thinking, in the
+ * international and the China spec's words.
  */
-export function moonshotCnChatFacts(
+const ALWAYS_THINKS = /Thinking is always on for this model|该模型始终开启思考/
+
+/**
+ * A model's own `thinking.type` switch with nothing else beside it. The
+ * statement wins over the enum; `disabled` in the model's own enum says it
+ * can be turned off. An enum that only lists `enabled` states nothing by
+ * itself, and a third value is not an on/off switch: both give null.
+ */
+export function moonshotThinkingToggle(
+  types: Array<string>,
+  description: unknown,
+): ModelReasoning | null {
+  const values = [...types].sort().join()
+  if (values !== 'enabled' && values !== 'disabled,enabled') return null
+  if (typeof description === 'string' && ALWAYS_THINKS.test(description)) {
+    return { mode: 'toggle', mandatory: true }
+  }
+  return values === 'enabled' ? null : { mode: 'toggle', mandatory: false }
+}
+
+/**
+ * Per-model facts from the chat request union, keyed by the ids in its
+ * `model` discriminator. Throws when the document is not this host's chat
+ * spec.
+ */
+export function moonshotChatFacts(
   spec: OpenApiDocument,
   hash: string,
+  host: MoonshotHost,
 ): Record<string, MoonshotChatFacts> {
-  if (spec.servers?.[0]?.url !== CN_SERVER) {
-    throw new Error(`moonshotai-cn: spec server is not ${CN_SERVER}`)
+  if (spec.servers?.[0]?.url !== host.server) {
+    throw new Error(`${host.label}: spec server is not ${host.server}`)
   }
   const post = spec.paths?.[CHAT_PATH]?.post
   const body = isRecord(post?.requestBody) ? post.requestBody : {}
@@ -246,7 +285,7 @@ export function moonshotCnChatFacts(
     : {}
   const mapping = isRecord(discriminator.mapping) ? discriminator.mapping : {}
   if (discriminator.propertyName !== 'model') {
-    throw new Error('moonshotai-cn: chat request is not a per-model union')
+    throw new Error(`${host.label}: chat request is not a per-model union`)
   }
 
   const out: Record<string, MoonshotChatFacts> = {}
@@ -257,7 +296,7 @@ export function moonshotCnChatFacts(
     if (!stringEnum(props.model).includes(rawId)) continue
     const source = (path: string): FactSource => ({
       derivation: 'upstream-spec',
-      sourceUrl: MOONSHOT_CN_OPENAPI_URL,
+      sourceUrl: host.specUrl,
       sourceHash: hash,
       path,
     })
@@ -280,8 +319,16 @@ export function moonshotCnChatFacts(
       facts.capabilities = ['reasoning']
       facts.factSources.capabilities = { reasoning: effortSource }
     } else if (thinking.length > 0) {
-      // An on/off `thinking.type` names no mode `ModelReasoning` can hold.
-      facts.factSources.reasoning = source(REASONING_SOURCE_SILENT)
+      const described = deref(spec, props.thinking)
+      const toggle = moonshotThinkingToggle(
+        thinking,
+        isRecord(described) ? described.description : undefined,
+      )
+      if (toggle) facts.reasoning = toggle
+      // A switch whose off position is not stated is not stored.
+      facts.factSources.reasoning = source(
+        toggle ? 'thinking.type' : REASONING_SOURCE_SILENT,
+      )
     }
 
     const input = new Set<string>()
@@ -295,9 +342,16 @@ export function moonshotCnChatFacts(
     out[rawId] = facts
   }
   if (Object.keys(out).length === 0) {
-    throw new Error('moonshotai-cn: chat spec mapped no model ids')
+    throw new Error(`${host.label}: chat spec mapped no model ids`)
   }
   return out
+}
+
+export function moonshotCnChatFacts(
+  spec: OpenApiDocument,
+  hash: string,
+): Record<string, MoonshotChatFacts> {
+  return moonshotChatFacts(spec, hash, CN_HOST)
 }
 
 async function fetchCnSpec(): Promise<{ spec: OpenApiDocument; hash: string }> {

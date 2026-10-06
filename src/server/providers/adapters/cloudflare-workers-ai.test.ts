@@ -6,6 +6,7 @@ import {
   chatBodyFields,
   parseCatalogModel,
   provider,
+  thinkingSwitch,
   WORKERS_AI_CATALOG_URL,
   WORKERS_AI_MODELS_URL,
 } from './cloudflare-workers-ai.ts'
@@ -102,6 +103,7 @@ function facts(text: string, rawId: string, edit?: (doc: CatalogDoc) => void) {
   const doc: CatalogDoc = {
     properties: parsed.properties,
     chatFields: chatBodyFields(parsed.input),
+    thinkingSwitch: thinkingSwitch(parsed.input),
     hasRequestSchema: parsed.input !== null,
     hash: 'h',
   }
@@ -309,30 +311,179 @@ describe('cloudflare-workers-ai catalog facts', () => {
     })
   })
 
-  it('leaves a thinking toggle without a mode', () => {
-    // @cf/google/gemma-4-26b-a4b-it: on by default, can be turned off.
-    const gemma = facts(
-      catalogFile(
-        '@cf/google/gemma-4-26b-a4b-it',
-        [
-          { property_id: 'reasoning', value: 'true' },
+  /** A chat body with `chat_template_kwargs.enable_thinking`, as published. */
+  const switchInput = (enableThinking: unknown) => ({
+    anyOf: [
+      {
+        oneOf: [
+          { title: 'Prompt', ...body('prompt', 'max_tokens') },
           {
-            property_id: 'reasoning_effort',
-            value: { mandatory: false, default_enabled: true },
+            title: 'Messages',
+            properties: {
+              messages: {},
+              max_tokens: {},
+              max_completion_tokens: {},
+              chat_template_kwargs: {
+                type: 'object',
+                properties: {
+                  enable_thinking: enableThinking,
+                  clear_thinking: { type: 'boolean', default: false },
+                },
+              },
+            },
           },
         ],
-        { input: body('messages', 'max_tokens', 'max_completion_tokens') },
+      },
+      { ...body('requests') },
+    ],
+  })
+  /** `enable_thinking` of gemma-4-26b-a4b-it and of kimi-k2.7-code (2026-10-07). */
+  const ON_OFF = {
+    type: 'boolean',
+    default: true,
+    description: 'Whether to enable reasoning for this model.',
+  }
+  const ON_ONLY = {
+    type: 'boolean',
+    default: true,
+    description:
+      'Reasoning is always enabled for this model and cannot be disabled.',
+    enum: [true],
+  }
+  const switched = (
+    rawId: string,
+    effort: unknown,
+    enableThinking: unknown,
+    edit?: (doc: CatalogDoc) => void,
+  ) =>
+    facts(
+      catalogFile(
+        rawId,
+        [
+          { property_id: 'reasoning', value: 'true' },
+          ...(effort === undefined
+            ? []
+            : [{ property_id: 'reasoning_effort', value: effort }]),
+        ],
+        { input: switchInput(enableThinking) },
       ),
-      '@cf/google/gemma-4-26b-a4b-it',
+      rawId,
+      edit,
     )
-    expect(gemma.reasoning).toBeUndefined()
+
+  it('reads an on/off toggle from the model’s own enable_thinking field', () => {
+    // On by default, can be turned off.
+    const gemma = switched(
+      '@cf/google/gemma-4-26b-a4b-it',
+      { mandatory: false, default_enabled: true },
+      ON_OFF,
+    )
+    expect(gemma.reasoning).toEqual({ mode: 'toggle', mandatory: false })
     expect(gemma.capabilities).toEqual(['reasoning'])
-    expect(gemma.factSources?.reasoning?.path).toBe('silent')
+    expect(gemma.factSources?.reasoning).toMatchObject({
+      sourceHash: 'h',
+      path: 'chat_template_kwargs.enable_thinking',
+    })
+    // The request map is unchanged by the toggle.
     expect(gemma.requestMap).toMatchObject({
       thinking: null,
       maxTokensField: 'max_completion_tokens',
       reasoningEffort: null,
     })
+
+    // The catalog states `mandatory: true`, and the field only takes `true`.
+    expect(
+      switched(
+        '@cf/moonshotai/kimi-k2.7-code',
+        { mandatory: true, default_enabled: true },
+        ON_ONLY,
+      ).reasoning,
+    ).toEqual({ mode: 'toggle', mandatory: true })
+    // The statement wins over a field that still offers `false`.
+    expect(
+      switched('@cf/moonshotai/kimi-k2.7-code', { mandatory: true }, ON_OFF)
+        .reasoning,
+    ).toEqual({ mode: 'toggle', mandatory: true })
+    // @cf/nvidia/nemotron-3-120b-a12b: no property, a plain boolean field.
+    expect(
+      switched('@cf/nvidia/nemotron-3-120b-a12b', undefined, ON_OFF).reasoning,
+    ).toEqual({ mode: 'toggle', mandatory: false })
+  })
+
+  it('stores no toggle without a request field or a stated off position', () => {
+    const none = (model: ReturnType<typeof facts>) => {
+      expect(model.reasoning).toBeUndefined()
+      expect(model.capabilities).toEqual(['reasoning'])
+      expect(model.factSources?.reasoning?.path).toBe('silent')
+    }
+    // @cf/qwen/qwq-32b: the catalog flag alone.
+    none(
+      facts(
+        catalogFile(
+          '@cf/qwen/qwq-32b',
+          [{ property_id: 'reasoning', value: 'true' }],
+          { input: body('messages', 'max_tokens') },
+        ),
+        '@cf/qwen/qwq-32b',
+      ),
+    )
+    // `mandatory` is stated but the request takes no switch.
+    none(
+      facts(
+        catalogFile(
+          '@cf/x/y',
+          [
+            { property_id: 'reasoning', value: 'true' },
+            { property_id: 'reasoning_effort', value: { mandatory: true } },
+          ],
+          { input: body('messages', 'max_tokens') },
+        ),
+        '@cf/x/y',
+      ),
+    )
+    // A field that only takes `true`, with no statement beside it.
+    none(switched('@cf/x/y', undefined, ON_ONLY))
+    // The catalog says it can be turned off; the field refuses `false`.
+    none(switched('@cf/x/y', { mandatory: false }, ON_ONLY))
+    // Shapes this does not know.
+    none(switched('@cf/x/y', undefined, { type: 'string', enum: ['on'] }))
+    none(switched('@cf/x/y', undefined, { ...ON_OFF, enum: [false] }))
+    none(switched('@cf/x/y', undefined, {}))
+    // An entry cached before the field was read claims no switch.
+    none(
+      switched('@cf/x/y', { mandatory: false }, ON_OFF, (doc) => {
+        delete doc.thinkingSwitch
+      }),
+    )
+    // A `mandatory` that is not a boolean is a changed file.
+    expect(() => switched('@cf/x/y', { mandatory: 'no' }, ON_OFF)).toThrow(
+      /reasoning_effort changed shape/,
+    )
+  })
+
+  it('reads enable_thinking only from bodies that take messages', () => {
+    expect(thinkingSwitch(switchInput(ON_OFF))).toBe('on-off')
+    expect(thinkingSwitch(switchInput(ON_ONLY))).toBe('on-only')
+    expect(thinkingSwitch(effortInput(['low']))).toBeNull()
+    expect(thinkingSwitch(null)).toBeNull()
+    const kwargs = (field: unknown) => ({
+      chat_template_kwargs: { properties: { enable_thinking: field } },
+    })
+    // A prompt body's switch is not the chat body's.
+    expect(
+      thinkingSwitch({
+        oneOf: [{ properties: { prompt: {}, ...kwargs(ON_OFF) } }],
+      }),
+    ).toBeNull()
+    // Two chat bodies that disagree state nothing.
+    expect(
+      thinkingSwitch({
+        oneOf: [
+          { properties: { messages: {}, ...kwargs(ON_OFF) } },
+          { properties: { messages: {}, ...kwargs(ON_ONLY) } },
+        ],
+      }),
+    ).toBeNull()
   })
 
   it('reads chat fields only from bodies that take messages', () => {

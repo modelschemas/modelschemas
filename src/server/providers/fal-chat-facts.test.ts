@@ -98,8 +98,14 @@ describe('falChatFacts', () => {
       input: ['text', 'image'],
       output: ['text'],
     })
-    // `reasoning_mode` is a think/no_think switch: no effort config, no flag.
-    expect(got.reasoning).toBeUndefined()
+    // `reasoning_mode` is the endpoint's own think/no_think switch. The
+    // schema walk knows no such field, so the flag list is unchanged.
+    expect(got.reasoning).toEqual({ mode: 'toggle', mandatory: false })
+    expect(got.factSources?.reasoning).toMatchObject({
+      derivation: 'upstream-spec',
+      endpointId: 'nvidia/nemotron-3-nano-omni/vision',
+      path: '/properties/reasoning_mode',
+    })
     expect(got.capabilities).toEqual(
       expect.arrayContaining(['max_tokens', 'temperature', 'top_p']),
     )
@@ -166,6 +172,24 @@ describe('falChatFacts', () => {
     expect(got.reasoning).toBeUndefined()
     expect(got.capabilities).not.toContain('reasoning')
     expect(got.contextWindow).toBeUndefined()
+  })
+
+  it('stores no toggle for a `reasoning_mode` it does not know', () => {
+    for (const values of [
+      ['think'],
+      ['think', 'no_think', 'auto'],
+      ['on', 'off'],
+      [],
+    ]) {
+      const model = fixture('nvidia/nemotron-3-nano-omni/vision')
+      inputProperties(model).reasoning_mode!.enum = values
+      expect(facts(model).reasoning).toBeUndefined()
+      expect(facts(model).factSources?.reasoning).toBeUndefined()
+    }
+    // A free-text field of that name is not a switch.
+    const text = fixture('nvidia/nemotron-3-nano-omni/vision')
+    delete inputProperties(text).reasoning_mode!.enum
+    expect(facts(text).reasoning).toBeUndefined()
   })
 
   it('does not read a non-integer or unbounded cap', () => {

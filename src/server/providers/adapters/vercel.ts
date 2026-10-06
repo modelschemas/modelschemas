@@ -69,22 +69,48 @@ function modalities(value: unknown): ModelInfo['modalities'] {
   return { input, output }
 }
 
-/** Effort control published on the gateway row. Toggle-only rows stay null. */
+/**
+ * The Chat Completions field behind a toggle or budget row
+ * (vercel.com/docs/ai-gateway/models-and-providers/reasoning, "How
+ * reasoning is mapped"). Effort rows carry no source of their own.
+ */
+function controlField(reasoning: ModelReasoning | null): string | null {
+  if (reasoning?.mode === 'toggle') return 'reasoning.enabled'
+  return reasoning?.mode === 'budget' ? 'reasoning.max_tokens' : null
+}
+
+/**
+ * The controls the gateway row lists in `reasoning_options`. An `effort`
+ * entry is an effort row. Without one: `toggle` "identifies an on/off
+ * control", so a row that lists it can turn reasoning off; a
+ * `budget_tokens` entry alone leaves that unstated. A row with a control
+ * type this does not know stores nothing.
+ */
 export function vercelReasoning(
   row: Record<string, unknown>,
 ): ModelReasoning | null {
   const options = Array.isArray(row.reasoning_options)
     ? row.reasoning_options.filter(isRecord)
     : []
+  const toggle = options.some((option) => option.type === 'toggle')
   const effort = options.find((option) => option.type === 'effort')
   const efforts = effort ? stringList(effort.values) : null
-  if (!efforts) return null
-  const toggle = options.some((option) => option.type === 'toggle')
-  return {
-    mode: 'effort',
-    mandatory: !toggle && !efforts.includes('none') && !efforts.includes('off'),
-    efforts,
+  if (efforts) {
+    return {
+      mode: 'effort',
+      mandatory:
+        !toggle && !efforts.includes('none') && !efforts.includes('off'),
+      efforts,
+    }
   }
+  const types = options.map((option) => option.type)
+  if (types.some((type) => type !== 'toggle' && type !== 'budget_tokens')) {
+    return null
+  }
+  if (types.includes('budget_tokens')) {
+    return { mode: 'budget', mandatory: toggle ? false : null }
+  }
+  return toggle ? { mode: 'toggle', mandatory: false } : null
 }
 
 export function parseVercelModels(
@@ -112,6 +138,8 @@ export function parseVercelModels(
         : null
     const activity =
       typeof row.type === 'string' ? (TYPE_ACTIVITY[row.type] ?? null) : null
+    const reasoning = vercelReasoning(row)
+    const field = controlField(reasoning)
     models.push({
       rawId: row.id,
       displayName: typeof row.name === 'string' ? row.name : null,
@@ -120,8 +148,20 @@ export function parseVercelModels(
       maxOutput: positive(row.max_tokens),
       modalities: modalities(row.modalities),
       pricing: card,
-      reasoning: vercelReasoning(row),
+      reasoning,
       releasedAt: positive(row.released),
+      ...(field
+        ? {
+            factSources: {
+              reasoning: {
+                derivation: 'listing',
+                sourceUrl: source.url,
+                sourceHash: source.hash,
+                path: field,
+              },
+            },
+          }
+        : {}),
     })
   }
   if (models.length === 0) {

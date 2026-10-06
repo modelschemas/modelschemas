@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import specFixture from '../fixtures/moonshotai-cn-openapi.json' with { type: 'json' }
 import { provider } from './moonshot.ts'
 
 const SPEC_URL = 'https://platform.kimi.ai/docs/openapi.json'
@@ -66,15 +67,94 @@ describe('moonshot adapter', () => {
       })
       expect(urls[0]).toBe('https://api.moonshot.ai/v1/models')
       expect(result.skipped).toBeUndefined()
+      // The stub's spec is not a spec: the stored reasoning is kept.
       expect(result.models).toEqual([
         {
           rawId: 'kimi-k2.7-code',
           releasedAt: 1_786_418_420,
           activity: 'chat',
+          absent: { reasoning: 'unavailable' },
         },
       ])
+      expect(result.docsFailures).toMatchObject({
+        failed: 1,
+        first: [{ source: SPEC_URL }],
+      })
     } finally {
       globalThis.fetch = original
+    }
+  })
+
+  it('reads each K2 model’s thinking switch from its own spec branch', async () => {
+    // The international spec has the China spec's shape and names its own
+    // server; the fixture is the China document with that one line changed.
+    const spec = (server: string) =>
+      JSON.stringify({ ...specFixture, servers: [{ url: server }] })
+    const list = async (body: string) => {
+      const original = globalThis.fetch
+      globalThis.fetch = ((url: string) =>
+        Promise.resolve(
+          new Response(
+            String(url) === SPEC_URL
+              ? body
+              : String(url).includes('platform.kimi.ai')
+                ? '["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'
+                : JSON.stringify({
+                    data: [
+                      { id: 'kimi-k3' },
+                      { id: 'kimi-k2.7-code' },
+                      { id: 'kimi-k2.6' },
+                      { id: 'moonshot-v1-8k' },
+                    ],
+                  }),
+          ),
+        )) as typeof fetch
+      try {
+        return await provider.listModels({ MOONSHOT_API_KEY: 'test-key' })
+      } finally {
+        globalThis.fetch = original
+      }
+    }
+
+    const listed = await list(spec('https://api.moonshot.ai'))
+    const byId = new Map(listed.models.map((model) => [model.rawId, model]))
+    expect(listed.docsFailures).toMatchObject({ failed: 0 })
+    expect(byId.get('kimi-k2.6')?.reasoning).toEqual({
+      mode: 'toggle',
+      mandatory: false,
+    })
+    expect(byId.get('kimi-k2.7-code')?.reasoning).toEqual({
+      mode: 'toggle',
+      mandatory: true,
+    })
+    expect(byId.get('kimi-k2.6')?.factSources).toEqual({
+      reasoning: {
+        derivation: 'upstream-spec',
+        sourceUrl: SPEC_URL,
+        sourceHash: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        path: 'thinking.type',
+      },
+    })
+    // Only the switch is taken from the spec; an effort row and an id the
+    // spec does not map are left as the listing gave them.
+    for (const id of ['kimi-k3', 'moonshot-v1-8k']) {
+      expect(byId.get(id)).not.toHaveProperty('reasoning')
+      expect(byId.get(id)).not.toHaveProperty('factSources')
+      expect(byId.get(id)).not.toHaveProperty('absent')
+    }
+
+    // The China host's document is not this provider's, and neither is a
+    // 200 web page: every row keeps what is stored.
+    for (const body of [
+      spec('https://api.moonshot.cn'),
+      '<!DOCTYPE html><html><body>Not found</body></html>',
+    ]) {
+      const failed = await list(body)
+      expect(failed.docsFailures).toMatchObject({ failed: 1 })
+      for (const model of failed.models) {
+        expect(model.absent).toEqual({ reasoning: 'unavailable' })
+        expect(model).not.toHaveProperty('reasoning')
+      }
     }
   })
 
