@@ -161,6 +161,13 @@ export type Model = {
   id?: string
   provider?: string
   rawId?: string
+  /**
+   * A provider-stated link to an existing maker row. It does not change this row's facts. null when the maker is not stated or its row is missing. factSources.sameAs records the source.
+   */
+  sameAs?: {
+    provider: string
+    rawId: string
+  } | null
   activity?:
     | 'chat'
     | 'image'

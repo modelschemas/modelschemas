@@ -327,3 +327,188 @@ describe('catalog rate cards', () => {
     expect(blob?.pricing).toBeNull()
   })
 })
+
+describe('sameAs maker links', () => {
+  beforeAll(async () => {
+    await db
+      .insert(providers)
+      .values(
+        [
+          'anthropic',
+          'openai',
+          'gemini',
+          'openrouter',
+          'vercel',
+          'cloudflare-ai-gateway',
+          'cloudflare-workers-ai',
+          'azure',
+          'moonshot',
+        ].map((id) => ({
+          id,
+          displayName: id,
+          specSourceUrl: `https://example.com/${id}`,
+        })),
+      )
+      .onConflictDoNothing()
+    await db.insert(models).values([
+      {
+        id: 'sameas-anthropic-opus',
+        providerId: 'anthropic',
+        rawId: 'claude-opus-4-5-20251101',
+        aliases: ['claude-opus-4-5'],
+        pricing: GPT_4O,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-openai-gpt',
+        providerId: 'openai',
+        rawId: 'gpt-4o-2024-11-20',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-gemini-imagen',
+        providerId: 'gemini',
+        rawId: 'imagen',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-workers-kimi',
+        providerId: 'cloudflare-workers-ai',
+        rawId: '@cf/moonshotai/kimi-k2.6',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-moonshot-kimi',
+        providerId: 'moonshot',
+        rawId: 'kimi-k2.6',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-openrouter-opus',
+        providerId: 'openrouter',
+        rawId: 'anthropic/claude-opus-4-5',
+        contextWindow: 1234,
+        factSources: { contextWindow: { derivation: 'listing' } },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-openrouter-missing',
+        providerId: 'openrouter',
+        rawId: 'openai/no-such-model',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-vercel-imagen',
+        providerId: 'vercel',
+        rawId: 'google/imagen',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-cloudflare-kimi',
+        providerId: 'cloudflare-ai-gateway',
+        rawId: 'workers-ai/@cf/moonshotai/kimi-k2.6',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-azure-gpt',
+        providerId: 'azure',
+        rawId: 'gpt-4o-2024-11-20',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'sameas-moonshot-unproven',
+        providerId: 'moonshot',
+        rawId: 'moonshotai/Kimi-K2.6',
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+    ])
+  })
+
+  it('links gateway ids to existing maker rows and preserves the reseller facts', async () => {
+    const opus = await getModelDetail(
+      db,
+      'openrouter',
+      'anthropic/claude-opus-4-5',
+    )
+    expect(opus?.sameAs).toEqual({
+      provider: 'anthropic',
+      rawId: 'claude-opus-4-5-20251101',
+    })
+    expect(opus?.factSources).toMatchObject({
+      contextWindow: { derivation: 'listing' },
+      sameAs: {
+        derivation: 'listing',
+        sourceUrl: 'https://openrouter.ai/api/v1/models',
+        path: 'rawId',
+      },
+    })
+    expect(opus?.contextWindow).toBe(1234)
+    expect(opus?.pricing).toBeNull()
+
+    const vercel = await getModelDetail(db, 'vercel', 'google/imagen')
+    expect(vercel?.sameAs).toEqual({ provider: 'gemini', rawId: 'imagen' })
+    const cloudflare = await getModelDetail(
+      db,
+      'cloudflare-ai-gateway',
+      'workers-ai/@cf/moonshotai/kimi-k2.6',
+    )
+    expect(cloudflare?.sameAs).toEqual({
+      provider: 'cloudflare-workers-ai',
+      rawId: '@cf/moonshotai/kimi-k2.6',
+    })
+    expect(cloudflare?.factSources).toMatchObject({
+      sameAs: { derivation: 'docs-derived' },
+    })
+    const azure = await getModelDetail(db, 'azure', 'gpt-4o-2024-11-20')
+    expect(azure?.sameAs).toEqual({
+      provider: 'openai',
+      rawId: 'gpt-4o-2024-11-20',
+    })
+  })
+
+  it('returns null without a native maker claim or an existing target', async () => {
+    const missing = await getModelDetail(
+      db,
+      'openrouter',
+      'openai/no-such-model',
+    )
+    expect(missing?.sameAs).toBeNull()
+    expect(missing?.factSources).toBeNull()
+    const unproven = await getModelDetail(
+      db,
+      'moonshot',
+      'moonshotai/Kimi-K2.6',
+    )
+    expect(unproven?.sameAs).toBeNull()
+  })
+
+  it('includes links on catalog and provider lists', async () => {
+    const listed = await listModelsCatalog(db, {
+      provider: 'openrouter',
+      provenance: true,
+    })
+    const opus = listed.models.find(
+      (row) => row.id === 'sameas-openrouter-opus',
+    )
+    expect(opus?.sameAs?.provider).toBe('anthropic')
+    expect(opus?.factSources).toMatchObject({
+      sameAs: { derivation: 'listing' },
+    })
+    const provider = await listProviderModels(db, 'openrouter')
+    expect(
+      provider?.models.find((row) => row.id === 'sameas-openrouter-opus')
+        ?.sameAs,
+    ).toEqual({ provider: 'anthropic', rawId: 'claude-opus-4-5-20251101' })
+  })
+})

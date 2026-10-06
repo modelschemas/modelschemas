@@ -22,6 +22,8 @@ import {
   storedAliases,
 } from '#/server/providers/provider-aliases.ts'
 import { servePricing } from '#/server/rate-card.ts'
+import { resolveSameAs } from '#/server/same-as.ts'
+import type { ResolvedSameAs } from '#/server/same-as.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
 
@@ -87,6 +89,7 @@ function toApiModel(
   opts: {
     includeFactSources?: boolean
     pricing?: 'compact' | 'full'
+    sameAs?: ResolvedSameAs
   } = {},
 ) {
   const schemaEndpointId = resolveSchemaEndpointId({
@@ -108,6 +111,7 @@ function toApiModel(
     id: row.id,
     provider: row.providerId,
     rawId: row.rawId,
+    sameAs: opts.sameAs?.target ?? null,
     activity: row.activity,
     displayName: row.displayName,
     schemaEndpointId,
@@ -124,7 +128,14 @@ function toApiModel(
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
     ...(opts.includeFactSources
-      ? { factSources: (row.factSources as ModelFactSources | null) ?? null }
+      ? {
+          factSources: opts.sameAs
+            ? {
+                ...((row.factSources as ModelFactSources | null) ?? {}),
+                sameAs: opts.sameAs.source,
+              }
+            : ((row.factSources as ModelFactSources | null) ?? null),
+        }
       : {}),
     _links: {
       ...modelLinks(row.providerId),
@@ -179,12 +190,14 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
     .from(models)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(models.id)
+  const sameAs = await resolveSameAs(db, rows)
   return {
     count: rows.length,
     models: rows.map((row) =>
       toApiModel(row, {
         includeFactSources: filters.provenance === true,
         pricing: filters.pricing === true ? 'full' : 'compact',
+        sameAs: sameAs.get(row.id),
       }),
     ),
     _links: {
@@ -210,10 +223,13 @@ export async function listProviderModels(db: Db, providerId: string) {
     .from(models)
     .where(eq(models.providerId, providerId))
     .orderBy(models.id)
+  const sameAs = await resolveSameAs(db, rows)
   return {
     provider: provider.id,
     count: rows.length,
-    models: rows.map((row) => toApiModel(row, { pricing: 'compact' })),
+    models: rows.map((row) =>
+      toApiModel(row, { pricing: 'compact', sameAs: sameAs.get(row.id) }),
+    ),
     _links: modelLinks(provider.id),
   }
 }
@@ -246,9 +262,11 @@ export async function getModelDetail(
         )
   const row = direct ?? resolveAlias(modelId, aliasHits)
   if (!row) return null
+  const sameAs = await resolveSameAs(db, [row])
   const body = toApiModel(row, {
     includeFactSources: true,
     pricing: 'full',
+    sameAs: sameAs.get(row.id),
   })
   const joinIds = openRouterJoinIds(providerId, row.rawId)
   if (joinIds.length === 0) return { ...body, discrepancies: [] }

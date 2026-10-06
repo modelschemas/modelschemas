@@ -744,6 +744,21 @@ export const openApiDocument = {
           id: { type: 'string' },
           provider: { type: 'string' },
           rawId: { type: 'string' },
+          sameAs: {
+            description:
+              "A provider-stated link to an existing maker row. It does not change this row's facts. null when the maker is not stated or its row is missing. factSources.sameAs records the source.",
+            oneOf: [
+              {
+                type: 'object',
+                required: ['provider', 'rawId'],
+                properties: {
+                  provider: { type: 'string' },
+                  rawId: { type: 'string' },
+                },
+              },
+              { type: 'null' },
+            ],
+          },
           activity: { type: ['string', 'null'], enum: [...activityEnum, null] },
           displayName: { type: ['string', 'null'] },
           schemaEndpointId: { type: ['string', 'null'] },

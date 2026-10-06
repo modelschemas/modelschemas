@@ -76,6 +76,7 @@ function isStringArray(value: unknown): value is Array<string> {
 
 export function emptySources(sources: ModelFactSources): boolean {
   return (
+    sources.sameAs === undefined &&
     sources.contextWindow === undefined &&
     sources.maxOutput === undefined &&
     sources.modalities === undefined &&

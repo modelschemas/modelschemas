@@ -143,6 +143,7 @@ export interface FactSource {
 
 /** Per-field (and per-flag) provenance for a catalog row. */
 export interface ModelFactSources {
+  sameAs?: FactSource
   contextWindow?: FactSource
   maxOutput?: FactSource
   modalities?: FactSource
