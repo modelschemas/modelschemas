@@ -10,8 +10,11 @@ import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
 
 import {
+  DASHSCOPE_COMPAT_SCOPE,
   DASHSCOPE_COMPAT_URL,
+  dashscopeCompatCovers,
   parseDashscopeCompat,
+  parseDashscopeCompatScope,
 } from '../dashscope-compat.ts'
 import type { DashscopeCompatFacts } from '../dashscope-compat.ts'
 import {
@@ -334,6 +337,7 @@ function withCompat(
   compat: DashscopeCompatFacts | null,
 ): ModelInfo {
   if (model.activity !== 'chat') return model
+  if (compat && !dashscopeCompatCovers(model.rawId, compat.scope)) return model
   if (!compat) {
     return {
       ...model,
@@ -499,6 +503,15 @@ export const provider: ProviderConfig = {
   classify: classifyOpenAiCompat,
   generationEndpointId: ({ rawId, activity }) => {
     if (activity === 'video') return null
+    if (
+      activity === 'chat' &&
+      !dashscopeCompatCovers(
+        rawId,
+        parseDashscopeCompatScope(DASHSCOPE_COMPAT_SCOPE),
+      )
+    ) {
+      return null
+    }
     return compatGenerationEndpointId(
       activity,
       '',

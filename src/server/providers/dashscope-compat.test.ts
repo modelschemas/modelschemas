@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseDashscopeCompat } from './dashscope-compat.ts'
+import {
+  dashscopeCompatCovers,
+  parseDashscopeCompat,
+  parseDashscopeCompatScope,
+} from './dashscope-compat.ts'
 
 /**
  * Request-parameter rows from
  * compatibility-of-openai-with-dashscope.md, checked 2026-10-08.
  * top_p says "keeps only the smallest set" and is not model-restricted.
+ * The Supported models line is the page's own compat scope.
  */
 const COMPAT_FIXTURE = `
+Supported models: Qwen large language models (commercial and open-source editions), Qwen-VL, Qwen-Coder, Qwen-Omni, Qwen-Math, DeepSeek, Kimi, GLM, MiniMax.
+Qwen-Audio does not support the OpenAI compatible protocol.
+
 ## Request parameters
 
 The request parameters are aligned with the OpenAI interface.
@@ -51,6 +59,25 @@ describe('parseDashscopeCompat', () => {
       reasoningEffort: null,
     })
     expect(facts.sourceHash).toMatch(/^[0-9a-f]{64}$/)
+    expect(facts.scope).toEqual({
+      qwenLlm: true,
+      qwenKinds: ['vl', 'coder', 'omni', 'math'],
+      families: ['deepseek', 'kimi', 'glm', 'minimax'],
+      deny: ['audio'],
+    })
+    const scope = parseDashscopeCompatScope(COMPAT_FIXTURE)
+    for (const id of [
+      'qwen-plus',
+      'qwen3-omni-flash',
+      'deepseek-v4.1-flash',
+      'glm-5',
+      'kimi-k2',
+      'minimax-m2',
+    ]) {
+      expect(dashscopeCompatCovers(id, scope)).toBe(true)
+    }
+    expect(dashscopeCompatCovers('decision-model-preview', scope)).toBe(false)
+    expect(dashscopeCompatCovers('qwen-audio-turbo', scope)).toBe(false)
   })
 
   it('throws when the request table is missing', async () => {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { DASHSCOPE_COMPAT_URL } from '../dashscope-compat.ts'
+import {
+  DASHSCOPE_COMPAT_SCOPE,
+  DASHSCOPE_COMPAT_URL,
+} from '../dashscope-compat.ts'
 import { dashscopeModelPageUrl } from '../dashscope-model-limits.ts'
 import { OPENAI_OPENAPI_URL } from '../openai-compat.ts'
 import {
@@ -302,6 +305,7 @@ describe('dashscope listing cards', () => {
 })
 
 const COMPAT_PAGE = `
+${DASHSCOPE_COMPAT_SCOPE}
 ## Request parameters
 <table><tbody>
 <tr><td><p>messages</p></td><td><p>array</p></td><td><p>-</p></td><td><p>Valid roles: system, user, assistant.</p></td></tr>
@@ -409,5 +413,56 @@ describe('dashscope listModels docs', () => {
     expect(model?.maxOutput).toBe(16384)
     expect(model?.factSources?.contextWindow?.sourceUrl).toBe(page)
     expect(model?.requestMap?.maxTokensField).toBe('max_tokens')
+  })
+
+  it('leaves a non-compat chat id off the OpenAI request map', async () => {
+    const { result } = await withStubbedFetch(
+      (url) => {
+        if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
+        return new Response(
+          JSON.stringify({
+            output: {
+              total: 1,
+              models: [
+                {
+                  model: 'decision-model-preview',
+                  capabilities: ['TG'],
+                  features: [],
+                  inference_metadata: {
+                    request_modality: ['Text'],
+                    response_modality: ['Text'],
+                  },
+                  model_info: {
+                    context_window: 65536,
+                    max_output_tokens: 0,
+                  },
+                },
+              ],
+            },
+          }),
+        )
+      },
+      () => provider.listModels({ DASHSCOPE_API_KEY: 'test-key' }),
+    )
+    const model = result.models[0]
+    expect(model?.contextWindow).toBe(65536)
+    expect(model?.maxOutput).toBe(0)
+    expect(model?.requestMap).toBeUndefined()
+    expect(model?.capabilities ?? []).not.toEqual(
+      expect.arrayContaining(['temperature', 'max_tokens', 'top_p']),
+    )
+    expect(model?.factSources?.capabilities?.temperature).toBeUndefined()
+    expect(
+      provider.generationEndpointId?.({
+        rawId: 'decision-model-preview',
+        activity: 'chat',
+      }),
+    ).toBeNull()
+    expect(
+      provider.generationEndpointId?.({
+        rawId: 'qwen-plus',
+        activity: 'chat',
+      }),
+    ).toBe('chat/completions')
   })
 })

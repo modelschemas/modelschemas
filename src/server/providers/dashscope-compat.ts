@@ -31,6 +31,79 @@ export interface DashscopeCompatFacts {
   requestMap: ChatRequestMap
   flags: Array<string>
   sourceHash: string
+  scope: DashscopeCompatScope
+}
+
+/**
+ * Which listing ids the compat page names. `qwenLlm` is the generic Qwen
+ * line. `qwenKinds` are the Qwen-VL style names. `families` are the other
+ * names (DeepSeek, Kimi, GLM, MiniMax). `deny` is a family the page says
+ * does not speak this protocol (Qwen-Audio).
+ */
+export interface DashscopeCompatScope {
+  qwenLlm: boolean
+  qwenKinds: Array<string>
+  families: Array<string>
+  deny: Array<string>
+}
+
+/** Supported-models sentences from the compat page, checked 2026-10-08. */
+export const DASHSCOPE_COMPAT_SCOPE = `Supported models: Qwen large language models (commercial and open-source editions), Qwen-VL, Qwen-Coder, Qwen-Omni, Qwen-Math, DeepSeek, Kimi, GLM, MiniMax.
+Qwen-Audio does not support the OpenAI compatible protocol.`
+
+/** The Supported models line, plus a family the page says is not compatible. */
+export function parseDashscopeCompatScope(
+  markdown: string,
+): DashscopeCompatScope {
+  const line = markdown.match(/Supported models:\s*([^\n]+)/i)?.[1] ?? ''
+  const items = line
+    .replace(/\.\s*$/, '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '')
+  const scope: DashscopeCompatScope = {
+    qwenLlm: false,
+    qwenKinds: [],
+    families: [],
+    deny: [],
+  }
+  if (/qwen-audio does not support/i.test(markdown)) scope.deny.push('audio')
+  for (const item of items) {
+    if (/qwen large language models/i.test(item)) {
+      scope.qwenLlm = true
+      continue
+    }
+    const words = item
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((word) => word !== '')
+    if (words[0] === 'qwen' && words[1]) {
+      scope.qwenKinds.push(words[1])
+      continue
+    }
+    if (words[0]) scope.families.push(words[0])
+  }
+  return scope
+}
+
+/** True when this listing id is one of the compat page's supported models. */
+export function dashscopeCompatCovers(
+  rawId: string,
+  scope: DashscopeCompatScope,
+): boolean {
+  const id = rawId.toLowerCase()
+  const parts = id.split(/[^a-z0-9]+/).filter((part) => part !== '')
+  if (parts[0] === 'qwen' && scope.deny.some((kind) => parts.includes(kind))) {
+    return false
+  }
+  if (scope.qwenLlm && id.startsWith('qwen')) return true
+  if (
+    parts[0] === 'qwen' &&
+    scope.qwenKinds.some((kind) => parts.includes(kind))
+  ) {
+    return true
+  }
+  return scope.families.some((family) => id.startsWith(family))
 }
 
 interface CompatParam {
@@ -131,6 +204,7 @@ export async function parseDashscopeCompat(
       reasoningEffort: null,
     },
     flags,
+    scope: parseDashscopeCompatScope(markdown),
     sourceHash: await sha256Text(markdown),
   }
 }
