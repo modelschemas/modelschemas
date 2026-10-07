@@ -317,8 +317,12 @@ async function listModels(
     pageToken = body.nextPageToken
   } while (pageToken)
   const rawIdOf = (m: GeminiModel) => m.name.replace(/^models\//, '')
-  const features = await geminiModelFeatures(listed.map(rawIdOf), kv)
+  const { features, docsFailures } = await geminiModelFeatures(
+    listed.map(rawIdOf),
+    kv,
+  )
   return {
+    docsFailures,
     models: listed.map((m) => {
       const rawId = rawIdOf(m)
       const methods = m.supportedGenerationMethods ?? []
@@ -346,6 +350,7 @@ async function listModels(
         reasoning: feat.reasoning,
         serverTools: feat.serverTools,
         factSources: { ...priced.factSources, ...feat.factSources },
+        ...(feat.absent ? { absent: feat.absent } : {}),
       }
     }),
   }

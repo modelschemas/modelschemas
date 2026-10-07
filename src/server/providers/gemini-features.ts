@@ -13,11 +13,21 @@
 import {
   assertParsed,
   cachedDocs,
+  docsReport,
+  docsRun,
   mapConcurrent,
   markdownTableRows,
+  tryDocs,
+  unavailable,
 } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { FactSource, ModelFactSources, ModelReasoning } from './types.ts'
+import type {
+  DocsFailures,
+  FactSource,
+  ModelFactSources,
+  ModelInfo,
+  ModelReasoning,
+} from './types.ts'
 
 export const GEMINI_MODELS_INDEX_URL =
   'https://ai.google.dev/gemini-api/docs/models.md.txt'
@@ -73,9 +83,18 @@ const MEDIA: Record<string, string> = {
 }
 const MEDIA_ORDER = [...new Set(Object.values(MEDIA))]
 
-/** `Text, Image, Video, Audio, and PDF` → media, or null on any other word. */
+/**
+ * `Text, Image, Video, Audio, and PDF` → media, or null on any other word.
+ * A parenthetical is a qualifier (`Audio (MP3)`, `Video (up to 10s)`) and is
+ * dropped, unless it names a medium itself (`Text (and Image, Audio)`): then
+ * the list is inside it and the cell is not read.
+ */
 function mediaList(cell: string): Array<string> | null {
   const found = new Set<string>()
+  for (const [, inside = ''] of cell.matchAll(/\(([^)]*)\)/g)) {
+    const words = inside.toLowerCase().match(/[a-z]+/g) ?? []
+    if (words.some((word) => word in MEDIA)) return null
+  }
   const items = cell
     .replace(/\([^)]*\)/g, '')
     .split(/,|\band\b/i)
@@ -168,21 +187,26 @@ export function familyOf(
   return best
 }
 
-/** Reasoning, server tools and modalities per listed id, with provenance. */
+type GeminiFeatures = Pick<ModelInfo, 'absent'> & {
+  reasoning: ModelReasoning | null
+  serverTools: Array<string> | null
+  modalities: { input: Array<string>; output: Array<string> } | null
+  factSources: ModelFactSources
+}
+
+/**
+ * Reasoning, server tools and modalities per listed id, with provenance.
+ * A model page that fails to load is that family's alone: its rows keep the
+ * stored tools and modalities (`absent`) and the failure is in
+ * `docsFailures`.
+ */
 export async function geminiModelFeatures(
   rawIds: Array<string>,
   kv?: KVNamespace,
-): Promise<
-  (
-    rawId: string,
-    thinking: boolean,
-  ) => {
-    reasoning: ModelReasoning | null
-    serverTools: Array<string> | null
-    modalities: { input: Array<string>; output: Array<string> } | null
-    factSources: ModelFactSources
-  }
-> {
+): Promise<{
+  features: (rawId: string, thinking: boolean) => GeminiFeatures
+  docsFailures: DocsFailures
+}> {
   const [slugs, thinking] = await Promise.all([
     cachedDocs(kv, GEMINI_MODELS_INDEX_URL, async () => {
       const parsed = parseModelIndex(await fetchText(GEMINI_MODELS_INDEX_URL))
@@ -207,25 +231,33 @@ export async function geminiModelFeatures(
       }),
     ),
   ]
-  const pages = await mapConcurrent(needed, 8, async (slug) => {
-    try {
-      return await cachedDocs(kv, GEMINI_MODEL_PAGE(slug), async () => {
-        const markdown = await fetchText(GEMINI_MODEL_PAGE(slug))
+  const docs = docsRun()
+  const pages = await mapConcurrent(needed, 8, (slug) => {
+    const url = GEMINI_MODEL_PAGE(slug)
+    return tryDocs(docs, url, (cached) =>
+      cached(kv, url, async () => {
+        const markdown = await fetchText(url)
         return {
           slug,
           tools: parsePageTools(markdown),
           modalities: parsePageModalities(markdown),
           hash: await sha256Text(markdown),
         }
-      })
-    } catch {
-      return null
-    }
+      }),
+    )
   })
   const tools = Object.fromEntries(
     pages.flatMap((page) => (page ? [[page.slug, page]] : [])),
   )
-  return (rawId, modelThinks) => {
+  const read = Object.values(tools)
+  // Every page read and none states modalities is a reshaped site, not a
+  // catalog without media. Throwing keeps the stored column.
+  if (read.length > 0 && !read.some((page) => page.modalities)) {
+    throw new Error(
+      `gemini model pages: 0 of ${String(read.length)} state modalities`,
+    )
+  }
+  const features = (rawId: string, modelThinks: boolean): GeminiFeatures => {
     const factSources: ModelFactSources = {}
     const family = modelThinks
       ? familyOf(rawId, Object.keys(thinking.reasoning))
@@ -247,10 +279,18 @@ export async function geminiModelFeatures(
         path: 'silent',
       }
     }
-    const slug = familyOf(rawId, Object.keys(tools))
+    // The id's family among every indexed page, so a page that failed
+    // cannot hand its rows to a shorter sibling family that loaded.
+    const slug = familyOf(rawId, slugs)
     const page = slug ? tools[slug] : undefined
     if (!slug || !page) {
-      return { reasoning, serverTools: null, modalities: null, factSources }
+      return {
+        reasoning,
+        serverTools: null,
+        modalities: null,
+        factSources,
+        ...(slug ? unavailable('serverTools', 'modalities') : {}),
+      }
     }
     const source = (path: string): FactSource => ({
       derivation: 'docs-derived',
@@ -273,4 +313,5 @@ export async function geminiModelFeatures(
       factSources,
     }
   }
+  return { features, docsFailures: docsReport(docs) }
 }

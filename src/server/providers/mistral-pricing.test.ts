@@ -1,9 +1,11 @@
 import { price } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
+import { mistralModelPage, tip } from './fixtures/mistral-model-page.ts'
 import {
   indexMistralApiIds,
   indexMistralModalities,
+  mistralModelPricing,
   mistralRateCard,
   parseMistralApiIds,
   parseMistralPageModalities,
@@ -170,39 +172,122 @@ describe('mistral pricing page', () => {
 })
 
 describe('mistral model page modalities', () => {
-  // The RSC payload escapes its quotes.
-  const tip = (label: string) =>
-    `[\\"$\\",\\"$L44\\",null,{\\"children\\":\\"${label}\\"}]`
+  const parse = (...blocks: Array<Array<unknown>>) =>
+    parseMistralPageModalities(mistralModelPage(['m-1'], blocks))
+  const base = [tip('Text input'), tip('Text output')]
 
-  it('reads the tooltip labels, both sides or nothing', () => {
+  it('reads the tooltips of the Modalities block', () => {
     expect(
-      parseMistralPageModalities(
-        [tip('Image input'), tip('Text input'), tip('Text output')].join(),
-      ),
+      parse([tip('Image input'), tip('Text input'), tip('Text output')]),
     ).toEqual({ input: ['text', 'image'], output: ['text'] })
+    expect(parse([tip('Audio input'), tip('Text output')])).toEqual({
+      input: ['audio'],
+      output: ['text'],
+    })
+    // The side is matched whatever its case.
+    expect(
+      parse([tip('Text Input'), tip('Image input'), tip('Text OUTPUT')]),
+    ).toEqual({ input: ['text', 'image'], output: ['text'] })
+    // A reasoning marker is not a medium; the page's "Max output" span is
+    // outside the block.
+    expect(parse([...base, tip('Reasoning output')])).toEqual({
+      input: ['text'],
+      output: ['text'],
+    })
+    // A label served as its own lazy row.
     expect(
       parseMistralPageModalities(
-        [tip('Audio input'), tip('Text output')].join(),
-      ),
-    ).toEqual({ input: ['audio'], output: ['text'] })
-    // A reasoning marker and a `span` label are not media.
-    expect(
-      parseMistralPageModalities(
-        [
-          tip('Text input'),
-          tip('Reasoning output'),
-          tip('Text output'),
-          `[\\"$\\",\\"span\\",null,{\\"children\\":\\"Max output\\"}]`,
-        ].join(),
+        mistralModelPage(
+          ['m-1'],
+          [
+            [
+              tip('Text input'),
+              [
+                '$',
+                '$L4f',
+                'k',
+                {
+                  children: [['$', '$L50', null, { asChild: true }], '$Lc0'],
+                },
+              ],
+            ],
+          ],
+          { c0: ['$', '$L51', null, { children: 'Text output' }] },
+        ),
       ),
     ).toEqual({ input: ['text'], output: ['text'] })
-    expect(parseMistralPageModalities(tip('Text input'))).toBeNull()
+    // A tooltip that gains a prop or a key is still a tooltip.
+    expect(
+      parse([
+        ...base,
+        tip('Image input', { side: 'top' }),
+        [
+          '$',
+          '$L4f',
+          'audio',
+          {
+            children: [
+              ['$', '$L50', null, { asChild: true }],
+              ['$', '$L51', 'k1', { children: 'Audio input' }],
+            ],
+          },
+        ],
+      ]),
+    ).toEqual({ input: ['text', 'image', 'audio'], output: ['text'] })
+  })
+
+  it.each([
+    ['an unknown medium', tip('Hologram input')],
+    ['a two-word medium', tip('Point cloud input')],
+    ['a medium with a digit', tip('3D input')],
+    ['a hyphenated medium', tip('3D-mesh input')],
+    ['a plural', tip('Images input')],
+    ['a reworded label', tip('Input: Image')],
+    ['a label with no side', tip('Accepts images')],
+    ['an empty tooltip', tip('')],
+    ['a tooltip that is not text', tip(['$', 'b', null, { children: 'x' }])],
+    ['reasoning as an input', tip('Reasoning input')],
+  ])('reads nothing when the block holds %s', (_name, extra) => {
+    expect(parse([...base, extra])).toBeNull()
+  })
+
+  it('reads nothing from one side, no block, or blocks that differ', () => {
+    expect(parse([tip('Text input'), tip('Image input')])).toBeNull()
+    expect(parse([tip('Text input'), tip('Reasoning output')])).toBeNull()
+    expect(parse()).toBeNull()
+    expect(parseMistralPageModalities('<h1>Mistral Medium</h1>')).toBeNull()
+    // The page renders the block once per layout; both must agree, so a
+    // second model's block cannot be merged in.
+    expect(parse(base, base)).toEqual({ input: ['text'], output: ['text'] })
+    expect(parse(base, [tip('Audio input'), tip('Audio output')])).toBeNull()
+    // Tooltips outside a Modalities block are not read.
     expect(
       parseMistralPageModalities(
-        [tip('Text input'), tip('Hologram input'), tip('Text output')].join(),
+        `<script>self.__next_f.push([1,${JSON.stringify(
+          `1:${JSON.stringify(base)}\n`,
+        )}])</script>`,
       ),
     ).toBeNull()
-    expect(parseMistralPageModalities('<h1>Mistral Medium</h1>')).toBeNull()
+  })
+
+  it('refuses a poll in which no model page states modalities', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      const body = href.endsWith('/pricing')
+        ? PAGE
+        : href.endsWith('/changelogs')
+          ? ''
+          : mistralModelPage([href.slice(href.lastIndexOf('/') + 1)], [])
+      return Promise.resolve(new Response(body))
+    }) as typeof fetch
+    try {
+      await expect(mistralModelPricing()).rejects.toThrow(
+        /mistral model pages: 0 of \d+ state modalities/,
+      )
+    } finally {
+      globalThis.fetch = original
+    }
   })
 
   it('drops an API id two pages state differently', () => {

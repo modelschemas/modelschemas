@@ -288,31 +288,135 @@ const MISTRAL_MEDIA: Record<string, string> = {
   document: 'file',
 }
 
+type Json = string | number | boolean | null | Array<Json> | JsonObject
+interface JsonObject {
+  [key: string]: Json
+}
+
+/** Props of an RSC element `["$", tag, key, props]`, else null. */
+function rscProps(node: Json): JsonObject | null {
+  if (!Array.isArray(node) || node[0] !== '$') return null
+  const props = node[3]
+  return typeof props === 'object' && props !== null && !Array.isArray(props)
+    ? props
+    : null
+}
+
+/** The page's RSC rows by id. Rows that are not JSON (text, imports) are skipped. */
+function rscRows(html: string): RscRows {
+  const stream = [
+    ...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g),
+  ]
+    .map((match) => JSON.parse(match[1] ?? '""') as string)
+    .join('')
+  const rows = new Map<string, Json>()
+  for (const line of stream.split('\n')) {
+    const row = line.match(/^([0-9a-f]+):(.*)$/)
+    if (!row?.[1]) continue
+    try {
+      rows.set(row[1], JSON.parse(row[2] ?? '') as Json)
+    } catch {
+      // Not a JSON row.
+    }
+  }
+  return rows
+}
+
+/** Every node that directly follows a "Modalities" heading element. */
+function modalityBlocks(node: Json, out: Array<Json> = []): Array<Json> {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      const children = rscProps(item)?.children
+      const label = Array.isArray(children) ? children.at(-1) : children
+      const next = node[index + 1]
+      if (label === 'Modalities' && next !== undefined) out.push(next)
+      modalityBlocks(item, out)
+    })
+  } else if (typeof node === 'object' && node !== null) {
+    for (const value of Object.values(node)) modalityBlocks(value, out)
+  }
+  return out
+}
+
+type RscRows = Map<string, Json>
+
+/** A `$L<id>` reference to a row of the page, followed; anything else as is. */
+function deref(rows: RscRows, node: Json): Json {
+  const id = typeof node === 'string' ? node.match(/^\$L(.+)$/)?.[1] : null
+  return id ? (rows.get(id) ?? node) : node
+}
+
 /**
- * Modalities a model page states. Each tooltip is a component in the RSC
- * payload whose only prop is its label: `["$","$L53",null,{"children":"Text
- * input"}]` (quotes escaped). A `span` label such as "Max output" is not
- * one. "Reasoning output" marks a reasoning model, which is not a medium.
- * Null when the page has none, names a medium this map lacks, or states
- * only one side: a partial list would read as the whole answer.
+ * Tooltip labels in a block. A tooltip is an element whose children hold an
+ * `asChild` trigger; the label is its one other child's text. Anything else
+ * in that place reads as `null`, which no caller can map.
  */
-export function parseMistralPageModalities(
-  html: string,
-): MistralModalities | null {
+function tooltipLabels(
+  rows: RscRows,
+  node: Json,
+  out: Array<string | null> = [],
+): Array<string | null> {
+  if (!Array.isArray(node)) return out
+  const children = rscProps(node)?.children
+  if (
+    Array.isArray(children) &&
+    children.some((child) => rscProps(child)?.asChild === true)
+  ) {
+    const rest = children.filter((child) => rscProps(child)?.asChild !== true)
+    const label =
+      rest.length === 1
+        ? rscProps(deref(rows, rest[0] ?? null))?.children
+        : null
+    out.push(typeof label === 'string' ? label : null)
+    return out
+  }
+  for (const item of children === undefined ? node : [children]) {
+    tooltipLabels(rows, item, out)
+  }
+  return out
+}
+
+function blockModalities(rows: RscRows, block: Json): MistralModalities | null {
   const found = { input: new Set<string>(), output: new Set<string>() }
-  for (const match of html.matchAll(
-    /\$L[0-9a-f]+\\?",null,\{\\?"children\\?":\\?"([A-Za-z]+) (input|output)\\?"\}/g,
-  )) {
+  for (const label of tooltipLabels(rows, deref(rows, block))) {
+    const match = label?.match(/^(.+) (input|output)$/i)
+    if (!match) return null
     const word = (match[1] ?? '').toLowerCase()
-    if (word === 'reasoning') continue
+    const side = (match[2] ?? '').toLowerCase() === 'input' ? 'input' : 'output'
+    // A reasoning model's marker, not a medium.
+    if (word === 'reasoning' && side === 'output') continue
     const medium = MISTRAL_MEDIA[word]
     if (!medium) return null
-    found[match[2] === 'input' ? 'input' : 'output'].add(medium)
+    found[side].add(medium)
   }
   if (found.input.size === 0 || found.output.size === 0) return null
   const ordered = (have: Set<string>) =>
     Object.values(MISTRAL_MEDIA).filter((medium) => have.has(medium))
   return { input: ordered(found.input), output: ordered(found.output) }
+}
+
+/**
+ * Modalities a model page states: the tooltips ("Text input", "Image
+ * input", "Text output") of the block beside its "Modalities" heading, read
+ * from the RSC payload. Null unless every tooltip in the block is a known
+ * medium on a known side, both sides are stated, and every such block on
+ * the page (it renders one per layout) says the same. A partial list would
+ * read as the whole answer.
+ */
+export function parseMistralPageModalities(
+  html: string,
+): MistralModalities | null {
+  const rows = rscRows(html)
+  const blocks = [...rows.values()]
+    .flatMap((row) => modalityBlocks(row))
+    .map((block) => blockModalities(rows, block))
+  const [first] = blocks
+  if (!first) return null
+  return blocks.every(
+    (block) => JSON.stringify(block) === JSON.stringify(first),
+  )
+    ? first
+    : null
 }
 
 export interface MistralModelPage {
@@ -499,6 +603,13 @@ export async function mistralModelPricing(
       ].join('\n'),
     )
     const tools = indexMistralServerTools(pages)
+    // Every page read and none states modalities is a reshaped site, not
+    // a catalog without media. Throwing keeps the stored column.
+    if (!pages.some((page) => page.modalities)) {
+      throw new Error(
+        `mistral model pages: 0 of ${String(pages.length)} state modalities`,
+      )
+    }
     return {
       rates: Object.fromEntries(byId),
       tools: Object.fromEntries(tools),
