@@ -149,8 +149,10 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v22: DashScope compat cache includes `scope`. A v21 entry has no scope,
 // so a chat id the page does not name would still get the compat map.
 // v23: Gemini's cached index is `{url, ids}` rows, thinking pages cache
-// budget bodies, and model pages cache per-id sections. A v22 entry has
-// none of those, so every Gemini fact read from it would stay null.
+// budget bodies, and model pages cache per-id sections. Thinking-level
+// `mandatory` is true only when the page says that family cannot turn
+// thinking off. A v22 entry has none of that, so Gemini facts read from
+// it would stay null or mark every level column mandatory.
 const DOCS_CACHE_VERSION = 'v23'
 
 /**
