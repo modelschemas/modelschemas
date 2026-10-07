@@ -7,6 +7,7 @@ import {
 } from './anthropic-features.ts'
 import {
   familyOf,
+  parsePageModalities,
   parsePageTools,
   parseThinkingPage,
 } from './gemini-features.ts'
@@ -126,6 +127,35 @@ describe('gemini features (issue #77)', () => {
       familyOf('gemini-2.5-computer-use-preview-10-2025', parsed.keys()),
     ).toBeNull()
     expect(familyOf('deep-research-preview-04-2026', parsed.keys())).toBeNull()
+  })
+
+  it('reads the Supported data types row, or nothing', () => {
+    const row = (cells: string) => `x\n| Supported data types | ${cells} |\n`
+    expect(
+      parsePageModalities(
+        row('**Inputs** Audio, images, video, text, and PDF **Output** Text'),
+      ),
+    ).toEqual({
+      input: ['text', 'image', 'audio', 'video', 'file'],
+      output: ['text'],
+    })
+    expect(
+      parsePageModalities(
+        row(
+          '**Inputs** Audio (speech) **Output** Audio (translated speech) and Text (transcript)',
+        ),
+      ),
+    ).toEqual({ input: ['audio'], output: ['text', 'audio'] })
+    // A word that is not a medium leaves the whole fact unknown.
+    expect(
+      parsePageModalities(row('**Input** Text **Output** Text embeddings')),
+    ).toBeNull()
+    expect(
+      parsePageModalities(
+        row('**Input** Text, Image **Output** Video with audio'),
+      ),
+    ).toBeNull()
+    expect(parsePageModalities('| Capabilities | x |')).toBeNull()
   })
 
   it('maps Supported capabilities to generateContent tool fields', () => {

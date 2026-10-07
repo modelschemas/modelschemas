@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   indexMistralApiIds,
+  indexMistralModalities,
   mistralRateCard,
   parseMistralApiIds,
+  parseMistralPageModalities,
   parseMistralPricing,
   parseMistralSamePrice,
 } from './mistral-pricing.ts'
@@ -164,6 +166,48 @@ describe('mistral pricing page', () => {
       'mistral-large-2512',
       'mistral-large-latest',
     ])
+  })
+})
+
+describe('mistral model page modalities', () => {
+  // The RSC payload escapes its quotes.
+  const tip = (label: string) =>
+    `[\\"$\\",\\"$L44\\",null,{\\"children\\":\\"${label}\\"}]`
+
+  it('reads the tooltip labels, both sides or nothing', () => {
+    expect(
+      parseMistralPageModalities(
+        [tip('Image input'), tip('Text input'), tip('Text output')].join(),
+      ),
+    ).toEqual({ input: ['text', 'image'], output: ['text'] })
+    expect(
+      parseMistralPageModalities(
+        [tip('Audio input'), tip('Text output')].join(),
+      ),
+    ).toEqual({ input: ['audio'], output: ['text'] })
+    expect(parseMistralPageModalities(tip('Text input'))).toBeNull()
+    expect(
+      parseMistralPageModalities(
+        [tip('Text input'), tip('Hologram input'), tip('Text output')].join(),
+      ),
+    ).toBeNull()
+    expect(parseMistralPageModalities('<h1>Mistral Medium</h1>')).toBeNull()
+  })
+
+  it('drops an API id two pages state differently', () => {
+    const text = { input: ['text'], output: ['text'] }
+    const vision = { input: ['text', 'image'], output: ['text'] }
+    const byId = indexMistralModalities([
+      { slug: 'a-1', ids: ['a-1', 'a-latest'], hash: 'h1', modalities: text },
+      { slug: 'a-2', ids: ['a-2', 'a-latest'], hash: 'h2', modalities: vision },
+      { slug: 'b-1', ids: ['b-1'], hash: 'h3', modalities: null },
+    ])
+    expect([...byId.keys()]).toEqual(['a-1', 'a-2'])
+    expect(byId.get('a-2')).toEqual({
+      modalities: vision,
+      url: 'https://docs.mistral.ai/models/a-2',
+      hash: 'h2',
+    })
   })
 })
 

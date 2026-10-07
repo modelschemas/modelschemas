@@ -1,8 +1,13 @@
 /**
- * Catalog-fact merge for issue #53: listing/docs first, then flags and
- * modalities walked from the bound generation request schema. Each stored
+ * Catalog-fact merge for issue #53: listing/docs first, then capability
+ * flags walked from the bound generation request schema. Each stored
  * value keeps the winning rung. `generated` OpenAI-borrowed specs are
  * skipped — walking them would stamp OpenAI's tools onto DeepSeek etc.
+ *
+ * Modalities are never walked. A request schema names the media parts a
+ * route accepts (`image_url`, `input_audio`), not what one model takes; it
+ * has no key for text and none for output. Walked, it gave every model on
+ * a route the same `{ input: ['image', 'audio'], output: [] }`.
  */
 import { undatedId } from './model-facts.ts'
 import type {
@@ -52,26 +57,9 @@ const NESTED_CONTAINERS = new Set([
 
 /**
  * `factSources.modalities.path` for a row whose own docs were read and state
- * no modalities. The schema rung then leaves the field null: a shared
- * request schema says what the route accepts, not what this model does.
+ * no modalities: the field is null because the source is silent.
  */
 export const MODALITIES_SOURCE_SILENT = 'silent'
-
-const INPUT_MODALITY: Record<string, string> = {
-  image: 'image',
-  image_url: 'image',
-  images: 'image',
-  input_image: 'image',
-  inline_data: 'image',
-  input_audio: 'audio',
-  audio: 'audio',
-  video: 'video',
-  input_video: 'video',
-  file: 'file',
-  input_file: 'file',
-  document: 'file',
-  pdf: 'file',
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -243,13 +231,12 @@ export function modelBranchSchemas(schema: unknown): Array<[string, unknown]> {
 
 export interface SchemaWalk {
   flags: Array<string>
-  modalities: { input: Array<string>; output: Array<string> } | null
   sources: ModelFactSources
 }
 
 /**
- * Walk a bundled request schema for OpenRouter parameter names and input
- * modalities. `generated` schemas are skipped by the caller.
+ * Walk a bundled request schema for OpenRouter parameter names.
+ * `generated` schemas are skipped by the caller.
  */
 export function walkRequestSchema(
   schema: unknown,
@@ -287,32 +274,6 @@ export function walkRequestSchema(
     flags.set('response_format', '/properties/responseSchema')
   }
 
-  const input = new Set<string>()
-  const visitKeys = (node: unknown, depth: number) => {
-    if (depth > 6) return
-    const resolved = resolveRef(schema, node)
-    if (Array.isArray(resolved)) {
-      for (const item of resolved) visitKeys(item, depth + 1)
-      return
-    }
-    if (!isRecord(resolved)) return
-    for (const key of Object.keys(resolved)) {
-      const modality = INPUT_MODALITY[key]
-      if (modality) input.add(modality)
-    }
-    const inner = propertiesOf(schema, resolved)
-    for (const key of Object.keys(inner)) {
-      const modality = INPUT_MODALITY[key]
-      if (modality) input.add(modality)
-      visitKeys(inner[key], depth + 1)
-    }
-    visitKeys(resolved.items, depth + 1)
-    visitKeys(resolved.anyOf, depth + 1)
-    visitKeys(resolved.oneOf, depth + 1)
-    visitKeys(resolved.allOf, depth + 1)
-  }
-  visitKeys(schema, 0)
-
   const source = (path: string): FactSource => ({
     derivation: meta.derivation,
     endpointId: meta.endpointId,
@@ -322,20 +283,15 @@ export function walkRequestSchema(
     ...(meta.fetchedAt !== undefined ? { fetchedAt: meta.fetchedAt } : {}),
   })
 
-  const flagList = [...flags.keys()]
-  const sources: ModelFactSources = {}
-  if (flagList.length > 0) {
-    sources.capabilities = Object.fromEntries(
-      [...flags].map(([flag, path]) => [flag, source(path)]),
-    )
+  if (flags.size === 0) return null
+  return {
+    flags: [...flags.keys()],
+    sources: {
+      capabilities: Object.fromEntries(
+        [...flags].map(([flag, path]) => [flag, source(path)]),
+      ),
+    },
   }
-  let modalities: SchemaWalk['modalities'] = null
-  if (input.size > 0) {
-    modalities = { input: [...input], output: [] }
-    sources.modalities = source('modalities')
-  }
-  if (flagList.length === 0 && modalities === null) return null
-  return { flags: flagList, modalities, sources }
 }
 
 export interface MergedFacts {
@@ -349,8 +305,9 @@ export interface MergedFacts {
 
 /**
  * Listing/docs win on a field they stated. Schema fills remaining
- * capability flags and null modalities. Host-native capability objects
- * and `exactCapabilities` listings are left alone.
+ * capability flags, and nothing else: modalities the listing does not
+ * state stay null. Host-native capability objects and `exactCapabilities`
+ * listings are left alone.
  */
 export function mergeListingAndSchema(
   listing: ModelInfo,
@@ -375,16 +332,7 @@ export function mergeListingAndSchema(
     capabilities = have.size > 0 ? [...have] : null
   }
 
-  const walked =
-    listed.modalities?.path === MODALITIES_SOURCE_SILENT ? null : walk
-  const modalities =
-    listing.modalities != null
-      ? listing.modalities
-      : (walked?.modalities ?? null)
   const sources: ModelFactSources = { ...listed }
-  if (listing.modalities == null && walked?.sources.modalities) {
-    sources.modalities = walked.sources.modalities
-  }
   if (Object.keys(capSources).length > 0 && !capabilitiesIsObject) {
     sources.capabilities = capSources
   }
@@ -392,7 +340,7 @@ export function mergeListingAndSchema(
   return {
     contextWindow: listing.contextWindow ?? null,
     maxOutput: listing.maxOutput ?? null,
-    modalities,
+    modalities: listing.modalities ?? null,
     pricing: listing.pricing ?? null,
     capabilities,
     factSources: emptySources(sources) ? null : sources,

@@ -11,6 +11,9 @@
  * The table keys docs slugs (`mistral-large-3-25-12`). The model page names
  * the API ids that slug serves (`mistral-large-2512`, `mistral-large-latest`).
  * An API id named by two slugs at different rates gets no card.
+ *
+ * The same model page states the model's modalities, as one icon per medium
+ * with a tooltip label ("Text input", "Image input", "Text output").
  */
 import {
   cardPrice,
@@ -271,11 +274,49 @@ export function parseMistralApiIds(html: string, slug: string): Array<string> {
   return best
 }
 
+export interface MistralModalities {
+  input: Array<string>
+  output: Array<string>
+}
+
+/** Tooltip word → medium, in stored order. */
+const MISTRAL_MEDIA: Record<string, string> = {
+  text: 'text',
+  image: 'image',
+  audio: 'audio',
+  video: 'video',
+  document: 'file',
+}
+
+/**
+ * Modalities a model page states. The tooltips are in the RSC payload as
+ * `"children":"Text input"` (quotes escaped). Null when the page has none,
+ * names a medium this map lacks, or states only one side: a partial list
+ * would read as the whole answer.
+ */
+export function parseMistralPageModalities(
+  html: string,
+): MistralModalities | null {
+  const found = { input: new Set<string>(), output: new Set<string>() }
+  for (const match of html.matchAll(
+    /children\\?":\\?"([A-Za-z]+) (input|output)\\?"/g,
+  )) {
+    const medium = MISTRAL_MEDIA[(match[1] ?? '').toLowerCase()]
+    if (!medium) return null
+    found[match[2] === 'input' ? 'input' : 'output'].add(medium)
+  }
+  if (found.input.size === 0 || found.output.size === 0) return null
+  const ordered = (have: Set<string>) =>
+    Object.values(MISTRAL_MEDIA).filter((medium) => have.has(medium))
+  return { input: ordered(found.input), output: ordered(found.output) }
+}
+
 export interface MistralModelPage {
   slug: string
   ids: Array<string>
   hash: string
   serverTools?: Array<string>
+  modalities?: MistralModalities | null
 }
 
 /**
@@ -312,7 +353,46 @@ export function indexMistralApiIds(
   return byId
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'serverTools'>
+type PricedFacts = Pick<
+  ModelInfo,
+  'pricing' | 'factSources' | 'serverTools' | 'modalities'
+>
+
+interface MistralStatedModalities {
+  modalities: MistralModalities
+  url: string
+  hash: string
+}
+
+/**
+ * API id → modalities its model page states. An id two pages state
+ * differently gets none, like a price.
+ */
+export function indexMistralModalities(
+  pages: Array<MistralModelPage>,
+): Map<string, MistralStatedModalities> {
+  const out = new Map<string, MistralStatedModalities>()
+  const conflicts = new Set<string>()
+  for (const page of pages) {
+    if (!page.modalities) continue
+    const stated = {
+      modalities: page.modalities,
+      url: MISTRAL_MODEL_PAGE(page.slug),
+      hash: page.hash,
+    }
+    for (const id of page.ids) {
+      const prior = out.get(id)
+      if (!prior) out.set(id, stated)
+      else if (
+        JSON.stringify(prior.modalities) !== JSON.stringify(page.modalities)
+      ) {
+        conflicts.add(id)
+      }
+    }
+  }
+  for (const id of conflicts) out.delete(id)
+  return out
+}
 
 interface MistralHostedTools {
   tools: Array<string>
@@ -385,6 +465,7 @@ export async function mistralModelPricing(
           ids,
           hash: await sha256Text(body),
           serverTools: parseMistralPageTools(body),
+          modalities: parseMistralPageModalities(body),
         }
       })
       return {
@@ -392,6 +473,7 @@ export async function mistralModelPricing(
         ids: page.ids,
         hash: page.hash,
         serverTools: page.serverTools,
+        modalities: page.modalities,
       }
     })
     const byId = indexMistralApiIds(bySlug, pages)
@@ -412,6 +494,7 @@ export async function mistralModelPricing(
     return {
       rates: Object.fromEntries(byId),
       tools: Object.fromEntries(tools),
+      modalities: Object.fromEntries(indexMistralModalities(pages)),
       hash,
       extractedAt: new Date().toISOString(),
     }
@@ -432,11 +515,16 @@ export async function mistralModelPricing(
     const toolFacts = hosted
       ? tagDocsFacts({ serverTools: hosted.tools }, hosted.url, hosted.hash)
       : {}
-    const factSources = { ...pricingFacts, ...toolFacts }
-    if (!pricing && !hosted) return {}
+    const stated = doc.modalities[rawId]
+    const modalityFacts = stated
+      ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
+      : {}
+    const factSources = { ...pricingFacts, ...toolFacts, ...modalityFacts }
+    if (!pricing && !hosted && !stated) return {}
     return {
       ...(pricing ? { pricing } : {}),
       ...(hosted ? { serverTools: hosted.tools } : {}),
+      ...(stated ? { modalities: stated.modalities } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
   }

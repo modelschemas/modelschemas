@@ -4,7 +4,6 @@ import {
   factDiscrepancies,
   listingSources,
   mergeListingAndSchema,
-  MODALITIES_SOURCE_SILENT,
   openRouterJoinIds,
   schemaRung,
   tagDocsFacts,
@@ -65,8 +64,6 @@ describe('walkRequestSchema', () => {
       endpointId: 'v1/messages',
       path: '/properties/tools',
     })
-    expect(walk?.modalities?.input.sort()).toEqual(['image'])
-    expect(walk?.modalities?.output).toEqual([])
   })
 
   it('walks Gemini generationConfig and responseSchema', () => {
@@ -105,24 +102,64 @@ describe('walkRequestSchema', () => {
 })
 
 describe('mergeListingAndSchema', () => {
-  it('leaves modalities null when the listing read its docs and found none', () => {
-    const walk = walkRequestSchema(chatSchema, {
+  // The shape of Mistral's /v1/chat/completions and Gemini's
+  // generateContent bodies: media content parts beside a plain-string part.
+  const multimodalRoute = {
+    properties: {
+      tools: { type: 'array' },
+      messages: {
+        type: 'array',
+        items: {
+          properties: {
+            content: {
+              anyOf: [
+                { type: 'string' },
+                {
+                  type: 'array',
+                  items: {
+                    anyOf: [
+                      { properties: { text: { type: 'string' } } },
+                      { properties: { image_url: { type: 'object' } } },
+                      { properties: { input_audio: { type: 'object' } } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+  }
+
+  it('never fills modalities from the route schema', () => {
+    const walk = walkRequestSchema(multimodalRoute, {
       derivation: 'upstream-spec',
-      endpointId: 'chat/completions',
+      endpointId: 'v1/chat/completions',
     })
-    expect(walk?.modalities?.input).toContain('image')
-    const silent = {
-      derivation: 'docs-derived' as const,
-      path: MODALITIES_SOURCE_SILENT,
+    // A text-only model and an audio model bind the same route. Walked, both
+    // stored `{ input: ['image', 'audio'], output: [] }`: no text, no output.
+    for (const rawId of ['codestral-2508', 'voxtral-small-latest']) {
+      const merged = mergeListingAndSchema({ rawId, activity: 'chat' }, walk)
+      expect(merged.modalities).toBeNull()
+      expect(merged.factSources?.modalities).toBeUndefined()
+      // Capability flags still come from the schema.
+      expect(merged.capabilities).toEqual(['tools'])
     }
+  })
+
+  it('keeps the modalities the listing states', () => {
+    const walk = walkRequestSchema(multimodalRoute, {
+      derivation: 'upstream-spec',
+      endpointId: 'v1/chat/completions',
+    })
+    const modalities = { input: ['text'], output: ['text'] }
     const merged = mergeListingAndSchema(
-      { rawId: 'gpt-chat-latest', factSources: { modalities: silent } },
+      { rawId: 'codestral-2508', modalities },
       walk,
     )
-    expect(merged.modalities).toBeNull()
-    expect(merged.factSources?.modalities).toEqual(silent)
-    // Capability flags still come from the schema.
-    expect(merged.capabilities).toContain('tools')
+    expect(merged.modalities).toEqual(modalities)
+    expect(merged.factSources?.modalities).toEqual({ derivation: 'listing' })
   })
 
   it('keeps listing flags and fills the rest from the schema', () => {

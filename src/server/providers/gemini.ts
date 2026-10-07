@@ -282,7 +282,8 @@ interface GeminiModelList {
 /**
  * Request features the Models API row states: `thinking`, and a sampling
  * default present ⇒ that param is accepted. Tool use and structured output
- * are not on the row and stay unset. Modalities are not on the row either.
+ * are not on the row and stay unset. Modalities are not on the row either:
+ * they come from the model's docs page (`gemini-features.ts`).
  */
 export function geminiCapabilities(
   m: Pick<GeminiModel, 'temperature' | 'topP' | 'topK' | 'thinking'>,
@@ -334,6 +335,7 @@ async function listModels(
             : geminiGenerationEndpointId(activity, methods),
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
+        modalities: feat.modalities,
         capabilities: geminiCapabilities(m),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.

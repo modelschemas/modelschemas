@@ -137,7 +137,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v11 entry written by the PR's preview build would drop every Azure row.
 // v13: MiniMax M2 rows store no maxOutput (the spec maximum is the context
 // window). A v12 entry would keep 204800 on them for six hours.
-const DOCS_CACHE_VERSION = 'v13'
+// v14: Gemini and Mistral model pages gain `modalities`. A v13 entry has
+// none, and the schema walk that used to fill the field no longer does.
+const DOCS_CACHE_VERSION = 'v14'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
