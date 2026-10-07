@@ -1,12 +1,18 @@
 /**
  * Cerebras model pages linked from the catalog (issue #109). Each page's
- * `<ModelInfo>` states the API id, paid prices per million tokens, input
- * and output formats, and feature names. The marketing pricing page is a
- * client render and is not parsed.
+ * `<ModelInfo>` states the API id, paid prices per million tokens, the
+ * paid output cap, input and output formats, and feature names. The
+ * marketing pricing page is a client render and is not parsed.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
-import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
+import { tagDocsFacts } from './fact-sources.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  mapConcurrent,
+  tokenCount,
+} from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
@@ -22,6 +28,8 @@ export interface CerebrasModelFacts {
   modalities: { input: Array<string>; output: Array<string> } | null
   capabilities: Array<string>
   contextWindow: number | null
+  /** Paid-tier cap. A parenthetical integer beats `40k` → 40,000. */
+  maxOutput: number | null
 }
 
 const FEATURES: Record<string, Array<string>> = {
@@ -33,6 +41,36 @@ const FEATURES: Record<string, Array<string>> = {
 function dollars(cell: string): number | null {
   const match = cell.match(/\$(\d+(?:\.\d+)?)/)
   return match?.[1] ? Number(match[1]) : null
+}
+
+/**
+ * Paid max output. `40K tokens (40,960) for paid` is 40960. Otherwise the
+ * `<ModelInfo>` paid tier (`40k` → 40,000). An unreadable tier throws.
+ */
+function paidMaxOutput(markdown: string, block: string): number | null {
+  const sentence = markdown.match(/max(?:imum)? output:\s*([^\n]+)/i)?.[1]
+  const exact = sentence?.match(
+    /(\d+(?:\.\d+)?)\s*k\s+tokens?\s*\(([\d,]+)\)\s+for paid\b/i,
+  )?.[2]
+  if (exact) {
+    const count = Number(exact.replace(/,/g, ''))
+    if (!Number.isFinite(count)) {
+      throw new Error(`cerebras model page: unreadable paid max output`)
+    }
+    return count
+  }
+  const paid = block.match(/maxOutput=\{\{([\s\S]*?)\}\}/)?.[1]
+  if (!paid) return null
+  const tiers = paid.match(/paidTiers:\s*"([^"]*)"/)?.[1]
+  if (tiers === undefined) return null
+  if (tiers.trim() === '' || /^n\/a$/i.test(tiers.trim())) return null
+  const count = tokenCount(tiers)
+  if (count == null) {
+    throw new Error(
+      `cerebras model page: unreadable paid max output "${tiers}"`,
+    )
+  }
+  return count
 }
 
 function quotedList(block: string, key: string): Array<string> {
@@ -66,7 +104,8 @@ export function parseCerebrasModelPage(
   const outputFormats = quotedList(block, 'outputFormats')
   const features = quotedList(block, 'features')
   const capabilities = features.flatMap((feature) => FEATURES[feature] ?? [])
-  const paid = block.match(/paidTiers:\s*"([^"]+)"/)?.[1]
+  const contextPaid = block.match(/contextLength=\{\{([\s\S]*?)\}\}/)?.[1]
+  const paid = contextPaid?.match(/paidTiers:\s*"([^"]+)"/)?.[1]
   const context = paid?.match(/([\d.]+)\s*k/i)
   return {
     inputPerMillion: input,
@@ -77,12 +116,18 @@ export function parseCerebrasModelPage(
         : null,
     capabilities,
     contextWindow: context?.[1] ? Number(context[1]) * 1000 : null,
+    maxOutput: paidMaxOutput(markdown, block),
   }
 }
 
 type Attached = Pick<
   ModelInfo,
-  'pricing' | 'modalities' | 'capabilities' | 'contextWindow'
+  | 'pricing'
+  | 'modalities'
+  | 'capabilities'
+  | 'contextWindow'
+  | 'maxOutput'
+  | 'factSources'
 >
 
 export async function cerebrasModelFacts(
@@ -129,13 +174,15 @@ export async function cerebrasModelFacts(
       hash: doc.hash,
       extractedAt: doc.extractedAt,
     })
-    return {
+    const facts = {
       ...(pricing ? { pricing } : {}),
       ...(row.modalities ? { modalities: row.modalities } : {}),
       ...(row.capabilities.length > 0
         ? { capabilities: row.capabilities }
         : {}),
       ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}),
+      ...(row.maxOutput != null ? { maxOutput: row.maxOutput } : {}),
     }
+    return { ...facts, factSources: tagDocsFacts(facts, row.url, doc.hash) }
   }
 }

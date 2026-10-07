@@ -1,0 +1,1 @@
+- cerebras: cacheRead — prompt caching bills cached input at the standard input rate and publishes no separate cached-input price (model pages list input and output only), https://inference-docs.cerebras.ai/capabilities/prompt-caching.md, checked 2026-10-07

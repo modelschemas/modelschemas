@@ -6,11 +6,13 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { cerebrasModelFacts } from '../cerebras-pricing.ts'
-import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import { cerebrasChatFacts } from '../cerebras-reasoning.ts'
 import {
   cerebrasModelActivity,
   compatGenerationEndpointId,
 } from '../model-meta.ts'
+import { listOpenAiCompatibleModels } from '../openai-compat.ts'
+import { listsReasoning, overlayModelFacts } from '../reasoning-config.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -54,10 +56,23 @@ async function listModels(
     activity: cerebrasModelActivity,
   })
   if (listed.models.length === 0) return listed
-  const facts = await cerebrasModelFacts(kv)
+  const [facts, chat] = await Promise.all([
+    cerebrasModelFacts(kv),
+    cerebrasChatFacts(kv),
+  ])
   return {
     ...listed,
-    models: listed.models.map((model) => ({ ...model, ...facts(model.rawId) })),
+    models: listed.models.map((model) => {
+      const page = facts(model.rawId)
+      return overlayModelFacts(
+        model,
+        page,
+        chat(
+          model.rawId,
+          listsReasoning(page.capabilities ?? model.capabilities),
+        ),
+      )
+    }),
   }
 }
 

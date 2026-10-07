@@ -153,7 +153,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // `mandatory` is true only when the page says that family cannot turn
 // thinking off. A v22 entry has none of that, so Gemini facts read from
 // it would stay null or mark every level column mandatory.
-const DOCS_CACHE_VERSION = 'v23'
+// v24: Cerebras model pages include paid maxOutput. A v23 entry has no
+// maxOutput and would leave it null for six hours.
+const DOCS_CACHE_VERSION = 'v24'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
