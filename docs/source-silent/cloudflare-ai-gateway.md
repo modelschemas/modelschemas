@@ -1,0 +1,1 @@
+- cloudflare-ai-gateway: endpoint — no OpenAPI operation for a gateway model's request; api-schemas openapi.json has no /ai/v1/chat/completions, /ai/v1/messages, or /ai/v1/responses, and /ai/run/{model_name} is Workers AI only, https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json, checked 2026-10-07
