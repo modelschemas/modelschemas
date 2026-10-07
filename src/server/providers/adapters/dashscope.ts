@@ -10,17 +10,33 @@ import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
 
 import {
-  classifyOpenAiCompat,
-  fetchOpenAiCompatibleSpec,
-} from '../openai-compat.ts'
-import type { OpenAiCompatPath } from '../openai-compat.ts'
+  DASHSCOPE_COMPAT_SCOPE,
+  DASHSCOPE_COMPAT_URL,
+  dashscopeCompatCovers,
+  parseDashscopeCompat,
+  parseDashscopeCompatScope,
+} from '../dashscope-compat.ts'
+import type { DashscopeCompatFacts } from '../dashscope-compat.ts'
+import {
+  dashscopeModelPageUrl,
+  loadDashscopeModelLimits,
+} from '../dashscope-model-limits.ts'
+import type { DashscopeLimitsDoc } from '../dashscope-model-limits.ts'
+import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import {
   compatGenerationEndpointId,
   dashscopeModelActivity,
 } from '../model-meta.ts'
-import { fetchJson, sha256Text, skippedResult } from '../types.ts'
+import {
+  classifyOpenAiCompat,
+  fetchOpenAiCompatibleSpec,
+} from '../openai-compat.ts'
+import type { OpenAiCompatPath } from '../openai-compat.ts'
+import { fetchJson, fetchText, sha256Text, skippedResult } from '../types.ts'
 import type {
+  FactSource,
   ListModelsResult,
+  ModelFactSources,
   ModelInfo,
   ProviderConfig,
   ProviderSecrets,
@@ -59,8 +75,23 @@ const TOKEN_LEVERS: Record<string, string> = {
   omni_input_token: 'input_tokens',
   omni_output_token: 'output_tokens',
   input_token_cache: 'cache_read_tokens',
+  omni_input_token_cache: 'cache_read_tokens',
+  input_token_cache_read: 'cache_read_tokens',
   input_token_cache_creation_5m: 'cache_write_tokens',
   input_token_cache_creation_1h: 'cache_write_1h_tokens',
+}
+
+/**
+ * Thinking-only rows publish `thinking_*` and no plain token type. A row
+ * that publishes both keeps the plain type: that is the non-thinking price,
+ * and the thinking price is a different mode.
+ */
+const THINKING_ALIAS: Record<string, string> = {
+  thinking_input_token: 'input_token',
+  thinking_output_token: 'output_token',
+  thinking_input_token_cache: 'input_token_cache',
+  thinking_input_token_cache_creation_5m: 'input_token_cache_creation_5m',
+  thinking_input_token_cache_read: 'input_token_cache_read',
 }
 
 const FEATURES: Record<string, Array<string>> = {
@@ -94,6 +125,8 @@ export interface DashscopeListedModel {
   model_info?: {
     context_window?: number | null
     max_output_tokens?: number | null
+    /** Published response cap when `max_output_tokens` is null. */
+    reasoning_max_output_tokens?: number | null
   }
 }
 
@@ -101,12 +134,24 @@ function modalityList(values: Array<string> | undefined): Array<string> {
   return (values ?? []).map((value) => value.toLowerCase())
 }
 
-/** `Default` and a 0 floor are the base. `32k<…` starts above 32k tokens. */
-function promptFloor(range: string): number | null {
-  if (range === '' || range === 'Default') return 0
-  if (/^0\s*</.test(range)) return 0
-  const kilo = range.match(/(\d+(?:\.\d+)?)\s*k\s*</i)
-  if (kilo?.[1]) return Number(kilo[1]) * 1000
+/**
+ * Lower bound of a prompt tier. `Default` and an upper bound only
+ * (`Input<=32k`) are the base. `32k<Input<=128k` starts above 32k.
+ * `256k<Input<=1m` starts above 256k. An unrecognized name is null,
+ * and the card is dropped.
+ */
+export function promptFloor(range: string): number | null {
+  const text = range.trim()
+  if (text === '' || /^default$/i.test(text)) return 0
+  const head = text.split(/[<≤]/, 1)[0] ?? ''
+  const bound = head.match(/(\d+(?:\.\d+)?)\s*([km])?\s*$/i)
+  if (bound?.[1]) {
+    const amount = Number(bound[1])
+    const unit = bound[2]?.toLowerCase()
+    if (!Number.isFinite(amount)) return null
+    return amount * (unit === 'm' ? 1_000_000 : unit === 'k' ? 1_000 : 1)
+  }
+  if (/[<≤=]/.test(text)) return 0
   return null
 }
 
@@ -124,10 +169,18 @@ function standardBand(items: Array<DashscopePrice>): Array<DashscopePrice> {
   )
 }
 
+function canonicalType(type: string, present: Set<string>): string | undefined {
+  if (TOKEN_LEVERS[type]) return type
+  const alias = THINKING_ALIAS[type]
+  if (!alias || present.has(alias)) return undefined
+  return alias
+}
+
 /**
  * Token ranges become a token card. A per-image quote becomes a unit card.
  * An unparsed range, a mixed unit, or an all-zero quote stays null.
  * Explicit cache read is omitted when implicit cache is also quoted.
+ * Text, vision, and audio prices that are not one input rate stay null.
  */
 export async function dashscopeListedCard(
   ranges: Array<DashscopeRange> | undefined,
@@ -168,13 +221,18 @@ export async function dashscopeListedCard(
   const rateMap = (
     prices: Array<DashscopePrice>,
   ): Record<string, number> | null => {
-    const rates: Record<string, number> = {}
-    const hasImplicit = prices.some(
-      (price) => price.type === 'input_token_cache',
+    const present = new Set(
+      prices.flatMap((price) => (price.type ? [price.type] : [])),
     )
+    const hasImplicit = prices.some((price) => {
+      const type = price.type ? canonicalType(price.type, present) : undefined
+      return type === 'input_token_cache' || type === 'omni_input_token_cache'
+    })
+    const rates: Record<string, number> = {}
     for (const price of prices) {
-      if (hasImplicit && price.type === 'input_token_cache_read') continue
-      const lever = price.type ? TOKEN_LEVERS[price.type] : undefined
+      const type = price.type ? canonicalType(price.type, present) : undefined
+      if (!type || (hasImplicit && type === 'input_token_cache_read')) continue
+      const lever = TOKEN_LEVERS[type]
       const amount = positive(price.price)
       if (!lever || amount === null) continue
       if (lever in rates && rates[lever] !== amount / 1e6) return null
@@ -203,6 +261,14 @@ function releasedAt(value: string | null | undefined): number | null {
   return Number.isNaN(ms) ? null : Math.floor(ms / 1000)
 }
 
+function listingSource(path: string): FactSource {
+  return { derivation: 'listing', sourceUrl: MODELS_URL, path }
+}
+
+function unique(flags: Array<string>): Array<string> {
+  return [...new Set(flags)]
+}
+
 export async function dashscopeListedModel(
   row: DashscopeListedModel,
 ): Promise<ModelInfo | null> {
@@ -213,32 +279,165 @@ export async function dashscopeListedModel(
   )
   const input = modalityList(row.inference_metadata?.request_modality)
   const output = modalityList(row.inference_metadata?.response_modality)
+  const info = row.model_info
+  const maxFromOutput = info?.max_output_tokens ?? null
+  const maxOutput = maxFromOutput ?? info?.reasoning_max_output_tokens ?? null
+  const contextWindow = info?.context_window ?? null
+  const chatFeatures = activity === 'chat' && Array.isArray(row.features)
   const model: ModelInfo = {
     rawId: row.model,
     displayName: row.name ?? null,
     activity,
-    contextWindow: row.model_info?.context_window ?? null,
-    maxOutput: row.model_info?.max_output_tokens ?? null,
+    contextWindow,
+    maxOutput,
     releasedAt: releasedAt(row.published_time),
     ...(input.length > 0 || output.length > 0
       ? { modalities: { input, output } }
       : {}),
-    ...(capabilities.length > 0 ? { capabilities } : {}),
+    ...(chatFeatures || capabilities.length > 0
+      ? { capabilities, ...(chatFeatures ? { exactCapabilities: true } : {}) }
+      : {}),
   }
   const card = await dashscopeListedCard(row.prices)
   if (card) model.pricing = card
+  const sources: ModelFactSources = {}
+  if (contextWindow != null) {
+    sources.contextWindow = listingSource('model_info.context_window')
+  }
+  if (maxOutput != null) {
+    sources.maxOutput = listingSource(
+      maxFromOutput != null
+        ? 'model_info.max_output_tokens'
+        : 'model_info.reasoning_max_output_tokens',
+    )
+  }
+  if (model.modalities != null) {
+    sources.modalities = listingSource('inference_metadata')
+  }
+  if (card) sources.pricing = listingSource('prices')
+  if (capabilities.length > 0) {
+    sources.capabilities = Object.fromEntries(
+      capabilities.map((flag) => [flag, listingSource(`features.${flag}`)]),
+    )
+  }
+  if (
+    sources.contextWindow ||
+    sources.maxOutput ||
+    sources.modalities ||
+    sources.pricing ||
+    sources.capabilities
+  ) {
+    model.factSources = sources
+  }
   return model
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+function withCompat(
+  model: ModelInfo,
+  compat: DashscopeCompatFacts | null,
+): ModelInfo {
+  if (model.activity !== 'chat') return model
+  if (compat && !dashscopeCompatCovers(model.rawId, compat.scope)) return model
+  if (!compat) {
+    return {
+      ...model,
+      absent: { ...model.absent, requestMap: 'unavailable' },
+    }
+  }
+  const prior = Array.isArray(model.capabilities) ? model.capabilities : []
+  const flags = unique([
+    ...prior.filter((flag): flag is string => typeof flag === 'string'),
+    ...compat.flags,
+  ])
+  const compatSource = (flag: string): FactSource => ({
+    derivation: 'docs-extracted',
+    sourceUrl: DASHSCOPE_COMPAT_URL,
+    sourceHash: compat.sourceHash,
+    path: `parameters.${flag}`,
+  })
+  const sources: ModelFactSources = { ...model.factSources }
+  sources.capabilities = {
+    ...sources.capabilities,
+    ...Object.fromEntries(
+      compat.flags.map((flag) => [flag, compatSource(flag)]),
+    ),
+  }
+  return {
+    ...model,
+    requestMap: compat.requestMap,
+    capabilities: flags,
+    exactCapabilities: true,
+    factSources: sources,
+  }
+}
+
+function needsModelPage(model: ModelInfo): boolean {
+  return (
+    model.activity === 'chat' &&
+    (model.contextWindow == null || model.maxOutput == null)
+  )
+}
+
+function applyModelLimits(
+  model: ModelInfo,
+  url: string,
+  doc: DashscopeLimitsDoc | null,
+): ModelInfo {
+  if (!needsModelPage(model)) return model
+  const limits = doc?.models[model.rawId]
+  const next: ModelInfo = { ...model }
+  const sources: ModelFactSources = { ...model.factSources }
+  const absent = { ...model.absent }
+  const source = (path: string): FactSource => ({
+    derivation: 'docs-extracted',
+    sourceUrl: url,
+    ...(doc ? { sourceHash: doc.sourceHash } : {}),
+    path,
+  })
+  if (model.contextWindow == null) {
+    const value = limits?.contextWindow
+    if (value != null) {
+      next.contextWindow = value
+      sources.contextWindow = source('Context limits.Context Window')
+    } else if (!doc) {
+      absent.contextWindow = 'unavailable'
+    }
+  }
+  if (model.maxOutput == null) {
+    const value = limits?.maxOutput
+    if (value != null) {
+      next.maxOutput = value
+      sources.maxOutput = source('Context limits.Max Output')
+    } else if (!doc) {
+      absent.maxOutput = 'unavailable'
+    }
+  }
+  if (
+    sources.contextWindow ||
+    sources.maxOutput ||
+    sources.modalities ||
+    sources.pricing ||
+    sources.capabilities
+  ) {
+    next.factSources = sources
+  }
+  if (Object.keys(absent).length > 0) next.absent = absent
+  return next
+}
+
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const key = env.DASHSCOPE_API_KEY
   if (!key) {
     return { models: [], ...skippedResult('dashscope', 'DASHSCOPE_API_KEY') }
   }
-  const models: Array<ModelInfo> = []
+  const run = docsRun()
+  const listed: Array<ModelInfo> = []
   let page = 1
   let total = Infinity
-  while (models.length < total && page < 20) {
+  while (listed.length < total && page < 20) {
     const body = (await fetchJson(
       `${MODELS_URL}?page_no=${String(page)}&page_size=100&language=en-US`,
       { headers: { Authorization: `Bearer ${key}` } },
@@ -248,11 +447,48 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     if (batch.length === 0) break
     for (const row of batch) {
       const model = await dashscopeListedModel(row)
-      if (model) models.push(model)
+      if (model) listed.push(model)
     }
     page += 1
   }
-  return { models }
+  const compat = await tryDocs(run, DASHSCOPE_COMPAT_URL, (cached) =>
+    cached(kv, DASHSCOPE_COMPAT_URL, async () =>
+      parseDashscopeCompat(await fetchText(DASHSCOPE_COMPAT_URL)),
+    ),
+  )
+  const limitUrls = [
+    ...new Set(
+      listed
+        .filter(needsModelPage)
+        .map((model) => dashscopeModelPageUrl(model.rawId)),
+    ),
+  ]
+  const limitDocs = new Map<string, DashscopeLimitsDoc | null>()
+  for (const url of limitUrls) {
+    limitDocs.set(
+      url,
+      await tryDocs(run, url, (cached) =>
+        cached(kv, url, async () =>
+          loadDashscopeModelLimits(await fetchText(url)),
+        ),
+      ),
+    )
+  }
+  return {
+    models: listed.map((model) =>
+      withCompat(
+        needsModelPage(model)
+          ? applyModelLimits(
+              model,
+              dashscopeModelPageUrl(model.rawId),
+              limitDocs.get(dashscopeModelPageUrl(model.rawId)) ?? null,
+            )
+          : model,
+        compat,
+      ),
+    ),
+    docsFailures: docsReport(run),
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -267,6 +503,15 @@ export const provider: ProviderConfig = {
   classify: classifyOpenAiCompat,
   generationEndpointId: ({ rawId, activity }) => {
     if (activity === 'video') return null
+    if (
+      activity === 'chat' &&
+      !dashscopeCompatCovers(
+        rawId,
+        parseDashscopeCompatScope(DASHSCOPE_COMPAT_SCOPE),
+      )
+    ) {
+      return null
+    }
     return compatGenerationEndpointId(
       activity,
       '',

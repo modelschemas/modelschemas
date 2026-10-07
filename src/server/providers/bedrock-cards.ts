@@ -2,9 +2,10 @@
  * Amazon Bedrock model cards (issue #153). The user guide's "Models at a
  * glance" page links one card per model; each card states the API model id,
  * inference-profile ids, limits, modalities, lifecycle, and reasoning. A few
- * cards (OpenAI, xAI, Moonshot) also state token prices; the rest point at
- * the marketing pricing page, which is not parsed, so those prices stay null.
- * Every page is fetched as the `.md` twin AWS publishes next to the HTML.
+ * cards (OpenAI, xAI, Moonshot) also state token prices. A card with no
+ * dollars is filled from the AWS price list, then the pricing page
+ * (`bedrock-pricing.ts`). Every card is fetched as the `.md` twin AWS
+ * publishes next to the HTML.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -13,6 +14,13 @@ import type { Activity } from '#/db/schema.ts'
 
 import { endpointIdFromPath } from '../ingest/bundle.ts'
 import {
+  cacheWriteLever,
+  cacheWriteNamesDuration,
+  fetchBedrockPriceBook,
+  lookupBedrockPrice,
+} from './bedrock-pricing.ts'
+import { tagDocsFacts } from './fact-sources.ts'
+import {
   assertParsed,
   cachedDocs,
   mapConcurrent,
@@ -20,6 +28,7 @@ import {
   markdownTableRows,
   tokenCount,
 } from './model-facts.ts'
+import type { ChatRequestMap } from './request-map.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo, ModelReasoning } from './types.ts'
 
@@ -49,8 +58,9 @@ export function bedrockCardSlugs(index: string): Array<string> {
 }
 
 function field(markdown: string, name: string): string | undefined {
+  // GPT-6.1 Sol indents the bullet with two spaces; other cards use one.
   return markdown
-    .match(new RegExp(`^\\+ \\*\\*${name}:\\*\\* (.+)$`, 'm'))?.[1]
+    .match(new RegExp(`^\\+\\s+\\*\\*${name}:\\*\\*\\s+(.+)$`, 'm'))?.[1]
     ?.trim()
 }
 
@@ -77,15 +87,108 @@ export function bedrockReasoning(
     .map((effort) => effort.trim())
     .filter(Boolean)
   const canDisable = /can be disabled|turned off/.test(note)
-  if (efforts && efforts.length > 0) {
+  const named = efforts && efforts.length > 0 ? efforts : undefined
+  // Adaptive cards name the levels after "configurable —". Keep the mode
+  // and store those levels; a note with no list still has no efforts.
+  if (/adaptive/.test(note)) {
     return {
-      mode: 'effort',
-      mandatory: !canDisable && !efforts.includes('none'),
-      efforts,
+      mode: 'adaptive',
+      mandatory: /cannot be disabled/.test(note),
+      ...(named ? { efforts: named } : {}),
     }
   }
-  if (!/adaptive/.test(note)) return null
-  return { mode: 'adaptive', mandatory: /cannot be disabled/.test(note) }
+  if (named) {
+    return {
+      mode: 'effort',
+      mandatory: !canDisable && !named.includes('none'),
+      efforts: named,
+    }
+  }
+  return null
+}
+
+const EFFORT_LEVELS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
+
+/**
+ * A card whose Reasoning bullet is only `Supported` sometimes names the
+ * levels under `**Reasoning effort**`. Adaptive notes with no level list
+ * stay as the bullet parsed them.
+ */
+function reasoningEffortProse(markdown: string): ModelReasoning | null {
+  const block = markdown.match(
+    /\*\*Reasoning effort\*\*([\s\S]*?)(?:\n\*\*|\n## |\n### |$)/,
+  )?.[1]
+  if (!block) return null
+  const efforts: Array<string> = []
+  for (const match of block.matchAll(
+    /`(?:\{[^`]*?"effort"\s*:\s*"([a-z]+)"[^`]*|"([a-z]+)"|([a-z]+))`/g,
+  )) {
+    const level = match[1] ?? match[2] ?? match[3]
+    if (level && EFFORT_LEVELS.includes(level) && !efforts.includes(level)) {
+      efforts.push(level)
+    }
+  }
+  if (efforts.length < 2) return null
+  const cannot = /cannot be disabled/.test(block)
+  const can = /can be disabled|turned off|disables reasoning/.test(block)
+  return {
+    mode: 'effort',
+    mandatory: cannot ? true : efforts.includes('none') || can ? false : null,
+    efforts,
+  }
+}
+
+/**
+ * Converse body from the Bedrock Runtime service model
+ * (https://raw.githubusercontent.com/boto/botocore/develop/botocore/data/bedrock-runtime/2023-09-30/service-2.json).
+ * Roles are user, assistant, and system. There is no top-level
+ * `reasoning_effort`; `outputConfig.effort` is a different shared field
+ * and is not copied onto every model. `maxTokens` sits on
+ * `inferenceConfig`, not `max_tokens`.
+ */
+const CONVERSE_REQUEST_MAP: ChatRequestMap = {
+  thinking: null,
+  maxTokensField: null,
+  developerRole: false,
+  replayReasoningContent: null,
+  store: null,
+  strictTools: null,
+  sessionAffinity: null,
+  cacheControl: null,
+  toolStream: null,
+  reasoningEffort: false,
+}
+
+/** Ticked feature labels only. A bare Reasoning tick is not a capability. */
+function cardFlags(
+  markdown: string,
+  reasoningOn: boolean,
+): Array<string> | null {
+  const flags: Array<string> = []
+  if (reasoningOn) flags.push('reasoning')
+  const seen = new Set<string>(flags)
+  const parts = markdown.split(/icon-(yes|no)\.png/i)
+  for (let index = 1; index < parts.length; index += 2) {
+    if (parts[index]?.toLowerCase() !== 'yes') continue
+    const label = (parts[index + 1] ?? '').split(/<br|\n|icon-/i)[0] ?? ''
+    if (/client-side tool calling/i.test(label) && !seen.has('tools')) {
+      seen.add('tools')
+      flags.push('tools')
+    }
+    if (/structured outputs?/i.test(label) && !seen.has('structured_outputs')) {
+      seen.add('structured_outputs')
+      flags.push('structured_outputs')
+    }
+  }
+  return flags.length > 0 ? flags : null
 }
 
 interface CardTables {
@@ -142,17 +245,44 @@ interface Quote {
   rates: Record<string, number>
 }
 
-function lever(header: string): string | null {
+/**
+ * A bare "cache write" column takes the one TTL the card names. GPT-6
+ * headers omit the duration; the prompt-caching section says `ttl` `30m`
+ * is the only one. No TTL mentioned keeps the 5-minute lever. Two
+ * different TTLs have no single lever.
+ */
+function proseWriteLever(markdown: string): string | null {
+  const found = new Set<'5m' | '1h' | 'other'>()
+  const ttls = /ttl\b[^.\n]{0,80}?(\d+)\s*(m|h|min(?:ute)?s?|hours?)\b/gi
+  for (const match of markdown.matchAll(ttls)) {
+    const n = match[1]
+    const unit = match[2]?.toLowerCase()
+    if (!n || !unit) continue
+    if (n === '5' && unit.startsWith('m')) found.add('5m')
+    else if (n === '1' && unit.startsWith('h')) found.add('1h')
+    else found.add('other')
+  }
+  if (found.size === 0) return 'cache_write_tokens'
+  if (found.size > 1) return null
+  if (found.has('5m')) return 'cache_write_tokens'
+  if (found.has('1h')) return 'cache_write_1h_tokens'
+  return null
+}
+
+function lever(header: string, markdown: string): string | null {
   const name = header.replace(/\*/g, '').toLowerCase()
   if (name.includes('cache read')) return 'cache_read_tokens'
-  if (name.includes('cache write')) return 'cache_write_tokens'
+  if (name.includes('cache write')) {
+    if (cacheWriteNamesDuration(name)) return cacheWriteLever(name)
+    return proseWriteLever(markdown)
+  }
   if (name === 'input') return 'input_tokens'
   if (name === 'output') return 'output_tokens'
   return null
 }
 
 /** Rows of a `| **Inference option** | **Input** | … |` table. */
-function quotes(block: string): Array<Quote> {
+function quotes(block: string, markdown: string): Array<Quote> {
   const rows = tableRows(block)
   const head = rows.find((row) => row[0] === '**Inference option**')
   if (!head) return []
@@ -161,7 +291,7 @@ function quotes(block: string): Array<Quote> {
     if (row === head) continue
     const rates: Record<string, number> = {}
     row.forEach((cell, index) => {
-      const key = lever(head[index] ?? '')
+      const key = lever(head[index] ?? '', markdown)
       const dollars = cell.match(/^\$(\d+(?:\.\d+)?)$/)?.[1]
       if (key && dollars) rates[key] = Number(dollars) / 1e6
     })
@@ -170,6 +300,15 @@ function quotes(block: string): Array<Quote> {
     }
   }
   return out
+}
+
+/** Ultrafast, priority, flex, batch, and GovCloud are not the standard rate. */
+function skippedPriceHeading(heading: string): boolean {
+  return /ultrafast|priority|flex|batch|govcloud/i.test(heading)
+}
+
+function standardShort(heading: string): boolean {
+  return /commercial regions/i.test(heading) && /short context/i.test(heading)
 }
 
 const inRegion = (all: Array<Quote>) =>
@@ -193,26 +332,41 @@ export interface BedrockCardPrice {
  * different rate than the id this row is keyed on.
  */
 export function bedrockCardPrice(markdown: string): BedrockCardPrice | null {
-  const section = markdownSection(markdown, 'Pricing')
-  if (!/per 1 million tokens/.test(section)) return null
+  const full = markdownSection(markdown, 'Pricing')
+  if (!/per 1 million tokens/.test(full)) return null
+  // GovCloud (US) republishes the same table at a different rate. The
+  // commercial block is the standard price; a GovCloud-only card stays.
+  const beforeGov = full.split('**AWS GovCloud')[0] ?? full
+  const section = quotes(beforeGov, markdown).length > 0 ? beforeGov : full
   const blocks = section.split(/\n### /)
-  const priced = blocks.findIndex((block) => quotes(block).length > 0)
-  const first = blocks[priced]
-  if (first === undefined) return null
-  if (priced > 0 && !first.startsWith('Commercial Regions — short context')) {
-    return null
+  let baseBlock: string | undefined
+  for (const [index, block] of blocks.entries()) {
+    if (quotes(block, markdown).length === 0) continue
+    const heading = block.split('\n')[0] ?? ''
+    if (skippedPriceHeading(heading)) continue
+    // A headingless table (Grok) is already the commercial rate. A ###
+    // block has to be the standard short-context rate; Ultrafast uses
+    // the same "Commercial Regions, short context" words.
+    if (index > 0 && !standardShort(heading)) return null
+    baseBlock = block
+    break
   }
-  const baseQuotes = quotes(first)
+  if (baseBlock === undefined) return null
+  const baseQuotes = quotes(baseBlock, markdown)
   const base = inRegion(baseQuotes)
   if (!base) return null
   let uniform = baseQuotes.every((quote) => sameRates(quote, base))
   const tiers: Array<TokenRateTier> = []
   for (const block of blocks) {
-    const over = block.match(
-      /^Commercial Regions — long context \(more than ([\d.,]+[KM]?) input tokens\)/,
+    const heading = block.split('\n')[0] ?? ''
+    // GovCloud's long-context table is a #### inside the ### GovCloud
+    // block. Match the ### line only, or that table becomes the tier.
+    if (skippedPriceHeading(heading)) continue
+    const over = heading.match(
+      /long context \(more than ([\d.,]+\s*[KM]?) input tokens\)/i,
     )
-    if (!over) continue
-    const longQuotes = quotes(block)
+    if (!over?.[1]) continue
+    const longQuotes = quotes(block, markdown)
     const long = inRegion(longQuotes)
     const minPromptTokens = tokenCount(over[1])
     // A long-context table we cannot read would underprice long prompts.
@@ -248,8 +402,11 @@ export function parseBedrockCard(
 
   const tables = cardTables(rows)
   const activity = activityOf(tables.output)
-  const reasoning = field(markdown, 'Reasoning')
-  return {
+  const reasoningText = field(markdown, 'Reasoning')
+  const reasoning =
+    bedrockReasoning(reasoningText) ?? reasoningEffortProse(markdown)
+  const converse = activity === 'chat' && tables.converse
+  const info: ModelInfo = {
     rawId,
     displayName: markdown.match(/^# (.+)$/m)?.[1]?.trim() ?? null,
     activity,
@@ -260,16 +417,21 @@ export function parseBedrockCard(
         ? { input: tables.input, output: tables.output }
         : null,
     pricing: price ? compileTokenCard(price.base, price.tiers, source) : null,
-    capabilities: reasoning?.startsWith('Supported') ? ['reasoning'] : null,
-    reasoning: bedrockReasoning(reasoning),
-    schemaEndpointId:
-      activity === 'chat' && tables.converse
-        ? endpointIdFromPath(BEDROCK_CONVERSE_PATH)
-        : null,
+    capabilities: cardFlags(
+      markdown,
+      reasoningText?.startsWith('Supported') === true || reasoning != null,
+    ),
+    reasoning,
+    requestMap: converse ? CONVERSE_REQUEST_MAP : null,
+    schemaEndpointId: converse
+      ? endpointIdFromPath(BEDROCK_CONVERSE_PATH)
+      : null,
     aliases,
     deprecated: field(markdown, 'Model lifecycle') === 'Legacy',
     releasedAt: launchDay(field(markdown, 'Model launch date')),
   }
+  info.factSources = tagDocsFacts(info, source.url, source.hash)
+  return info
 }
 
 export async function bedrockCardModels(
@@ -307,6 +469,27 @@ export async function bedrockCardModels(
       ...model,
       aliases: (model.aliases ?? []).filter((id) => !byId.has(id)),
     }))
+    const book = await fetchBedrockPriceBook()
+    for (const model of models) {
+      if (model.pricing != null) continue
+      const hit = lookupBedrockPrice(
+        book,
+        model.rawId,
+        model.displayName ?? null,
+      )
+      if (!hit) continue
+      const pricing = compileTokenCard(hit.rates, [], {
+        url: hit.url,
+        hash: hit.hash,
+        extractedAt: new Date().toISOString(),
+      })
+      if (!pricing) continue
+      model.pricing = pricing
+      model.factSources = {
+        ...model.factSources,
+        ...tagDocsFacts({ pricing }, hit.url, hit.hash),
+      }
+    }
     return { models }
   })
   return doc.models

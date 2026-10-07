@@ -145,8 +145,19 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // sale row skipped and leave the new fields null for six hours.
 // v21: Azure rows gain effort lists, request maps, and the gpt-4 /
 // computer-use-preview meter match. A v16 entry would leave those null
-// for six hours. v19 and v20 are still open fill-gaps PRs.
-const DOCS_CACHE_VERSION = 'v21'
+// for six hours.
+// v22: DashScope compat cache includes `scope`. A v21 entry has no scope,
+// so a chat id the page does not name would still get the compat map.
+// v23: Gemini's cached index is `{url, ids}` rows, thinking pages cache
+// budget bodies, and model pages cache per-id sections. Thinking-level
+// `mandatory` is true only when the page says that family cannot turn
+// thinking off. A v22 entry has none of that, so Gemini facts read from
+// it would stay null or mark every level column mandatory.
+// v24: Cerebras model pages include paid maxOutput. A v23 entry has no
+// maxOutput and would leave it null for six hours.
+// v25: Bedrock cards gain request maps, feature flags, and price-list
+// rates. A v24 entry would leave those null for six hours.
+const DOCS_CACHE_VERSION = 'v25'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

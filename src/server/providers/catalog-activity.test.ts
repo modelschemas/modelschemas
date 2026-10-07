@@ -70,6 +70,10 @@ const CEREBRAS_PAGE = `
   contextLength={{
     paidTiers: "131k tokens"
   }}
+  maxOutput={{
+    freeTier: "32k tokens",
+    paidTiers: "40k tokens"
+  }}
 />
 `
 
@@ -147,6 +151,33 @@ describe('cerebras model pages', () => {
     expect(facts?.outputPerMillion).toBe(0.75)
     expect(facts?.modalities).toEqual({ input: ['text'], output: ['text'] })
     expect(facts?.capabilities).toEqual(['reasoning', 'tools'])
+    expect(facts?.maxOutput).toBe(40_000)
+    expect(facts?.contextWindow).toBe(131_000)
+  })
+
+  it('prefers the paid parenthetical context window over 128k', () => {
+    const facts = parseCerebrasModelPage(`
+Context window: 64K tokens (65,536) for Free Trial and 128K tokens (131,072) for paid tiers and trial customers.
+<ModelInfo
+  contextLength={{
+    paidTiers: "128k tokens"
+  }}
+/>
+`)
+    expect(facts?.contextWindow).toBe(131_072)
+  })
+
+  it('prefers the paid parenthetical output cap over 40k', () => {
+    const facts = parseCerebrasModelPage(`
+Maximum output: 32K tokens (32,768) for Free Trial and 40K tokens (40,960) for paid tiers.
+<ModelInfo
+  maxOutput={{
+    freeTier: "32k tokens",
+    paidTiers: "40k tokens"
+  }}
+/>
+`)
+    expect(facts?.maxOutput).toBe(40_960)
   })
 })
 
@@ -205,6 +236,33 @@ describe('issue #109 listModels', () => {
         if (url.endsWith('/models/openai-oss.md')) {
           return new Response(CEREBRAS_PAGE, { status: 200 })
         }
+        if (url.endsWith('/capabilities/reasoning.md')) {
+          return new Response(
+            `
+| Model | Default | \`reasoning_effort\` | Disable reasoning | Availability |
+| - | - | - | - | - |
+| [\`gpt-oss-120b\`](/models/openai-oss) | \`medium\` | \`low\`, \`medium\`, \`high\` | Not supported | Shared Inference |
+| \`kimi-k2.7-code\` | Always enabled | Accepted but ignored | Not supported | Customer trials only |
+`,
+            { status: 200 },
+          )
+        }
+        if (url.endsWith('/openapi.yaml')) {
+          return new Response(
+            `
+        max_completion_tokens:
+          type: integer
+          description: The maximum number of tokens that can be generated.
+        max_tokens:
+          type: integer
+          description: >
+            An alias for \`max_completion_tokens\`. Do not send both parameters
+            in the same request.
+        Developer messages are supported only by \`gpt-oss-120b\`.
+`,
+            { status: 200 },
+          )
+        }
         return new Response('missing', { status: 404 })
       },
       async () => {
@@ -219,8 +277,33 @@ describe('issue #109 listModels', () => {
           output: ['text'],
         })
         expect(inputUsd(priced?.pricing)).toBeCloseTo(0.35, 9)
+        expect(priced?.maxOutput).toBe(40_000)
+        expect(priced?.reasoning).toEqual({
+          mode: 'effort',
+          mandatory: true,
+          efforts: ['low', 'medium', 'high'],
+        })
+        expect(priced?.requestMap).toMatchObject({
+          maxTokensField: 'max_completion_tokens',
+          developerRole: true,
+          reasoningEffort: true,
+          thinking: {
+            on: { reasoning_effort: 'high' },
+            off: null,
+          },
+        })
+        expect(priced?.factSources?.maxOutput?.sourceUrl).toBe(
+          'https://inference-docs.cerebras.ai/models/openai-oss.md',
+        )
+        expect(priced?.factSources?.reasoning?.sourceUrl).toBe(
+          'https://inference-docs.cerebras.ai/capabilities/reasoning.md',
+        )
         expect(bare?.activity).toBe('chat')
         expect(bare?.pricing ?? null).toBeNull()
+        expect(bare?.maxOutput ?? null).toBeNull()
+        expect(bare?.reasoning ?? null).toBeNull()
+        expect(bare?.requestMap?.developerRole).toBe(false)
+        expect(bare?.requestMap?.maxTokensField).toBe('max_completion_tokens')
       },
     )
   })

@@ -1,12 +1,18 @@
 /**
  * Cerebras model pages linked from the catalog (issue #109). Each page's
- * `<ModelInfo>` states the API id, paid prices per million tokens, input
- * and output formats, and feature names. The marketing pricing page is a
- * client render and is not parsed.
+ * `<ModelInfo>` states the API id, paid prices per million tokens, the
+ * paid output cap, input and output formats, and feature names. The
+ * marketing pricing page is a client render and is not parsed.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
-import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
+import { tagDocsFacts } from './fact-sources.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  mapConcurrent,
+  tokenCount,
+} from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
@@ -21,7 +27,10 @@ export interface CerebrasModelFacts {
   outputPerMillion: number | null
   modalities: { input: Array<string>; output: Array<string> } | null
   capabilities: Array<string>
+  /** Paid window. A parenthetical integer beats `128k` → 128,000. */
   contextWindow: number | null
+  /** Paid-tier cap. A parenthetical integer beats `40k` → 40,000. */
+  maxOutput: number | null
 }
 
 const FEATURES: Record<string, Array<string>> = {
@@ -33,6 +42,65 @@ const FEATURES: Record<string, Array<string>> = {
 function dollars(cell: string): number | null {
   const match = cell.match(/\$(\d+(?:\.\d+)?)/)
   return match?.[1] ? Number(match[1]) : null
+}
+
+/**
+ * `128K tokens (131,072) for paid` is 131072. The first `Nk (exact) for paid`
+ * wins, so a free-tier parenthetical earlier in the sentence is ignored.
+ */
+function paidParenthetical(sentence: string | undefined): number | null {
+  const exact = sentence?.match(
+    /(\d+(?:\.\d+)?)\s*k\s+tokens?\s*\(([\d,]+)\)\s+for paid\b/i,
+  )?.[2]
+  if (!exact) return null
+  const count = Number(exact.replace(/,/g, ''))
+  if (!Number.isFinite(count)) {
+    throw new Error(`cerebras model page: unreadable paid token count`)
+  }
+  return count
+}
+
+/**
+ * Paid context window. The prose parenthetical beats `<ModelInfo>` (`128k`
+ * → 128,000). An unreadable paid tier throws.
+ */
+function paidContextWindow(markdown: string, block: string): number | null {
+  const sentence = markdown.match(/context window:\s*([^\n]+)/i)?.[1]
+  const exact = paidParenthetical(sentence)
+  if (exact != null) return exact
+  const contextPaid = block.match(/contextLength=\{\{([\s\S]*?)\}\}/)?.[1]
+  const paid = contextPaid?.match(/paidTiers:\s*"([^"]*)"/)?.[1]
+  if (paid === undefined) return null
+  if (paid.trim() === '' || /^n\/a$/i.test(paid.trim())) return null
+  const count = tokenCount(paid)
+  if (count == null) {
+    throw new Error(
+      `cerebras model page: unreadable paid context window "${paid}"`,
+    )
+  }
+  return count
+}
+
+/**
+ * Paid max output. `40K tokens (40,960) for paid` is 40960. Otherwise the
+ * `<ModelInfo>` paid tier (`40k` → 40,000). An unreadable tier throws.
+ */
+function paidMaxOutput(markdown: string, block: string): number | null {
+  const sentence = markdown.match(/max(?:imum)? output:\s*([^\n]+)/i)?.[1]
+  const exact = paidParenthetical(sentence)
+  if (exact != null) return exact
+  const paid = block.match(/maxOutput=\{\{([\s\S]*?)\}\}/)?.[1]
+  if (!paid) return null
+  const tiers = paid.match(/paidTiers:\s*"([^"]*)"/)?.[1]
+  if (tiers === undefined) return null
+  if (tiers.trim() === '' || /^n\/a$/i.test(tiers.trim())) return null
+  const count = tokenCount(tiers)
+  if (count == null) {
+    throw new Error(
+      `cerebras model page: unreadable paid max output "${tiers}"`,
+    )
+  }
+  return count
 }
 
 function quotedList(block: string, key: string): Array<string> {
@@ -66,8 +134,6 @@ export function parseCerebrasModelPage(
   const outputFormats = quotedList(block, 'outputFormats')
   const features = quotedList(block, 'features')
   const capabilities = features.flatMap((feature) => FEATURES[feature] ?? [])
-  const paid = block.match(/paidTiers:\s*"([^"]+)"/)?.[1]
-  const context = paid?.match(/([\d.]+)\s*k/i)
   return {
     inputPerMillion: input,
     outputPerMillion: output,
@@ -76,13 +142,19 @@ export function parseCerebrasModelPage(
         ? { input: inputFormats, output: outputFormats }
         : null,
     capabilities,
-    contextWindow: context?.[1] ? Number(context[1]) * 1000 : null,
+    contextWindow: paidContextWindow(markdown, block),
+    maxOutput: paidMaxOutput(markdown, block),
   }
 }
 
 type Attached = Pick<
   ModelInfo,
-  'pricing' | 'modalities' | 'capabilities' | 'contextWindow'
+  | 'pricing'
+  | 'modalities'
+  | 'capabilities'
+  | 'contextWindow'
+  | 'maxOutput'
+  | 'factSources'
 >
 
 export async function cerebrasModelFacts(
@@ -129,13 +201,15 @@ export async function cerebrasModelFacts(
       hash: doc.hash,
       extractedAt: doc.extractedAt,
     })
-    return {
+    const facts = {
       ...(pricing ? { pricing } : {}),
       ...(row.modalities ? { modalities: row.modalities } : {}),
       ...(row.capabilities.length > 0
         ? { capabilities: row.capabilities }
         : {}),
       ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}),
+      ...(row.maxOutput != null ? { maxOutput: row.maxOutput } : {}),
     }
+    return { ...facts, factSources: tagDocsFacts(facts, row.url, doc.hash) }
   }
 }
