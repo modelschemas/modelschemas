@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
+import { price } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
+
 import { provider } from './fireworks.ts'
+import chatSpec from '../fixtures/fireworks-chat-spec.json'
+import serverlessBody from '../fixtures/fireworks-serverless.json'
+import { FIREWORKS_SERVERLESS_URL } from '../fireworks-facts.ts'
+import { FIREWORKS_PRICING_URL } from '../fireworks-pricing.ts'
 
 const SPEC_URL = 'https://docs.fireworks.ai/text-completion.openapi.yaml'
 const MODELS_URL = 'https://api.fireworks.ai/inference/v1/models'
@@ -26,6 +33,10 @@ describe('fireworks provider', () => {
     expect(provider.specSourceUrl).toBe(SPEC_URL)
     expect(provider.modelsEndpoint).toBe(MODELS_URL)
     expect(provider.defaultDerivation).toBe('upstream-spec')
+    expect(provider.perModelSchemaFlags).toEqual([
+      'reasoning',
+      'reasoning_effort',
+    ])
   })
 })
 
@@ -75,6 +86,111 @@ describe('fireworks fetchSpec', () => {
       expect(result.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
       expect(result.sources).toHaveLength(1)
       expect(result.outputStrategy).toBe('post-200')
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
+describe('fireworks listModels docs', () => {
+  it('merges serverless prices with the spec families', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      if (href.includes('/inference/v1/models')) {
+        return Promise.resolve(
+          Response.json({
+            data: [
+              {
+                id: 'accounts/fireworks/models/deepseek-v4p1-flash',
+                context_length: 1048576,
+                kind: 'HF_BASE_MODEL',
+                supports_chat: true,
+                supports_tools: true,
+              },
+              {
+                id: 'accounts/fireworks/models/inkling',
+                context_length: 1048576,
+                kind: 'HF_BASE_MODEL',
+                supports_chat: true,
+              },
+              {
+                id: 'accounts/fireworks/models/qwen3p8-max',
+                kind: 'HF_BASE_MODEL',
+                supports_chat: true,
+                supports_tools: true,
+              },
+              {
+                id: 'accounts/fireworks/models/ember-1',
+                kind: 'HF_BASE_MODEL',
+                supports_chat: true,
+                supports_tools: true,
+              },
+              {
+                id: 'accounts/fireworks/models/qwen3-reranker-8b',
+                kind: 'HF_BASE_MODEL',
+                supports_chat: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (href.includes('/v1/serverless/models')) {
+        return Promise.resolve(Response.json(serverlessBody))
+      }
+      if (href.includes('serverless/pricing.md')) {
+        return Promise.resolve(
+          new Response(
+            '| Model | Standard | Priority |\n| - | - | - |\n| [DeepSeek V4.1 Flash](https://app.fireworks.ai/models/fireworks/deepseek-v4p1-flash) | $0.30 / $0.006 / $1.20 | $0.375 / $0.0075 / $1.50 |\n',
+          ),
+        )
+      }
+      if (href.includes('text-completion.openapi.yaml')) {
+        return Promise.resolve(Response.json(chatSpec))
+      }
+      return Promise.resolve(new Response('missing', { status: 404 }))
+    }) as typeof fetch
+    try {
+      const { models, docsFailures } = await provider.listModels({
+        FIREWORKS_API_KEY: 'test',
+      })
+      const deepseek = models.find((model) => model.rawId.includes('deepseek'))
+      const inkling = models.find((model) => model.rawId.includes('inkling'))
+      const qwen = models.find((model) => model.rawId.includes('qwen3p8-max'))
+      const ember = models.find((model) => model.rawId.includes('ember-1'))
+      const rerank = models.find((model) => model.rawId.includes('reranker'))
+      expect(docsFailures?.failed).toBe(0)
+      expect(deepseek?.factSources?.contextWindow).toMatchObject({
+        derivation: 'listing',
+        sourceUrl: MODELS_URL,
+        path: 'context_length',
+      })
+      expect(deepseek?.factSources?.pricing?.sourceUrl).toBe(
+        FIREWORKS_PRICING_URL,
+      )
+      expect(deepseek?.reasoning?.efforts).toContain('none')
+      expect(deepseek?.requestMap?.maxTokensField).toBe('max_tokens')
+      expect(inkling?.factSources?.pricing?.sourceUrl).toBe(
+        FIREWORKS_SERVERLESS_URL,
+      )
+      expect(
+        price(
+          inkling?.pricing as RateCard,
+          {},
+          {
+            input_tokens: 1e6,
+            output_tokens: 0,
+          },
+        ),
+      ).toBeCloseTo(1)
+      expect(qwen?.contextWindow ?? null).toBeNull()
+      expect(qwen?.reasoning?.mode).toBe('effort')
+      expect(qwen?.capabilities).toEqual(['tools', 'reasoning'])
+      expect(ember?.reasoning ?? null).toBeNull()
+      expect(ember?.capabilities).toEqual(['tools'])
+      expect(ember?.requestMap?.reasoningEffort).toBeNull()
+      expect(rerank?.activity).toBeNull()
+      expect(rerank?.requestMap ?? null).toBeNull()
     } finally {
       globalThis.fetch = original
     }

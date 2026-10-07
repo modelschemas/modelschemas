@@ -6,11 +6,9 @@
  * than merged. Size-band tables name no API id and are ignored. Fast rows
  * bind to `accounts/fireworks/routers/<slug>-fast`.
  */
-import { compileTokenCard } from '@modelschemas/rate-card'
-
-import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
+import { assertParsed, markdownTableRows } from './model-facts.ts'
+import type { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { ModelInfo } from './types.ts'
 
 export const FIREWORKS_PRICING_URL =
   'https://docs.fireworks.ai/serverless/pricing.md'
@@ -60,12 +58,18 @@ export function parseFireworksPricing(
   return out
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing'>
+export interface FireworksPricingDoc {
+  rates: Record<string, FireworksRates>
+  hash: string
+  extractedAt: string
+}
 
-export async function fireworksModelPricing(
-  kv?: KVNamespace,
-): Promise<(rawId: string) => PricedFacts> {
-  const doc = await cachedDocs(kv, FIREWORKS_PRICING_URL, async () => {
+/** Headline Standard cells. The adapter merges these with the serverless API. */
+export function loadFireworksPricingDoc(
+  kv: KVNamespace | undefined,
+  cached: typeof cachedDocs,
+): Promise<FireworksPricingDoc> {
+  return cached(kv, FIREWORKS_PRICING_URL, async () => {
     const markdown = await fetchText(FIREWORKS_PRICING_URL)
     const parsed = parseFireworksPricing(markdown)
     assertParsed(parsed, 'fireworks pricing page')
@@ -75,22 +79,4 @@ export async function fireworksModelPricing(
       extractedAt: new Date().toISOString(),
     }
   })
-  return (rawId) => {
-    const row = doc.rates[rawId]
-    if (!row) return {}
-    const pricing = compileTokenCard(
-      {
-        input_tokens: row.input / 1e6,
-        output_tokens: row.output / 1e6,
-        cache_read_tokens: row.cacheRead / 1e6,
-      },
-      [],
-      {
-        url: FIREWORKS_PRICING_URL,
-        hash: doc.hash,
-        extractedAt: doc.extractedAt,
-      },
-    )
-    return pricing ? { pricing } : {}
-  }
 }

@@ -1,0 +1,540 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "accounts/fireworks/models/glm-5p2",
+      "serverless_mode": "fast",
+      "usage_identifier": "accounts/fireworks/routers/glm-5p2-fast",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.21",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "6.6",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "2.1",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/minimax-m3",
+      "serverless_mode": "standard",
+      "context_length": 512000,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.06",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "1.2",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.3",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/minimax-m3",
+      "serverless_mode": "priority",
+      "context_length": 512000,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.09",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "1.8",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.45",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/gpt-oss-120b",
+      "serverless_mode": "standard",
+      "context_length": 131072,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.015",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "0.6",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.15",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/gpt-oss-120b",
+      "serverless_mode": "priority",
+      "context_length": 131072,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.018",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "0.72",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.18",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/nemotron-3-ultra-nvfp4",
+      "serverless_mode": "standard",
+      "context_length": 262144,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.12",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "2.4",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.6",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/qwen3-reranker-8b",
+      "serverless_mode": "standard",
+      "context_length": 40960,
+      "pricing": [
+        {
+          "sku": "Embedding input tokens",
+          "amount": "0.2",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/qwen3-embedding-8b",
+      "serverless_mode": "standard",
+      "context_length": 40960,
+      "pricing": [
+        {
+          "sku": "Embedding input tokens",
+          "amount": "0.1",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/kimi-k3",
+      "serverless_mode": "priority",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.375",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "18.75",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "3.75",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/kimi-k3",
+      "serverless_mode": "standard",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.3",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "15",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "3",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/kimi-k3",
+      "serverless_mode": "fast",
+      "usage_identifier": "accounts/fireworks/routers/kimi-k3-fast",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.45",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "22.5",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "4.5",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/qwen3p8-max",
+      "serverless_mode": "standard",
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.25",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "6",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "2",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/qwen3p8-max",
+      "serverless_mode": "priority",
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.375",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "9",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "3",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/glm-5p3",
+      "serverless_mode": "standard",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.26",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "4.4",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "1.4",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/glm-5p3",
+      "serverless_mode": "priority",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.325",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "5.5",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "1.75",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/glm-5p3",
+      "serverless_mode": "fast",
+      "usage_identifier": "accounts/fireworks/routers/glm-5p3-fast",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.39",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "6.6",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "2.1",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/glm-5p3-flash",
+      "serverless_mode": "standard",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.03",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "0.5",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.15",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/glm-5p3-flash",
+      "serverless_mode": "priority",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.0375",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "0.625",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.1875",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/deepseek-v4p1-flash",
+      "serverless_mode": "standard",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.006",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "1.2",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.3",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/deepseek-v4p1-flash",
+      "serverless_mode": "priority",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.0075",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "1.5",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.375",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/ember-1",
+      "serverless_mode": "standard",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.3",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "15",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "3",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b",
+      "serverless_mode": "standard",
+      "context_length": 262144,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.01",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "0.2",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.05",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b",
+      "serverless_mode": "priority",
+      "context_length": 262144,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.0125",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "0.25",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "0.0625",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/inkling",
+      "serverless_mode": "standard",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.17",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "4.05",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "1",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "accounts/fireworks/models/inkling",
+      "serverless_mode": "priority",
+      "context_length": 1048576,
+      "pricing": [
+        {
+          "sku": "LLM input tokens (cached)",
+          "amount": "0.17",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM output tokens",
+          "amount": "4.05",
+          "unit": "1M tokens"
+        },
+        {
+          "sku": "LLM input tokens (uncached)",
+          "amount": "1",
+          "unit": "1M tokens"
+        }
+      ]
+    },
+    {
+      "id": "firerouter/auto",
+      "usage_identifier": "auto"
+    }
+  ]
+}
