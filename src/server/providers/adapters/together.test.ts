@@ -152,9 +152,15 @@ describe('together listModels', () => {
   it('parses Together’s bare-array catalog', async () => {
     const original = globalThis.fetch
     globalThis.fetch = ((url: string, init?: RequestInit) => {
+      const target = String(url)
       const headers = new Headers(init?.headers)
-      expect(headers.get('Authorization')).toBe('Bearer test-key')
-      if (String(url).includes('/v2/supported-models')) {
+      if (
+        target.startsWith('https://api.together.xyz/') ||
+        target.startsWith('https://api.together.ai/')
+      ) {
+        expect(headers.get('Authorization')).toBe('Bearer test-key')
+      }
+      if (target.includes('/v2/supported-models')) {
         return Promise.resolve(
           new Response(
             JSON.stringify({
@@ -165,13 +171,30 @@ describe('together listModels', () => {
                   outputModalities: ['MODALITY_TEXT'],
                   features: ['FEATURE_TOOL_CALLING', 'FEATURE_REASONING'],
                 },
+                {
+                  name: 'org/reason-flag',
+                  inputModalities: ['MODALITY_TEXT'],
+                  outputModalities: ['MODALITY_TEXT'],
+                  features: ['FEATURE_REASONING'],
+                },
               ],
             }),
             { status: 200, headers: { 'content-type': 'application/json' } },
           ),
         )
       }
-      expect(String(url)).toBe('https://api.together.xyz/v1/models')
+      if (target.includes('/serverless/models.md')) {
+        return textResponse(LIST_DOCS)
+      }
+      if (target.includes('/inference/chat/reasoning.md')) {
+        return textResponse(LIST_REASONING)
+      }
+      if (target.includes('/kimi-k3-quickstart.md'))
+        return textResponse(LIST_KIMI)
+      if (target.includes('/glm-5.3-quickstart.md'))
+        return textResponse(LIST_GLM)
+      if (target.endsWith('/gpt-oss.md')) return textResponse(LIST_GPT)
+      expect(target).toBe('https://api.together.xyz/v1/models')
       return Promise.resolve(
         new Response(
           JSON.stringify([
@@ -181,7 +204,24 @@ describe('together listModels', () => {
               created: 1692896905,
               type: 'chat',
               context_length: 32768,
+              config: { max_output_length: 8192 },
+              pricing: { input: 0.17, output: 0.25, cached_input: 0 },
             },
+            {
+              id: 'moonshotai/Kimi-K3',
+              type: 'chat',
+              context_length: 1048576,
+              pricing: { input: 2.7, output: 13.5, cached_input: 0.27 },
+            },
+            { id: 'openai/gpt-oss-120b', type: 'chat', context_length: 131072 },
+            { id: 'zai-org/GLM-5.3', type: 'chat' },
+            {
+              id: 'zai-org/GLM-5.3-Flash',
+              type: 'chat',
+              context_length: 1048575,
+            },
+            { id: 'org/vision-only', type: 'chat', context_length: 0 },
+            { id: 'org/reason-flag', type: 'chat', context_length: 4096 },
             { id: 'BAAI/bge-large-en-v1.5', type: 'embedding' },
             { id: 'org/reranker', type: 'rerank' },
           ]),
@@ -192,36 +232,167 @@ describe('together listModels', () => {
     try {
       const result = await provider.listModels({ TOGETHER_API_KEY: 'test-key' })
       expect(result.skipped).toBeUndefined()
-      expect(result.models).toEqual([
-        {
-          rawId: 'Qwen/Qwen3.5-9B',
-          displayName: 'Qwen 3.5 9B',
-          activity: 'chat',
-          contextWindow: 32768,
-          releasedAt: 1692896905,
-          modalities: { input: ['text'], output: ['text'] },
-          capabilities: ['tools', 'reasoning'],
-        },
-        {
-          rawId: 'BAAI/bge-large-en-v1.5',
-          displayName: null,
-          activity: 'embeddings',
-          contextWindow: null,
-          releasedAt: null,
-        },
-        {
-          rawId: 'org/reranker',
-          displayName: null,
-          activity: null,
-          contextWindow: null,
-          releasedAt: null,
-        },
-      ])
+      expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
+      const byId = Object.fromEntries(
+        result.models.map((model) => [model.rawId, model]),
+      )
+      const qwen = byId['Qwen/Qwen3.5-9B']
+      expect(qwen).toMatchObject({
+        displayName: 'Qwen 3.5 9B',
+        activity: 'chat',
+        contextWindow: 32768,
+        maxOutput: 8192,
+        releasedAt: 1692896905,
+        modalities: { input: ['text'], output: ['text'] },
+        capabilities: ['tools', 'reasoning'],
+        reasoning: { mode: 'toggle', mandatory: false },
+      })
+      expect(qwen?.factSources?.contextWindow).toEqual({
+        derivation: 'listing',
+        sourceUrl: 'https://api.together.xyz/v1/models',
+        path: 'context_length',
+      })
+      expect(qwen?.factSources?.maxOutput?.path).toBe(
+        'config.max_output_length',
+      )
+      expect(qwen?.factSources?.pricing?.sourceUrl).toBe(
+        'https://api.together.xyz/v1/models',
+      )
+      expect(qwen?.factSources?.modalities?.sourceUrl).toBe(
+        'https://api.together.ai/v2/supported-models',
+      )
+      expect(qwen?.factSources?.reasoning?.sourceUrl).toBe(
+        'https://docs.together.ai/docs/inference/chat/reasoning.md',
+      )
+      const kimi = byId['moonshotai/Kimi-K3']
+      expect(kimi?.reasoning).toEqual({
+        mode: 'effort',
+        mandatory: false,
+        efforts: ['low', 'medium', 'high', 'max'],
+      })
+      expect(kimi?.factSources?.reasoning?.sourceUrl).toBe(
+        'https://docs.together.ai/docs/kimi-k3-quickstart.md',
+      )
+      expect(kimi?.contextWindow).toBe(1048576)
+      if (!kimi?.pricing || typeof kimi.pricing !== 'object') {
+        throw new Error('kimi card missing')
+      }
+      expect(
+        price(
+          kimi.pricing as never,
+          {},
+          { input_tokens: 1e6, output_tokens: 0 },
+        ),
+      ).toBeCloseTo(2.7, 9)
+      const gpt = byId['openai/gpt-oss-120b']
+      expect(gpt?.reasoning).toEqual({
+        mode: 'effort',
+        mandatory: true,
+        efforts: ['low', 'medium', 'high'],
+      })
+      expect(gpt?.factSources?.reasoning?.sourceUrl).toBe(
+        'https://docs.together.ai/docs/gpt-oss.md',
+      )
+      expect(byId['zai-org/GLM-5.3']?.reasoning).toEqual({
+        mode: 'effort',
+        mandatory: true,
+        efforts: ['low', 'medium', 'high', 'max'],
+      })
+      expect(byId['zai-org/GLM-5.3']?.contextWindow).toBe(1048575)
+      expect(byId['zai-org/GLM-5.3-Flash']?.reasoning).toBeUndefined()
+      expect(byId['org/vision-only']?.contextWindow).toBeNull()
+      expect(byId['org/vision-only']?.modalities).toEqual({
+        input: ['text', 'image'],
+        output: ['text'],
+      })
+      expect(byId['org/vision-only']?.factSources?.modalities?.path).toBe(
+        'Vision models',
+      )
+      const flagged = byId['org/reason-flag']
+      expect(flagged?.reasoning).toBeUndefined()
+      expect(flagged?.capabilities).toEqual(['reasoning'])
+      expect(flagged?.factSources?.reasoning?.path).toBe('silent')
+      expect(byId['BAAI/bge-large-en-v1.5']?.activity).toBe('embeddings')
+      expect(byId['org/reranker']?.activity).toBeNull()
     } finally {
       globalThis.fetch = original
     }
   })
 })
+
+function textResponse(body: string): Promise<Response> {
+  return Promise.resolve(
+    new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/markdown' },
+    }),
+  )
+}
+
+const LIST_DOCS = `
+## Chat models
+
+| Organization | Model name | API model string | Context length | Input pricing (per 1M tokens) | Cached input pricing (per 1M tokens) | Output pricing (per 1M tokens) | Quantization | Function calling | Structured outputs |
+| :- | :- | :- | :- | :- | :- | :- | :- | :- | :- |
+| Qwen | Qwen3.5 9B | Qwen/Qwen3.5-9B | 262144 | \\$0.17 | - | \\$0.25 | FP8 | Yes | Yes |
+| Z.ai | GLM-5.3 | zai-org/GLM-5.3 | 1048575 | \\$1.40 | \\$0.26 | \\$4.40 | FP4 | Yes | Yes |
+
+## Vision models
+
+| Organization | Model name | API model string | Context length | Input pricing (per 1M tokens) | Output pricing (per 1M tokens) |
+| :- | :- | :- | :- | :- | :- |
+| Org | Vision only | org/vision-only | 8192 | \\$1.00 | \\$1.00 |
+`
+
+const LIST_REASONING = `
+* **Hybrid:** Supports both reasoning and non-reasoning modes via \`reasoning={"enabled": True/False}\`.
+* **Adjustable effort:** Supports the \`reasoning_effort\` parameter to control reasoning depth (\`"low"\`, \`"medium"\`, or \`"high"\`).
+
+## Supported models
+
+| Model | API string | Type | Context length |
+| :- | :- | :- | :- |
+| Qwen3.5 9B | \`Qwen/Qwen3.5-9B\` | Hybrid (on by default) | 262K |
+| Kimi K3 | \`moonshotai/Kimi-K3\` | Hybrid (on by default) | 1M |
+| GPT-OSS 120B | \`openai/gpt-oss-120b\` | Adjustable effort | 128K |
+`
+
+const LIST_KIMI = `
+The model ID is \`moonshotai/Kimi-K3\`.
+
+| Parameter | Behavior on Together |
+| - | - |
+| \`reasoning_effort\` | \`"low"\`, \`"medium"\`, \`"high"\`, or \`"max"\` (default). |
+| \`reasoning\` | \`{"enabled": False}\` disables thinking entirely. |
+`
+
+const LIST_GLM = `
+| Model | Model ID | Input / 1M tokens |
+| - | - | - |
+| GLM-5.3 | \`zai-org/GLM-5.3\` | \\$1.40 |
+| GLM-5.3 Flash | \`zai-org/GLM-5.3-Flash\` | \\$0.15 |
+
+## Set the reasoning effort
+
+\`reasoning_effort\` accepts \`"low"\`, \`"medium"\`, \`"high"\`, and \`"max"\`.
+
+Thinking cannot be disabled entirely on GLM-5.3.
+
+\`\`\`python
+completion = client.chat.completions.create(
+    model="zai-org/GLM-5.3",
+    reasoning_effort="max",
+)
+\`\`\`
+`
+
+const LIST_GPT = `
+The model ID is \`openai/gpt-oss-120b\`.
+
+\`reasoning_effort\` accepts \`"low"\`, \`"medium"\`, and \`"high"\`.
+
+Reasoning cannot be disabled entirely.
+`
 
 describe('togetherRateCard', () => {
   it('compiles per-million listing rates into a token card', async () => {
@@ -259,6 +430,15 @@ describe('togetherRateCard', () => {
       }),
     ).toBeNull()
     expect(await togetherRateCard(undefined)).toBeNull()
+  })
+})
+
+describe('together provider', () => {
+  it('keeps reasoning flags off the shared chat schema', () => {
+    expect(provider.perModelSchemaFlags).toEqual([
+      'reasoning',
+      'reasoning_effort',
+    ])
   })
 })
 
