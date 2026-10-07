@@ -22,7 +22,7 @@ const complete: ModelRow = {
     },
     source: { url: 'https://docs.example.com/pricing' },
   },
-  capabilities: ['reasoning', 'tools'],
+  capabilities: { reasoning: true, tools: true },
   reasoning: { mode: 'effort', efforts: ['low', 'high'] },
   requestMap: { maxTokensField: 'max_tokens' },
   schemaEndpointId: 'full/chat/completions',
@@ -136,7 +136,11 @@ describe('gap report scoring', () => {
     const plain = provider(
       'full',
       buildReport([
-        { ...complete, capabilities: ['tools'], reasoning: null },
+        {
+          ...complete,
+          capabilities: { tools: true, reasoning: false },
+          reasoning: null,
+        },
         { ...complete, reasoning: null },
       ]),
     )

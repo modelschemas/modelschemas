@@ -169,7 +169,7 @@ describe('compare', () => {
         output_tokens: 1e-5,
         cache_read_tokens: 1.25e-7,
       }),
-      capabilities: ['tools', 'temperature'],
+      capabilities: { tools: true, temperature: true },
       reasoning: { mode: 'effort', efforts: ['low', 'high'] },
     }),
     ours('bare'),
@@ -248,17 +248,16 @@ describe('compare', () => {
       cacheRead: { status: 'agree', ours: 0.125 },
       cacheWrite: { status: 'neither' },
       tools: { status: 'agree' },
-      // No acme row lists `structured_outputs`, so its absence says nothing.
+      // The map has no `structured_outputs` key: unknown.
       structuredOutput: { status: 'neither' },
       reasoning: { status: 'agree' },
       reasoningOptions: { status: 'agree', ours: 'effort:high,low' },
       temperature: { status: 'disagree', ours: true, theirs: false },
+      releasedAt: { status: 'onlyTheirs', theirs: '2026-01-01' },
+      knowledgeCutoff: { status: 'neither' },
+      openWeights: { status: 'neither' },
     })
-    expect(acme?.noField).toMatchObject({
-      release_date: 1,
-      family: 1,
-      knowledge: 0,
-    })
+    expect(acme?.noField).toMatchObject({ family: 1 })
   })
 
   it('reports a non-USD card as held but not compared', () => {
@@ -314,9 +313,9 @@ describe('compare', () => {
 
 describe('what counts as a value', () => {
   const rows: Array<OurRow> = [
-    ours('thinker', { capabilities: ['reasoning'] }),
-    ours('tooler', { capabilities: ['tools', 'reasoning'] }),
-    ours('empty', { capabilities: [] }),
+    ours('thinker', { capabilities: { reasoning: true, tools: false } }),
+    ours('tooler', { capabilities: { tools: true, reasoning: true } }),
+    ours('empty', { capabilities: null }),
     ours('jingle', {
       pricing: {
         price: 0.04,
@@ -352,20 +351,50 @@ describe('what counts as a value', () => {
   const facts = (model: string) =>
     acme.models.find((m) => m.ours === model)?.facts
 
-  it('reads a missing flag as false only when the provider emits that flag', () => {
-    // `tools` appears on a sibling row, so its absence here is a held false.
+  it('holds a false only where the map states one', () => {
+    // `tools: false` is in the row's own map: a held false.
     expect(facts('thinker')?.tools).toEqual({
       status: 'disagree',
       ours: false,
       theirs: true,
     })
-    // No acme row ever lists these two: unknown, so we are behind.
+    // No key for these two: unknown, so we are behind. A sibling row that
+    // lists a flag says nothing about this one.
     expect(facts('thinker')?.temperature.status).toBe('onlyTheirs')
     expect(facts('thinker')?.structuredOutput.status).toBe('onlyTheirs')
     expect(facts('thinker')?.reasoning.ours).toBe(true)
+    expect(facts('tooler')?.structuredOutput.status).toBe('neither')
   })
 
-  it('reads an empty capability list as unknown', () => {
+  it('compares the three dated and stated facts, a month agreeing with its days', () => {
+    const dated = compare(
+      [
+        ours('m', {
+          releasedAt: Date.UTC(2026, 0, 1) / 1000,
+          knowledgeCutoff: '2025-06',
+          openWeights: false,
+        }),
+      ],
+      {
+        acme: catalog(
+          their('m', {
+            release_date: '2026-01-02',
+            knowledge: '2025-06-30',
+            open_weights: false,
+          }),
+        ),
+      },
+      new Map(),
+      new Date(0),
+    ).providers[0]?.models[0]?.facts
+    expect(dated).toMatchObject({
+      releasedAt: { status: 'disagree', ours: '2026-01-01' },
+      knowledgeCutoff: { status: 'agree', ours: '2025-06' },
+      openWeights: { status: 'agree', ours: false },
+    })
+  })
+
+  it('reads no map as unknown', () => {
     expect(facts('empty')?.tools).toEqual({
       status: 'onlyTheirs',
       theirs: true,

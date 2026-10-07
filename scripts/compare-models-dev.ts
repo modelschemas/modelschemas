@@ -24,6 +24,7 @@ import { parseArgs } from 'node:util'
 import { cardCurrency } from '@modelschemas/rate-card'
 
 import { readLedger } from './gap-report.ts'
+import { isCapabilityMap } from '../src/lib/capabilities.ts'
 import type { FactKey as LedgerKey, Ledger } from '../src/lib/completeness.ts'
 
 const THEIRS_URL = 'https://models.dev/api.json'
@@ -77,6 +78,9 @@ export type OurRow = {
   capabilities?: unknown
   reasoning?: { mode?: string; efforts?: Array<string> | null } | null
   aliases?: Array<string> | null
+  releasedAt?: number | null
+  knowledgeCutoff?: string | null
+  openWeights?: boolean | null
 }
 
 export type TheirModel = {
@@ -238,10 +242,19 @@ export const NON_TOKEN = 'non-token card'
 export function classify(
   ours: Value | undefined,
   theirs: Value | undefined,
-  options: { rounding?: boolean; currency?: string } = {},
+  options: { rounding?: boolean; currency?: string; prefix?: boolean } = {},
 ): Status {
   if (ours === undefined) return theirs === undefined ? 'neither' : 'onlyTheirs'
   if (theirs === undefined) return 'onlyOurs'
+  // A month and a day in that month are one date at two precisions.
+  if (
+    options.prefix &&
+    typeof ours === 'string' &&
+    typeof theirs === 'string' &&
+    (ours.startsWith(theirs) || theirs.startsWith(ours))
+  ) {
+    return 'agree'
+  }
   // Their prices are USD. Ours in another currency is a value we hold, but
   // it is never converted, so the two are not compared.
   if (options.currency !== undefined && options.currency !== 'USD') {
@@ -310,29 +323,14 @@ function currency(row: OurRow): string | undefined {
   }
 }
 
-/** What a fact needs to know beyond the row: its provider's other rows. */
-type Context = {
-  /** Every capability flag some chat row of this provider lists. */
-  emitted: ReadonlySet<string>
-}
-
-const capabilityList = (row: OurRow): Array<unknown> =>
-  Array.isArray(row.capabilities) ? row.capabilities : []
-
 /**
- * A capability flag. A list that lacks the flag says `false` only when the
- * provider's adapter emits that flag at all — some chat row of the provider
- * lists it. Otherwise the absence is silence, as with no list or an empty
- * one: unknown, never a held `false`.
+ * A capability flag, read from the row's map: `true` and `false` are what
+ * the provider states, and a missing key (or no map) is unknown, never a
+ * held `false`.
  */
-function flag(
-  row: OurRow,
-  name: string,
-  context: Context,
-): boolean | undefined {
-  const list = capabilityList(row)
-  if (list.includes(name)) return true
-  return list.length > 0 && context.emitted.has(name) ? false : undefined
+function flag(row: OurRow, name: string): boolean | undefined {
+  const map = row.capabilities
+  return isCapabilityMap(map) ? map[name] : undefined
 }
 
 function ourPrice(row: OurRow): Value | undefined {
@@ -376,7 +374,9 @@ type Fact = {
   ledger?: LedgerKey
   rounding?: boolean
   price?: boolean
-  ours: (row: OurRow, context: Context) => Value | undefined
+  /** Dates: equal when one is the other at a coarser precision. */
+  prefix?: boolean
+  ours: (row: OurRow) => Value | undefined
   theirs: (model: TheirModel) => Value | undefined
 }
 
@@ -435,20 +435,19 @@ export const FACTS = {
   tools: {
     label: 'tools',
     ledger: 'capabilities',
-    ours: (row, context) => flag(row, 'tools', context),
+    ours: (row) => flag(row, 'tools'),
     theirs: (model) => model.tool_call,
   },
   structuredOutput: {
     label: 'struct',
     ledger: 'capabilities',
-    ours: (row, context) => flag(row, 'structured_outputs', context),
+    ours: (row) => flag(row, 'structured_outputs'),
     theirs: (model) => model.structured_output,
   },
   reasoning: {
     label: 'reason',
     ledger: 'reasoning',
-    ours: (row, context) =>
-      row.reasoning ? true : flag(row, 'reasoning', context),
+    ours: (row) => (row.reasoning ? true : flag(row, 'reasoning')),
     theirs: (model) => model.reasoning,
   },
   reasoningOptions: {
@@ -460,8 +459,29 @@ export const FACTS = {
   temperature: {
     label: 'temp',
     ledger: 'capabilities',
-    ours: (row, context) => flag(row, 'temperature', context),
+    ours: (row) => flag(row, 'temperature'),
     theirs: (model) => model.temperature,
+  },
+  // The provider's own date as a UTC day, beside their `YYYY-MM-DD`.
+  releasedAt: {
+    label: 'rel',
+    prefix: true,
+    ours: (row) =>
+      typeof row.releasedAt === 'number'
+        ? new Date(row.releasedAt * 1000).toISOString().slice(0, 10)
+        : undefined,
+    theirs: (model) => model.release_date || undefined,
+  },
+  knowledgeCutoff: {
+    label: 'know',
+    prefix: true,
+    ours: (row) => row.knowledgeCutoff ?? undefined,
+    theirs: (model) => model.knowledge || undefined,
+  },
+  openWeights: {
+    label: 'open',
+    ours: (row) => row.openWeights ?? undefined,
+    theirs: (model) => model.open_weights,
   },
 } satisfies Record<string, Fact>
 
@@ -470,10 +490,7 @@ export const FACT_KEYS = Object.keys(FACTS) as Array<FactKey>
 
 /** Fields models.dev carries that our rows have no column for. */
 export const NO_FIELD = {
-  release_date: (model: TheirModel) => model.release_date,
-  knowledge: (model: TheirModel) => model.knowledge,
   'limit.input': (model: TheirModel) => positive(model.limit?.input),
-  open_weights: (model: TheirModel) => model.open_weights,
   family: (model: TheirModel) => model.family,
 }
 export type NoFieldKey = keyof typeof NO_FIELD
@@ -613,9 +630,6 @@ export function headline(
 export const behind = (provider: ProviderComparison): number =>
   FACT_KEYS.reduce((sum, key) => sum + provider.facts[key].onlyTheirs, 0)
 
-const emittedFlags = (row: OurRow): Array<string> =>
-  capabilityList(row).filter((name) => typeof name === 'string')
-
 function compareProvider(
   provider: string,
   rows: Array<OurRow>,
@@ -649,15 +663,15 @@ function compareProvider(
     NO_FIELD_KEYS.map((key) => [key, 0]),
   ) as Record<NoFieldKey, number>
 
-  const context: Context = { emitted: new Set(chat.flatMap(emittedFlags)) }
   const models = matches.map((match) => {
     const cells = {} as Record<FactKey, Cell>
     for (const key of FACT_KEYS) {
       const fact: Fact = FACTS[key]
-      const ours = fact.ours(match.row, context)
+      const ours = fact.ours(match.row)
       const their = fact.theirs(match.theirs)
       const status = classify(ours, their, {
         rounding: fact.rounding,
+        prefix: fact.prefix,
         currency: fact.price ? currency(match.row) : undefined,
       })
       const ledgered = status === 'onlyTheirs' && silent.includes(key)

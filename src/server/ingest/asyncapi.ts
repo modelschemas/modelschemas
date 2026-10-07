@@ -3,6 +3,8 @@
  * server (receive) payloads as a `type`-discriminated `oneOf` via
  * {@link bundleSchema}. FAL WMA is the only caller today.
  */
+import type { CapabilityMap } from '#/lib/capabilities.ts'
+
 import { bundleSchema, findDanglingRefs } from './bundle.ts'
 import type { ExtractedEndpointSchemas, JsonValue } from './bundle.ts'
 
@@ -198,22 +200,15 @@ export function hasAsyncApiFlag(capabilities: unknown): boolean {
   return isObject(capabilities) && capabilities.asyncapi === true
 }
 
-/** Add or drop `asyncapi: true` on a capabilities object; keep other keys. */
+/** Add or drop `asyncapi: true` on a flag map; keep its other flags. */
 export function withAsyncApiFlag(
-  capabilities: unknown,
+  capabilities: CapabilityMap | null,
   enabled: boolean,
-): unknown {
-  if (!enabled) {
-    if (!isObject(capabilities) || capabilities.asyncapi === undefined) {
-      return capabilities
-    }
-    const next: Record<string, unknown> = { ...capabilities }
-    delete next.asyncapi
-    return next
-  }
-  const base = isObject(capabilities) ? { ...capabilities } : {}
-  base.asyncapi = true
-  return base
+): CapabilityMap | null {
+  if (enabled) return { ...capabilities, asyncapi: true }
+  if (capabilities?.asyncapi === undefined) return capabilities
+  const { asyncapi: _dropped, ...rest } = capabilities
+  return Object.keys(rest).length > 0 ? rest : null
 }
 
 /**
@@ -221,12 +216,12 @@ export function withAsyncApiFlag(
  * previously persisted `asyncapi: true` unless the listing sets the key.
  */
 export function preserveAsyncApiFlag(
-  existing: unknown,
-  listed: unknown,
-): unknown {
-  if (!hasAsyncApiFlag(existing)) return listed
-  if (isObject(listed) && listed.asyncapi === undefined) {
-    return withAsyncApiFlag(listed, true)
+  existing: CapabilityMap | null,
+  listed: CapabilityMap | null,
+): CapabilityMap | null {
+  if (!hasAsyncApiFlag(existing) || listed?.asyncapi !== undefined) {
+    return listed
   }
-  return listed
+  // A listing with no flags at all (null) still keeps the synced one.
+  return withAsyncApiFlag(listed, true)
 }

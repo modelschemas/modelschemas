@@ -522,9 +522,9 @@ async function listModels(
       activity: falCategoryActivity(m.metadata.category),
       deprecated: m.metadata.status === 'deprecated',
       releasedAt: isoToEpochSeconds(m.metadata.date),
-      capabilities: { category: m.metadata.category },
-      // A chat row with a request schema swaps the category object for the
-      // flag list every other provider's chat rows carry.
+      providerMetadata: { category: m.metadata.category },
+      // A chat row with a request schema also carries the flag list every
+      // other provider's chat rows do.
       ...rest,
       ...(card ? { pricing: card.card } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),

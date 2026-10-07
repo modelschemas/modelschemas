@@ -167,7 +167,11 @@ function ModelDetail() {
     ['maxOutput', model.maxOutput],
     ['modalities', model.modalities],
     ['capabilities', model.capabilities],
+    ['knowledgeCutoff', model.knowledgeCutoff],
+    ['openWeights', model.openWeights],
+    ['weightsUrl', model.weightsUrl],
     ['requestMap', model.requestMap],
+    ['providerMetadata', model.providerMetadata],
   ]
   const published = richness.filter(([, v]) => v !== null && v !== undefined)
   const unpublished = richness.filter(([, v]) => v === null || v === undefined)
@@ -281,6 +285,25 @@ function ModelDetail() {
                             no bound generation route
                           </span>
                         ))
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="font-mono text-xs text-ink-faint">
+                      releasedAt
+                    </td>
+                    <td className="font-mono text-[12.5px]">
+                      {model.releasedAt === null ? (
+                        <span className="text-ink-faint">
+                          no release date reported by the provider
+                        </span>
+                      ) : (
+                        <>
+                          {model.releasedAt}{' '}
+                          <span className="text-ink-faint">
+                            — {shortDate(model.releasedAt)}
+                          </span>
+                        </>
                       )}
                     </td>
                   </tr>

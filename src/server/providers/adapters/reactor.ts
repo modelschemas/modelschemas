@@ -429,7 +429,7 @@ function modelInfo(
     displayName: model.displayName,
     activity: 'video',
     ...facts,
-    capabilities: {
+    providerMetadata: {
       pricingName: model.pricingName,
       ...(extras?.upstreamId ? { upstreamId: extras.upstreamId } : {}),
     },

@@ -46,7 +46,7 @@ async function seedFal(db: SyncDeps['db']): Promise<SyncDeps> {
         rawId: DIRECTOR,
         activity: 'video',
         displayName: 'H3 Max Director',
-        capabilities: { category: 'text-to-video' },
+        providerMetadata: { category: 'text-to-video' },
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       },
@@ -55,7 +55,7 @@ async function seedFal(db: SyncDeps['db']): Promise<SyncDeps> {
         providerId: 'fal',
         rawId: OPENAPI_MODEL,
         activity: 'image',
-        capabilities: { category: 'text-to-image' },
+        providerMetadata: { category: 'text-to-image' },
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       },
@@ -64,7 +64,7 @@ async function seedFal(db: SyncDeps['db']): Promise<SyncDeps> {
         providerId: 'fal',
         rawId: GHOST,
         activity: 'image',
-        capabilities: { category: 'text-to-image' },
+        providerMetadata: { category: 'text-to-image' },
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       },
@@ -173,10 +173,8 @@ describe('FAL AsyncAPI ingest', () => {
     )
 
     const director = await getModelDetail(db, 'fal', DIRECTOR)
-    expect(director?.capabilities).toEqual({
-      category: 'text-to-video',
-      asyncapi: true,
-    })
+    expect(director?.capabilities).toEqual({ asyncapi: true })
+    expect(director?.providerMetadata).toEqual({ category: 'text-to-video' })
     expect(director?.schemaEndpointId).toBe(DIRECTOR)
 
     const flagged = await listModelsCatalog(db, {
@@ -188,7 +186,7 @@ describe('FAL AsyncAPI ingest', () => {
     expect(flagged.models.map((m) => m.rawId)).not.toContain(GHOST)
 
     const openapiModel = await getModelDetail(db, 'fal', OPENAPI_MODEL)
-    expect(openapiModel?.capabilities).toEqual({ category: 'text-to-image' })
+    expect(openapiModel?.capabilities).toBeNull()
     const openapiInput = await getEndpointSchema(
       db,
       'fal',
@@ -204,7 +202,7 @@ describe('FAL AsyncAPI ingest', () => {
       await getEndpointSchema(db, 'fal', 'image', GHOST, 'input'),
     ).toBeNull()
     const ghost = await getModelDetail(db, 'fal', GHOST)
-    expect(ghost?.capabilities).toEqual({ category: 'text-to-image' })
+    expect(ghost?.capabilities).toBeNull()
 
     const assembled = await assembleProviderOpenApi(db, 'fal', {
       model: DIRECTOR,
@@ -239,7 +237,7 @@ describe('FAL AsyncAPI ingest', () => {
       providerId: id,
       rawId: 'cleared/wma',
       activity: 'video',
-      capabilities: { category: 'text-to-video', asyncapi: true },
+      capabilities: { asyncapi: true, tools: true },
       firstSeenAt: NOW,
       lastSeenAt: NOW,
     })
@@ -265,6 +263,6 @@ describe('FAL AsyncAPI ingest', () => {
     const row = await db.query.models.findFirst({
       where: eq(models.id, 'fal-unflag-cleared-wma'),
     })
-    expect(row?.capabilities).toEqual({ category: 'text-to-video' })
+    expect(row?.capabilities).toEqual({ tools: true })
   })
 })

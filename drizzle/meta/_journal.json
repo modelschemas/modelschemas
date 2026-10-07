@@ -92,6 +92,20 @@
       "when": 1791388800000,
       "tag": "0012_same_as_links",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1791475200000,
+      "tag": "0013_model_stated_facts",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791475200001,
+      "tag": "0014_capability_flag_maps",
+      "breakpoints": true
     }
   ]
 }

@@ -41,7 +41,7 @@ beforeAll(async () => {
       activity: 'chat',
       displayName: 'Chatty One',
       contextWindow: 100_000,
-      capabilities: ['tools', 'vision'],
+      capabilities: { tools: true, vision: true, seed: false },
       reasoning: { mode: 'toggle', mandatory: false },
       firstSeenAt: NOW,
       lastSeenAt: NOW,
@@ -61,7 +61,7 @@ beforeAll(async () => {
       rawId: 'beta/chatter',
       activity: 'chat',
       displayName: 'Beta Chatter',
-      capabilities: ['tools'],
+      capabilities: { tools: true },
       reasoning: { mode: 'effort', mandatory: null, efforts: ['low', 'max'] },
       firstSeenAt: NOW,
       lastSeenAt: NOW,
@@ -106,7 +106,11 @@ describe('listModelsCatalog filters', () => {
     ])
   })
 
-  it('filters by capability substring and free text', async () => {
+  it('filters by a capability flag stated true, and by free text', async () => {
+    // A stated false, a prefix of a flag, and a quote are not matches.
+    expect(await catalogIds({ capability: 'seed' })).toEqual([])
+    expect(await catalogIds({ capability: 'tool' })).toEqual([])
+    expect(await catalogIds({ capability: 'x"y' })).toEqual([])
     expect(await catalogIds({ capability: 'vision' })).toEqual([
       'cat-alpha-chatty',
     ])

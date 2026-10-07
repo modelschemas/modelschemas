@@ -169,6 +169,21 @@ ones).
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
   Models API + thinking table; Anthropic tools are a hand-written table
   in `anthropic-features.ts` (re-verify on each Claude launch).
+- **Stated facts** (`settleStatedFacts` in `poll-models.ts`; contract in
+  the `FactAbsence` comment in `providers/types.ts`): `models.capabilities`
+  is a yes/no flag map (`src/lib/capabilities.ts`), a boolean map or null
+  on every row. Adapters still emit the list of supported flags, plus
+  `unsupportedCapabilities` for a stated no; `settleCapabilities` is the one
+  place they become the map, and it adds `false` for `exactCapabilities`
+  rows from the flags that provider's exact rows list in the same poll. A
+  provider's native listing object goes in `providerMetadata`, never in
+  `capabilities` (the gate refuses a non-flag value). `models.releasedAt`
+  is the provider's own date (`firstSeenAt` still folds it in), kept when
+  a listing stops stating it. `knowledgeCutoff` (`YYYY-MM[-DD]`) and
+  `openWeights` + `weightsUrl` are null unless the provider states them.
+  A stored row's first `releasedAt` or `providerMetadata` is written with
+  no `model.updated`. Migration `0014` is a drizzle custom migration that
+  converted the stored lists.
 - **sameAs links** (issue #199, `src/server/ingest/model-identity.ts`): a
   reseller row links to the upstream row its own provider names — never
   inferred from a similar name alone, and never a copied fact. Adapters

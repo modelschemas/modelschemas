@@ -279,9 +279,26 @@ describe('huggingface listing', () => {
       },
     })
 
+    // `agree/all`: every host says no structured output. That is a stated
+    // no, and it says nothing about plain `response_format`.
+    expect(byId['agree/all']?.unsupportedCapabilities).toEqual([
+      'structured_outputs',
+    ])
+    expect(byId['agree/all']?.factSources?.capabilities).toMatchObject({
+      structured_outputs: {
+        ...listing,
+        path: 'providers[provider=nscale].supports_structured_output',
+      },
+    })
+    expect(byId['promo/free']?.unsupportedCapabilities).toEqual([
+      'tools',
+      'structured_outputs',
+    ])
+
     expect(byId['agree/but-one-silent']).toMatchObject({
       contextWindow: 40960,
       capabilities: [],
+      unsupportedCapabilities: ['tools', 'structured_outputs'],
       pricing: {
         tables: {
           rate: {
@@ -295,6 +312,16 @@ describe('huggingface listing', () => {
           path: 'providers[provider=nscale].context_length',
         },
         pricing: { ...listing, path: 'providers[provider=nscale].pricing' },
+        capabilities: {
+          tools: {
+            ...listing,
+            path: 'providers[provider=nscale].supports_tools',
+          },
+          structured_outputs: {
+            ...listing,
+            path: 'providers[provider=nscale].supports_structured_output',
+          },
+        },
       },
     })
     expect(byId['agree/float-noise']?.pricing).toMatchObject({

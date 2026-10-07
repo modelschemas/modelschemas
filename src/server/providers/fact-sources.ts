@@ -9,6 +9,8 @@
  * has no key for text and none for output. Walked, it gave every model on
  * a route the same `{ input: ['image', 'audio'], output: [] }`.
  */
+import { isCapabilityMap, supportedFlags } from '#/lib/capabilities.ts'
+
 import { undatedId } from './model-facts.ts'
 import type {
   Derivation,
@@ -76,6 +78,8 @@ export function emptySources(sources: ModelFactSources): boolean {
     sources.modalities === undefined &&
     sources.pricing === undefined &&
     sources.reasoning === undefined &&
+    sources.knowledgeCutoff === undefined &&
+    sources.openWeights === undefined &&
     sources.requestMap === undefined &&
     (sources.capabilities === undefined ||
       Object.keys(sources.capabilities).length === 0) &&
@@ -95,9 +99,16 @@ export function listingSources(info: ModelInfo): ModelFactSources {
   if (info.modalities != null) out.modalities = listingSource()
   if (info.pricing != null) out.pricing = listingSource()
   if (info.reasoning != null) out.reasoning = listingSource()
-  if (isStringArray(info.capabilities) && info.capabilities.length > 0) {
+  if (info.knowledgeCutoff != null) out.knowledgeCutoff = listingSource()
+  if (info.openWeights != null) out.openWeights = listingSource()
+  // A stated no is sourced like a stated yes, under the same record.
+  const flags = [
+    ...(isStringArray(info.capabilities) ? info.capabilities : []),
+    ...(info.unsupportedCapabilities ?? []),
+  ]
+  if (flags.length > 0) {
     out.capabilities = Object.fromEntries(
-      info.capabilities.map((flag) => [flag, listingSource()]),
+      flags.map((flag) => [flag, listingSource()]),
     )
   }
   if (info.serverTools != null && info.serverTools.length > 0) {
@@ -308,7 +319,9 @@ export interface MergedFacts {
  * Listing/docs win on a field they stated. Schema fills remaining
  * capability flags, and nothing else: modalities the listing does not
  * state stay null. Host-native capability objects and `exactCapabilities`
- * listings are left alone.
+ * listings are left alone, and so is a flag the listing says the model
+ * does not support: a shared schema that carries the field does not
+ * outrank the provider's own no.
  */
 export function mergeListingAndSchema(
   listing: ModelInfo,
@@ -324,8 +337,9 @@ export function mergeListingAndSchema(
   }
   if (!closed && walk && walk.flags.length > 0) {
     const have = new Set(isStringArray(capabilities) ? capabilities : [])
+    const refused = new Set(listing.unsupportedCapabilities)
     for (const flag of walk.flags) {
-      if (have.has(flag)) continue
+      if (have.has(flag) || refused.has(flag)) continue
       have.add(flag)
       const src = walk.sources.capabilities?.[flag]
       if (src) capSources[flag] = src
@@ -494,8 +508,14 @@ export function factDiscrepancies(
       )
     }
   }
-  const oursCaps = sortedStrings(ours.capabilities)
-  const theirCaps = sortedStrings(openrouter.capabilities)
+  // Stored maps: what each side says yes to. A `false` and a missing key
+  // both read as "not listed" here, as a missing list entry did.
+  const oursCaps = isCapabilityMap(ours.capabilities)
+    ? supportedFlags(ours.capabilities).sort()
+    : null
+  const theirCaps = isCapabilityMap(openrouter.capabilities)
+    ? supportedFlags(openrouter.capabilities).sort()
+    : null
   if (oursCaps !== null && theirCaps !== null) {
     const theirSet = new Set(theirCaps)
     const oursSet = new Set(oursCaps)

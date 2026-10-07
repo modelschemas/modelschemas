@@ -286,7 +286,18 @@ export type Model = {
    * Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.
    */
   pricing?: RateCard | CompactPricing | null
-  capabilities?: unknown
+  /**
+   * Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.
+   */
+  capabilities?: {
+    [key: string]: boolean
+  } | null
+  /**
+   * The provider's own listing object for the model, as published: not normalised, and different for every provider (fal category, BytePlus Ark features and task type, ElevenLabs languages, Replicate visibility). null when the provider lists none. Nothing in it is a capability flag; read capabilities for those.
+   */
+  providerMetadata?: {
+    [key: string]: unknown
+  } | null
   /**
    * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
    */
@@ -308,6 +319,25 @@ export type Model = {
    */
   aliases?: Array<string> | null
   factSources?: unknown
+  /**
+   * The provider's own stated release or creation date, epoch seconds. null when the provider reports none. Unlike firstSeenAt it is never our observation.
+   */
+  releasedAt?: number | null
+  /**
+   * Knowledge (training data) cutoff as the provider states it: YYYY-MM, or YYYY-MM-DD when the provider gives a day. Never padded to a day. null when unknown. factSources.knowledgeCutoff is its source.
+   */
+  knowledgeCutoff?: string | null
+  /**
+   * true when the provider itself states the weights can be openly downloaded, false when it states they cannot, null when it states neither. Never inferred from a model name. factSources.openWeights is its source.
+   */
+  openWeights?: boolean | null
+  /**
+   * Where the provider says the weights are. Set only when openWeights is true.
+   */
+  weightsUrl?: string | null
+  /**
+   * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
+   */
   firstSeenAt?: number
   lastSeenAt?: number
   deprecatedAt?: number | null
@@ -457,7 +487,7 @@ export type ListModelsData = {
       | 'moderation'
     provider?: string
     /**
-     * Substring match against model capabilities.
+     * A capability flag the model is stated to support: matches rows whose capabilities map has this key set to true (capability=tools). Exact flag name, not a substring.
      */
     capability?: string
     /**

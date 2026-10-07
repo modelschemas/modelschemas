@@ -5,6 +5,7 @@
  * actually uses, not general-purpose conversion.
  */
 import type { Activity } from '#/db/schema.ts'
+import { supportedFlags } from '#/lib/capabilities.ts'
 import { geminiModelFeatures } from './gemini-features.ts'
 import { geminiModelPricing } from './gemini-pricing.ts'
 import {
@@ -396,10 +397,11 @@ export const geminiProvider: ProviderConfig = {
   generationEndpointId: ({ activity, capabilities }) =>
     geminiGenerationEndpointId(
       activity,
+      // A listing's list at poll time, a stored row's map at read time.
       Array.isArray(capabilities)
         ? capabilities.filter(
             (value): value is string => typeof value === 'string',
           )
-        : [],
+        : supportedFlags(capabilities),
     ),
 }

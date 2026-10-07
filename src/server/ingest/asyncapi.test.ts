@@ -64,19 +64,23 @@ describe('extractAsyncApiSchemas', () => {
 
 describe('asyncapi catalog flag helpers', () => {
   it('adds, detects, drops, and preserves asyncapi: true', () => {
-    const listed = { category: 'text-to-video' }
+    const listed = { tools: true }
     const flagged = withAsyncApiFlag(listed, true)
-    expect(flagged).toEqual({ category: 'text-to-video', asyncapi: true })
+    expect(flagged).toEqual({ tools: true, asyncapi: true })
     expect(hasAsyncApiFlag(flagged)).toBe(true)
     expect(hasAsyncApiFlag(listed)).toBe(false)
-    expect(withAsyncApiFlag(flagged, false)).toEqual({
-      category: 'text-to-video',
-    })
+    expect(withAsyncApiFlag(flagged, false)).toEqual({ tools: true })
     expect(preserveAsyncApiFlag(flagged, listed)).toEqual({
-      category: 'text-to-video',
+      tools: true,
       asyncapi: true,
     })
     expect(preserveAsyncApiFlag(listed, listed)).toEqual(listed)
+    // A row with no flags of its own: the flag is the whole map, or none.
+    expect(withAsyncApiFlag(null, true)).toEqual({ asyncapi: true })
+    expect(withAsyncApiFlag({ asyncapi: true }, false)).toBeNull()
+    expect(preserveAsyncApiFlag({ asyncapi: true }, null)).toEqual({
+      asyncapi: true,
+    })
   })
 })
 

@@ -26,7 +26,10 @@ availability and schema questions.
    document; \`GET {base}/openapi.json\` is the typed spec.
 2. **Read without auth.** All reads are public at a low rate limit (60/h per
    IP). Go straight to:
-   - \`GET /v1/models?activity=chat&q=claude\` — what can I use right now
+   - \`GET /v1/models?activity=chat&q=claude\` — what can I use right now.
+     A row's \`capabilities\` is a map: \`true\` = the provider states
+     support, \`false\` = it states none, key absent = unknown (never read a
+     missing key as false). \`?capability=tools\` keeps rows where it is true.
    - \`GET /v1/schemas\` — every schema on the system
      (provider → activity → endpoint ids)
    - \`GET /v1/schemas/{provider}\` — endpoint ids per activity

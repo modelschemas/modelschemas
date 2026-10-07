@@ -71,9 +71,9 @@ describe('moonshot adapter', () => {
       expect(result.models).toEqual([
         {
           rawId: 'kimi-k2.7-code',
-          releasedAt: 1_786_418_420,
+          releasedAt: null,
           activity: 'chat',
-          absent: { reasoning: 'unavailable' },
+          absent: { reasoning: 'unavailable', releasedAt: 'cleared' },
         },
       ])
       expect(result.docsFailures).toMatchObject({
@@ -140,7 +140,7 @@ describe('moonshot adapter', () => {
     for (const id of ['kimi-k3', 'moonshot-v1-8k']) {
       expect(byId.get(id)).not.toHaveProperty('reasoning')
       expect(byId.get(id)).not.toHaveProperty('factSources')
-      expect(byId.get(id)).not.toHaveProperty('absent')
+      expect(byId.get(id)?.absent).toEqual({ releasedAt: 'cleared' })
     }
 
     // The China host's document is not this provider's, and neither is a
@@ -152,7 +152,10 @@ describe('moonshot adapter', () => {
       const failed = await list(body)
       expect(failed.docsFailures).toMatchObject({ failed: 1 })
       for (const model of failed.models) {
-        expect(model.absent).toEqual({ reasoning: 'unavailable' })
+        expect(model.absent).toEqual({
+          reasoning: 'unavailable',
+          releasedAt: 'cleared',
+        })
         expect(model).not.toHaveProperty('reasoning')
       }
     }

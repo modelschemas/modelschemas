@@ -384,7 +384,8 @@ describe('assembleProviderOpenApi', () => {
         providerId: 'fal',
         rawId: 'minimax/h3-max/director',
         activity: 'video',
-        capabilities: { category: 'text-to-video', asyncapi: true },
+        capabilities: { asyncapi: true },
+        providerMetadata: { category: 'text-to-video' },
         firstSeenAt: NOW,
         lastSeenAt: NOW,
       })
