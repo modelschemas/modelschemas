@@ -7,11 +7,24 @@
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
+import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
+import {
+  TOGETHER_REASONING_QUICKSTARTS,
+  TOGETHER_REASONING_URL,
+  applyTogetherDocs,
+  loadTogetherQuickstart,
+  loadTogetherReasoningPage,
+  loadTogetherServerlessChat,
+  reasoningHit,
+  supportedFactSources,
+} from '../together-facts.ts'
 import { togetherMediaPricing } from '../together-pricing.ts'
 import { fetchJson, fetchOpenApi, sha256Text, skippedResult } from '../types.ts'
 import type { RateCard } from '@modelschemas/rate-card'
 import type {
+  FactSource,
   ListModelsResult,
+  ModelFactSources,
   ModelInfo,
   ProviderConfig,
   ProviderSecrets,
@@ -67,10 +80,12 @@ interface TogetherSupportedModel {
 /** Page through v2 supported-models. `name` matches a v1 catalog id. */
 async function togetherSupportedFacts(
   key: string,
-): Promise<Map<string, Pick<ModelInfo, 'modalities' | 'capabilities'>>> {
+): Promise<
+  Map<string, Pick<ModelInfo, 'modalities' | 'capabilities' | 'factSources'>>
+> {
   const facts = new Map<
     string,
-    Pick<ModelInfo, 'modalities' | 'capabilities'>
+    Pick<ModelInfo, 'modalities' | 'capabilities' | 'factSources'>
   >()
   let after: string | undefined
   for (let page = 0; page < 20; page += 1) {
@@ -87,11 +102,15 @@ async function togetherSupportedFacts(
       const capabilities = (row.features ?? []).flatMap(
         (feature) => TOGETHER_FEATURES[feature] ?? [],
       )
+      const modalities =
+        input.length > 0 || output.length > 0 ? { input, output } : null
       facts.set(row.name, {
-        ...(input.length > 0 || output.length > 0
-          ? { modalities: { input, output } }
-          : {}),
+        ...(modalities ? { modalities } : {}),
         ...(capabilities.length > 0 ? { capabilities } : {}),
+        factSources: supportedFactSources({
+          ...(modalities ? { modalities } : {}),
+          ...(capabilities.length > 0 ? { capabilities } : {}),
+        }),
       })
     }
     if (!body.next_cursor) break
@@ -175,6 +194,31 @@ export async function togetherRateCard(
 
 const MEDIA_ACTIVITIES = new Set(['image', 'video', 'audio'])
 
+function listingFact(path: string): FactSource {
+  return { derivation: 'listing', sourceUrl: TOGETHER_MODELS_URL, path }
+}
+
+function positiveNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null
+}
+
+function mergeSources(
+  base: ModelFactSources | undefined,
+  extra: ModelFactSources | undefined,
+): ModelFactSources | undefined {
+  if (!extra) return base
+  const capabilities =
+    base?.capabilities || extra.capabilities
+      ? { ...base?.capabilities, ...extra.capabilities }
+      : undefined
+  const merged: ModelFactSources = { ...base, ...extra }
+  if (capabilities) merged.capabilities = capabilities
+  else delete merged.capabilities
+  return merged
+}
+
 async function listModels(
   env: ProviderSecrets,
   kv?: KVNamespace,
@@ -200,29 +244,93 @@ async function listModels(
     : null
   const models: Array<ModelInfo> = []
   for (const { item, activity } of rows) {
+    const contextWindow = positiveNumber(item.context_length)
+    const config = isRecord(item.config) ? item.config : null
+    const maxOutput = positiveNumber(config?.max_output_length)
+    const factSources: ModelFactSources = {}
+    if (contextWindow != null) {
+      factSources.contextWindow = listingFact('context_length')
+    }
+    if (maxOutput != null)
+      factSources.maxOutput = listingFact('config.max_output_length')
     const model: ModelInfo = {
       rawId: item.id as string,
       displayName:
         typeof item.display_name === 'string' ? item.display_name : null,
       activity,
-      contextWindow:
-        typeof item.context_length === 'number' ? item.context_length : null,
+      contextWindow,
+      maxOutput,
       releasedAt: typeof item.created === 'number' ? item.created : null,
+      ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
     if (media && activity && MEDIA_ACTIVITIES.has(activity)) {
       Object.assign(model, media(item.id as string, activity))
     } else {
       const card = await togetherRateCard(item.pricing)
-      if (card) model.pricing = card
+      if (card) {
+        model.pricing = card
+        model.factSources = {
+          ...(model.factSources ?? {}),
+          pricing: listingFact('pricing'),
+        }
+      }
     }
     models.push(model)
   }
   const supported = await togetherSupportedFacts(key)
+  const docs = docsRun()
+  const [chatDocs, reasoningPage, quickstarts] = await Promise.all([
+    tryDocs(
+      docs,
+      'https://docs.together.ai/docs/serverless/models.md',
+      (cached) => loadTogetherServerlessChat(kv, cached),
+    ),
+    tryDocs(docs, TOGETHER_REASONING_URL, (cached) =>
+      loadTogetherReasoningPage(kv, cached),
+    ),
+    Promise.all(
+      TOGETHER_REASONING_QUICKSTARTS.map((url) =>
+        tryDocs(docs, url, (cached) => loadTogetherQuickstart(kv, cached, url)),
+      ),
+    ),
+  ])
+  const reasoning = new Map<string, ReturnType<typeof reasoningHit>>()
+  if (reasoningPage) {
+    for (const [id, mode] of reasoningPage.byId) {
+      reasoning.set(
+        id,
+        reasoningHit(mode, TOGETHER_REASONING_URL, reasoningPage.hash),
+      )
+    }
+  }
+  TOGETHER_REASONING_QUICKSTARTS.forEach((url, index) => {
+    const page = quickstarts[index]
+    if (!page) return
+    for (const [id, mode] of page.byId) {
+      reasoning.set(id, reasoningHit(mode, url, page.hash))
+    }
+  })
+  const pageMeta = reasoningPage
+    ? { loaded: true, hash: reasoningPage.hash }
+    : { loaded: false, hash: '' }
   return {
-    models: models.map((model) => ({
-      ...model,
-      ...supported.get(model.rawId),
-    })),
+    models: models.map((model) => {
+      const extra = supported.get(model.rawId)
+      const withSupported: ModelInfo = {
+        ...model,
+        ...(extra?.modalities ? { modalities: extra.modalities } : {}),
+        ...(extra?.capabilities ? { capabilities: extra.capabilities } : {}),
+      }
+      const merged = mergeSources(model.factSources, extra?.factSources)
+      if (merged) withSupported.factSources = merged
+      return applyTogetherDocs(
+        withSupported,
+        chatDocs,
+        reasoning,
+        pageMeta.loaded ? pageMeta : null,
+      )
+    }),
+    docsFailures: docsReport(docs),
   }
 }
 
@@ -236,6 +344,9 @@ export const provider: ProviderConfig = {
   fetchSpec,
   listModels,
   classify,
+  // The shared chat body publishes `reasoning` and `reasoning_effort` for
+  // every model on the route. Together only states those per model.
+  perModelSchemaFlags: ['reasoning', 'reasoning_effort'],
   generationEndpointId: ({ activity }) => {
     switch (activity) {
       case 'chat':
