@@ -265,9 +265,9 @@ function ModelsCatalog() {
                     <th title="Has a price card">priced</th>
                     <th
                       className="num max-sm:hidden"
-                      title="Chat facts filled of those scored for this model. Facts the provider does not publish are left out."
+                      title="Chat completeness: chat facts filled of those scored for this model. Facts the provider does not publish are left out."
                     >
-                      chat completeness
+                      chat
                     </th>
                     <th className="num">first seen</th>
                     <th className="num">last seen</th>
