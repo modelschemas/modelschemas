@@ -31,7 +31,7 @@ const host = (name: string, rest: Record<string, unknown>) => ({
   is_model_author: false,
   ...rest,
 })
-/** featherless-ai is live but publishes no figures. */
+/** featherless-ai is live but publishes no figures, so it is not `:fastest`. */
 const SILENT = host('featherless-ai', {})
 
 const model = (id: string, providers: unknown, output = ['text']) => ({
@@ -61,7 +61,7 @@ const FIXTURE = {
         throughput: 15.2,
       }),
     ]),
-    // A provider that states nothing settles nothing, not even a "no".
+    // An unprobed host is not the default route and does not veto it.
     model('agree/but-one-silent', [
       host('nscale', {
         context_length: 40960,
@@ -150,6 +150,90 @@ const FIXTURE = {
         throughput: 50,
       }),
     ]),
+    // Same throughput: context is shared, the prices are not.
+    model('route/tie', [
+      host('novita', {
+        context_length: 4096,
+        pricing: { input: 0.2, output: 0.4 },
+        supports_tools: true,
+        supports_structured_output: false,
+        throughput: 40,
+      }),
+      host('deepinfra', {
+        context_length: 4096,
+        pricing: { input: 0.5, output: 0.9 },
+        supports_tools: true,
+        supports_structured_output: false,
+        throughput: 40,
+      }),
+    ]),
+    model('route/tie-price', [
+      host('novita', {
+        context_length: 8192,
+        pricing: { input: 0.2, output: 0.4 },
+        supports_tools: true,
+        supports_structured_output: true,
+        throughput: 40,
+      }),
+      host('together', {
+        context_length: 8192,
+        pricing: { input: 0.2, output: 0.4 },
+        supports_tools: true,
+        supports_structured_output: true,
+        throughput: 40,
+      }),
+    ]),
+    // `:fastest` is highest throughput, not the lowest output price.
+    model('route/fast-not-cheap', [
+      host('cerebras', {
+        context_length: 65536,
+        pricing: { input: 0.9, output: 2 },
+        supports_tools: true,
+        supports_structured_output: false,
+        throughput: 200,
+      }),
+      host('novita', {
+        context_length: 1000000,
+        pricing: { input: 0.1, output: 0.2 },
+        supports_tools: false,
+        supports_structured_output: true,
+        throughput: 20,
+      }),
+    ]),
+    // The fastest host publishes no context. The slower one does not fill it.
+    model('route/fast-no-context', [
+      host('cerebras', {
+        pricing: { input: 0.1, output: 0.1 },
+        supports_tools: false,
+        supports_structured_output: false,
+        throughput: 1000,
+      }),
+      host('novita', {
+        context_length: 16384,
+        pricing: { input: 0.02, output: 0.05 },
+        supports_tools: false,
+        supports_structured_output: false,
+        throughput: 80,
+      }),
+    ]),
+    // An error host is not the route, even with a higher throughput.
+    model('route/error-faster', [
+      host('fireworks-ai', {
+        status: 'error',
+        context_length: 1000,
+        pricing: { input: 9, output: 9 },
+        supports_tools: false,
+        supports_structured_output: false,
+        throughput: 500,
+      }),
+      host('novita', {
+        context_length: 8192,
+        pricing: { input: 0.1, output: 0.2 },
+        supports_tools: true,
+        supports_structured_output: false,
+        throughput: 10,
+      }),
+    ]),
     model('image/model', [], ['image']),
   ],
 }
@@ -181,19 +265,37 @@ describe('huggingface listing', () => {
         source: { url: HUGGINGFACE_MODELS_URL },
       },
       factSources: {
-        contextWindow: { ...listing, path: 'providers[].context_length' },
-        pricing: { ...listing, path: 'providers[].pricing' },
+        contextWindow: {
+          ...listing,
+          path: 'providers[provider=nscale].context_length',
+        },
+        pricing: { ...listing, path: 'providers[provider=nscale].pricing' },
         capabilities: {
-          tools: { ...listing, path: 'providers[].supports_tools' },
+          tools: {
+            ...listing,
+            path: 'providers[provider=nscale].supports_tools',
+          },
         },
       },
     })
 
     expect(byId['agree/but-one-silent']).toMatchObject({
-      contextWindow: null,
-      pricing: null,
-      capabilities: null,
-      factSources: {},
+      contextWindow: 40960,
+      capabilities: [],
+      pricing: {
+        tables: {
+          rate: {
+            base: { input_tokens: 0.07 / 1e6, output_tokens: 0.2 / 1e6 },
+          },
+        },
+      },
+      factSources: {
+        contextWindow: {
+          ...listing,
+          path: 'providers[provider=nscale].context_length',
+        },
+        pricing: { ...listing, path: 'providers[provider=nscale].pricing' },
+      },
     })
     expect(byId['agree/float-noise']?.pricing).toMatchObject({
       tables: {
@@ -213,17 +315,105 @@ describe('huggingface listing', () => {
     expect(byId['split/price']).toMatchObject({
       contextWindow: 1048576,
       pricing: null,
-      capabilities: null,
+      capabilities: ['tools', 'structured_outputs', 'response_format'],
     })
     expect(byId['split/price']?.factSources).toEqual({
-      contextWindow: { ...listing, path: 'providers[].context_length' },
+      contextWindow: {
+        ...listing,
+        path: 'providers[provider=fireworks-ai].context_length',
+      },
+      capabilities: {
+        tools: {
+          ...listing,
+          path: 'providers[provider=fireworks-ai].supports_tools',
+        },
+        structured_outputs: {
+          ...listing,
+          path: 'providers[provider=fireworks-ai].supports_structured_output',
+        },
+        response_format: {
+          ...listing,
+          path: 'providers[provider=fireworks-ai].supports_structured_output',
+        },
+      },
     })
 
     expect(byId['split/context']).toMatchObject({
-      contextWindow: null,
+      contextWindow: 65536,
       capabilities: ['tools', 'structured_outputs', 'response_format'],
+      factSources: {
+        contextWindow: {
+          ...listing,
+          path: 'providers[provider=cerebras].context_length',
+        },
+        pricing: { ...listing, path: 'providers[provider=cerebras].pricing' },
+      },
     })
     expect(byId['split/context']?.pricing).not.toBeNull()
+
+    expect(byId['route/tie']).toMatchObject({
+      contextWindow: 4096,
+      pricing: null,
+      capabilities: ['tools'],
+      factSources: {
+        contextWindow: {
+          ...listing,
+          path: 'providers[provider=deepinfra,novita].context_length',
+        },
+        capabilities: {
+          tools: {
+            ...listing,
+            path: 'providers[provider=deepinfra,novita].supports_tools',
+          },
+        },
+      },
+    })
+    expect(byId['route/tie-price']).toMatchObject({
+      contextWindow: 8192,
+      factSources: {
+        pricing: {
+          ...listing,
+          path: 'providers[provider=novita,together].pricing',
+        },
+      },
+    })
+    expect(byId['route/tie-price']?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: { input_tokens: 0.2 / 1e6, output_tokens: 0.4 / 1e6 },
+        },
+      },
+    })
+    expect(byId['route/fast-not-cheap']).toMatchObject({
+      contextWindow: 65536,
+      capabilities: ['tools'],
+      factSources: {
+        pricing: { ...listing, path: 'providers[provider=cerebras].pricing' },
+      },
+    })
+    expect(byId['route/fast-not-cheap']?.pricing).toMatchObject({
+      tables: {
+        rate: { base: { input_tokens: 0.9 / 1e6, output_tokens: 2 / 1e6 } },
+      },
+    })
+    expect(byId['route/fast-no-context']).toMatchObject({
+      contextWindow: null,
+      capabilities: [],
+      factSources: {
+        pricing: { ...listing, path: 'providers[provider=cerebras].pricing' },
+      },
+    })
+    expect(byId['route/error-faster']).toMatchObject({
+      contextWindow: 8192,
+      capabilities: ['tools'],
+      factSources: {
+        contextWindow: {
+          ...listing,
+          path: 'providers[provider=novita].context_length',
+        },
+        pricing: { ...listing, path: 'providers[provider=novita].pricing' },
+      },
+    })
 
     expect(byId['unranked/only']).toMatchObject({
       contextWindow: null,
@@ -381,6 +571,23 @@ describe('huggingface listing', () => {
       ],
     })
     expect(row).toMatchObject({ contextWindow: null, capabilities: null })
+  })
+
+  it('throws when a provider status is not live or error', async () => {
+    await expect(
+      parseHuggingFaceModels({
+        data: [
+          model('x/y', [
+            host('novita', {
+              status: 'staging',
+              context_length: 8192,
+              pricing: { input: 0.1, output: 0.2 },
+              throughput: 10,
+            }),
+          ]),
+        ],
+      }),
+    ).rejects.toThrow('status is in an unread shape')
   })
 
   it('throws on a payload that lists nothing', async () => {

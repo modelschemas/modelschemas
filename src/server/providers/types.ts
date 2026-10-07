@@ -278,11 +278,11 @@ export type ModelFact =
  * |                    | table's map (no stored "no map")       |                 |
  * | `unavailable`      | the stored value and source            | the docs failure|
  *
- * - `cleared`: the source was read and has no value now (router hosts that
- *   stopped agreeing, a price moved to a subscription). Only say it for a
- *   value the source visibly lacks; a shape the parser cannot read must
- *   throw. The poller refuses a poll that clears most of a provider's
- *   prices at once (`refusesPriceClears`).
+ * - `cleared`: the source was read and has no value now (the Hugging Face
+ *   default route publishes no price, a price moved to a subscription).
+ *   Only say it for a value the source visibly lacks; a shape the parser
+ *   cannot read must throw. The poller refuses a poll that clears most of
+ *   a provider's prices at once (`refusesPriceClears`).
  * - `unavailable`: the source could not be read this poll (`tryDocs`). A
  *   new row has nothing stored, so the fact is null.
  * - A reason wins over a value the listing also carries.
