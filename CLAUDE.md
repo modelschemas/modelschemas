@@ -164,7 +164,9 @@ ones).
   reseller row links to the upstream row its own provider names — never
   inferred from a similar name alone, and never a copied fact. Adapters
   state the upstream with `ProviderConfig.upstreamModelIdentity`
-  (OpenRouter, Vercel, Azure); polls store it as evidence
+  (OpenRouter, Vercel, Azure, Perplexity's `anthropic/`-style ids — not
+  OpenCode, whose AI SDK package column names the wire protocol, not the
+  maker); polls store it as evidence
   (`models.upstream_provider`/`upstream_raw_id`/`upstream_source`), writing
   only what changed. Names gateways use for a provider (`google` → gemini)
   are rows in `provider_model_namespaces`, mirrored from
