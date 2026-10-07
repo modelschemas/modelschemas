@@ -4,18 +4,34 @@
  * api-reference page is HTML, not a spec; the published YAML covers
  * POST /v1/chat/completions and /v1/completions. Models list needs
  * FIREWORKS_API_KEY.
+ *
+ * Prices, reasoning, and the chat request map are read on each poll from
+ * the pricing page, the serverless models API, and that same YAML.
  */
 import type { Activity } from '#/db/schema.ts'
-import { fireworksModelPricing } from '../fireworks-pricing.ts'
 import {
-  classifyOpenAiCompat,
-  listOpenAiCompatibleModels,
-} from '../openai-compat.ts'
+  applyFireworksDocs,
+  FIREWORKS_SERVERLESS_URL,
+  FIREWORKS_SPEC_URL,
+  loadFireworksChatSpec,
+  loadFireworksServerless,
+  mergeFireworksRates,
+} from '../fireworks-facts.ts'
+import {
+  FIREWORKS_PRICING_URL,
+  loadFireworksPricingDoc,
+} from '../fireworks-pricing.ts'
+import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import {
   compatGenerationEndpointId,
   fireworksModalities,
   fireworksModelActivity,
 } from '../model-meta.ts'
+import {
+  classifyOpenAiCompat,
+  listOpenAiCompatibleModels,
+} from '../openai-compat.ts'
+import { overlayModelFacts } from '../reasoning-config.ts'
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
@@ -24,8 +40,6 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-const FIREWORKS_SPEC_URL =
-  'https://docs.fireworks.ai/text-completion.openapi.yaml'
 const FIREWORKS_MODELS_URL = 'https://api.fireworks.ai/inference/v1/models'
 
 /**
@@ -65,17 +79,54 @@ async function listModels(
     activity: fireworksModelActivity,
     extend: async (row) => {
       const modalities = fireworksModalities(row)
-      return modalities ? { modalities } : {}
+      const stated =
+        typeof row.context_length === 'number' && row.context_length > 0
+      return {
+        ...(modalities ? { modalities } : {}),
+        ...(stated
+          ? {
+              factSources: {
+                contextWindow: {
+                  derivation: 'listing' as const,
+                  sourceUrl: FIREWORKS_MODELS_URL,
+                  path: 'context_length',
+                },
+              },
+            }
+          : {}),
+      }
     },
   })
   if (listed.models.length === 0) return listed
-  const pricing = await fireworksModelPricing(kv)
+  const docs = docsRun()
+  const key = env.FIREWORKS_API_KEY
+  const markdown = await tryDocs(docs, FIREWORKS_PRICING_URL, (cached) =>
+    loadFireworksPricingDoc(kv, cached),
+  )
+  const serverless = key
+    ? await tryDocs(docs, FIREWORKS_SERVERLESS_URL, (cached) =>
+        loadFireworksServerless(kv, cached, key),
+      )
+    : null
+  const chat = await tryDocs(docs, FIREWORKS_SPEC_URL, (cached) =>
+    loadFireworksChatSpec(kv, cached),
+  )
+  const prices = mergeFireworksRates(markdown, serverless)
+  const context = serverless?.context ?? {}
   return {
     ...listed,
-    models: listed.models.map((model) => ({
-      ...model,
-      ...pricing(model.rawId),
-    })),
+    models: listed.models.map((model) =>
+      overlayModelFacts(
+        model,
+        applyFireworksDocs(model, {
+          prices,
+          context,
+          contextHash: serverless?.hash ?? null,
+          chat,
+        }),
+      ),
+    ),
+    docsFailures: docsReport(docs),
   }
 }
 
@@ -93,4 +144,8 @@ export const provider: ProviderConfig = {
     activity === 'embeddings'
       ? null
       : compatGenerationEndpointId(activity, 'v1/'),
+  // The shared chat schema lists `reasoning_effort` on every model.
+  // Fireworks names the families that accept it in that field's
+  // description. The walk must not stamp `reasoning` on the rest.
+  perModelSchemaFlags: ['reasoning', 'reasoning_effort'],
 }

@@ -1,0 +1,38 @@
+{
+  "components": {
+    "schemas": {
+      "ChatCompletionRequest": {
+        "properties": {
+          "max_tokens": {
+            "description": "The maximum number of tokens to generate in the completion. If the token count of your prompt plus max_tokens exceeds the model's context length, the behavior depends on context_length_exceeded_behavior. By default, max_tokens will be lowered to fit in the context window instead of returning an error."
+          },
+          "max_completion_tokens": {
+            "description": "Alias for max_tokens. Cannot be specified together with max_tokens."
+          },
+          "prompt_cache_key": {
+            "description": "A key used for prompt caching session affinity. Requests with the same prompt_cache_key are routed to the same backend to maximize KV cache hit rates. This is the preferred field for session affinity (takes priority over the 'user' field)."
+          },
+          "reasoning_effort": {
+            "description": "Controls reasoning behavior for supported models. When enabled, the model's reasoning appears in the `reasoning_content` field of the response, separate from the final answer in `content`.\n\n**Accepted values:**\n\n- **String** (OpenAI-compatible): `'low'`, `'medium'`, `'high'`, `'xhigh'`, or `'max'` to enable reasoning with varying effort levels; `'none'` to disable reasoning. `'adaptive'` is supported only by MiniMax M3.\n- **Boolean** (Fireworks extension): `true` to enable reasoning, `false` to disable it.\n- **Integer** (Fireworks extension): A positive integer to set a hard token limit on reasoning output. Integer values enable the model's normal medium-style thinking behavior and force the model to end its thinking phase after at most that many generated thinking tokens. DeepSeek V4.1 is the exception; see below.\n\n**Important:** Boolean values are normalized internally: `true` becomes `'medium'`, and `false` becomes `'none'`. This normalization happens before model-specific validation, so if a model doesn't support `'none'`, passing `false` will produce an error referencing `'none'`.\n\n**Model-specific behavior:**\n\n- **Qwen3.8 / Qwen3.8 Max**: Hybrid thinking for deployments using the `qwen3p8` or `qwen3p8-max` conversation styles. Use `'none'` or `false` to disable thinking. Omitted or boolean-true effort uses the model-default `'xhigh'` prompt with a 131072-token budget. Named levels condition the prompt and map to hard budgets: `'low'` to 4096, `'medium'` to 16384, and `'high'`/`'xhigh'`/`'max'` to 262144. A positive integer remains an explicit hard budget and selects the corresponding low/medium/xhigh prompt tier.\n- **Other Qwen3 models**: Grammar-based reasoning on the reasoning-enabled `qwen3`/`qwen3p5` conversation styles. Older chat-mode deployments may opt into `qwen3-no-thinking`, which disables reasoning support. For reasoning-enabled styles, use `'none'` or `false` to disable. Supports integer token limits to cap reasoning output. `'low'`, `'medium'`, and `'high'` keep their model-specific behavior and are not hard budgets.\n- **MiniMax M2**: Reasoning is required (always on). Defaults to `'medium'` when omitted. Accepts only string `reasoning_effort`: `'low'`, `'medium'`, or `'high'`. `'none'` and boolean values are rejected.\n- **DeepSeek V3.1**: Binary on/off reasoning. Default reasoning off (matches chat template). Use `true`, `'low'`, `'medium'`, or `'high'` to enable; `'none'` or `false` to disable.\n- **DeepSeek V3.2**: Binary on/off reasoning. Default reasoning on. Use `'none'` or `false` to disable; effort levels and integers have no additional effect.\n- **DeepSeek V4**: Three thinking tiers: `Low`, `High`, and `Max`. Default reasoning on at the vendor default tier (`'low'`). `'low'` selects Low (no reasoning-effort preamble); `'medium'` is silently promoted to `'high'`; `'high'` selects High; `'xhigh'` is silently promoted to `'max'`; `'max'` selects Max (the most thorough preamble). Boolean `true` defers to the vendor default tier. `'none'` or `false` disables thinking.\n- **DeepSeek V4.1**: Follows the official thinking-mode map. `'low'` stays `'low'`; `'medium'`, `'high'`, and `'xhigh'` select `'high'` (default); `'max'` stays `'max'`. Omitted or boolean `true` also select `'high'`. `'none'` or `false` disables thinking. The staged encoder (`encoding/encoding.py`) turns those names into the vendor 1-100 prompt scale (official Flash map: `'low'`=50, `'high'`=75, `'max'`=100). An integer from 1 to 100 is sent as that number and does not set a thinking-token cap. Integers from 101 to 1023 are sent as `'low'` and do not set a cap. An integer >= 1024 is sent as `'high'` and is also a hard thinking-token budget. `minimal` and `ultra` are outside the shared effort enum and are rejected before this map. DeepSeek V4 (not V4.1) does not use this numeric scale.\n- **GLM 4.5, GLM 4.5 Air, GLM 4.6, GLM 4.7, GLM 5.1**: Binary on/off reasoning. Default reasoning on. Use `'none'` or `false` to disable; effort levels and integers have no additional effect.\n- **GLM 5.2**: Two thinking tiers, `High` and `Max` (rendered as a `Reasoning Effort:` system line). `'high'` selects High; `'low'` and `'medium'` are collapsed to `'high'`; `'max'` and `'xhigh'` select Max; when omitted, the model default (`Max`) applies. `'none'` or `false` disables thinking.\n- **Kimi K3**: Three thinking tiers: `Low`, `High`, and `Max`. Default reasoning on when omitted (vendor default effort `Max`). Boolean `true` defers to that vendor default (K3 clears it before the global `true` → `'medium'` normalization). `'none'` or `false` disables thinking. `'low'` selects Low; `'medium'` is silently promoted to `'high'`; `'high'` selects High; `'xhigh'` is silently promoted to `'max'`; `'max'` selects Max.\n- **Harmony (OpenAI GPT-OSS 120B, GPT-OSS 20B)**: Accepts only `'low'`, `'medium'`, or `'high'`. Does not support `'none'`, `false`, or integer values — using these will return an error (e.g., \"Invalid reasoning effort: none\"). When omitted, defaults to `'medium'`. Lower effort produces faster responses with shorter reasoning."
+          }
+        }
+      },
+      "ChatMessage": {
+        "properties": {
+          "role": {
+            "description": "The role of the messages author. One of `system`, `user`, or `assistant`."
+          },
+          "content": {},
+          "reasoning_content": {
+            "description": "The reasoning or thinking process generated by the model. This field is only available for certain reasoning models (GLM 4.5, GLM 4.5 Air, GPT OSS 120B, GPT OSS 20B) and contains the model's internal reasoning that would otherwise appear in `<think></think>` tags within the content field."
+          },
+          "tool_calls": {},
+          "tool_call_id": {}
+        }
+      },
+      "ThinkingConfigAdaptive": {
+        "description": "Configuration that lets the model decide whether to think (MiniMax M3).\n\nPer the M3 API spec (§1.4), `{\"type\": \"adaptive\"}` is M3's default — the model\ndecides whether to emit a thinking phase. No forced first token is applied.\nCurrently accepted only by MiniMax M3; other model families reject it."
+      }
+    }
+  }
+}
