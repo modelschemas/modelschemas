@@ -3,8 +3,19 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { price } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
-import { BEDROCK_CARDS_URL, bedrockReasoning } from '../bedrock-cards.ts'
+import {
+  BEDROCK_CARDS_URL,
+  bedrockCardPrice,
+  bedrockReasoning,
+  parseBedrockCard,
+} from '../bedrock-cards.ts'
+import {
+  BEDROCK_METERED_URL,
+  BEDROCK_PRICE_LIST_URL,
+  BEDROCK_PRICING_PAGE_URL,
+} from '../bedrock-pricing.ts'
 import { BEDROCK_SDK_MODEL_URL } from '../bedrock-sdk-spec.ts'
+import { sha256Text } from '../types.ts'
 import { provider } from './amazon-bedrock.ts'
 
 const DOCS = 'https://docs.aws.amazon.com/bedrock/latest/userguide/'
@@ -158,12 +169,72 @@ const SDK_MODEL = {
   },
 }
 
+const PRICE_OFFER = {
+  products: {
+    input: {
+      attributes: {
+        usagetype: 'USE1-example.model-mantle-input-tokens-standard',
+        inferenceType: 'Input tokens',
+        service_tier: 'standard',
+        feature: '',
+        model: 'Example Model',
+      },
+    },
+    output: {
+      attributes: {
+        usagetype: 'USE1-example.model-mantle-output-tokens-standard',
+        inferenceType: 'Output tokens',
+        service_tier: 'standard',
+        feature: '',
+        model: 'Example Model',
+      },
+    },
+  },
+  terms: {
+    OnDemand: {
+      input: {
+        t: {
+          priceDimensions: {
+            d: {
+              unit: '1M tokens',
+              beginRange: '0',
+              endRange: 'Inf',
+              pricePerUnit: { USD: '3' },
+            },
+          },
+        },
+      },
+      output: {
+        t: {
+          priceDimensions: {
+            d: {
+              unit: '1M tokens',
+              beginRange: '0',
+              endRange: 'Inf',
+              pricePerUnit: { USD: '9' },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+
+const PRICE_PAGE = `<h2>Geo and In-region Cross-region Inference</h2>
+<table><thead><tr><th>Models</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr></thead>
+<tbody><tr><td>Page Only</td><td>$2.00</td><td>$4.00</td></tr></tbody></table>`
+
 const PAGES: Record<string, string> = {
   [BEDROCK_CARDS_URL]: INDEX,
   [`${DOCS}model-card-anthropic-claude-sonnet-4-5.md`]: SONNET,
   [`${DOCS}model-card-openai-gpt-6-sol.md`]: GPT6,
   [`${DOCS}model-card-openai-gpt-54.md`]: GPT54,
   [BEDROCK_SDK_MODEL_URL]: JSON.stringify(SDK_MODEL),
+  [BEDROCK_PRICE_LIST_URL]: JSON.stringify(PRICE_OFFER),
+  [BEDROCK_PRICING_PAGE_URL]: PRICE_PAGE,
+  [BEDROCK_METERED_URL]: JSON.stringify({
+    regions: { 'US East (N. Virginia)': {} },
+  }),
 }
 
 const originalFetch = globalThis.fetch
@@ -195,12 +266,24 @@ describe('amazon-bedrock', () => {
     const { models, skipped } = await provider.listModels({})
 
     expect(skipped).toBeUndefined()
-    expect(urls.every((url) => url.startsWith(DOCS))).toBe(true)
+    expect(urls.filter((url) => !url.startsWith(DOCS)).sort()).toEqual(
+      [
+        BEDROCK_METERED_URL,
+        BEDROCK_PRICE_LIST_URL,
+        BEDROCK_PRICING_PAGE_URL,
+      ].sort(),
+    )
     expect(models.map((model) => model.rawId)).toEqual([
       'anthropic.claude-sonnet-4-5-20250929-v1:0',
       'openai.gpt-6-sol',
       'openai.gpt-5.4',
     ])
+    const cardUrl = `${DOCS}model-card-anthropic-claude-sonnet-4-5.md`
+    const source = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: cardUrl,
+      sourceHash: await sha256Text(SONNET),
+    }
     expect(models[0]).toEqual({
       rawId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
       displayName: 'Claude Sonnet 4.5',
@@ -208,10 +291,23 @@ describe('amazon-bedrock', () => {
       contextWindow: 200_000,
       maxOutput: 64_000,
       modalities: { input: ['image', 'text'], output: ['text'] },
-      // The card names no dollar amount.
+      // The card names no dollar amount, and the fixtures do not price it.
       pricing: null,
       capabilities: ['reasoning'],
       reasoning: null,
+      // Converse roles are user, assistant, system. No reasoning_effort.
+      requestMap: {
+        thinking: null,
+        maxTokensField: null,
+        developerRole: false,
+        replayReasoningContent: null,
+        store: null,
+        strictTools: null,
+        sessionAffinity: null,
+        cacheControl: null,
+        toolStream: null,
+        reasoningEffort: false,
+      },
       schemaEndpointId: 'model/{modelId}/converse',
       aliases: [
         'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -220,6 +316,14 @@ describe('amazon-bedrock', () => {
       ],
       deprecated: true,
       releasedAt: Date.UTC(2025, 8, 30) / 1000,
+      factSources: {
+        contextWindow: { ...source, path: 'contextWindow' },
+        maxOutput: { ...source, path: 'maxOutput' },
+        modalities: { ...source, path: 'modalities' },
+        capabilities: {
+          reasoning: { ...source, path: 'capabilities.reasoning' },
+        },
+      },
     })
   })
 
@@ -270,6 +374,73 @@ describe('amazon-bedrock', () => {
         'Supported (adaptive thinking is always on and cannot be disabled; effort level is configurable)',
       ),
     ).toEqual({ mode: 'adaptive', mandatory: true })
+    expect(
+      bedrockReasoning(
+        'Supported (adaptive thinking is always on and cannot be disabled; effort level configurable — low, medium, high, xhigh, max; default: high)',
+      ),
+    ).toEqual({
+      mode: 'adaptive',
+      mandatory: true,
+      efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
+  })
+
+  it('reads a two-space limit bullet and ignores the GovCloud table', () => {
+    const card = parseBedrockCard(
+      `# GPT
++  **Context window:** 1M tokens
++  **Max output tokens:** 131,072
+
+| **Endpoint** | **Model ID** | **In-Region endpoint URL** | **Geo inference ID** | **Global inference ID** |
+| --- | --- | --- | --- | --- |
+| bedrock-runtime | openai.gpt-6.1-sol | https://example | Not supported | Not supported |
+`,
+      { url: 'https://example.test/card', hash: 'h', extractedAt: 't' },
+    )
+    expect(card?.contextWindow).toBe(1_000_000)
+    expect(card?.maxOutput).toBe(131_072)
+    expect(card?.requestMap).toBeNull()
+
+    const priced = `
+## Pricing
+| **Inference option** | **Input** | **Output** | **Cache read** |
+| --- | --- | --- | --- |
+| In-Region | $1.25 | $2.50 | $0.20 |
+
+**AWS GovCloud (US-West)**
+
+| **Inference option** | **Input** | **Output** | **Cache read** |
+| --- | --- | --- | --- |
+| In-Region | $1.50 | $3.00 | $0.24 |
+
+*All prices are per 1 million tokens.*
+`
+    const govPrice = bedrockCardPrice(priced)
+    expect(govPrice?.uniform).toBe(true)
+    expect(govPrice?.base.input_tokens).toBeCloseTo(1.25 / 1e6)
+    expect(govPrice?.base.cache_read_tokens).toBeCloseTo(0.2 / 1e6)
+  })
+
+  it('reads named reasoning levels from the effort section', () => {
+    const card = parseBedrockCard(
+      `# Model
+
+**Reasoning effort**
+
+Set reasoning effort to \`none\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, or \`max\`.
+
+| **Endpoint** | **Model ID** | **In-Region endpoint URL** | **Geo inference ID** | **Global inference ID** |
+| --- | --- | --- | --- | --- |
+| bedrock-runtime | openai.gpt-6-sol | https://example | Not supported | Not supported |
+`,
+      { url: 'https://example.test/card', hash: 'h', extractedAt: 't' },
+    )
+    expect(card?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(card?.capabilities).toEqual(['reasoning'])
   })
 
   it('generates the Converse schema from the SDK service model', async () => {

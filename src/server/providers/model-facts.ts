@@ -155,7 +155,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // it would stay null or mark every level column mandatory.
 // v24: Cerebras model pages include paid maxOutput. A v23 entry has no
 // maxOutput and would leave it null for six hours.
-const DOCS_CACHE_VERSION = 'v24'
+// v25: Bedrock cards gain request maps, feature flags, and price-list
+// rates. A v24 entry would leave those null for six hours.
+const DOCS_CACHE_VERSION = 'v25'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
