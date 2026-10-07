@@ -401,24 +401,54 @@ describe('issue #109 listModels', () => {
   })
 
   it('sets jina activity from output modalities and skips an all-zero price', async () => {
+    const chatSpec = {
+      openapi: '3.1.0',
+      components: {
+        schemas: {
+          ChatCompletionRequest: {
+            type: 'object',
+            properties: {
+              messages: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/ChatMessage' },
+              },
+              model: { type: 'string', const: 'jina-ocr-v1' },
+              max_completion_tokens: { type: 'integer', minimum: 1 },
+            },
+            required: ['messages', 'model'],
+          },
+          ChatMessage: {
+            type: 'object',
+            properties: {
+              role: {
+                type: 'string',
+                enum: ['system', 'developer', 'user', 'assistant'],
+              },
+            },
+          },
+        },
+      },
+    }
     await withFetch(
-      () =>
-        json({
-          data: [
-            {
-              id: 'jina-embeddings-v3',
-              output_modalities: ['embeddings'],
-              input_modalities: ['text'],
-              pricing: { prompt: '0.00000005', completion: '0' },
-            },
-            {
-              id: 'jina-reranker-v3',
-              output_modalities: ['text'],
-              input_modalities: ['text'],
-              pricing: { prompt: '0', completion: '0' },
-            },
-          ],
-        }),
+      (url) =>
+        url.endsWith('/openapi.json')
+          ? json(chatSpec)
+          : json({
+              data: [
+                {
+                  id: 'jina-embeddings-v3',
+                  output_modalities: ['embeddings'],
+                  input_modalities: ['text'],
+                  pricing: { prompt: '0.00000005', completion: '0' },
+                },
+                {
+                  id: 'jina-reranker-v3',
+                  output_modalities: ['text'],
+                  input_modalities: ['text'],
+                  pricing: { prompt: '0', completion: '0' },
+                },
+              ],
+            }),
       async () => {
         const { models } = await jina.listModels({ JINA_API_KEY: 'test' })
         const embed = models.find((model) => model.rawId.includes('embeddings'))
