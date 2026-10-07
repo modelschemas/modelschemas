@@ -136,6 +136,8 @@ export function falChatFacts(
     // `thinking` must name `enabled`, or the enum is a shape we do not know.
     const efforts = stringEnum(properties.reasoning_effort)
     const thinking = stringEnum(properties.thinking)
+    // The endpoint's own on/off switch. Any other value set is not read.
+    const mode = stringEnum(properties.reasoning_mode)
     let reasoning: ModelReasoning | null = null
     if (efforts && thinking?.includes('enabled')) {
       reasoning = {
@@ -145,6 +147,14 @@ export function falChatFacts(
       }
       facts.reasoning = reasoning
       sources.reasoning = source('/properties/reasoning_effort')
+    } else if (
+      !efforts &&
+      !thinking &&
+      [...(mode ?? [])].sort().join() === 'no_think,think'
+    ) {
+      reasoning = { mode: 'toggle', mandatory: false }
+      facts.reasoning = reasoning
+      sources.reasoning = source('/properties/reasoning_mode')
     }
 
     // Text is named by `prompt`, never assumed.

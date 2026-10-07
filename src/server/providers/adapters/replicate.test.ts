@@ -387,29 +387,152 @@ describe('replicate chat facts from a model schema', () => {
     )
   })
 
-  it('states no reasoning where none means unset, not off', () => {
+  it('leaves mandatory unstated where none means unset, not off', () => {
     // `thinking_level` ["none","low","high"], default "none": "Thinking
-    // level for reasoning (low or high)".
+    // level for reasoning (low or high)". The default is not a level.
     const gemini = replicateChatFacts(model('google/gemini-3-flash'))
-    expect(gemini?.reasoning).toBeUndefined()
-    expect(gemini?.factSources?.reasoning).toBeUndefined()
+    expect(gemini?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'high'],
+    })
+    expect(gemini?.factSources?.reasoning?.path).toBe(
+      `${INPUT}/properties/thinking_level`,
+    )
     // `thinking` ["medium","None"]: "leave as None for default behavior".
     const deepseek = replicateChatFacts(model('deepseek-ai/deepseek-v3.1'))
     expect(deepseek?.capabilities).toContain('reasoning')
-    expect(deepseek?.reasoning).toBeUndefined()
+    expect(deepseek?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['medium'],
+    })
+    expect(deepseek?.factSources?.reasoning?.path).toBe(
+      `${INPUT}/properties/thinking`,
+    )
+
+    // A `none` that is not the default is a published value, still unstated.
+    const explicit = model('google/gemini-3-flash')
+    ;(inputProperties(explicit).thinking_level as { default: string }).default =
+      'low'
+    expect(replicateChatFacts(explicit)?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['none', 'low', 'high'],
+    })
   })
 
-  it('states no reasoning when the enum cannot turn it off', () => {
-    // `effort` is low…max: the schema does not say reasoning is optional.
-    const facts = replicateChatFacts(model('anthropic/claude-sonnet-5'))
-    expect(facts?.capabilities).toContain('reasoning_effort')
-    expect(facts?.reasoning).toBeUndefined()
+  it('reads off from the description, never from the absence of none', () => {
+    // `effort` low…max: "'low' disables thinking for the fastest, cheapest
+    // responses."
+    const claude = replicateChatFacts(model('anthropic/claude-sonnet-5'))
+    expect(claude?.capabilities).toContain('reasoning_effort')
+    expect(claude?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(claude?.factSources?.reasoning?.path).toBe(
+      `${INPUT}/properties/effort`,
+    )
+
+    const effort = (description: string) => {
+      const row = model('anthropic/claude-sonnet-5')
+      ;(inputProperties(row).effort as { description: string }).description =
+        description
+      return replicateChatFacts(row)?.reasoning
+    }
+    // Reworded, or naming a level the enum does not list: unstated.
+    expect(effort('How much thinking Claude does.')?.mandatory).toBeNull()
+    expect(effort("'low' keeps thinking short.")?.mandatory).toBeNull()
+    expect(effort("'none' disables thinking.")?.mandatory).toBeNull()
+    expect(effort("Use 'low' to disable.")?.mandatory).toBe(false)
+
+    // `reasoning_effort` without `none`: levels, off unstated.
+    const gpt = model('openai/gpt-5.4')
+    const schemas = gpt.latest_version?.openapi_schema?.components
+      ?.schemas as Record<string, { enum?: Array<string> }>
+    schemas.reasoning_effort!.enum = ['low', 'medium', 'high']
+    expect(replicateChatFacts(gpt)?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'medium', 'high'],
+    })
 
     const dangling = model('openai/gpt-5.4')
-    const schemas = dangling.latest_version?.openapi_schema?.components
-      ?.schemas as Record<string, unknown>
-    delete schemas.reasoning_effort
+    delete (
+      dangling.latest_version?.openapi_schema?.components?.schemas as Record<
+        string,
+        unknown
+      >
+    ).reasoning_effort
     expect(replicateChatFacts(dangling)?.reasoning).toBeUndefined()
+  })
+
+  it('reads a budget and a boolean switch from the model’s own fields', () => {
+    const withFields = (fields: Record<string, unknown>) => {
+      const row = model('meta/llama-4-maverick-instruct')
+      Object.assign(inputProperties(row), fields)
+      return replicateChatFacts(row)
+    }
+    // google/gemini-2.5-flash (2026-10-07).
+    const BUDGET = {
+      type: 'integer',
+      title: 'Thinking Budget',
+      maximum: 24576,
+      minimum: 0,
+      nullable: true,
+      description:
+        'Thinking budget for reasoning (0 to disable thinking, higher values allow more reasoning)',
+    }
+    const budget = withFields({ thinking_budget: BUDGET })
+    expect(budget?.reasoning).toEqual({ mode: 'budget', mandatory: false })
+    expect(budget?.factSources?.reasoning?.path).toBe(
+      `${INPUT}/properties/thinking_budget`,
+    )
+    expect(
+      withFields({
+        thinking_budget: { ...BUDGET, description: 'Thinking budget.' },
+      })?.reasoning,
+    ).toEqual({ mode: 'budget', mandatory: null })
+    expect(
+      withFields({ thinking_budget: { ...BUDGET, type: 'string' } })?.reasoning,
+    ).toBeUndefined()
+
+    // prunaai/gemma-4-26b-a4b-fast (2026-10-07).
+    const SWITCH = {
+      type: 'boolean',
+      title: 'Enable Thinking',
+      default: false,
+      description:
+        'Enable thinking mode (model reasons internally before answering)',
+    }
+    const toggle = withFields({ enable_thinking: SWITCH })
+    expect(toggle?.reasoning).toEqual({ mode: 'toggle', mandatory: false })
+    expect(toggle?.factSources?.reasoning?.path).toBe(
+      `${INPUT}/properties/enable_thinking`,
+    )
+    // Not a two-position switch: nothing is stored.
+    for (const field of [
+      { ...SWITCH, type: 'string' },
+      { ...SWITCH, enum: [true] },
+    ]) {
+      const got = withFields({ enable_thinking: field })
+      expect(got?.reasoning).toBeUndefined()
+      expect(got?.factSources?.reasoning).toBeUndefined()
+    }
+    // Two level fields, or a `thinking` enum that is a switch: not read.
+    const two = model('anthropic/claude-sonnet-5')
+    inputProperties(two).thinking_level = inputProperties(two).effort
+    expect(replicateChatFacts(two)?.reasoning).toBeUndefined()
+    const switched = model('deepseek-ai/deepseek-v3.1')
+    ;(
+      switched.latest_version?.openapi_schema?.components?.schemas as Record<
+        string,
+        { enum?: Array<string> }
+      >
+    ).thinking!.enum = ['enabled', 'disabled']
+    expect(replicateChatFacts(switched)?.reasoning).toBeUndefined()
   })
 
   it('binds a run route only for an official model', () => {

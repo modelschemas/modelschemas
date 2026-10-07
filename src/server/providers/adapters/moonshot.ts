@@ -5,7 +5,12 @@
  * 401s here the same way an international key 401s on api.moonshot.cn.
  * Generation is POST /v1/chat/completions; files, batches, billing, and
  * token-estimate classify as platform.
+ *
+ * The spec's chat request is a per-model union, as on the China host. A
+ * model whose own branch takes only the `thinking.type` switch gets a
+ * toggle from it. A failed spec read leaves the stored value alone.
  */
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import { moonshotModelPricing } from '../moonshot-pricing.ts'
 import {
   classifyOpenAiCompat,
@@ -19,13 +24,22 @@ import {
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
+import { moonshotChatFacts } from './moonshotai-cn.ts'
+import type { MoonshotHost } from './moonshotai-cn.ts'
 
 const MOONSHOT_OPENAPI_URL = 'https://platform.kimi.ai/docs/openapi.json'
 const MOONSHOT_MODELS_URL = 'https://api.moonshot.ai/v1/models'
+
+const HOST: MoonshotHost = {
+  label: 'moonshot',
+  server: 'https://api.moonshot.ai',
+  specUrl: MOONSHOT_OPENAPI_URL,
+}
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const { spec, hash } = await fetchOpenApi(MOONSHOT_OPENAPI_URL)
@@ -53,12 +67,33 @@ async function listModels(
   })
   if (listed.models.length === 0) return listed
   const pricing = await moonshotModelPricing(kv)
+  const docs = docsRun()
+  const chat = await tryDocs(docs, MOONSHOT_OPENAPI_URL, (cached) =>
+    cached(kv, MOONSHOT_OPENAPI_URL, async () => {
+      const { spec, hash } = await fetchOpenApi(MOONSHOT_OPENAPI_URL)
+      return moonshotChatFacts(spec, hash, HOST)
+    }),
+  )
+  const toggle = (rawId: string): Partial<ModelInfo> => {
+    if (!chat) return unavailable('reasoning')
+    const facts = chat[rawId]
+    // Only the switch is taken here: the listing and the schema walk
+    // already supply this host's other facts.
+    return facts?.reasoning?.mode === 'toggle'
+      ? {
+          reasoning: facts.reasoning,
+          factSources: { reasoning: facts.factSources.reasoning },
+        }
+      : {}
+  }
   return {
     ...listed,
     models: listed.models.map((model) => ({
       ...model,
       ...pricing(model.rawId),
+      ...toggle(model.rawId),
     })),
+    docsFailures: docsReport(docs),
   }
 }
 

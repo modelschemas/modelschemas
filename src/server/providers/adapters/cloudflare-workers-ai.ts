@@ -8,7 +8,9 @@
  * calling, vision, reasoning efforts) and its own request and response
  * schema; both are read from it. The schemas share a template, so a field
  * in one is not proof the model honours it: capability flags come from the
- * properties only, never from the schema walk.
+ * properties only, never from the schema walk. `enable_thinking` is not
+ * template: only reasoning models' schemas carry it, each with its own
+ * enum, so with no effort list it is read as the model's on/off switch.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -35,6 +37,7 @@ import type {
   ListModelsResult,
   ModelFact,
   ModelInfo,
+  ModelReasoning,
   OpenApiDocument,
   ProviderConfig,
   ProviderSecrets,
@@ -217,10 +220,53 @@ export function chatBodyFields(schema: unknown): Array<string> {
   return [...fields]
 }
 
+export type ThinkingSwitch = 'on-off' | 'on-only'
+
+/**
+ * `chat_template_kwargs.enable_thinking` of the request bodies that take
+ * `messages`: `on-off` for a plain boolean, `on-only` when its enum is
+ * `[true]`. Null when no body has it, when the bodies disagree, or when it
+ * has another shape.
+ */
+export function thinkingSwitch(schema: unknown): ThinkingSwitch | null {
+  const found = new Set<ThinkingSwitch | null>()
+  const visit = (node: unknown) => {
+    if (!isRecord(node)) return
+    const kwargs =
+      isRecord(node.properties) && 'messages' in node.properties
+        ? node.properties.chat_template_kwargs
+        : undefined
+    const field =
+      isRecord(kwargs) && isRecord(kwargs.properties)
+        ? kwargs.properties.enable_thinking
+        : undefined
+    if (field !== undefined) {
+      const boolean = isRecord(field) && field.type === 'boolean'
+      found.add(
+        !boolean
+          ? null
+          : field.enum === undefined
+            ? 'on-off'
+            : JSON.stringify(field.enum) === '[true]'
+              ? 'on-only'
+              : null,
+      )
+    }
+    for (const variants of [node.oneOf, node.anyOf]) {
+      if (Array.isArray(variants)) variants.forEach(visit)
+    }
+  }
+  visit(schema)
+  const [only = null] = [...found]
+  return found.size === 1 ? only : null
+}
+
 /** What `listModels` keeps of a catalog file (six hours in KV). */
 export interface CatalogDoc {
   properties: Record<string, unknown>
   chatFields: Array<string>
+  /** Absent on an entry cached before this was read: no switch is claimed. */
+  thinkingSwitch?: ThinkingSwitch | null
   hasRequestSchema: boolean
   hash: string
 }
@@ -299,8 +345,8 @@ export function catalogFacts(
   const reasons = flag('reasoning')
   const vision = flag('vision')
 
-  // `supported_efforts` is an effort mode. Without it the property is an
-  // on/off toggle, which `ModelReasoning` has no mode for.
+  // `supported_efforts` is an effort mode. Without it the property only
+  // says whether reasoning can be turned off (`mandatory`).
   let efforts: Array<string> | null = null
   let mandatory = false
   const effort = doc.properties.reasoning_effort
@@ -321,6 +367,23 @@ export function catalogFacts(
     }
   }
 
+  // No effort list: `enable_thinking` in the model's own request schema is
+  // the whole control. The catalog's `mandatory` is the statement, and wins
+  // over the schema. With none, a plain boolean field offers "off"; a field
+  // that only takes `true` states nothing by itself. A `reasoning` flag
+  // with no request field stores no object.
+  let toggle: ModelReasoning | null = null
+  if (efforts === null && reasons && doc.thinkingSwitch) {
+    const stated = isRecord(effort) ? effort.mandatory : undefined
+    if (stated !== undefined && typeof stated !== 'boolean') {
+      throw fail('reasoning_effort')
+    }
+    if (stated === true) toggle = { mode: 'toggle', mandatory: true }
+    else if (doc.thinkingSwitch === 'on-off') {
+      toggle = { mode: 'toggle', mandatory: false }
+    }
+  }
+
   const map = requestMap(doc.chatFields, efforts)
   return {
     modalities: {
@@ -332,7 +395,11 @@ export function catalogFacts(
       ...(reasons ? ['reasoning'] : []),
     ],
     exactCapabilities: true,
-    ...(efforts ? { reasoning: { mode: 'effort', mandatory, efforts } } : {}),
+    ...(efforts
+      ? { reasoning: { mode: 'effort', mandatory, efforts } }
+      : toggle
+        ? { reasoning: toggle }
+        : {}),
     ...(map ? { requestMap: map } : {}),
     ...(doc.hasRequestSchema
       ? { schemaEndpointId: runPath(rawId).slice(1) }
@@ -345,9 +412,11 @@ export function catalogFacts(
       },
       ...(efforts
         ? { reasoning: source('properties.reasoning_effort') }
-        : reasons
-          ? { reasoning: source(REASONING_SOURCE_SILENT) }
-          : {}),
+        : toggle
+          ? { reasoning: source('chat_template_kwargs.enable_thinking') }
+          : reasons
+            ? { reasoning: source(REASONING_SOURCE_SILENT) }
+            : {}),
     },
   }
 }
@@ -391,6 +460,7 @@ async function listModels(
           return {
             properties: parsed.properties,
             chatFields: chatBodyFields(parsed.input),
+            thinkingSwitch: thinkingSwitch(parsed.input),
             hasRequestSchema: parsed.input !== null,
             hash: await sha256Text(text),
           }

@@ -4,6 +4,7 @@ import {
   parseZaiContextWindows,
   parseZaiOutputCaps,
   parseZaiReasoning,
+  parseZaiThinkingSwitch,
   provider,
   ZAI_OPENAPI_URL,
   ZAI_OVERVIEW_URL,
@@ -18,6 +19,15 @@ const TEXT_MAX_TOKENS =
   'The maximum number of tokens for model output, the GLM-5.3, GLM-5.2, GLM-5.1, GLM-5, GLM-4.7, GLM-4.6 series supports 128K maximum output, the GLM-4.5 series supports 96K maximum output, the GLM-4.6v series supports 32K maximum output, the GLM-4.5v series supports 16K maximum output, GLM-4-32B-0414-128K supports 16K maximum output.'
 const VISION_MAX_TOKENS =
   'The maximum number of tokens for model output. `GLM-5.3-Flash` series supports a maximum output length of 128K, the GLM-4.6V series supports 32K, the GLM-4.5V series supports 16K, and autoglm-phone-multilingual supports 4K. It is recommended to set it to no less than 1024.'
+
+/** `ChatThinking.type` of https://docs.z.ai/openapi.json (2026-10-07). */
+const THINKING_TYPE = {
+  type: 'string',
+  description:
+    'Whether to enable the chain of thought(`GLM-5.3` `GLM-5.3-FLASH` series can only be enabled, and the thinking depth is controlled by `reasoning_effort`; for other models, when enabled, GLM-5.2 GLM-5.1 GLM-5 GLM-4.6 GLM-4.5 and others will automatically determine whether to think, while GLM-4.7 and GLM-4.5V will think compulsorily), default: enabled',
+  default: 'enabled',
+  enum: ['enabled', 'disabled'],
+}
 
 const part = (type: string) => ({
   type: 'object',
@@ -39,6 +49,7 @@ function spec(
     visionMaxTokens?: string
     parts?: Array<string>
     thinking?: string
+    thinkingType?: unknown
     visionTools?: string
   } = {},
 ) {
@@ -157,7 +168,7 @@ function spec(
           description:
             overrides.thinking ??
             'Only supported by GLM-4.5 series and higher models. This parameter is used to control whether the model enable the chain of thought.',
-          properties: { type: { type: 'string' } },
+          properties: { type: overrides.thinkingType ?? THINKING_TYPE },
         },
         ChatCompletionVisionRequest: {
           type: 'object',
@@ -461,9 +472,25 @@ describe('zai', () => {
       contextWindow: 200_000,
       maxOutput: 131_072,
     })
-    // No effort list names these, so no reasoning object is invented.
-    expect(byId.get('glm-5')?.reasoning).toBeUndefined()
-    expect(byId.get('glm-4.6v')?.reasoning).toBeUndefined()
+    // No effort list names these: `thinking.type` is their whole control,
+    // and only the GLM-5.3 series "can only be enabled".
+    for (const id of ['glm-5', 'glm-4.5-air', 'glm-4.7-flash', 'glm-4.6v']) {
+      expect(byId.get(id)?.reasoning).toEqual({
+        mode: 'toggle',
+        mandatory: false,
+      })
+      expect(byId.get(id)?.factSources?.reasoning).toMatchObject({
+        derivation: 'upstream-spec',
+        sourceUrl: ZAI_OPENAPI_URL,
+        path: 'thinking.type',
+      })
+    }
+    // `thinking` is "GLM-4.5 series and higher": no switch, no object.
+    expect(byId.get('glm-4-32b-0414-128k')?.reasoning).toBeUndefined()
+    expect(
+      byId.get('glm-4-32b-0414-128k')?.factSources?.reasoning,
+    ).toBeUndefined()
+    expect(byId.get('glm-image')?.reasoning).toBeUndefined()
     // "/" and a Resolution column are not context windows.
     expect(byId.get('glm-ocr')?.contextWindow).toBeUndefined()
     expect(byId.get('glm-image')?.contextWindow).toBeUndefined()
@@ -681,6 +708,89 @@ describe('zai parsers fail closed', () => {
     expect(() =>
       parseZaiContextWindows(OVERVIEW.replaceAll('Context', 'Window')),
     ).toThrow(/no context windows/)
+  })
+
+  it('reads who cannot turn thinking off from the switch itself', () => {
+    expect(parseZaiThinkingSwitch(THINKING_TYPE)).toEqual({
+      names: ['glm-5.3', 'glm-5.3-flash'],
+      series: true,
+    })
+  })
+
+  it('stores a toggle that cannot be turned off as mandatory', async () => {
+    // A model the description locks, with no effort list of its own.
+    serve({
+      ...DOCS,
+      [ZAI_OPENAPI_URL]: JSON.stringify(
+        spec({
+          thinkingType: {
+            ...THINKING_TYPE,
+            description: THINKING_TYPE.description.replace(
+              '`GLM-5.3` `GLM-5.3-FLASH` series',
+              '`GLM-5.3` `GLM-5.3-FLASH` `GLM-4.7` series',
+            ),
+          },
+        }),
+      ),
+    })
+    const { models } = await provider.listModels({})
+    const reasoning = (id: string) =>
+      models.find((model) => model.rawId === id)?.reasoning
+    expect(reasoning('glm-4.7-flash')).toEqual({
+      mode: 'toggle',
+      mandatory: true,
+    })
+    expect(reasoning('glm-5')).toEqual({ mode: 'toggle', mandatory: false })
+    // An effort row keeps its own reading.
+    expect(reasoning('glm-5.3')?.mode).toBe('effort')
+  })
+
+  it('throws on a thinking.type switch it cannot read', async () => {
+    const reworded = [
+      // The sentence that says who may send `disabled` is gone.
+      {
+        ...THINKING_TYPE,
+        description: 'Whether to enable the chain of thought',
+      },
+      {
+        ...THINKING_TYPE,
+        description: THINKING_TYPE.description.replace(
+          'series can only be enabled',
+          'series always think',
+        ),
+      },
+      {
+        ...THINKING_TYPE,
+        description: THINKING_TYPE.description.replace(
+          'for other models, when enabled',
+          'other models cannot be disabled either',
+        ),
+      },
+      // The locked list is not a plain list of models.
+      {
+        ...THINKING_TYPE,
+        description: THINKING_TYPE.description.replace(
+          '`GLM-5.3` `GLM-5.3-FLASH` series',
+          'every model except `GLM-4.5` series',
+        ),
+      },
+      // A third position is not an on/off switch.
+      { ...THINKING_TYPE, enum: ['enabled', 'disabled', 'auto'] },
+      { ...THINKING_TYPE, enum: ['enabled'] },
+      { type: 'string' },
+    ]
+    for (const thinkingType of reworded) {
+      expect(() => parseZaiThinkingSwitch(thinkingType)).toThrow(
+        /unreadable thinking.type switch/,
+      )
+      serve({
+        ...DOCS,
+        [ZAI_OPENAPI_URL]: JSON.stringify(spec({ thinkingType })),
+      })
+      await expect(provider.listModels({})).rejects.toThrow(
+        /unreadable thinking.type switch/,
+      )
+    }
   })
 
   it('throws on a reworded reasoning_effort list', () => {

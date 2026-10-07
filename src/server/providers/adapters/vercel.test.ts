@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { provider, VERCEL_MODELS_URL } from './vercel.ts'
+import { provider, VERCEL_MODELS_URL, vercelReasoning } from './vercel.ts'
 
 /**
  * Excerpt of https://ai-gateway.vercel.sh/v1/models (2026-10-04).
@@ -71,9 +71,21 @@ describe('vercel', () => {
       contextWindow: 40960,
       maxOutput: 16384,
       modalities: { input: ['text'], output: ['text'] },
-      reasoning: null,
+      // A toggle and nothing else: "an on/off control".
+      reasoning: { mode: 'toggle', mandatory: false },
+      factSources: {
+        reasoning: {
+          derivation: 'listing',
+          sourceUrl: VERCEL_MODELS_URL,
+          sourceHash: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+          path: 'reasoning.enabled',
+        },
+      },
       releasedAt: 1745798400,
     })
+    // An effort row carries no source of its own, as before.
+    expect(listed.models[1]).not.toHaveProperty('factSources')
+    expect(listed.models[2]).not.toHaveProperty('factSources')
     expect(listed.models[0]?.pricing).toMatchObject({
       tables: {
         rate: {
@@ -94,5 +106,42 @@ describe('vercel', () => {
     expect(spec.skipped).toContain('skipped')
     expect(spec.specs).toEqual([])
     expect(urls).toEqual([VERCEL_MODELS_URL])
+  })
+
+  it('reads each control the row lists, and nothing it does not know', () => {
+    const options = (...reasoning_options: Array<unknown>) =>
+      vercelReasoning({ reasoning_options })
+    // anthropic/claude-sonnet-4.5: a switch and a budget.
+    expect(
+      options({ type: 'toggle' }, { type: 'budget_tokens', min: 1024 }),
+    ).toEqual({ mode: 'budget', mandatory: false })
+    // minimax/minimax-m3: a budget alone says nothing about turning it off.
+    expect(options({ type: 'budget_tokens' })).toEqual({
+      mode: 'budget',
+      mandatory: null,
+    })
+    // An effort entry keeps its reading whatever sits beside it.
+    expect(
+      options(
+        { type: 'toggle' },
+        { type: 'effort', values: ['low', 'medium', 'xhigh'] },
+        { type: 'budget_tokens' },
+      ),
+    ).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['low', 'medium', 'xhigh'],
+    })
+    // A control type this does not know, an effort entry without values,
+    // or no controls: nothing is stored.
+    expect(options({ type: 'toggle' }, { type: 'auto' })).toBeNull()
+    expect(options({ type: 'switch' })).toBeNull()
+    expect(options({ type: 'toggle' }, { type: 'effort' })).toBeNull()
+    expect(
+      options({ type: 'toggle' }, { type: 'effort', values: [] }),
+    ).toBeNull()
+    expect(options()).toBeNull()
+    expect(vercelReasoning({})).toBeNull()
+    expect(vercelReasoning({ reasoning_options: 'toggle' })).toBeNull()
   })
 })
