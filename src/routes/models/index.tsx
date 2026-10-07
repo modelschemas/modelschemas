@@ -13,6 +13,7 @@ import {
 import type { ResourceView } from '#/components/site.tsx'
 import { activities } from '#/db/schema.ts'
 import type { Activity } from '#/db/schema.ts'
+import type { ModelRow } from '#/lib/completeness.ts'
 import type { SerializableModel } from '#/lib/json.ts'
 import { timeAgo, shortDate } from '#/lib/time.ts'
 
@@ -25,8 +26,17 @@ interface CatalogSearch {
   q?: string
 }
 
+/** Chat facts filled of those scored for one row; null for non-chat rows. */
+interface RowCompleteness {
+  filled: number
+  needed: number
+  missing: Array<string>
+}
+
 interface CatalogData {
   count: number
+  /** By model id, for the rows shown. */
+  completeness: Record<string, RowCompleteness>
   models: Array<SerializableModel>
   providers: Array<string>
   truncated: boolean
@@ -39,13 +49,38 @@ const getCatalog = createServerFn({ method: 'GET' })
     const { getDb } = await import('#/db/index.ts')
     const { listModelsCatalog, knownProviderIds } =
       await import('#/server/catalog.ts')
+    const { FACT_KEYS, buildReport } = await import('#/lib/completeness.ts')
+    const { sourceSilentLedger } = await import('#/server/source-silent.ts')
     const db = getDb(env)
-    const [result, providers] = await Promise.all([
+    // The second read carries full rate cards: the score reads them, and the
+    // page shows the compact rows the API serves.
+    const [result, scored, providers] = await Promise.all([
       listModelsCatalog(db, data),
+      listModelsCatalog(db, { ...data, pricing: true }),
       knownProviderIds(db),
     ])
+    const completeness: Record<string, RowCompleteness> = {}
+    for (const row of scored.models.slice(0, MAX_ROWS)) {
+      if (row.activity !== 'chat') continue
+      // Same scorer as the front page and `bun run gap:report`, one row at a time.
+      const [report] = buildReport(
+        [row as unknown as ModelRow],
+        sourceSilentLedger,
+      ).providers
+      if (!report) continue
+      const counted = FACT_KEYS.filter(
+        (key) => !report.silent.includes(key) && report.facts[key].need > 0,
+      )
+      const missing = counted.filter((key) => report.facts[key].have === 0)
+      completeness[row.id] = {
+        filled: counted.length - missing.length,
+        needed: counted.length,
+        missing,
+      }
+    }
     return {
       count: result.count,
+      completeness,
       // drizzle json columns are typed unknown; the values are plain JSON
       models: result.models.slice(
         0,
@@ -83,13 +118,15 @@ function queryString(search: CatalogSearch): string {
   return qs === '' ? '' : `?${qs}`
 }
 
-/** The reasoning mode a row states (effort, toggle, adaptive, budget), if any. */
-function reasoningMode(
-  reasoning: SerializableModel['reasoning'],
-): string | null {
-  if (reasoning === null || typeof reasoning !== 'object') return null
-  if (Array.isArray(reasoning)) return null
-  return typeof reasoning.mode === 'string' ? reasoning.mode : null
+function completenessCell(row: RowCompleteness | undefined): string {
+  return row ? `${String(row.filled)}/${String(row.needed)}` : '—'
+}
+
+function completenessTitle(row: RowCompleteness | undefined): string {
+  if (!row) return 'Scored for chat models only'
+  return row.missing.length === 0
+    ? 'Every scored fact is filled'
+    : `Missing: ${row.missing.join(', ')}`
 }
 
 /** Model rawIds can contain slashes (FAL); those detail URLs use the slug id. */
@@ -227,10 +264,10 @@ function ModelsCatalog() {
                     <th className="max-sm:hidden">activity</th>
                     <th title="Has a price card">priced</th>
                     <th
-                      className="max-sm:hidden"
-                      title="How reasoning is controlled: effort, toggle, adaptive or budget"
+                      className="num max-sm:hidden"
+                      title="Chat facts filled of those scored for this model. Facts the provider does not publish are left out."
                     >
-                      reasoning controls
+                      completeness
                     </th>
                     <th className="num">first seen</th>
                     <th className="num">last seen</th>
@@ -272,8 +309,11 @@ function ModelsCatalog() {
                         >
                           {m.pricing === null ? '✗' : '✓'}
                         </td>
-                        <td className="font-mono text-xs text-ink-soft max-sm:hidden">
-                          {reasoningMode(m.reasoning) ?? '—'}
+                        <td
+                          className="num text-ink-soft max-sm:hidden"
+                          title={completenessTitle(data.completeness[m.id])}
+                        >
+                          {completenessCell(data.completeness[m.id])}
                         </td>
                         <td className="num text-ink-faint">
                           {shortDate(m.firstSeenAt)}
