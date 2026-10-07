@@ -88,7 +88,8 @@ function Marker({ label, text }: { label: string; text: string }) {
 }
 
 function completenessNote(c: Completeness): string {
-  const silent = c.silent.join(', ')
+  // Defensive: nothing `/v1/status` sends may throw in render.
+  const silent = Array.isArray(c.silent) ? c.silent.join(', ') : ''
   if (c.needed === 0) {
     return `Nothing to fill across ${c.chat} chat models: this provider does not publish ${silent}`
   }
@@ -333,7 +334,9 @@ function Landing() {
                           href={`/models?provider=${p.id}&activity=chat`}
                           title={completenessNote(p.completeness)}
                         >
-                          {showPct(Math.round(p.completeness.score * 100))}
+                          {showPct(
+                            Math.round(Number(p.completeness.score) * 100),
+                          )}
                         </a>
                       )}
                     </td>

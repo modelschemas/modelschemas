@@ -435,11 +435,39 @@ describe('getServiceStatus', () => {
         .where(eq(cacheMeta.key, KEY))
       expect(await scoreOf(db, 'broken')).toMatchObject(none)
     }
+    // Entries that are not a whole `Completeness`, though the chat count
+    // matches the live one: never served, and no usable record at all.
+    for (const entry of [
+      7,
+      { chat: 1 },
+      { score: 'high', chat: 1, filled: 0, needed: 8, silent: 'x' },
+      { score: 0, chat: 1, filled: 0, needed: 8, silent: [1] },
+    ]) {
+      await db
+        .update(cacheMeta)
+        .set({ lastError: JSON.stringify({ broken: entry }) })
+        .where(eq(cacheMeta.key, KEY))
+      expect(await scoreOf(db, 'broken')).toEqual({
+        computedAt: null,
+        score: null,
+        chat: 0,
+        filled: 0,
+        needed: 0,
+        silent: [],
+      })
+    }
+    // An array is not a record. One bad entry does not cost the good ones.
     await db
       .update(cacheMeta)
-      .set({ lastError: '{"broken":7}' })
+      .set({ lastError: '[{"chat":1}]' })
       .where(eq(cacheMeta.key, KEY))
-    expect(await scoreOf(db, 'broken')).toMatchObject({ score: null, chat: 0 })
+    expect(await scoreOf(db, 'broken')).toMatchObject(none)
+    const good = { score: 0.5, chat: 1, filled: 4, needed: 8, silent: [] }
+    await db
+      .update(cacheMeta)
+      .set({ lastError: JSON.stringify({ broken: good, other: { chat: 1 } }) })
+      .where(eq(cacheMeta.key, KEY))
+    expect(await scoreOf(db, 'broken')).toEqual({ computedAt: NOW, ...good })
 
     // Deleted.
     await db.delete(cacheMeta).where(eq(cacheMeta.key, KEY))

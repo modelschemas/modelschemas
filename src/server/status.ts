@@ -10,6 +10,7 @@ import {
 } from '#/db/schema.ts'
 import { FACT_KEYS, buildReport, scoredFacts } from '#/lib/completeness.ts'
 import type { FactKey, Ledger, ModelRow } from '#/lib/completeness.ts'
+import { errorMessage } from '#/server/errors.ts'
 import { readIngestRecords } from '#/server/ingest/docs-failing.ts'
 import type {
   DocsFailing,
@@ -164,10 +165,21 @@ async function scoreCompleteness(
 
 const logCompleteness = (error: unknown) => {
   console.error(
-    JSON.stringify({
-      job: 'completeness',
-      error: error instanceof Error ? error.message : String(error),
-    }),
+    JSON.stringify({ job: 'completeness', error: errorMessage(error) }),
+  )
+}
+
+/** A stored entry is served only if it is wholly a `Completeness`. */
+function isCompleteness(value: unknown): value is Completeness {
+  if (typeof value !== 'object' || value === null) return false
+  const entry = value as Partial<Record<keyof Completeness, unknown>>
+  return (
+    (entry.score === null || typeof entry.score === 'number') &&
+    typeof entry.chat === 'number' &&
+    typeof entry.filled === 'number' &&
+    typeof entry.needed === 'number' &&
+    Array.isArray(entry.silent) &&
+    entry.silent.every((fact) => typeof fact === 'string')
   )
 }
 
@@ -215,11 +227,19 @@ async function readCompleteness(db: Db): Promise<{
       where: eq(cacheMeta.key, COMPLETENESS_KEY),
     })
     if (row?.lastError) {
-      const scores: unknown = JSON.parse(row.lastError)
-      if (typeof scores === 'object' && scores !== null) {
-        return {
-          computedAt: row.fetchedAt,
-          scores: scores,
+      const stored: unknown = JSON.parse(row.lastError)
+      if (typeof stored === 'object' && stored !== null) {
+        const entries = Object.entries(stored)
+        const valid = entries.filter(([, entry]) => isCompleteness(entry))
+        // Entries and none of them usable is no record either.
+        if (
+          !Array.isArray(stored) &&
+          (valid.length > 0 || entries.length === 0)
+        ) {
+          return {
+            computedAt: row.fetchedAt,
+            scores: Object.fromEntries(valid),
+          }
         }
       }
     }
@@ -287,7 +307,7 @@ export async function getServiceStatus(
   // The record is as old as the last poll. It is served only for a provider
   // whose live chat count still equals the count it scored, so a score never
   // sits over a different row set; that also makes no chat rows a null, not
-  // a zero. Anything else read from the record fails the same comparison.
+  // a zero.
   const completeness = (providerId: string): Completeness => {
     const scored = scores[providerId]
     const chat = modelsBy.get(providerId)?.chat ?? 0
