@@ -3,12 +3,17 @@ import { describe, expect, it } from 'vitest'
 
 import { mistralModelPage, tip } from './fixtures/mistral-model-page.ts'
 import {
+  copyMistralAliasFacts,
   indexMistralApiIds,
   indexMistralModalities,
+  mistralIndexSlugFor,
   mistralModelPricing,
   mistralRateCard,
   parseMistralApiIds,
+  parseMistralModelIndex,
+  parseMistralPageMaxOutput,
   parseMistralPageModalities,
+  parseMistralPagePrice,
   parseMistralPricing,
   parseMistralSamePrice,
 } from './mistral-pricing.ts'
@@ -74,6 +79,27 @@ describe('mistral pricing page', () => {
     expect(rates.has('mixed-units')).toBe(false)
     expect(rates.has('leanstral-1-5')).toBe(false)
     expect(rates.has('mistral-embed')).toBe(false)
+  })
+
+  it('keeps the struck-through standard price and skips an unreadable sale cell', () => {
+    const sale = `<h2>Flagship</h2><p>Prices /M Tokens</p><table>
+<tr><td><a href="/models/mistral-large-4-0">Large 4</a></td>
+<td><del><span>Original price: </span>$1.36</del><ins><span>Sale price: </span>$0.68</ins></td>
+<td><del><span>Original price: </span>$0.14</del><ins>$0.07</ins></td>
+<td><del><span>Original price: </span>$4.18</del><ins>$2.09</ins></td></tr>
+<tr><td><a href="/models/broken-sale">Broken</a></td>
+<td><del>no amount</del><ins>$0.68</ins></td><td>$0.1</td><td>$0.2</td></tr>
+</table>`
+    const rates = parseMistralPricing(sale)
+    expect(rates.get('mistral-large-4-0')).toEqual({
+      kind: 'tokens',
+      rates: {
+        input_tokens: 1.36 / 1e6,
+        cache_read_tokens: 0.14 / 1e6,
+        output_tokens: 4.18 / 1e6,
+      },
+    })
+    expect(rates.has('broken-sale')).toBe(false)
   })
 
   it('compiles a unit card from the parsed meters', () => {
@@ -351,6 +377,220 @@ describe('mistral model page modalities', () => {
       url: 'https://docs.mistral.ai/models/a-2',
       hash: 'h2',
     })
+  })
+})
+
+describe('mistral model page price and max output', () => {
+  const widget = {
+    type: 'custom',
+    free: false,
+    input: [
+      { type: 'range', price: 0.004, denominator: '/Min' },
+      { type: 'flat', price: 0.1, denominator: '/M Tokens' },
+    ],
+    output: [{ type: 'range', price: 0.4, denominator: '/M Tokens' }],
+  }
+  const page = (extra: Record<string, unknown>) =>
+    mistralModelPage(['voxtral-small-2507'], [[tip('Text input')]], extra)
+
+  it('reads a mixed token and audio widget, preferring originalPrice', () => {
+    expect(parseMistralPagePrice(page({ a1: widget }))).toEqual({
+      kind: 'tokens',
+      rates: {
+        audio_minutes: 0.004,
+        input_tokens: 0.1 / 1e6,
+        output_tokens: 0.4 / 1e6,
+      },
+    })
+    const card = mistralRateCard(
+      parseMistralPagePrice(page({ a1: widget })) ?? {
+        kind: 'tokens',
+        rates: {},
+      },
+      {
+        url: 'https://docs.mistral.ai/models/voxtral-small-25-07',
+        hash: 'c'.repeat(64),
+        extractedAt: '2026-10-08T00:00:00.000Z',
+      },
+    )
+    expect(card).not.toBeNull()
+    if (!card) return
+    expect(
+      price(card, {}, { input_tokens: 1_000_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(0.5, 9)
+    expect(
+      price(
+        card,
+        {},
+        {
+          input_tokens: 1_000_000,
+          output_tokens: 1_000_000,
+          audio_minutes: 2,
+        },
+      ),
+    ).toBeCloseTo(0.508, 9)
+    expect(
+      parseMistralPagePrice(
+        page({
+          a3: {
+            type: 'custom',
+            free: false,
+            input: [
+              {
+                price: 0.68,
+                originalPrice: 1.36,
+                denominator: '/M Tokens',
+                label: 'Input',
+              },
+              {
+                price: 0.07,
+                originalPrice: 0.14,
+                denominator: '/M Tokens',
+                label: 'Cached input',
+              },
+            ],
+            output: [
+              {
+                price: 2.09,
+                originalPrice: 4.18,
+                denominator: '/M Tokens',
+                label: 'Output',
+              },
+            ],
+          },
+        }),
+      ),
+    ).toEqual({
+      kind: 'tokens',
+      rates: {
+        input_tokens: 1.36 / 1e6,
+        cache_read_tokens: 0.14 / 1e6,
+        output_tokens: 4.18 / 1e6,
+      },
+    })
+  })
+
+  it('stores no card for a free widget and throws when widgets disagree', () => {
+    expect(
+      parseMistralPagePrice(
+        page({
+          a1: { type: 'flat', free: true, price: 0, denominator: '/M Tokens' },
+        }),
+      ),
+    ).toBeNull()
+    expect(() =>
+      parseMistralPagePrice(
+        page({
+          a1: widget,
+          a2: {
+            type: 'custom',
+            free: false,
+            input: [{ price: 1, denominator: '/M Tokens' }],
+            output: [{ price: 2, denominator: '/M Tokens' }],
+          },
+        }),
+      ),
+    ).toThrow(/widgets disagree/)
+  })
+
+  it('reads the Max output stat as 1024-based tokens', () => {
+    const stat = (label: string, value: string) => [
+      [
+        '$',
+        'span',
+        null,
+        {
+          className: 'uppercase',
+          children: ['$undefined', label],
+        },
+      ],
+      [
+        '$',
+        'div',
+        null,
+        {
+          className: 'text-lg font-bold font-mono text-primary-soft',
+          children: value,
+        },
+      ],
+    ]
+    expect(
+      parseMistralPageMaxOutput(page({ aa: stat('Max output', '128k') })),
+    ).toBe(128 * 1024)
+    // The context stat is not a max-output cap.
+    expect(
+      parseMistralPageMaxOutput(page({ aa: stat('Context', '1M') })),
+    ).toBeNull()
+    expect(
+      parseMistralPageMaxOutput(
+        page({
+          aa: stat('Max output', '128k'),
+          ab: stat('Max output', '256k'),
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('matches one index slug and no more', () => {
+    const slugs = parseMistralModelIndex(
+      '<a href="/models/overview">o</a><a href="/models/voxtral-small-25-07">v</a><a href="/models/leanstral-1-5">l</a><a href="/models/zai-glm-5-2">g</a> /models/page-abc',
+    )
+    const set = new Set(slugs)
+    expect(slugs).toEqual([
+      'voxtral-small-25-07',
+      'leanstral-1-5',
+      'zai-glm-5-2',
+    ])
+    expect(mistralIndexSlugFor('voxtral-small-2507', set)).toBe(
+      'voxtral-small-25-07',
+    )
+    expect(mistralIndexSlugFor('labs-leanstral-1-5', set)).toBe('leanstral-1-5')
+    expect(mistralIndexSlugFor('zai-glm-5-2', set)).toBe('zai-glm-5-2')
+    expect(mistralIndexSlugFor('mistral-medium-2604', set)).toBeNull()
+    expect(mistralIndexSlugFor('magistral-medium-latest', set)).toBeNull()
+  })
+})
+
+describe('mistral alias facts', () => {
+  it('copies one agreed fact onto mutual aliases and skips a conflict', () => {
+    const source = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://docs.mistral.ai/models/mistral-small-4-0-26-03',
+    }
+    const models = [
+      {
+        rawId: 'mistral-small-latest',
+        modalities: { input: ['text'], output: ['text'] },
+        maxOutput: 131072,
+        factSources: { modalities: source, maxOutput: source },
+      },
+      { rawId: 'mistral-vibe-cli-fast' },
+      {
+        rawId: 'left',
+        pricing: { price: 1 },
+      },
+      {
+        rawId: 'right',
+        pricing: { price: 2 },
+      },
+      { rawId: 'neither' },
+    ]
+    copyMistralAliasFacts(
+      models,
+      new Map([
+        ['mistral-small-latest', ['mistral-vibe-cli-fast']],
+        ['mistral-vibe-cli-fast', ['mistral-small-latest']],
+        ['left', ['right', 'neither']],
+        ['right', ['left']],
+        ['neither', ['left']],
+      ]),
+    )
+    expect(models[1]).toMatchObject({
+      modalities: { input: ['text'], output: ['text'] },
+      maxOutput: 131072,
+      factSources: { modalities: source, maxOutput: source },
+    })
+    expect(models[4]?.pricing).toBeUndefined()
   })
 })
 

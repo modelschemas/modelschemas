@@ -80,7 +80,8 @@ export function emptySources(sources: ModelFactSources): boolean {
     (sources.capabilities === undefined ||
       Object.keys(sources.capabilities).length === 0) &&
     (sources.serverTools === undefined ||
-      Object.keys(sources.serverTools).length === 0)
+      Object.keys(sources.serverTools).length === 0) &&
+    sources.requestMap === undefined
   )
 }
 

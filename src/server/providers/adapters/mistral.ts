@@ -8,7 +8,15 @@ import {
   mistralGenerationEndpointId,
   mistralModelActivity,
 } from '../model-meta.ts'
-import { mistralModelPricing } from '../mistral-pricing.ts'
+import {
+  copyMistralAliasFacts,
+  mistralModelPricing,
+} from '../mistral-pricing.ts'
+import {
+  MISTRAL_OPENAPI_URL,
+  mistralChatWire,
+  mistralRequestMap,
+} from '../mistral-request.ts'
 import {
   listsReasoning,
   mistralModelReasoning,
@@ -17,12 +25,12 @@ import {
 import { fetchOpenApi } from '../types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
 
-const MISTRAL_OPENAPI_URL = 'https://docs.mistral.ai/openapi.yaml'
 const MISTRAL_MODELS_URL = 'https://api.mistral.ai/v1/models'
 
 /**
@@ -49,6 +57,34 @@ function classify(path: string): Activity | null {
   return null
 }
 
+/**
+ * A page we read that names no price clears a stored card. Mutual aliases
+ * of that page clear too, unless one of them has a price.
+ */
+function clearUnpriced(
+  models: Array<ModelInfo>,
+  seen: ReadonlySet<string>,
+  aliases: ReadonlyMap<string, ReadonlyArray<string>>,
+): void {
+  const byId = new Map(models.map((model) => [model.rawId, model]))
+  const clear = (model: ModelInfo | undefined) => {
+    if (!model || model.pricing != null) return
+    model.absent = { ...(model.absent ?? {}), pricing: 'cleared' }
+  }
+  for (const model of models) {
+    if (seen.has(model.rawId)) clear(model)
+  }
+  for (const [id, names] of aliases) {
+    const clique = [id, ...names].filter(
+      (other) =>
+        byId.has(other) && (other === id || aliases.get(other)?.includes(id)),
+    )
+    if (!clique.some((other) => seen.has(other))) continue
+    if (clique.some((other) => byId.get(other)?.pricing != null)) continue
+    for (const other of clique) clear(byId.get(other))
+  }
+}
+
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const { spec, hash } = await fetchOpenApi(MISTRAL_OPENAPI_URL)
   return {
@@ -67,28 +103,56 @@ export const provider: ProviderConfig = {
   defaultDerivation: 'upstream-spec',
   fetchSpec,
   listModels: async (env, kv): Promise<ListModelsResult> => {
+    const aliases = new Map<string, Array<string>>()
     const listed = await listOpenAiCompatibleModels({
       providerId: 'mistral',
       url: MISTRAL_MODELS_URL,
       env,
       envVar: 'MISTRAL_API_KEY',
       activity: mistralModelActivity,
+      extend: (row) => {
+        const names = row.aliases?.filter(
+          (id) => typeof id === 'string' && id.length > 0,
+        )
+        if (names && names.length > 0) aliases.set(row.id, names)
+        return Promise.resolve({})
+      },
     })
     if (listed.models.length === 0) return listed
-    const [pricing, reasoning] = await Promise.all([
-      mistralModelPricing(kv),
-      mistralModelReasoning(kv),
-    ])
-    return {
-      ...listed,
-      models: listed.models.map((model) =>
-        overlayModelFacts(
-          model,
-          pricing(model.rawId),
-          reasoning(model.rawId, listsReasoning(model.capabilities)),
-        ),
+    const chat = listed.models.some((model) => model.activity === 'chat')
+    const [pricing, reasoning, wire] = await Promise.all([
+      mistralModelPricing(
+        kv,
+        listed.models.map((model) => model.rawId),
       ),
+      mistralModelReasoning(kv),
+      chat ? mistralChatWire(kv) : Promise.resolve(null),
+    ])
+    const models = listed.models.map((model) =>
+      overlayModelFacts(
+        model,
+        pricing(model.rawId),
+        reasoning(model.rawId, listsReasoning(model.capabilities)),
+      ),
+    )
+    copyMistralAliasFacts(models, aliases)
+    if (wire) {
+      for (const model of models) {
+        if (model.activity !== 'chat') continue
+        model.requestMap = mistralRequestMap(wire, model.reasoning)
+        model.factSources = {
+          ...(model.factSources ?? {}),
+          requestMap: {
+            derivation: 'docs-derived',
+            sourceUrl: MISTRAL_OPENAPI_URL,
+            sourceHash: wire.hash,
+            path: '/components/schemas/ChatCompletionRequest',
+          },
+        }
+      }
     }
+    clearUnpriced(models, pricing.seen, aliases)
+    return { ...listed, models }
   },
   classify,
   generationEndpointId: ({ rawId, activity }) =>

@@ -166,11 +166,17 @@ export function parseMistralReasoning(
   const prelude = preludeEnd < 0 ? markdown : markdown.slice(0, preludeEnd)
   const bullet =
     /`([a-z0-9][a-z0-9.-]*)`:\s*Supports adjustable reasoning via the `reasoning_effort`/g
+  // `reasoning_effort = "none"` omits the thinking chunk for Mistral models.
+  // Example assignments are still not an allowlist. A model's own value list
+  // below replaces this.
+  const noneOmits =
+    /reasoning_effort\s*=\s*"none"[\s\S]{0,240}thinking chunk (?:is )?omitted/i.test(
+      prelude,
+    )
   for (const match of prelude.matchAll(bullet)) {
     const id = match[1]
     if (!id) continue
-    // Example assignments (`reasoning_effort = "high"`) are not an allowlist.
-    out.set(id, { mode: 'effort', mandatory: true })
+    out.set(id, { mode: 'effort', mandatory: !noneOmits })
   }
   const ownList =
     /`([a-z0-9][a-z0-9.-]*)`:[^\n]{0,240}?Supported values are ([^\n.]+)/g

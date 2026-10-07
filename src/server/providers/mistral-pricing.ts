@@ -12,8 +12,13 @@
  * the API ids that slug serves (`mistral-large-2512`, `mistral-large-latest`).
  * An API id named by two slugs at different rates gets no card.
  *
- * The same model page states the model's modalities, as one icon per medium
- * with a tooltip label ("Text input", "Image input", "Text output").
+ * A cell that strikes through a price (`<del>`) is a promotion. The standard
+ * tier is the struck-through amount. The `<ins>` sale price is not stored.
+ *
+ * The same model page states modalities (one tooltip per medium), a "Max
+ * output" stat when Mistral publishes one, and a pricing widget for models
+ * the token table does not list. `k` and `M` on that stat are 1024, the same
+ * scale the listing uses (262144 shown as 256k).
  */
 import {
   cardPrice,
@@ -112,6 +117,19 @@ function cellText(html: string): string {
     .trim()
 }
 
+/**
+ * Cell text for the standard tier. `null` when a struck-through price is
+ * present and the original amount is unreadable: the sale must not be used.
+ */
+function standardCell(raw: string): string | null {
+  const del = raw.match(/<del\b[^>]*>([\s\S]*?)<\/del>/i)
+  if (!del) return cellText(raw)
+  const amounts = [
+    ...cellText(del[1] ?? '').matchAll(/\$[\d,]+(?:\.\d+)?/g),
+  ].map((match) => match[0])
+  return amounts.length === 1 ? (amounts[0] ?? null) : null
+}
+
 /** `$0.5` per million tokens. `undefined` is an absent lever (`—`). */
 function perMillion(cell: string): number | null | undefined {
   if (cell === '—' || cell === '–' || cell === '-' || cell === '') {
@@ -158,13 +176,15 @@ export function parseMistralPricing(
       const slug = row[0].match(/href="\/models\/([^"]+)"/)?.[1]
       if (!slug || out.has(slug)) continue
       const cells = [...row[0].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(
-        ([, cell = '']) => cellText(cell),
+        ([, cell = '']) => standardCell(cell),
       )
-      if (cells.some((cell) => /^free$/i.test(cell))) continue
+      if (cells.some((cell) => cell === null)) continue
+      const text = cells.map((cell) => cell ?? '')
+      if (text.some((cell) => /^free$/i.test(cell))) continue
       if (tokens) {
-        const input = perMillion(cells[1] ?? '')
-        const cached = perMillion(cells[2] ?? '')
-        const output = perMillion(cells[3] ?? '')
+        const input = perMillion(text[1] ?? '')
+        const cached = perMillion(text[2] ?? '')
+        const output = perMillion(text[3] ?? '')
         if (input === null || cached === null || output === null) continue
         if (input === undefined) continue
         const rates: Record<string, number> = { input_tokens: input }
@@ -173,7 +193,7 @@ export function parseMistralPricing(
         out.set(slug, { kind: 'tokens', rates })
         continue
       }
-      const meters = unitMeters(cells)
+      const meters = unitMeters(text)
       if (!meters) continue
       out.set(slug, { kind: 'unit', meters })
     }
@@ -450,12 +470,338 @@ export function parseMistralPageModalities(
     : null
 }
 
+/** `128k` → 131072, `1M` → 1048576. Any other spelling is unreadable. */
+function suffixTokens(value: string): number | null {
+  const match = /^(\d+(?:\.\d+)?)(k|M)$/.exec(value)
+  if (!match?.[1] || !match[2]) return null
+  const tokens = Number(match[1]) * (match[2] === 'M' ? 1024 * 1024 : 1024)
+  return Number.isInteger(tokens) ? tokens : null
+}
+
+function statLabel(node: Json): string | null {
+  const props = rscProps(node)
+  const className = props?.className
+  if (typeof className !== 'string' || !className.includes('uppercase')) {
+    return null
+  }
+  const leaves: Array<string> = []
+  const walk = (value: Json) => {
+    if (typeof value === 'string') leaves.push(value)
+    else if (Array.isArray(value)) value.forEach(walk)
+    else if (typeof value === 'object' && value !== null) {
+      Object.values(value).forEach(walk)
+    }
+  }
+  walk(props?.children ?? null)
+  return leaves.includes('Max output') ? 'Max output' : null
+}
+
+function statValue(node: Json): string | null {
+  const props = rscProps(node)
+  const className = props?.className
+  if (
+    typeof className !== 'string' ||
+    !className.includes('text-lg font-bold font-mono text-primary-soft')
+  ) {
+    return null
+  }
+  return typeof props?.children === 'string' ? props.children : null
+}
+
+/**
+ * Tokens from the "Max output" stat. Null when the page has no such stat
+ * or two layouts disagree. The context stat uses the same value style and
+ * is not a max-output cap.
+ */
+export function parseMistralPageMaxOutput(html: string): number | null {
+  const values = new Set<number>()
+  // A closure write does not widen `let flag = false` (stays the literal
+  // `false`), so the unreadable mark lives on an object.
+  const mark = { unreadable: false }
+  const visit = (node: Json) => {
+    if (Array.isArray(node)) {
+      for (let index = 0; index < node.length - 1; index++) {
+        const current = node[index]
+        const next = node[index + 1]
+        if (current === undefined || next === undefined) continue
+        if (statLabel(current) !== 'Max output') continue
+        const raw = statValue(next)
+        const tokens = raw === null ? null : suffixTokens(raw)
+        if (tokens === null) mark.unreadable = true
+        else values.add(tokens)
+      }
+      node.forEach(visit)
+      return
+    }
+    if (typeof node === 'object' && node !== null) {
+      Object.values(node).forEach(visit)
+    }
+  }
+  for (const row of rscRows(html).values()) visit(row)
+  if (mark.unreadable || values.size !== 1) return null
+  return [...values][0] ?? null
+}
+
+interface WidgetMeter {
+  price?: number
+  originalPrice?: number
+  denominator?: string
+  label?: string
+}
+
+function isJsonRecord(value: Json): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function pricingWidgets(html: string): Array<JsonObject> {
+  const found: Array<JsonObject> = []
+  const visit = (node: Json) => {
+    if (isJsonRecord(node)) {
+      const custom =
+        node.type === 'custom' &&
+        typeof node.free === 'boolean' &&
+        Array.isArray(node.input) &&
+        Array.isArray(node.output)
+      const flat =
+        node.type === 'flat' &&
+        typeof node.free === 'boolean' &&
+        typeof node.denominator === 'string'
+      if (custom || flat) found.push(node)
+    }
+    if (Array.isArray(node)) node.forEach(visit)
+    else if (isJsonRecord(node)) Object.values(node).forEach(visit)
+  }
+  for (const row of rscRows(html).values()) visit(row)
+  return found
+}
+
+function meterAmount(meter: WidgetMeter): number {
+  const amount = meter.originalPrice ?? meter.price
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
+    throw new Error('mistral model page pricing: unreadable amount')
+  }
+  return amount
+}
+
+function priceFamily(
+  denominator: string,
+): 'tokens' | 'audio_minutes' | 'pages' | 'characters' | null {
+  switch (denominator.trim().toLowerCase()) {
+    case '/m tokens':
+    case '/mtokens':
+      return 'tokens'
+    case '/min':
+    case '/minute':
+    case '/minutes':
+      return 'audio_minutes'
+    case '/1000 pages':
+    case '/1000 page':
+      return 'pages'
+    case '/m chars':
+    case '/m char':
+    case '/m characters':
+      return 'characters'
+    default:
+      return null
+  }
+}
+
+function tokenLever(
+  side: 'input' | 'output',
+  label: string | undefined,
+): string {
+  const name = (label ?? '').trim().toLowerCase()
+  if (side === 'output') {
+    if (name === '' || name === 'output') return 'output_tokens'
+  } else if (name === 'cached input' || name === 'cached') {
+    return 'cache_read_tokens'
+  } else if (name === '' || name === 'input') return 'input_tokens'
+  throw new Error(
+    `mistral model page pricing: unknown ${side} label ${label ?? ''}`,
+  )
+}
+
+function unitParam(
+  unit: MistralUnit,
+  side: 'input' | 'output',
+  label: string | undefined,
+): string {
+  const cached = (label ?? '').toLowerCase().includes('cached')
+  const names = UNIT_PARAMS[unit]
+  // Each unit tuple is [input, cached, output], so the index is present.
+  return side === 'output' ? names[2] : cached ? names[1] : names[0]
+}
+
+function widgetMeters(widget: JsonObject): Array<{
+  side: 'input' | 'output'
+  label?: string
+  denominator: string
+  amount: number
+}> {
+  if (widget.type === 'flat') {
+    if (widget.free === true) {
+      const amount =
+        typeof widget.price === 'number' && Number.isFinite(widget.price)
+          ? widget.price
+          : 0
+      if (amount > 0) {
+        throw new Error(
+          'mistral model page pricing: free widget has a positive price',
+        )
+      }
+      return []
+    }
+    const denominator = widget.denominator
+    if (typeof denominator !== 'string') {
+      throw new Error('mistral model page pricing: meter has no denominator')
+    }
+    const amount = meterAmount(widget)
+    return amount === 0 ? [] : [{ side: 'input', denominator, amount }]
+  }
+  const meters: Array<{
+    side: 'input' | 'output'
+    label?: string
+    denominator: string
+    amount: number
+  }> = []
+  for (const side of ['input', 'output'] as const) {
+    const list = widget[side]
+    if (!Array.isArray(list)) {
+      throw new Error('mistral model page pricing: meters are not a list')
+    }
+    for (const item of list) {
+      if (!isJsonRecord(item) || typeof item.denominator !== 'string') {
+        throw new Error('mistral model page pricing: meter has no denominator')
+      }
+      const amount = meterAmount(item)
+      if (amount < 0) {
+        throw new Error('mistral model page pricing: negative amount')
+      }
+      if (amount === 0) continue
+      meters.push({
+        side,
+        ...(typeof item.label === 'string' ? { label: item.label } : {}),
+        denominator: item.denominator,
+        amount,
+      })
+    }
+  }
+  if (widget.free === true) {
+    if (meters.length > 0) {
+      throw new Error(
+        'mistral model page pricing: free widget has a positive price',
+      )
+    }
+    return []
+  }
+  return meters
+}
+
+function listedFromMeters(
+  meters: ReturnType<typeof widgetMeters>,
+): MistralListedPrice | null {
+  if (meters.length === 0) return null
+  const tokenRates: Record<string, number> = {}
+  const units: Array<{ unit: MistralUnit; param: string; rate: number }> = []
+  for (const meter of meters) {
+    const family = priceFamily(meter.denominator)
+    if (!family) {
+      throw new Error(
+        `mistral model page pricing: unknown denominator ${meter.denominator}`,
+      )
+    }
+    if (family === 'tokens') {
+      const lever = tokenLever(meter.side, meter.label)
+      if (tokenRates[lever] !== undefined) {
+        throw new Error(`mistral model page pricing: repeated ${lever}`)
+      }
+      tokenRates[lever] = meter.amount / 1e6
+      continue
+    }
+    const param = unitParam(family, meter.side, meter.label)
+    if (units.some((unit) => unit.param === param)) {
+      throw new Error(`mistral model page pricing: repeated ${param}`)
+    }
+    const rate =
+      family === 'pages'
+        ? meter.amount / 1000
+        : family === 'characters'
+          ? meter.amount / 1e6
+          : meter.amount
+    units.push({ unit: family, param, rate })
+  }
+  if (Object.keys(tokenRates).length > 0 && units.length > 0) {
+    if (units.some((unit) => unit.unit !== 'audio_minutes')) {
+      throw new Error('mistral model page pricing: mixed units')
+    }
+    for (const unit of units) {
+      if (tokenRates[unit.param] !== undefined) {
+        throw new Error(`mistral model page pricing: repeated ${unit.param}`)
+      }
+      tokenRates[unit.param] = unit.rate
+    }
+    return { kind: 'tokens', rates: tokenRates }
+  }
+  if (Object.keys(tokenRates).length > 0) {
+    return { kind: 'tokens', rates: tokenRates }
+  }
+  const unit = units[0]?.unit
+  if (!unit || units.some((meter) => meter.unit !== unit)) {
+    throw new Error('mistral model page pricing: mixed units')
+  }
+  return {
+    kind: 'unit',
+    meters: units.map((meter, index) => ({
+      param: meter.param,
+      rate: meter.rate,
+      ...(index > 0 ? { default: 0 } : {}),
+    })),
+  }
+}
+
+/**
+ * The model page's pricing widget. `originalPrice` is the standard tier
+ * when a sale `price` sits beside it. `free` or an all-zero widget is no
+ * card. Two widgets that disagree throw.
+ */
+export function parseMistralPagePrice(html: string): MistralListedPrice | null {
+  const widgets = [
+    ...new Map(
+      pricingWidgets(html).map((widget) => [JSON.stringify(widget), widget]),
+    ).values(),
+  ]
+  if (widgets.length === 0) return null
+  const parsed = widgets.map((widget) => {
+    try {
+      return { price: listedFromMeters(widgetMeters(widget)), readable: true }
+    } catch {
+      // An unknown meter must not become a partial card, and must not
+      // fail the table-priced rows on the same poll.
+      return { price: null, readable: false }
+    }
+  })
+  if (parsed.some((row) => !row.readable)) {
+    if (parsed.every((row) => !row.readable || row.price === null)) return null
+    throw new Error('mistral model page pricing: widgets disagree')
+  }
+  const priced = parsed.flatMap((row) => (row.price ? [row.price] : []))
+  if (priced.length === 0) return null
+  const first = JSON.stringify(priced[0])
+  if (priced.some((row) => JSON.stringify(row) !== first)) {
+    throw new Error('mistral model page pricing: widgets disagree')
+  }
+  return priced[0] ?? null
+}
+
 export interface MistralModelPage {
   slug: string
   ids: Array<string>
   hash: string
   serverTools?: Array<string>
   modalities?: MistralModalities | null
+  maxOutput?: number | null
+  pagePrice?: MistralListedPrice | null
+  extractedAt?: string
 }
 
 /**
@@ -507,9 +853,10 @@ interface MistralStatedModalities {
  * API id → modalities its model page states. An id two pages state
  * differently gets none, like a price.
  *
- * ponytail: only the pages the pricing table links are fetched, so an
- * unpriced id (`voxtral-small-latest`) has no modalities. Reading the rest
- * means ~50 more 1 MB pages per poll off the /models index.
+ * Pages the pricing table does not link are fetched only when a listed id
+ * matches one index slug: the slug itself, a trailing `-MMDD` unfolded to
+ * `-MM-DD`, or the id with a `labs-` prefix removed. Zero or several
+ * matches fetch nothing.
  */
 export function indexMistralModalities(
   pages: Array<MistralModelPage>,
@@ -585,97 +932,290 @@ export function parseMistralSamePrice(html: string): Map<string, string> {
   return out
 }
 
+export const MISTRAL_MODELS_INDEX = 'https://docs.mistral.ai/models'
+
+const INDEX_SKIP = new Set(['overview', 'model-cards', 'model-selection-guide'])
+
+/** Docs slugs linked from the models index. An empty parse throws. */
+export function parseMistralModelIndex(html: string): Array<string> {
+  const slugs = new Set<string>()
+  for (const match of html.matchAll(/\/models\/([a-z0-9-]+)/g)) {
+    const slug = match[1]
+    if (!slug || INDEX_SKIP.has(slug) || slug.startsWith('page-')) continue
+    slugs.add(slug)
+  }
+  return [...slugs]
+}
+
+/**
+ * The one index slug a listed id is. Null when none or more than one of
+ * the exact slug, the unfolded date, and the `labs-`-stripped id match.
+ */
+export function mistralIndexSlugFor(
+  id: string,
+  slugs: ReadonlySet<string>,
+): string | null {
+  const unfolded = id.replace(/-(\d{2})(\d{2})$/, '-$1-$2')
+  const stripped = id.startsWith('labs-') ? id.slice('labs-'.length) : id
+  const hits = [...new Set([id, unfolded, stripped])].filter((name) =>
+    slugs.has(name),
+  )
+  return hits.length === 1 ? (hits[0] ?? null) : null
+}
+
+interface PageSourced<T> {
+  value: T
+  url: string
+  hash: string
+}
+
+function indexPageField<T>(
+  pages: Array<MistralModelPage>,
+  read: (page: MistralModelPage) => T | null | undefined,
+): Map<string, PageSourced<T>> {
+  const out = new Map<string, PageSourced<T>>()
+  const conflicts = new Set<string>()
+  for (const page of pages) {
+    const value = read(page)
+    if (value == null) continue
+    const stated = {
+      value,
+      url: MISTRAL_MODEL_PAGE(page.slug),
+      hash: page.hash,
+    }
+    const serialized = JSON.stringify(value)
+    for (const id of page.ids) {
+      const prior = out.get(id)
+      if (!prior) out.set(id, stated)
+      else if (JSON.stringify(prior.value) !== serialized) conflicts.add(id)
+    }
+  }
+  for (const id of conflicts) out.delete(id)
+  return out
+}
+
+/** Card lookup by API model id. `seen` is every id a fetched page names. */
+export interface MistralPricingLookup {
+  (rawId: string): PricedFacts
+  seen: ReadonlySet<string>
+}
+
 /** Card lookup by API model id. */
 export async function mistralModelPricing(
   kv?: KVNamespace,
-): Promise<(rawId: string) => PricedFacts> {
-  const doc = await cachedDocs(kv, MISTRAL_PRICING_URL, async () => {
+  listedIds: ReadonlyArray<string> = [],
+): Promise<MistralPricingLookup> {
+  const table = await cachedDocs(kv, MISTRAL_PRICING_URL, async () => {
     const [html, changelog] = await Promise.all([
       fetchText(MISTRAL_PRICING_URL),
       fetchText(MISTRAL_CHANGELOG_URL),
     ])
     const bySlug = parseMistralPricing(html)
     assertParsed(bySlug, 'mistral pricing page')
-    const pages = await mapConcurrent([...bySlug.keys()], 6, async (slug) => {
-      const url = MISTRAL_MODEL_PAGE(slug)
-      const page = await cachedDocs(kv, url, async () => {
-        const body = await fetchText(url)
-        const ids = parseMistralApiIds(body, slug)
-        if (ids.length === 0) {
-          throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
-        }
-        return {
-          ids,
-          hash: await sha256Text(body),
-          serverTools: parseMistralPageTools(body),
-          modalities: parseMistralPageModalities(body),
-        }
-      })
-      return {
-        slug,
-        ids: page.ids,
-        hash: page.hash,
-        serverTools: page.serverTools,
-        modalities: page.modalities,
-      }
-    })
-    const byId = indexMistralApiIds(bySlug, pages)
-    for (const [from, to] of parseMistralSamePrice(changelog)) {
-      const rates = byId.get(to)
-      if (!rates || byId.has(from)) continue
-      byId.set(from, rates)
-    }
-    assertParsed(byId, 'mistral model pages')
-    const hash = await sha256Text(
-      [
-        await sha256Text(html),
-        await sha256Text(changelog),
-        ...pages.map((page) => `${page.slug} ${page.hash}`).sort(),
-      ].join('\n'),
-    )
-    const tools = indexMistralServerTools(pages)
-    // Every page read and none states modalities is a reshaped site, not
-    // a catalog without media. Throwing keeps the stored column.
-    if (!pages.some((page) => page.modalities)) {
-      throw new Error(
-        `mistral model pages: 0 of ${String(pages.length)} state modalities`,
-      )
-    }
     return {
-      rates: Object.fromEntries(byId),
-      tools: Object.fromEntries(tools),
-      modalities: Object.fromEntries(indexMistralModalities(pages)),
-      hash,
+      bySlug: Object.fromEntries(bySlug),
+      samePrice: Object.fromEntries(parseMistralSamePrice(changelog)),
+      hash: await sha256Text(html),
       extractedAt: new Date().toISOString(),
     }
   })
-  return (rawId) => {
-    const row = doc.rates[rawId]
+  const bySlug = new Map(Object.entries(table.bySlug))
+  const loadPage = async (slug: string): Promise<MistralModelPage> => {
+    const url = MISTRAL_MODEL_PAGE(slug)
+    const page = await cachedDocs(kv, url, async () => {
+      const body = await fetchText(url)
+      const ids = parseMistralApiIds(body, slug)
+      if (ids.length === 0) {
+        throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
+      }
+      return {
+        ids,
+        hash: await sha256Text(body),
+        serverTools: parseMistralPageTools(body),
+        modalities: parseMistralPageModalities(body),
+        maxOutput: parseMistralPageMaxOutput(body),
+        pagePrice: parseMistralPagePrice(body),
+        extractedAt: new Date().toISOString(),
+      }
+    })
+    return { slug, ...page }
+  }
+  const tablePages = await mapConcurrent([...bySlug.keys()], 6, loadPage)
+  const covered = new Set(tablePages.flatMap((page) => page.ids))
+  const missing = listedIds.filter((id) => !covered.has(id))
+  let extraSlugs: Array<string> = []
+  if (missing.length > 0) {
+    const slugs = await cachedDocs(kv, MISTRAL_MODELS_INDEX, async () => {
+      const html = await fetchText(MISTRAL_MODELS_INDEX)
+      const parsed = parseMistralModelIndex(html)
+      if (parsed.length === 0) {
+        throw new Error('mistral models index: parsed 0 slugs')
+      }
+      return parsed
+    })
+    const index = new Set(slugs)
+    extraSlugs = [
+      ...new Set(
+        missing.flatMap((id) => {
+          const slug = mistralIndexSlugFor(id, index)
+          return slug && !bySlug.has(slug) ? [slug] : []
+        }),
+      ),
+    ]
+  }
+  const extraPages = await mapConcurrent(extraSlugs, 6, loadPage)
+  const pages = [...tablePages, ...extraPages]
+  const byId = indexMistralApiIds(bySlug, pages)
+  for (const [from, to] of Object.entries(table.samePrice)) {
+    const rates = byId.get(to)
+    if (!rates || byId.has(from)) continue
+    byId.set(from, rates)
+  }
+  assertParsed(byId, 'mistral model pages')
+  const tools = indexMistralServerTools(pages)
+  // Every page read and none states modalities is a reshaped site, not
+  // a catalog without media. Throwing keeps the stored column.
+  if (!pages.some((page) => page.modalities)) {
+    throw new Error(
+      `mistral model pages: 0 of ${String(pages.length)} state modalities`,
+    )
+  }
+  const modalities = indexMistralModalities(pages)
+  const maxOutput = indexPageField(pages, (page) => page.maxOutput)
+  const pageRates = indexPageField(pages, (page) => page.pagePrice)
+  const seen = new Set(pages.flatMap((page) => page.ids))
+  const lookup = (rawId: string): PricedFacts => {
+    const tableRow = byId.get(rawId)
+    const pageRow = pageRates.get(rawId)
+    const row = tableRow ?? pageRow?.value
     const pricing = row
-      ? mistralRateCard(row, {
-          url: MISTRAL_PRICING_URL,
-          hash: doc.hash,
-          extractedAt: doc.extractedAt,
-        })
+      ? mistralRateCard(
+          row,
+          tableRow
+            ? {
+                url: MISTRAL_PRICING_URL,
+                hash: table.hash,
+                extractedAt: table.extractedAt,
+              }
+            : {
+                url: pageRow?.url ?? MISTRAL_PRICING_URL,
+                hash: pageRow?.hash ?? table.hash,
+                extractedAt:
+                  pages.find((page) => page.ids.includes(rawId))?.extractedAt ??
+                  table.extractedAt,
+              },
+        )
       : null
-    const hosted = doc.tools[rawId]
+    const hosted = tools.get(rawId)
     const pricingFacts = pricing
-      ? tagDocsFacts({ pricing }, MISTRAL_PRICING_URL, doc.hash)
+      ? tagDocsFacts(
+          { pricing },
+          tableRow
+            ? MISTRAL_PRICING_URL
+            : (pageRow?.url ?? MISTRAL_PRICING_URL),
+          tableRow ? table.hash : pageRow?.hash,
+        )
       : {}
     const toolFacts = hosted
       ? tagDocsFacts({ serverTools: hosted.tools }, hosted.url, hosted.hash)
       : {}
-    const stated = doc.modalities[rawId]
+    const stated = modalities.get(rawId)
     const modalityFacts = stated
       ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
       : {}
-    const factSources = { ...pricingFacts, ...toolFacts, ...modalityFacts }
-    if (!pricing && !hosted && !stated) return {}
+    const cap = maxOutput.get(rawId)
+    const maxFacts = cap
+      ? tagDocsFacts({ maxOutput: cap.value }, cap.url, cap.hash)
+      : {}
+    const factSources = {
+      ...pricingFacts,
+      ...toolFacts,
+      ...modalityFacts,
+      ...maxFacts,
+    }
+    if (!pricing && !hosted && !stated && !cap) return {}
     return {
       ...(pricing ? { pricing } : {}),
       ...(hosted ? { serverTools: hosted.tools } : {}),
       ...(stated ? { modalities: stated.modalities } : {}),
+      ...(cap ? { maxOutput: cap.value } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
+    }
+  }
+  lookup.seen = seen
+  return lookup
+}
+
+const ALIAS_FACTS = [
+  'pricing',
+  'modalities',
+  'maxOutput',
+  'reasoning',
+  'serverTools',
+] as const
+
+/**
+ * Copy a fact onto mutual listing aliases when every member that has it
+ * agrees. A conflict copies nothing. The copy keeps the donor's docs URL.
+ */
+export function copyMistralAliasFacts(
+  models: Array<ModelInfo>,
+  aliases: ReadonlyMap<string, ReadonlyArray<string>>,
+): void {
+  const byId = new Map(models.map((model) => [model.rawId, model]))
+  const parent = new Map<string, string>()
+  const find = (id: string): string => {
+    const root = parent.get(id) ?? id
+    if (root === id) return id
+    const found = find(root)
+    parent.set(id, found)
+    return found
+  }
+  const union = (left: string, right: string) => {
+    const a = find(left)
+    const b = find(right)
+    if (a !== b) parent.set(a, b)
+  }
+  const grouped = new Set<string>()
+  for (const [id, names] of aliases) {
+    if (!byId.has(id)) continue
+    for (const other of names) {
+      if (other === id || !byId.has(other)) continue
+      if (!aliases.get(other)?.includes(id)) continue
+      union(id, other)
+      grouped.add(id)
+      grouped.add(other)
+    }
+  }
+  const groups = new Map<string, Array<string>>()
+  for (const id of grouped) {
+    const root = find(id)
+    const group = groups.get(root) ?? []
+    group.push(id)
+    groups.set(root, group)
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue
+    for (const fact of ALIAS_FACTS) {
+      const donors = group.flatMap((id) => {
+        const model = byId.get(id)
+        return model && model[fact] != null ? [model] : []
+      })
+      if (donors.length === 0) continue
+      const first = donors[0]
+      if (!first) continue
+      const serialized = JSON.stringify(first[fact])
+      if (donors.some((donor) => JSON.stringify(donor[fact]) !== serialized)) {
+        continue
+      }
+      for (const id of group) {
+        const target = byId.get(id)
+        if (!target || target[fact] != null) continue
+        Object.assign(target, { [fact]: first[fact] })
+        const source = first.factSources?.[fact]
+        if (!source) continue
+        target.factSources = { ...(target.factSources ?? {}), [fact]: source }
+      }
     }
   }
 }
