@@ -39,6 +39,7 @@ import type {
 import {
   classifyNvidiaOperation,
   fetchNvidiaText,
+  nvidiaInferNamesModel,
   nvidiaModelSpec,
   NVIDIA_REFERENCE_INDEXES,
   parseNvidiaInfer,
@@ -641,7 +642,11 @@ async function listModels(
       )
       if (loaded === null) return markUnavailable(model, schemaGaps(model))
       const infer = parseNvidiaInfer(loaded)
-      if (!infer) return model
+      // The content-safety page embeds the nano model's OpenAPI. A document
+      // that names a different id is not this row's schema.
+      if (!infer || !nvidiaInferNamesModel(model.rawId, infer.document)) {
+        return model
+      }
       return applyInfer(model, infer, inferUrl, await sha256Text(loaded))
     },
   )
@@ -692,7 +697,10 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
       try {
         const markdown = await fetchNvidiaText(page)
         const infer = parseNvidiaInfer(markdown)
-        const spec = infer ? nvidiaModelSpec(rawId, infer) : null
+        const spec =
+          infer && nvidiaInferNamesModel(rawId, infer.document)
+            ? nvidiaModelSpec(rawId, infer)
+            : null
         if (!spec) return null
         return {
           spec,

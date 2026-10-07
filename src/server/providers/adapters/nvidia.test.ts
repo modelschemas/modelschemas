@@ -498,6 +498,7 @@ describe('nvidia', () => {
                     "minimum": 1,
                     "description": "The maximum number of tokens to generate."
                   },
+                  "model": { "type": "string", "default": "z-ai/glm-5.3-flash" },
                   "reasoning_effort": { "type": "string", "enum": ["none", "high"] }
                 }
               }
@@ -553,5 +554,95 @@ updatedAt: test
         'x-modelschemas-activity': 'chat',
       }),
     ).toBe('chat')
+  })
+
+  it('does not copy an infer document that names a different model', async () => {
+    const infer =
+      'https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-5-content-safety-infer'
+    const openapi = `# OpenAPI definition
+
+\`\`\`json
+{
+  "openapi": "3.1.0",
+  "info": { "title": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" },
+  "paths": {
+    "/chat/completions": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "default": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+                  },
+                  "max_tokens": {
+                    "type": "integer",
+                    "maximum": 65536,
+                    "description": "The maximum number of tokens to generate."
+                  },
+                  "reasoning_budget": { "type": "integer", "maximum": 32768 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+\`\`\`
+`
+    stubFetch({
+      [NVIDIA_MODELS_URL]: JSON.stringify({
+        object: 'list',
+        data: [
+          {
+            id: 'nvidia/nemotron-3.5-content-safety',
+            object: 'model',
+            created: 735790403,
+            owned_by: 'nvidia',
+          },
+        ],
+      }),
+      'https://build.nvidia.com/nvidia/nemotron-3.5-content-safety.md': `---
+title: "nemotron-3.5-content-safety"
+canonical: "https://build.nvidia.com/nvidia/nemotron-3.5-content-safety"
+---
+
+## Specifications
+
+- **Context Length:** 131,072 tokens
+- **Input:** Text
+- **Output:** Text
+
+## Capabilities
+
+- **Reasoning:** Supported
+
+${CHAT_PROTOTYPE('nvidia/nemotron-3.5-content-safety')}`,
+      [NVIDIA_REFERENCE_INDEXES[0]!]: `---
+updatedAt: test
+---
+
+| Model | Endpoint |
+| --- | --- |
+| [nvidia / nemotron-3.5-content-safety](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-5-content-safety) | [chat](${infer}) |
+`,
+      [`${infer}.md`]: openapi,
+    })
+    const listed = await provider.listModels({})
+    const safety = listed.models.find(
+      (model) => model.rawId === 'nvidia/nemotron-3.5-content-safety',
+    )
+    expect(safety?.maxOutput).toBeUndefined()
+    expect(safety?.reasoning).toBeUndefined()
+    expect(safety?.schemaEndpointId).toBeUndefined()
+    expect(safety?.contextWindow).toBe(131072)
+    await expect(provider.fetchSpec({})).rejects.toThrow(
+      'parsed 0 generation specs',
+    )
   })
 })

@@ -3,7 +3,8 @@
  * Each reference index row names a listing id and its infer page. The
  * infer page embeds one OpenAPI document for that model. A shared
  * `/chat/completions` path would keep only the last model's schema, so
- * the synced path is the model's own id.
+ * the synced path is the model's own id. A document that names a different
+ * model is not that row's schema.
  */
 import type { Activity } from '#/db/schema.ts'
 
@@ -315,6 +316,37 @@ function activityForPath(path: string): Activity | null {
   if (path.includes('/embeddings')) return 'embeddings'
   if (/(^|\/)completions$/.test(path)) return 'chat'
   return null
+}
+
+/**
+ * Model ids the document itself names. A title with no slash is the API
+ * name. No stated id means the reference-index join is the only link.
+ */
+export function nvidiaStatedModelIds(doc: OpenApiDocument): Array<string> {
+  const ids = new Set<string>()
+  const title = doc.info?.title
+  if (typeof title === 'string' && title.includes('/')) ids.add(title.trim())
+  const model = requestProperties(doc).model
+  if (isRecord(model)) {
+    const add = (value: unknown) => {
+      if (typeof value === 'string' && value.includes('/'))
+        ids.add(value.trim())
+    }
+    add(model.default)
+    if (Array.isArray(model.enum)) {
+      for (const item of model.enum) add(item)
+    }
+  }
+  return [...ids]
+}
+
+/** True when every stated id is this listing id, or the document names none. */
+export function nvidiaInferNamesModel(
+  rawId: string,
+  doc: OpenApiDocument,
+): boolean {
+  const stated = nvidiaStatedModelIds(doc)
+  return stated.length === 0 || stated.every((id) => id === rawId)
 }
 
 export function parseNvidiaInfer(markdown: string): NvidiaInferFacts | null {

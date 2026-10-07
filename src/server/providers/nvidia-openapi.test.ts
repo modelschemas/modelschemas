@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  nvidiaInferNamesModel,
   nvidiaMaxOutput,
   nvidiaModelSpec,
   nvidiaReasoning,
@@ -25,13 +26,14 @@ updatedAt: 2026-10-05T22:07:01.000Z
 function inferDoc(
   properties: Record<string, unknown>,
   path = '/chat/completions',
+  title = 'NVIDIA NIM API',
 ): string {
   return `# OpenAPI definition
 
 \`\`\`json
 ${JSON.stringify({
   openapi: '3.1.0',
-  info: { title: 'NVIDIA NIM API' },
+  info: { title },
   paths: {
     [path]: {
       post: {
@@ -80,6 +82,54 @@ describe('parseNvidiaReferenceIndex', () => {
     expect(() =>
       parseNvidiaReferenceIndex('<html>Just a moment</html>'),
     ).toThrow('not markdown')
+  })
+})
+
+describe('nvidiaInferNamesModel', () => {
+  const nano = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'
+  const safety = 'nvidia/nemotron-3.5-content-safety'
+
+  it('accepts a document that names this model, and one that names none', () => {
+    const named = parseNvidiaInfer(
+      inferDoc(
+        { model: { type: 'string', default: nano } },
+        '/chat/completions',
+        nano,
+      ),
+    )
+    const unnamed = parseNvidiaInfer(
+      inferDoc({
+        max_tokens: {
+          type: 'integer',
+          maximum: 8192,
+          description: 'The maximum number of tokens to generate.',
+        },
+      }),
+    )
+    expect(named && nvidiaInferNamesModel(nano, named.document)).toBe(true)
+    expect(unnamed && nvidiaInferNamesModel(safety, unnamed.document)).toBe(
+      true,
+    )
+  })
+
+  it('rejects the nano document embedded on the content-safety page', () => {
+    const facts = parseNvidiaInfer(
+      inferDoc(
+        {
+          model: { type: 'string', default: nano },
+          max_tokens: {
+            type: 'integer',
+            maximum: 65536,
+            description: 'The maximum number of tokens to generate.',
+          },
+          reasoning_budget: { type: 'integer', maximum: 32768 },
+        },
+        '/chat/completions',
+        nano,
+      ),
+    )
+    expect(facts && nvidiaInferNamesModel(safety, facts.document)).toBe(false)
+    expect(facts && nvidiaInferNamesModel(nano, facts.document)).toBe(true)
   })
 })
 
