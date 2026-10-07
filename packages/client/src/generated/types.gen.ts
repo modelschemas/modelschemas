@@ -14,6 +14,10 @@ export type Error = {
 export type ServiceStatus = {
   service: 'modelschemas'
   time: number
+  /**
+   * Epoch seconds the completeness scores were computed, at the last models poll (every 15 minutes). null when none is stored yet, as after a deploy that changes the scorer; every score is then null.
+   */
+  completenessComputedAt?: number | null
   providers: Array<{
     id?: string
     displayName?: string
@@ -79,11 +83,11 @@ export type ServiceStatus = {
       priced: number
     }
     /**
-     * The gap-report score over the live chat models of the provider: the share filled of the ten chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint). Summed per model, each fact counted only where it applies. May lag a poll by a few minutes.
+     * The gap-report score over the live chat models of the provider: the share filled of the ten chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint). Summed per model, each fact counted only where it applies. Computed at the models poll (completenessComputedAt), not per request.
      */
     completeness?: {
       /**
-       * filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models: nothing to score, not a score of zero.
+       * filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models (nothing to score, not a score of zero), when no score is stored yet, and when the chat models changed since the stored score.
        */
       score: number | null
       /**

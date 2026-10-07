@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
+import { eq } from 'drizzle-orm'
 
 import { getDb } from '../db/index.ts'
 import {
@@ -13,7 +14,7 @@ import { FACT_KEYS, buildReport } from '../lib/completeness.ts'
 import type { Ledger, ModelRow } from '../lib/completeness.ts'
 import { providerRegistry } from '../server/providers/index.ts'
 import { listModelsCatalog } from './catalog.ts'
-import { getServiceStatus } from './status.ts'
+import { getServiceStatus, recordCompleteness } from './status.ts'
 
 const NOW = 1_781_150_000
 
@@ -260,6 +261,7 @@ describe('getServiceStatus', () => {
         model('part', 'image', { activity: 'image' }),
       ])
 
+    await recordCompleteness(db, NOW)
     const status = await getServiceStatus(db, NOW)
     const gone = status.providers.find((p) => p.id === 'gone')
     const part = status.providers.find((p) => p.id === 'part')
@@ -325,7 +327,18 @@ describe('getServiceStatus', () => {
       ['mixed', new Set(['cacheRead'] as const)],
     ])
 
-    const status = await getServiceStatus(db, NOW, { ledger })
+    // Nothing scored yet (no record, whatever an earlier test stored): no
+    // score anywhere, and the request still answers.
+    await db.delete(cacheMeta)
+    const before = await getServiceStatus(db, NOW)
+    expect(before.completenessComputedAt).toBeNull()
+    expect(before.providers.every((p) => p.completeness.score === null)).toBe(
+      true,
+    )
+
+    expect(await recordCompleteness(db, NOW - 60, ledger)).toBe(true)
+    const status = await getServiceStatus(db, NOW)
+    expect(status.completenessComputedAt).toBe(NOW - 60)
     const [noChat, allSilent, mixed] = ids.map(
       (id) => status.providers.find((p) => p.id === id)?.completeness,
     )
@@ -365,28 +378,109 @@ describe('getServiceStatus', () => {
     }
   })
 
-  it('serves completeness from the cache when given one', async () => {
-    const db = getDb(env)
-    const cache = {
-      db,
-      kv: env.SCHEMA_CACHE,
-      waitUntil: () => undefined,
-      now: () => NOW,
+  const KEY = 'status:completeness:v1'
+  const scoreOf = async (db: ReturnType<typeof getDb>, id: string) => {
+    const status = await getServiceStatus(db, NOW)
+    return {
+      computedAt: status.completenessComputedAt,
+      ...status.providers.find((p) => p.id === id)?.completeness,
     }
-    await db.insert(providers).values(provider('cached'))
-    await db.insert(models).values(model('cached', 'a'))
-    const first = await getServiceStatus(db, NOW, { cache })
-    await db.insert(models).values(model('cached', 'b'))
-    const second = await getServiceStatus(db, NOW, { cache })
-    const of = (status: typeof first) =>
-      status.providers.find((p) => p.id === 'cached')
-    // The score is the cached one; the counts are read every time.
-    expect(of(second)?.completeness).toEqual(of(first)?.completeness)
-    expect(of(first)?.completeness.chat).toBe(1)
-    expect(of(second)?.counts.chat).toBe(2)
-    // A cached score does not outlive the provider's last live chat row.
+  }
+
+  it('serves the stored score only while it matches the live chat rows', async () => {
+    const db = getDb(env)
+    await db.insert(providers).values(provider('stored'))
+    await db.insert(models).values(model('stored', 'a'))
+    await recordCompleteness(db, NOW)
+    expect(await scoreOf(db, 'stored')).toMatchObject({
+      computedAt: NOW,
+      score: 0,
+      chat: 1,
+      needed: 8,
+    })
+
+    // A chat row the record never scored: no number over a different set.
+    await db.insert(models).values(model('stored', 'b'))
+    expect(await scoreOf(db, 'stored')).toMatchObject({
+      computedAt: NOW,
+      score: null,
+      chat: 0,
+    })
+    // The next poll's record scores both, and says when.
+    await recordCompleteness(db, NOW + 900)
+    expect(await scoreOf(db, 'stored')).toMatchObject({
+      computedAt: NOW + 900,
+      score: 0,
+      chat: 2,
+    })
+    // No live chat row left: null at once, before any rescore.
     await db.update(models).set({ deprecatedAt: NOW })
-    const third = await getServiceStatus(db, NOW, { cache })
-    expect(of(third)?.completeness).toMatchObject({ score: null, chat: 0 })
+    expect(await scoreOf(db, 'stored')).toMatchObject({ score: null, chat: 0 })
+  })
+
+  it('answers with null scores when the record cannot be used', async () => {
+    const db = getDb(env)
+    await db.insert(providers).values(provider('broken'))
+    await db.insert(models).values(model('broken', 'a'))
+    await recordCompleteness(db, NOW)
+    expect(await scoreOf(db, 'broken')).toMatchObject({ score: 0 })
+    const none = { computedAt: null, score: null, chat: 0 }
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    // Corrupt JSON, JSON of the wrong shape, an entry of the wrong shape.
+    for (const lastError of ['{not json', '"a string"', 'null']) {
+      await db
+        .update(cacheMeta)
+        .set({ lastError })
+        .where(eq(cacheMeta.key, KEY))
+      expect(await scoreOf(db, 'broken')).toMatchObject(none)
+    }
+    await db
+      .update(cacheMeta)
+      .set({ lastError: '{"broken":7}' })
+      .where(eq(cacheMeta.key, KEY))
+    expect(await scoreOf(db, 'broken')).toMatchObject({ score: null, chat: 0 })
+
+    // Deleted.
+    await db.delete(cacheMeta).where(eq(cacheMeta.key, KEY))
+    expect(await scoreOf(db, 'broken')).toMatchObject(none)
+
+    // The read itself throws: the rest of the status is still served.
+    await recordCompleteness(db, NOW)
+    vi.spyOn(db.query.cacheMeta, 'findFirst').mockImplementation(() => {
+      throw new Error('D1 down')
+    })
+    const status = await getServiceStatus(db, NOW)
+    expect(status.completenessComputedAt).toBeNull()
+    expect(status.providers.find((p) => p.id === 'broken')).toMatchObject({
+      counts: { models: 1, chat: 1 },
+      completeness: { score: null },
+    })
+    expect(errors).toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
+  it('keeps the previous record when scoring fails', async () => {
+    const db = getDb(env)
+    await db.insert(providers).values(provider('kept'))
+    await db.insert(models).values(model('kept', 'a'))
+    await recordCompleteness(db, NOW)
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const throwing = {
+      get: () => {
+        throw new Error('scorer broke')
+      },
+    } as unknown as Ledger
+    // Never throws: the cron that calls it goes on to its next step.
+    expect(await recordCompleteness(db, NOW + 900, throwing)).toBe(false)
+    expect(errors).toHaveBeenCalledWith(
+      JSON.stringify({ job: 'completeness', error: 'scorer broke' }),
+    )
+    vi.restoreAllMocks()
+    expect(await scoreOf(db, 'kept')).toMatchObject({
+      computedAt: NOW,
+      score: 0,
+      chat: 1,
+    })
   })
 })

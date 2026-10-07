@@ -15,7 +15,7 @@ import {
   SiteNav,
   StatusDot,
 } from '#/components/site.tsx'
-import type { ServiceStatus } from '#/server/status.ts'
+import type { Completeness, ServiceStatus } from '#/server/status.ts'
 
 interface DashboardChange {
   id: string
@@ -33,16 +33,14 @@ interface DashboardData {
 
 const getDashboardData = createServerFn({ method: 'GET' }).handler(
   async (): Promise<DashboardData> => {
-    const { env, waitUntil } = await import('cloudflare:workers')
+    const { env } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')
     const { getServiceStatus } = await import('#/server/status.ts')
     const { listChanges } = await import('#/server/changes-api.ts')
 
     const db = getDb(env)
     const [status, changesOutcome] = await Promise.all([
-      getServiceStatus(db, undefined, {
-        cache: { db, kv: env.SCHEMA_CACHE, waitUntil },
-      }),
+      getServiceStatus(db),
       listChanges(db, { limit: 8 }),
     ])
     return {
@@ -75,6 +73,27 @@ const showPct = (value: number | null) => (value === null ? '—' : `${value}%`)
 /** "2026-10-07 05:15Z (3 polls)" for a status marker's tooltip. */
 const since = (record: { since: number; polls: number }) =>
   `${new Date(record.since * 1000).toISOString().slice(0, 16).replace('T', ' ')}Z (${record.polls} ${record.polls === 1 ? 'poll' : 'polls'})`
+
+/** An amber word beside the status dot; the detail is its tooltip and label. */
+function Marker({ label, text }: { label: string; text: string }) {
+  return (
+    <span
+      className="ml-2 cursor-help text-xs text-tok-amber"
+      title={text}
+      aria-label={text}
+    >
+      {label}
+    </span>
+  )
+}
+
+function completenessNote(c: Completeness): string {
+  const silent = c.silent.join(', ')
+  if (c.needed === 0) {
+    return `Nothing to fill across ${c.chat} chat models: this provider does not publish ${silent}`
+  }
+  return `${c.filled} of ${c.needed} facts filled across ${c.chat} chat models${silent ? `; not published by this provider: ${silent}` : ''}`
+}
 
 function Landing() {
   const { status, changes } = Route.useLoaderData()
@@ -272,20 +291,16 @@ function Landing() {
                     <td>
                       <StatusDot status={p.status} />
                       {p.docsFailing && (
-                        <span
-                          className="ml-2 cursor-help text-xs text-tok-amber"
-                          title={`docs failing since ${since(p.docsFailing)}: ${p.docsFailing.sources[0] ?? p.docsFailing.error}`}
-                        >
-                          docs
-                        </span>
+                        <Marker
+                          label="docs"
+                          text={`docs failing since ${since(p.docsFailing)}: ${[p.docsFailing.sources[0], String(p.docsFailing.error).slice(0, 160)].filter(Boolean).join(' — ')}`}
+                        />
                       )}
                       {p.priceClearsRefused && (
-                        <span
-                          className="ml-2 cursor-help text-xs text-tok-amber"
-                          title={`price clears refused since ${since(p.priceClearsRefused)}: ${p.priceClearsRefused.refused} of ${p.priceClearsRefused.priced} stored prices kept`}
-                        >
-                          prices
-                        </span>
+                        <Marker
+                          label="prices"
+                          text={`price clears refused since ${since(p.priceClearsRefused)}: ${p.priceClearsRefused.refused} of ${p.priceClearsRefused.priced} stored prices kept`}
+                        />
                       )}
                     </td>
                     <td className="num" data-label="models">
@@ -316,7 +331,7 @@ function Landing() {
                         <a
                           className="text-ink hover:text-tok-blue"
                           href={`/models?provider=${p.id}&activity=chat`}
-                          title={`${p.completeness.filled} of ${p.completeness.needed} facts filled across ${p.completeness.chat} chat models`}
+                          title={completenessNote(p.completeness)}
                         >
                           {showPct(Math.round(p.completeness.score * 100))}
                         </a>

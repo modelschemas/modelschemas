@@ -145,7 +145,8 @@ ones).
   holds the rest), and `completeness` there is the gap-report score:
   `src/lib/completeness.ts` is the one scorer, shared with
   `scripts/gap-report.ts`; the Worker bundles `docs/source-silent/*.md`
-  (`source-silent.ts`) and serves the score from the SWR cache (5 min).
+  (`source-silent.ts`). The 15-minute cron scores once after the poll
+  (`recordCompleteness`, one `cache_meta` row); requests only read it.
   BytePlus chat, Seedance, and Seedream cards come
   from its public ModelArk pricing doc (`byteplus-pricing.ts`; the console
   pricing view and `arkcli pricing` are login-gated). FAL cards come from `extract-fal-pricing.ts`:

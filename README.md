@@ -384,6 +384,14 @@ is token-auth only and is not used for releases.
      cleared. Either the adapter misreads a reshaped listing (fix it), or
      the prices really are gone (null the stale cards by hand in D1). The
      next poll that refuses nothing clears it.
+   - Both records are written and cleared only by a poll whose listing
+     loads. While the listing itself fails (`lastPolledAt` stalls) they stay
+     as last written, with an old `lastAt`.
+   - `completeness.score` null for every provider and
+     `completenessComputedAt` null → no score is stored, as after a deploy
+     that changes the scorer. The 15-minute poll cron computes it; trigger
+     that cron to force a recompute. A failed computation logs
+     `{"job":"completeness","error":…}` and keeps the previous scores.
 4. One provider failing never sinks the run (per-provider isolation); fix
    and re-trigger with the admin sync endpoint. Schema history is preserved
    across failures — superseded versions stay queryable via

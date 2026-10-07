@@ -24,6 +24,7 @@ import {
   specSyncShard,
   syncAllProviders,
 } from '#/server/ingest/sync.ts'
+import { recordCompleteness } from '#/server/status.ts'
 import { runWebhookTick } from '#/server/webhooks.ts'
 import type { SyncDeps } from '#/server/ingest/sync.ts'
 
@@ -130,8 +131,11 @@ export default {
     if (controller.cron === MODELS_POLL_CRON) {
       ctx.waitUntil(
         pollAllProviders(syncDeps(env))
-          .then((outcomes) => {
+          .then(async (outcomes) => {
             console.log(JSON.stringify({ job: 'models-poll', outcomes }))
+            // Score completeness once per poll; requests only read the
+            // record. It logs and keeps the old record rather than throw.
+            await recordCompleteness(getDb(env))
             // The 15-min cron also drains the webhook queue (task 6.2).
             return runWebhookTick(getDb(env))
           })

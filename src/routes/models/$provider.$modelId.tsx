@@ -82,7 +82,7 @@ interface ModelDetailData {
 const getModelDetail = createServerFn({ method: 'GET' })
   .inputValidator((params: { provider: string; modelId: string }) => params)
   .handler(async ({ data }): Promise<ModelDetailData | null> => {
-    const { env, waitUntil } = await import('cloudflare:workers')
+    const { env } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')
     const { getModelDetail: getModel } = await import('#/server/catalog.ts')
     const { getProviderSchemaIndex } = await import('#/server/schemas-api.ts')
@@ -110,9 +110,7 @@ const getModelDetail = createServerFn({ method: 'GET' })
           }
     const [index, status] = await Promise.all([
       getProviderSchemaIndex(db, data.provider),
-      getServiceStatus(db, undefined, {
-        cache: { db, kv: env.SCHEMA_CACHE, waitUntil },
-      }),
+      getServiceStatus(db),
     ])
 
     const all: Array<EndpointLink> = Object.entries(index.activities).flatMap(

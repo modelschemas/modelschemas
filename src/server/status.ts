@@ -1,11 +1,15 @@
 import { and, count, eq, isNull, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
-import { endpoints, models, providers, schemaVersions } from '#/db/schema.ts'
+import {
+  cacheMeta,
+  endpoints,
+  models,
+  providers,
+  schemaVersions,
+} from '#/db/schema.ts'
 import { FACT_KEYS, buildReport, scoredFacts } from '#/lib/completeness.ts'
 import type { FactKey, Ledger, ModelRow } from '#/lib/completeness.ts'
-import { swr } from '#/server/cache.ts'
-import type { SwrDeps } from '#/server/cache.ts'
 import { readIngestRecords } from '#/server/ingest/docs-failing.ts'
 import type {
   DocsFailing,
@@ -23,8 +27,10 @@ import { sourceSilentLedger } from '#/server/source-silent.ts'
  */
 export interface Completeness {
   /**
-   * 0 to 1, or null when the provider has no live chat models and so
-   * nothing to score. (The CLI prints 0 there so its loop keeps going.)
+   * 0 to 1. Null when the provider has no live chat models and so nothing
+   * to score (the CLI prints 0 there so its loop keeps going), and when
+   * there is no current score: none computed yet, or the provider's chat
+   * models changed since the last poll scored them.
    */
   score: number | null
   /** Live chat models scored. */
@@ -74,6 +80,11 @@ export interface ProviderStatus {
 export interface ServiceStatus {
   service: 'modelschemas'
   time: number
+  /**
+   * Epoch seconds the `completeness` scores were computed (the last models
+   * poll), or null when there is no record and every score is null.
+   */
+  completenessComputedAt: number | null
   providers: Array<ProviderStatus>
 }
 
@@ -82,12 +93,14 @@ const live = (where = sql`1`) =>
   sql<number>`count(case when ${models.deprecatedAt} is null and ${where} then 1 end)`
 
 /**
- * Seconds a cached score is served before a background rescore. Scoring
- * reads every live chat row's JSON facts (about 2 MB on the full catalog),
- * too much for each home-page hit; a poll moves the score at most every
- * 15 minutes.
+ * The `cache_meta` row holding every provider's score: `fetched_at` is when
+ * it was computed, `last_error` the JSON. Scoring reads every live chat
+ * row's JSON facts (about 2 MB on the full catalog), so the 15-minute poll
+ * computes it once (`recordCompleteness`) and requests only read the row.
+ * Bump the version when the scorer or the `Completeness` shape changes: the
+ * old row then reads as no record, and scores are null until the next poll.
  */
-const COMPLETENESS_STALE_TIME = 300
+const COMPLETENESS_KEY = 'status:completeness:v1'
 
 /**
  * Completeness of every provider with live chat rows. One query, only the
@@ -149,11 +162,71 @@ async function scoreCompleteness(
   )
 }
 
-export interface StatusOptions {
-  /** Defaults to the bundled `docs/source-silent` ledger. */
-  ledger?: Ledger
-  /** Serve completeness from the SWR cache; without it, score inline. */
-  cache?: SwrDeps
+const logCompleteness = (error: unknown) => {
+  console.error(
+    JSON.stringify({
+      job: 'completeness',
+      error: error instanceof Error ? error.message : String(error),
+    }),
+  )
+}
+
+/**
+ * Score every provider and store the result, after the models poll. Never
+ * throws: a failure is logged and the previous record stays. Returns
+ * whether a new record was written.
+ */
+export async function recordCompleteness(
+  db: Db,
+  now = Math.floor(Date.now() / 1000),
+  ledger: Ledger = sourceSilentLedger,
+): Promise<boolean> {
+  try {
+    const lastError = JSON.stringify(await scoreCompleteness(db, ledger))
+    await db
+      .insert(cacheMeta)
+      .values({
+        key: COMPLETENESS_KEY,
+        fetchedAt: now,
+        staleTime: 0,
+        lastError,
+      })
+      .onConflictDoUpdate({
+        target: cacheMeta.key,
+        set: { fetchedAt: now, lastError },
+      })
+    return true
+  } catch (error) {
+    logCompleteness(error)
+    return false
+  }
+}
+
+/**
+ * The stored scores. A missing, unreadable or misshapen record is no
+ * record: every score is then null and the request goes on.
+ */
+async function readCompleteness(db: Db): Promise<{
+  computedAt: number | null
+  scores: Partial<Record<string, Completeness>>
+}> {
+  try {
+    const row = await db.query.cacheMeta.findFirst({
+      where: eq(cacheMeta.key, COMPLETENESS_KEY),
+    })
+    if (row?.lastError) {
+      const scores: unknown = JSON.parse(row.lastError)
+      if (typeof scores === 'object' && scores !== null) {
+        return {
+          computedAt: row.fetchedAt,
+          scores: scores,
+        }
+      }
+    }
+  } catch (error) {
+    logCompleteness(error)
+  }
+  return { computedAt: null, scores: {} }
 }
 
 /**
@@ -167,13 +240,11 @@ export interface StatusOptions {
 export async function getServiceStatus(
   db: Db,
   now = Math.floor(Date.now() / 1000),
-  { ledger = sourceSilentLedger, cache }: StatusOptions = {},
 ): Promise<ServiceStatus> {
-  const score = () => scoreCompleteness(db, ledger)
   const [
     providerRows,
     records,
-    scored,
+    { computedAt, scores },
     modelCounts,
     endpointCounts,
     schemaCounts,
@@ -181,11 +252,7 @@ export async function getServiceStatus(
     db.select().from(providers),
     // One statement for every provider's docs-failing / refused-clears row.
     readIngestRecords(db),
-    cache
-      ? swr(cache, 'status:completeness', score, {
-          staleTime: COMPLETENESS_STALE_TIME,
-        }).then((result) => result.value)
-      : score(),
+    readCompleteness(db),
     // One pass yields every model tally. Deprecated rows are counted apart:
     // the catalog hides them, and a provider's count must match its list.
     db
@@ -217,16 +284,24 @@ export async function getServiceStatus(
   const modelsBy = new Map(modelCounts.map((r) => [r.providerId, r]))
   const endpointsBy = toMap(endpointCounts)
   const schemasBy = toMap(schemaCounts)
-  // No live chat rows: nothing to score, which is not a score of zero. The
-  // live count decides, so a cached score never outlives its last chat row.
-  const completeness = (providerId: string): Completeness =>
-    (modelsBy.get(providerId)?.chat ? scored[providerId] : undefined) ?? {
+  // The record is as old as the last poll. It is served only for a provider
+  // whose live chat count still equals the count it scored, so a score never
+  // sits over a different row set; that also makes no chat rows a null, not
+  // a zero. Anything else read from the record fails the same comparison.
+  const completeness = (providerId: string): Completeness => {
+    const scored = scores[providerId]
+    const chat = modelsBy.get(providerId)?.chat ?? 0
+    if (chat > 0 && scored?.chat === chat) return scored
+    return {
       score: null,
       chat: 0,
       filled: 0,
       needed: 0,
-      silent: FACT_KEYS.filter((key) => ledger.get(providerId)?.has(key)),
+      silent: FACT_KEYS.filter((key) =>
+        sourceSilentLedger.get(providerId)?.has(key),
+      ),
     }
+  }
 
   const byId = new Map<string, ProviderStatus>()
   for (const p of providerRows) {
@@ -274,6 +349,7 @@ export async function getServiceStatus(
   return {
     service: 'modelschemas',
     time: now,
+    completenessComputedAt: computedAt,
     providers: [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)),
   }
 }
