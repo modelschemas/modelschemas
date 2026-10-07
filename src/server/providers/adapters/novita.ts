@@ -5,17 +5,19 @@
  * Official host is api.novita.ai/openai/v1 (the older /v3/openai prefix
  * still appears in some clients).
  */
-import { novitaListingCard } from '../catalog-prices.ts'
+import { novitaListingCard, novitaTieredCard } from '../catalog-prices.ts'
+import { docsReport, docsRun } from '../model-facts.ts'
+import {
+  compatGenerationEndpointId,
+  novitaModelActivity,
+} from '../model-meta.ts'
+import { loadNovitaDocs } from '../novita-facts.ts'
 import {
   classifyOpenAiCompat,
   fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
   OPENAI_OPENAPI_URL,
 } from '../openai-compat.ts'
-import {
-  compatGenerationEndpointId,
-  novitaModelActivity,
-} from '../model-meta.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -41,22 +43,43 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
-  return listOpenAiCompatibleModels({
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const listed = await listOpenAiCompatibleModels({
     providerId: 'novita',
     url: NOVITA_MODELS_URL,
     env,
     envVar: 'NOVITA_API_KEY',
     activity: novitaModelActivity,
     extend: async (row) => {
-      const pricing = await novitaListingCard(
-        row.pricing,
-        row.is_tiered_billing,
-        NOVITA_MODELS_URL,
-      )
-      return pricing ? { pricing } : {}
+      const pricing = row.is_tiered_billing
+        ? await novitaTieredCard(row.tiered_billing_configs, NOVITA_MODELS_URL)
+        : await novitaListingCard(row.pricing, false, NOVITA_MODELS_URL)
+      if (!pricing) return {}
+      return {
+        pricing,
+        factSources: {
+          pricing: {
+            derivation: 'listing',
+            sourceUrl: NOVITA_MODELS_URL,
+            sourceHash: pricing.source.hash,
+            path: row.is_tiered_billing ? 'tiered_billing_configs' : 'pricing',
+          },
+        },
+      }
     },
   })
+  if (listed.skipped || listed.models.length === 0) return listed
+  const docs = docsRun()
+  const models = await loadNovitaDocs(
+    docs,
+    kv,
+    NOVITA_MODELS_URL,
+    listed.models,
+  )
+  return { ...listed, models, docsFailures: docsReport(docs) }
 }
 
 export const provider: ProviderConfig = {
