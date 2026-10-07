@@ -367,6 +367,7 @@ const SOURCED_FACTS = [
   'capabilities',
   'reasoning',
   'serverTools',
+  'requestMap',
 ] as const
 
 /** The facts `enrichListed` fills from the bound request schema. */

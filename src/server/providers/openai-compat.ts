@@ -141,6 +141,11 @@ export interface OpenAiCompatModelRow {
   /** novita: `chat`, `image`, … */
   model_type?: string
   is_tiered_billing?: boolean
+  /**
+   * novita prompt-size brackets (`min_tokens`, `pricing`). The summary
+   * `pricing` object on a tiered row is not the standard bracket.
+   */
+  tiered_billing_configs?: unknown
   /** hyperbolic: USD per 1M tokens (a per-token reading is not a real rate). */
   input_price?: number
   output_price?: number
