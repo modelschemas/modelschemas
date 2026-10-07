@@ -8,6 +8,8 @@
 import { extractEndpointSchemas } from '#/server/ingest/bundle.ts'
 import { walkRequestSchema } from './fact-sources.ts'
 import { tokenCount } from './model-facts.ts'
+import { SHARED_EFFORT_LEVELS } from './request-map.ts'
+import type { EffortLevelMap } from './request-map.ts'
 import type {
   FactSource,
   ModelFactSources,
@@ -23,6 +25,7 @@ export type FalChatFacts = Pick<
   | 'modalities'
   | 'capabilities'
   | 'reasoning'
+  | 'requestMap'
   | 'factSources'
 >
 
@@ -53,6 +56,86 @@ function stringEnum(node: unknown): Array<string> | null {
     only.every((item): item is string => typeof item === 'string')
     ? only
     : null
+}
+
+/**
+ * Shared levels this enum actually names. Null when a value is not one of
+ * those levels, or when `high` is missing — "on" is effort high.
+ */
+function effortLevelMap(
+  accepted: ReadonlyArray<string>,
+): EffortLevelMap | null {
+  const shared = new Set<string>(SHARED_EFFORT_LEVELS)
+  if (!accepted.every((effort) => shared.has(effort))) return null
+  if (!accepted.includes('high')) return null
+  const has = (level: string): string | null =>
+    accepted.includes(level) ? level : null
+  return {
+    off: has('none') ?? has('off'),
+    minimal: has('minimal'),
+    low: has('low'),
+    medium: has('medium'),
+    high: 'high',
+    xhigh: has('xhigh'),
+    max: has('max'),
+  }
+}
+
+/**
+ * Wire map from this endpoint's own properties. A router's boolean
+ * `reasoning` only asks for the trace back; it is not a thinking body.
+ * No max-token field and no effort or think/no_think switch → null.
+ */
+function falRequestMap(
+  properties: Record<string, unknown>,
+): ModelInfo['requestMap'] {
+  const maxTokensField =
+    'max_completion_tokens' in properties
+      ? 'max_completion_tokens'
+      : 'max_tokens' in properties
+        ? 'max_tokens'
+        : null
+  const efforts = stringEnum(properties.reasoning_effort)
+  const thinking = stringEnum(properties.thinking)
+  const mode = stringEnum(properties.reasoning_mode)
+  let thinkingRequest: NonNullable<ModelInfo['requestMap']>['thinking'] = null
+  if (efforts?.includes('high') && thinking?.includes('enabled')) {
+    thinkingRequest = {
+      on: { thinking: 'enabled', reasoning_effort: 'high' },
+      off: thinking.includes('disabled') ? { thinking: 'disabled' } : null,
+      levels: effortLevelMap(efforts),
+    }
+  } else if (
+    !efforts &&
+    !thinking &&
+    [...(mode ?? [])].sort().join() === 'no_think,think'
+  ) {
+    thinkingRequest = {
+      on: { reasoning_mode: 'think' },
+      off: { reasoning_mode: 'no_think' },
+      levels: null,
+    }
+  }
+  const reasoningEffort = 'reasoning_effort' in properties ? true : null
+  if (
+    maxTokensField === null &&
+    thinkingRequest === null &&
+    reasoningEffort !== true
+  ) {
+    return null
+  }
+  return {
+    thinking: thinkingRequest,
+    maxTokensField,
+    developerRole: null,
+    replayReasoningContent: null,
+    store: null,
+    strictTools: null,
+    sessionAffinity: null,
+    cacheControl: null,
+    toolStream: null,
+    reasoningEffort,
+  }
 }
 
 function integerMaximum(node: unknown): number | null {
@@ -192,6 +275,17 @@ export function falChatFacts(
           walk?.sources.capabilities?.[flag] ?? source('/properties'),
         ]),
       )
+    }
+
+    const requestMap = falRequestMap(properties)
+    if (requestMap) {
+      facts.requestMap = requestMap
+      const path = requestMap.maxTokensField
+        ? `/properties/${requestMap.maxTokensField}`
+        : requestMap.reasoningEffort
+          ? '/properties/reasoning_effort'
+          : '/properties/reasoning_mode'
+      sources.requestMap = source(path)
     }
   }
 

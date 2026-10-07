@@ -1,8 +1,9 @@
 /**
  * Nightly FAL rate-card extract (issue #68): page candidate catalog rows,
  * fetch each endpoint's llms.txt, hash-skip the Pricing section, and ask
- * one model to write a RateCard. Own cron / admin route — not the 15-min
- * poll and not FAL's spec-sync shard.
+ * one model to write a RateCard. Own cron / admin route — not FAL's
+ * spec-sync shard. Chat token sections compile in `compileFalTokenCard`
+ * and the model poll stores those; this job still owns every other section.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
