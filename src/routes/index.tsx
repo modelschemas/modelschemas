@@ -15,7 +15,7 @@ import {
   SiteNav,
   StatusDot,
 } from '#/components/site.tsx'
-import type { ServiceStatus } from '#/server/status.ts'
+import type { Completeness, ServiceStatus } from '#/server/status.ts'
 
 interface DashboardChange {
   id: string
@@ -70,6 +70,31 @@ const fmt = new Intl.NumberFormat('en-US')
 const pct = (part: number, whole: number) =>
   whole > 0 ? Math.round((part / whole) * 100) : null
 const showPct = (value: number | null) => (value === null ? '—' : `${value}%`)
+/** "2026-10-07 05:15Z (3 polls)" for a status marker's tooltip. */
+const since = (record: { since: number; polls: number }) =>
+  `${new Date(record.since * 1000).toISOString().slice(0, 16).replace('T', ' ')}Z (${record.polls} ${record.polls === 1 ? 'poll' : 'polls'})`
+
+/** An amber word beside the status dot; the detail is its tooltip and label. */
+function Marker({ label, text }: { label: string; text: string }) {
+  return (
+    <span
+      className="ml-2 cursor-help text-xs text-tok-amber"
+      title={text}
+      aria-label={text}
+    >
+      {label}
+    </span>
+  )
+}
+
+function completenessNote(c: Completeness): string {
+  // Defensive: nothing `/v1/status` sends may throw in render.
+  const silent = Array.isArray(c.silent) ? c.silent.join(', ') : ''
+  if (c.needed === 0) {
+    return `Nothing to fill across ${c.chat} chat models: this provider does not publish ${silent}`
+  }
+  return `${c.filled} of ${c.needed} facts filled across ${c.chat} chat models${silent ? `; not published by this provider: ${silent}` : ''}`
+}
 
 function Landing() {
   const { status, changes } = Route.useLoaderData()
@@ -245,9 +270,9 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Share of chat models with known reasoning controls: mode, whether it can be turned off, effort levels"
+                    title="Share of the chat facts @tanstack/ai-models needs that are filled: context window, max output, modalities, price, cache price, capabilities, reasoning, effort levels, request map, endpoint. Facts the provider does not publish are left out."
                   >
-                    reasoning controls
+                    completeness
                   </th>
                   <th className="num">polled</th>
                   <th className="num">synced</th>
@@ -266,6 +291,18 @@ function Landing() {
                     </td>
                     <td>
                       <StatusDot status={p.status} />
+                      {p.docsFailing && (
+                        <Marker
+                          label="docs"
+                          text={`docs failing since ${since(p.docsFailing)}: ${[p.docsFailing.sources[0], String(p.docsFailing.error).slice(0, 160)].filter(Boolean).join(' — ')}`}
+                        />
+                      )}
+                      {p.priceClearsRefused && (
+                        <Marker
+                          label="prices"
+                          text={`price clears refused since ${since(p.priceClearsRefused)}: ${p.priceClearsRefused.refused} of ${p.priceClearsRefused.priced} stored prices kept`}
+                        />
+                      )}
                     </td>
                     <td className="num" data-label="models">
                       {fmt.format(p.counts.models)}
@@ -288,8 +325,20 @@ function Landing() {
                     <td className="num" data-label="priced">
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
-                    <td className="num" data-label="reasoning controls">
-                      {showPct(pct(p.counts.reasoning, p.counts.chat))}
+                    <td className="num" data-label="completeness">
+                      {p.completeness.score === null ? (
+                        '—'
+                      ) : (
+                        <a
+                          className="text-ink hover:text-tok-blue"
+                          href={`/models?provider=${p.id}&activity=chat`}
+                          title={completenessNote(p.completeness)}
+                        >
+                          {showPct(
+                            Math.round(Number(p.completeness.score) * 100),
+                          )}
+                        </a>
+                      )}
                     </td>
                     <td className="num text-ink-faint" data-label="polled">
                       {timeAgo(p.lastPolledAt)}

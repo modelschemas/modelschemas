@@ -902,6 +902,13 @@
           "time": {
             "type": "integer"
           },
+          "completenessComputedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Epoch seconds the completeness scores were computed, at the last models poll (every 15 minutes). null when none is stored yet, as after a deploy that changes the scorer; every score is then null."
+          },
           "providers": {
             "type": "array",
             "items": {
@@ -934,11 +941,134 @@
                     "null"
                   ]
                 },
+                "docsFailing": {
+                  "type": "object",
+                  "description": "Present only while the provider docs pages fail to load. Polls go on and models keep their stored docs-derived facts, which may be stale. Does not change status.",
+                  "required": [
+                    "since",
+                    "polls",
+                    "lastAt",
+                    "failed",
+                    "skipped",
+                    "sources",
+                    "error"
+                  ],
+                  "properties": {
+                    "since": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the first failing poll."
+                    },
+                    "polls": {
+                      "type": "integer",
+                      "description": "Consecutive failing polls."
+                    },
+                    "lastAt": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the latest failing poll."
+                    },
+                    "failed": {
+                      "type": "integer",
+                      "description": "Documents that failed in the latest poll."
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "description": "Documents not attempted after the failure budget."
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The first few failing documents."
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "First error of the latest poll, at most 500 characters."
+                    }
+                  }
+                },
+                "priceClearsRefused": {
+                  "type": "object",
+                  "description": "Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.",
+                  "required": [
+                    "since",
+                    "polls",
+                    "lastAt",
+                    "refused",
+                    "priced"
+                  ],
+                  "properties": {
+                    "since": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the first refusing poll."
+                    },
+                    "polls": {
+                      "type": "integer",
+                      "description": "Consecutive refusing polls."
+                    },
+                    "lastAt": {
+                      "type": "integer",
+                      "description": "Epoch seconds of the latest refusing poll."
+                    },
+                    "refused": {
+                      "type": "integer",
+                      "description": "Stored prices the latest poll asked to clear; none was cleared."
+                    },
+                    "priced": {
+                      "type": "integer",
+                      "description": "Listed models holding a stored price at that poll."
+                    }
+                  }
+                },
+                "completeness": {
+                  "type": "object",
+                  "description": "The gap-report score over the live chat models of the provider: the share filled of the ten chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint). Summed per model, each fact counted only where it applies. Computed at the models poll (completenessComputedAt), not per request.",
+                  "required": [
+                    "score",
+                    "chat",
+                    "filled",
+                    "needed",
+                    "silent"
+                  ],
+                  "properties": {
+                    "score": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "description": "filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models (nothing to score, not a score of zero), when no score is stored yet, and when the chat models changed since the stored score."
+                    },
+                    "chat": {
+                      "type": "integer",
+                      "description": "Live chat models scored."
+                    },
+                    "filled": {
+                      "type": "integer",
+                      "description": "Facts carried, summed over those models; silent facts left out."
+                    },
+                    "needed": {
+                      "type": "integer",
+                      "description": "Facts that apply, summed over those models; silent facts left out."
+                    },
+                    "silent": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Facts the provider does not publish, left out of the score."
+                    }
+                  }
+                },
                 "counts": {
                   "type": "object",
+                  "description": "Model tallies count live models only: what GET /v1/models lists by default. Deprecated models are in deprecated and nowhere else.",
                   "properties": {
                     "models": {
                       "type": "integer"
+                    },
+                    "deprecated": {
+                      "type": "integer",
+                      "description": "Models no longer listed upstream (GET /v1/models?deprecated=true)."
                     },
                     "priced": {
                       "type": "integer",

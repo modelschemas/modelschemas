@@ -20,7 +20,11 @@ import {
   unavailable,
 } from '../providers/model-facts.ts'
 import type { ModelInfo, ProviderConfig } from '../providers/types.ts'
-import { readDocsFailing, recordDocsFailing } from './docs-failing.ts'
+import {
+  readDocsFailing,
+  readIngestRecords,
+  recordDocsFailing,
+} from './docs-failing.ts'
 import { runIngestScope, takeIngestEvents } from './ingest-signals.ts'
 import {
   modelDbId,
@@ -1482,6 +1486,15 @@ describe('absent facts (FactAbsence)', () => {
           },
         },
       ])
+      // The durable record: written by the first refusal, extended by the next.
+      const record = (await readIngestRecords(deps.db)).get(id)
+      expect(record?.priceClearsRefused).toMatchObject({
+        polls: poll + 1,
+        refused: 6,
+        priced: 6,
+      })
+      const refusal = record?.priceClearsRefused
+      expect((refusal?.lastAt ?? 0) - (refusal?.since ?? 0)).toBe(poll)
     }
     expect(await priced()).toBe(6)
     expect(await changesFor(deps, id)).toBe(before)
@@ -1494,6 +1507,8 @@ describe('absent facts (FactAbsence)', () => {
     expect(some.outcome).toMatchObject({ updated: 4, failures: 0 })
     expect(some.outcome.priceClearsRefused).toBeUndefined()
     expect(await priced()).toBe(2)
+    // The first poll that refuses nothing deletes the record.
+    expect((await readIngestRecords(deps.db)).has(id)).toBe(false)
   })
 
   it('does not count delisted rows toward the priced rows', async () => {

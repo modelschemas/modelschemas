@@ -14,14 +14,108 @@ export type Error = {
 export type ServiceStatus = {
   service: 'modelschemas'
   time: number
+  /**
+   * Epoch seconds the completeness scores were computed, at the last models poll (every 15 minutes). null when none is stored yet, as after a deploy that changes the scorer; every score is then null.
+   */
+  completenessComputedAt?: number | null
   providers: Array<{
     id?: string
     displayName?: string
     status?: 'active' | 'degraded' | 'disabled' | 'pending'
     lastPolledAt?: number | null
     lastSyncedAt?: number | null
+    /**
+     * Present only while the provider docs pages fail to load. Polls go on and models keep their stored docs-derived facts, which may be stale. Does not change status.
+     */
+    docsFailing?: {
+      /**
+       * Epoch seconds of the first failing poll.
+       */
+      since: number
+      /**
+       * Consecutive failing polls.
+       */
+      polls: number
+      /**
+       * Epoch seconds of the latest failing poll.
+       */
+      lastAt: number
+      /**
+       * Documents that failed in the latest poll.
+       */
+      failed: number
+      /**
+       * Documents not attempted after the failure budget.
+       */
+      skipped: number
+      /**
+       * The first few failing documents.
+       */
+      sources: Array<string>
+      /**
+       * First error of the latest poll, at most 500 characters.
+       */
+      error: string
+    }
+    /**
+     * Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.
+     */
+    priceClearsRefused?: {
+      /**
+       * Epoch seconds of the first refusing poll.
+       */
+      since: number
+      /**
+       * Consecutive refusing polls.
+       */
+      polls: number
+      /**
+       * Epoch seconds of the latest refusing poll.
+       */
+      lastAt: number
+      /**
+       * Stored prices the latest poll asked to clear; none was cleared.
+       */
+      refused: number
+      /**
+       * Listed models holding a stored price at that poll.
+       */
+      priced: number
+    }
+    /**
+     * The gap-report score over the live chat models of the provider: the share filled of the ten chat facts (contextWindow, maxOutput, modalities, priced, cacheRead, capabilities, reasoning, efforts, requestMap, endpoint). Summed per model, each fact counted only where it applies. Computed at the models poll (completenessComputedAt), not per request.
+     */
+    completeness?: {
+      /**
+       * filled / needed, 0 to 1. 1 when every fact that applies is in silent. null when the provider has no live chat models (nothing to score, not a score of zero), when no score is stored yet, and when the chat models changed since the stored score.
+       */
+      score: number | null
+      /**
+       * Live chat models scored.
+       */
+      chat: number
+      /**
+       * Facts carried, summed over those models; silent facts left out.
+       */
+      filled: number
+      /**
+       * Facts that apply, summed over those models; silent facts left out.
+       */
+      needed: number
+      /**
+       * Facts the provider does not publish, left out of the score.
+       */
+      silent: Array<string>
+    }
+    /**
+     * Model tallies count live models only: what GET /v1/models lists by default. Deprecated models are in deprecated and nowhere else.
+     */
     counts?: {
       models?: number
+      /**
+       * Models no longer listed upstream (GET /v1/models?deprecated=true).
+       */
+      deprecated?: number
       /**
        * Models with a stored rate card. priced / models is the price score.
        */

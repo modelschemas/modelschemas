@@ -44,7 +44,7 @@ import { providerRegistry } from '#/server/providers/index.ts'
 import { storedAliases } from '#/server/providers/provider-aliases.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
-import { recordDocsFailing } from './docs-failing.ts'
+import { recordDocsFailing, recordPriceClearsRefused } from './docs-failing.ts'
 import type { DocsFailing } from './docs-failing.ts'
 import {
   captureIngestEvents,
@@ -535,6 +535,8 @@ export async function pollProviderModels(
   )
   const { walks, properties } = await loadInputWalks(db, provider, listedModels)
   const refused = refusesPriceClears(listedModels, existingById, provider.id)
+  // Kept across polls like the docs record; it cannot fail the poll.
+  await recordPriceClearsRefused(db, provider.id, refused, now)
   if (refused) {
     const error = `refused to clear ${String(refused.clears)} of ${String(refused.priced)} stored prices in one poll`
     console.error(
