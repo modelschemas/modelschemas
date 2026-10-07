@@ -88,7 +88,9 @@ describe('anthropic features (issue #77)', () => {
 })
 
 describe('gemini features (issue #77)', () => {
-  const thinking = `| Thinking Level | Gemini 3.8 \\& 3.7 Flash | Gemini 3.1 Pro | Description |
+  const thinking = `You cannot disable thinking for Gemini 3.1 Pro. Gemini 3 Flash and Flash-Lite also do not support full thinking-off.
+
+| Thinking Level | Gemini 3.8 \\& 3.7 Flash | Gemini 3.1 Pro | Description |
 |---|---|---|---|
 | **\`minimal\`** | Not supported (error) | Not supported | x |
 | **\`low\`** | Supported | Supported | x |
@@ -105,10 +107,19 @@ describe('gemini features (issue #77)', () => {
     const parsed = parseThinkingPage(thinking)
     expect(parsed.get('gemini-3.7-flash')).toEqual({
       mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'high'],
+    })
+    expect(parsed.get('gemini-3.8-flash')).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'high'],
+    })
+    expect(parsed.get('gemini-3.1-pro')).toEqual({
+      mode: 'effort',
       mandatory: true,
       efforts: ['low', 'high'],
     })
-    expect(parsed.get('gemini-3.1-pro')?.efforts).toEqual(['low', 'high'])
     expect(parsed.get('gemini-2.5-pro')).toEqual({
       mode: 'budget',
       mandatory: true,
@@ -138,6 +149,40 @@ describe('gemini features (issue #77)', () => {
       on: -1,
       off: 0,
     })
+  })
+
+  it('sets mandatory only for families the prose says cannot turn thinking off', () => {
+    const page = `You cannot disable thinking for Gemini 3.1 Pro. Gemini 3 Flash and Flash-Lite also do not support full thinking-off.
+
+| Thinking Level | Gemini 3 Flash | Gemini 3.1 Flash-Lite | Gemini 3.6 \\& 3.5 Flash | Gemini Robotics ER 2 | Description |
+|---|---|---|---|---|---|
+| **\`minimal\`** | Supported | Supported | Supported | Supported | x |
+| **\`low\`** | Supported | Supported | Supported | Supported | x |
+| **\`medium\`** | Supported | Supported | Supported | Supported | x |
+| **\`high\`** | Supported | Supported | Supported | Supported | x |`
+    const parsed = parseThinkingPage(page)
+    const efforts = ['minimal', 'low', 'medium', 'high']
+    expect(parsed.get('gemini-3-flash')).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts,
+    })
+    expect(parsed.get('gemini-3.1-flash-lite')).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts,
+    })
+    for (const id of [
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-robotics-er-2',
+    ]) {
+      expect(parsed.get(id)).toEqual({
+        mode: 'effort',
+        mandatory: null,
+        efforts,
+      })
+    }
   })
 
   it('resolves ids to the longest family they version, never a sibling', () => {

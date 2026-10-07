@@ -7,7 +7,8 @@
  * whose columns name Gemini 3 families, and a `thinkingBudget` table whose
  * rows name Gemini 2.5 families. Both key by family, so an id resolves to
  * the longest family it extends with a `-preview…`/`-latest`/`-NNN` suffix.
- * The page states in prose that no Gemini 3 model turns thinking fully off.
+ * `mandatory` on a thinking-level column is true only when the page's prose
+ * says that family cannot turn thinking off.
  * A model page that lists thinking levels in backticks fills a family the
  * table does not name. Modalities: the same page's `Supported data types`
  * row, bound to the model-code and version ids on that page, and to the
@@ -140,11 +141,56 @@ function familyIds(label: string): Array<string> {
   return match[1].split('&').map((v) => `gemini-${v.trim()}-${tail}`)
 }
 
+const CANNOT_DISABLE =
+  /cannot (be )?disable|cannot be turned off|do not support full thinking-off/i
+
+/**
+ * Families the thinking page says cannot turn thinking fully off.
+ * `flashLite` is the bare "Flash-Lite" mention, which covers every
+ * flash-lite column. A versioned "Gemini 3.1 Flash-Lite" is one exact id.
+ */
+function mandatoryEffortFamilies(markdown: string): {
+  exact: Set<string>
+  flashLite: boolean
+} {
+  const exact = new Set<string>()
+  let flashLite = false
+  for (const para of markdown.split(/\n\s*\n/)) {
+    for (const sentence of para.split(/(?<=[.!?])\s+/)) {
+      if (!CANNOT_DISABLE.test(sentence)) continue
+      if (
+        /flash-lite/i.test(sentence) &&
+        !/Gemini\s+\d+(?:\.\d+)*\s+Flash-Lite/i.test(sentence)
+      ) {
+        flashLite = true
+      }
+      for (const match of sentence.matchAll(
+        /Gemini\s+(\d+(?:\.\d+)*)\s+([A-Za-z][\w-]*)/g,
+      )) {
+        const version = match[1]
+        const tail = (match[2] ?? '').toLowerCase()
+        if (version && tail) exact.add(`gemini-${version}-${tail}`)
+      }
+    }
+  }
+  return { exact, flashLite }
+}
+
+function effortMandatory(
+  id: string,
+  named: { exact: Set<string>; flashLite: boolean },
+): boolean | null {
+  if (named.exact.has(id)) return true
+  if (named.flashLite && id.endsWith('-flash-lite')) return true
+  return null
+}
+
 /** Family id → reasoning, from both thinking tables. */
 export function parseThinkingPage(
   markdown: string,
 ): Map<string, ModelReasoning> {
   const out = new Map<string, ModelReasoning>()
+  const named = mandatoryEffortFamilies(markdown)
   const rows = markdownTableRows(markdown)
   const levelHeader = rows.find((row) => row[0] === 'Thinking Level')
   if (levelHeader) {
@@ -158,7 +204,11 @@ export function parseThinkingPage(
         .map((row) => (row[0] ?? '').replace(/[*`]/g, ''))
       if (efforts.length === 0) return
       for (const id of familyIds(label)) {
-        out.set(id, { mode: 'effort', mandatory: true, efforts })
+        out.set(id, {
+          mode: 'effort',
+          mandatory: effortMandatory(id, named),
+          efforts,
+        })
       }
     })
   }
@@ -223,8 +273,6 @@ export function parseThinkingBudgets(
 }
 
 const EFFORT_WORDS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
-const CANNOT_DISABLE =
-  /cannot (be )?disable|cannot be turned off|do not support full thinking-off/i
 
 /**
  * Backtick thinking levels on a model page. Quoted samples do not count.
