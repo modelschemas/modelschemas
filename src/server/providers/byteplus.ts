@@ -310,7 +310,13 @@ function curatedModels(): Array<ModelInfo> {
     contextWindow: m.contextWindow ?? null,
     maxOutput: m.maxOutput ?? null,
     modalities: { input: m.input, output: m.output },
-    capabilities: m.capabilities,
+    // A chat row's list is flags; an image or video row's object is the
+    // provider's own description of the model.
+    ...(Array.isArray(m.capabilities)
+      ? { capabilities: m.capabilities }
+      : m.capabilities
+        ? { providerMetadata: m.capabilities as Record<string, unknown> }
+        : {}),
     // Dated ids embed their release as a -YYMMDD suffix; the undated Seed
     // Speech ids keep their poll-time firstSeenAt.
     releasedAt: byteplusIdSuffixDate(m.rawId),
@@ -447,10 +453,10 @@ function toModelInfo(m: ArkModel): ModelInfo {
       input: m.modalities?.input_modalities,
       output: m.modalities?.output_modalities,
     },
-    capabilities:
-      activity === 'chat'
-        ? arkChatCapabilities(m)
-        : {
+    ...(activity === 'chat'
+      ? { capabilities: arkChatCapabilities(m) }
+      : {
+          providerMetadata: {
             ...m.features,
             taskType: m.task_type,
             domain: m.domain || undefined,
@@ -459,6 +465,7 @@ function toModelInfo(m: ArkModel): ModelInfo {
             // above so the disagreement stays visible.
             ...(probed === undefined ? {} : { structuredOutputProbed: probed }),
           },
+        }),
     // 'Retiring' models still serve but are on the way out; both states are
     // deprecation signals for consumers picking a model today.
     deprecated: m.status === 'Shutdown' || m.status === 'Retiring',

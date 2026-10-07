@@ -167,7 +167,7 @@ async function listModels(
     activity: 'audio',
     // ElevenLabs' API has no release timestamp — curated dates only.
     releasedAt: curatedReleasedAt(ELEVENLABS_RELEASE_DATES, m.model_id),
-    capabilities: {
+    providerMetadata: {
       canDoTextToSpeech: m.can_do_text_to_speech,
       canDoVoiceConversion: m.can_do_voice_conversion,
       languages: m.languages?.map((l) => l.language_id),

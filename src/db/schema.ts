@@ -9,6 +9,8 @@ import {
 } from 'drizzle-orm/sqlite-core'
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
+import type { CapabilityMap } from '#/lib/capabilities.ts'
+
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -405,7 +407,18 @@ export const models = sqliteTable(
     maxOutput: integer('max_output'),
     modalities: text('modalities', { mode: 'json' }),
     pricing: text('pricing', { mode: 'json' }),
-    capabilities: text('capabilities', { mode: 'json' }),
+    // A flag map: `{ tools: true, reasoning: false }`. true = the provider
+    // states support, false = it states none, key absent = unknown, null =
+    // nothing known. Booleans only.
+    capabilities: text('capabilities', {
+      mode: 'json',
+    }).$type<CapabilityMap | null>(),
+    // The provider's own listing object, as published and not normalised
+    // (fal category, Ark features, ElevenLabs languages, …). Never flags.
+    providerMetadata: text('provider_metadata', { mode: 'json' }).$type<Record<
+      string,
+      unknown
+    > | null>(),
     // Thinking configuration and provider-hosted tool type ids (issue #77).
     reasoning: text('reasoning', { mode: 'json' }),
     serverTools: text('server_tools', { mode: 'json' }),
@@ -432,6 +445,14 @@ export const models = sqliteTable(
     // Null → config binds at read time; Gemini still reads leftover
     // methods from capabilities until the poller rewrites the row.
     schemaEndpointId: text('schema_endpoint_id'),
+    // The provider's own stated release/created date; null when it reports
+    // none. `firstSeenAt` below folds the same date in and cannot say which.
+    releasedAt: integer('released_at'),
+    // `YYYY-MM` or `YYYY-MM-DD`, as precise as the provider states it.
+    knowledgeCutoff: text('knowledge_cutoff'),
+    // Stated by the provider itself, never inferred; null = unstated.
+    openWeights: integer('open_weights', { mode: 'boolean' }),
+    weightsUrl: text('weights_url'),
     // Upstream release date when the provider reports one (backdated by the
     // poller, issue #1); otherwise when our poller first observed the model.
     firstSeenAt: integer('first_seen_at').notNull(),

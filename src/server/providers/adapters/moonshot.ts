@@ -88,11 +88,21 @@ async function listModels(
   }
   return {
     ...listed,
-    models: listed.models.map((model) => ({
-      ...model,
-      ...pricing(model.rawId),
-      ...toggle(model.rawId),
-    })),
+    models: listed.models.map((model) => {
+      const over = {
+        ...pricing(model.rawId),
+        ...toggle(model.rawId),
+      }
+      return {
+        ...model,
+        ...over,
+        // `created` is one clock on every id and it moves forward on each
+        // list, so it is not a release date. `cleared` drops a value a
+        // previous poll stored from it.
+        releasedAt: null,
+        absent: { ...model.absent, ...over.absent, releasedAt: 'cleared' },
+      }
+    }),
     docsFailures: docsReport(docs),
   }
 }

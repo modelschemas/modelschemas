@@ -212,16 +212,33 @@ describe('mergeListingAndSchema', () => {
     ])
   })
 
-  it('does not turn a host-native capabilities object into flags', () => {
+  it('does not walk in a flag the listing says the model does not support', () => {
+    const walk = walkRequestSchema(chatSchema, {
+      derivation: 'upstream-spec',
+      endpointId: 'chat/completions',
+    })
+    const merged = mergeListingAndSchema(
+      { rawId: 'm', unsupportedCapabilities: ['tools'] },
+      walk,
+    )
+    expect(merged.capabilities).not.toContain('tools')
+    expect(merged.capabilities).toContain('temperature')
+    // The no keeps its listing source; the walk does not overwrite it.
+    expect(merged.factSources?.capabilities?.tools).toEqual({
+      derivation: 'listing',
+    })
+  })
+
+  it('adds no schema flags to a stored map kept as unavailable', () => {
     const walk = walkRequestSchema(chatSchema, {
       derivation: 'upstream-spec',
       endpointId: 'x',
     })
     const merged = mergeListingAndSchema(
-      { rawId: 'fal-ai/flux', capabilities: { category: 'text-to-image' } },
+      { rawId: 'kept', capabilities: { reasoning: true, tools: false } },
       walk,
     )
-    expect(merged.capabilities).toEqual({ category: 'text-to-image' })
+    expect(merged.capabilities).toEqual({ reasoning: true, tools: false })
     expect(merged.factSources?.capabilities).toBeUndefined()
   })
 })
@@ -299,7 +316,7 @@ describe('OpenRouter compare', () => {
         contextWindow: 200_000,
         maxOutput: 8_192,
         modalities: { input: ['text', 'image'], output: ['text'] },
-        capabilities: ['tools', 'temperature'],
+        capabilities: { tools: true, temperature: true, seed: false },
         factSources: {
           capabilities: { tools: { derivation: 'upstream-spec' } },
         },
@@ -309,7 +326,7 @@ describe('OpenRouter compare', () => {
         contextWindow: 200_000,
         maxOutput: 8_192,
         modalities: { input: ['text'], output: ['text'] },
-        capabilities: ['tools', 'top_p'],
+        capabilities: { tools: true, top_p: true },
       },
     )
     expect(diffs).toEqual(

@@ -349,7 +349,7 @@ describe('fal listModels', () => {
     const byId = new Map(models.map((m) => [m.rawId, m]))
     expect(byId.get('fal-ai/flux/dev')).toMatchObject({
       activity: 'image',
-      capabilities: { category: 'text-to-image' },
+      providerMetadata: { category: 'text-to-image' },
     })
     expect(byId.get('fal-ai/flux/dev')?.factSources).toBeUndefined()
     expect(byId.get('fal-ai/bytedance/seed/v2/mini')).toMatchObject({
@@ -362,10 +362,10 @@ describe('fal listModels', () => {
       maxTokensField: 'max_tokens',
       thinking: null,
     })
-    // No request schema: the row keeps FAL's category object.
-    expect(
-      byId.get('openrouter/router/openai/v1/chat/completions')?.capabilities,
-    ).toEqual({ category: 'llm' })
+    // No request schema: no flags. FAL's category is metadata on every row.
+    const router = byId.get('openrouter/router/openai/v1/chat/completions')
+    expect(router?.capabilities).toBeUndefined()
+    expect(router?.providerMetadata).toEqual({ category: 'llm' })
   })
 
   it('stores a chat token card from that endpoint llms.txt', async () => {

@@ -190,7 +190,12 @@ async function routeFacts(
 ): Promise<
   Pick<
     ModelInfo,
-    'contextWindow' | 'pricing' | 'capabilities' | 'factSources' | 'absent'
+    | 'contextWindow'
+    | 'pricing'
+    | 'capabilities'
+    | 'unsupportedCapabilities'
+    | 'factSources'
+    | 'absent'
   >
 > {
   const selected = defaultRoute(route)
@@ -226,13 +231,22 @@ async function routeFacts(
           ...(structured ? ['structured_outputs', 'response_format'] : []),
         ]
 
+  // A no needs no second flag settled: every host on the chosen route
+  // states it. An unset structured-output flag says nothing about plain
+  // `response_format`.
+  const unsupported = [
+    ...(tools === false ? ['tools'] : []),
+    ...(structured === false ? ['structured_outputs'] : []),
+  ]
+
   const at = (name: string) => listed(`${selected.path}.${name}`)
   const factSources: ModelFactSources = {}
   if (contextWindow !== null) factSources.contextWindow = at('context_length')
   if (pricing !== null) factSources.pricing = at('pricing')
-  if (capabilities && capabilities.length > 0) {
+  const sourced = [...(capabilities ?? []), ...unsupported]
+  if (sourced.length > 0) {
     factSources.capabilities = Object.fromEntries(
-      capabilities.map((name) => [
+      sourced.map((name) => [
         name,
         at(name === 'tools' ? 'supports_tools' : 'supports_structured_output'),
       ]),
@@ -242,6 +256,7 @@ async function routeFacts(
     contextWindow,
     pricing,
     capabilities,
+    unsupportedCapabilities: unsupported.length > 0 ? unsupported : null,
     factSources,
     ...(pricing === null
       ? { absent: { pricing: read ? 'cleared' : 'unavailable' } }

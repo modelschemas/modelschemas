@@ -13,6 +13,8 @@ import {
   providers,
   schemaVersions,
 } from '#/db/schema.ts'
+import { isCapabilityMap } from '#/lib/capabilities.ts'
+import type { CapabilityMap } from '#/lib/capabilities.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { stableStringify } from '#/server/kv.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
@@ -26,6 +28,7 @@ import {
 } from '#/server/providers/fact-sources.ts'
 import type { SchemaWalk } from '#/server/providers/fact-sources.ts'
 import { keepValidReasoning } from '#/server/providers/reasoning-config.ts'
+import { KNOWLEDGE_CUTOFF } from '#/server/providers/types.ts'
 import { chatRequestMap } from '#/server/providers/request-map.ts'
 import {
   parseStoredRateCard,
@@ -157,6 +160,155 @@ function comparable(
     aliases: storedAliases(info.aliases),
     schemaEndpointId: info.schemaEndpointId ?? null,
     deprecated: info.deprecated ?? false,
+    releasedAt: info.releasedAt ?? null,
+    knowledgeCutoff: info.knowledgeCutoff ?? null,
+    openWeights: info.openWeights ?? null,
+    weightsUrl: info.weightsUrl ?? null,
+    providerMetadata: info.providerMetadata ?? null,
+  }
+}
+
+function isStringArray(value: unknown): value is Array<string> {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+/**
+ * The provider's own flag vocabulary, for the `false` entries of its
+ * `exactCapabilities` rows: every flag some exact row of this poll lists.
+ * Read from what the adapter emitted, never from a global list, so a flag
+ * the provider has no word for is never a "no".
+ * ponytail: the vocabulary is this poll's rows. When the last model that
+ * lists a flag goes, the others' `false` for it turns to unknown. Give an
+ * adapter a declared vocabulary if that ever churns.
+ */
+function exactVocabulary(listed: Array<ModelInfo>): Array<string> {
+  const flags = new Set<string>()
+  for (const info of listed) {
+    if (info.exactCapabilities !== true) continue
+    if (!isStringArray(info.capabilities)) continue
+    for (const flag of info.capabilities) flags.add(flag)
+  }
+  return [...flags].sort()
+}
+
+/**
+ * The write gate for `capabilities`: the one place a listing's flags become
+ * the stored map. Listed flags are `true`, `unsupportedCapabilities` are
+ * `false`, and an `exactCapabilities` row adds `false` for every flag of
+ * the provider's vocabulary its list leaves out. A map with no entries is
+ * null. A row that is not a flag list, or that names a flag as both
+ * supported and unsupported, is not stored: the row keeps the map and
+ * sources it had (null on a new row) and an `ingest_failed` event says why.
+ */
+function settleCapabilities(
+  provider: ProviderConfig,
+  info: ModelInfo,
+  existing: typeof models.$inferSelect | undefined,
+  vocabulary: Array<string>,
+): { capabilities: CapabilityMap | null; factSources?: ModelFactSources } {
+  const refuse = (why: string) => {
+    noteIngest(
+      ingestFailedEvent(
+        'models-poll',
+        provider.id,
+        `${info.rawId}: capabilities not stored: ${why}`,
+      ),
+    )
+    const { capabilities: _refused, ...sources } = info.factSources ?? {}
+    const prior = (existing?.factSources as ModelFactSources | null)
+      ?.capabilities
+    const factSources = prior ? { ...sources, capabilities: prior } : sources
+    return {
+      capabilities: existing?.capabilities ?? null,
+      factSources: emptySources(factSources) ? undefined : factSources,
+    }
+  }
+  const listed = info.capabilities ?? null
+  // A stored map kept as `unavailable` goes back as it is.
+  if (isCapabilityMap(listed)) {
+    return {
+      capabilities: Object.keys(listed).length > 0 ? listed : null,
+      factSources: info.factSources,
+    }
+  }
+  if (listed !== null && !isStringArray(listed)) {
+    return refuse('not a flag list')
+  }
+  const yes = listed ?? []
+  // `absent.capabilities` speaks for the whole map, its noes included.
+  const stated = info.absent?.capabilities
+    ? []
+    : (info.unsupportedCapabilities ?? [])
+  const both = stated.filter((flag) => yes.includes(flag))
+  if (both.length > 0) {
+    return refuse(`${both.join(', ')} listed as both supported and unsupported`)
+  }
+  const sources = { ...info.factSources?.capabilities }
+  const no = [...stated]
+  if (info.exactCapabilities === true && listed) {
+    // The list is the model's whole one: what it leaves out is a no, and
+    // the document that states the list is the source of each.
+    const source = Object.values(sources).at(0) ?? {
+      derivation: 'listing' as const,
+      sourceUrl: listingSourceUrl(provider),
+    }
+    for (const flag of vocabulary) {
+      if (yes.includes(flag) || no.includes(flag)) continue
+      no.push(flag)
+      sources[flag] = { ...source, path: 'unlisted' }
+    }
+  }
+  const map: CapabilityMap = {}
+  for (const flag of yes) map[flag] = true
+  for (const flag of no) map[flag] = false
+  const factSources: ModelFactSources = { ...info.factSources }
+  if (Object.keys(sources).length > 0) factSources.capabilities = sources
+  return {
+    capabilities: Object.keys(map).length > 0 ? map : null,
+    factSources: emptySources(factSources) ? undefined : factSources,
+  }
+}
+
+/**
+ * The last word on the stated facts before the write (see the table under
+ * `FactAbsence`): the flag map, the release date a row keeps, a cutoff in
+ * the stored format or not at all, and a weights link only beside a stated
+ * yes.
+ */
+function settleStatedFacts(
+  provider: ProviderConfig,
+  info: ModelInfo,
+  existing: typeof models.$inferSelect | undefined,
+  vocabulary: Array<string>,
+  now: number,
+): ModelInfo & { capabilities: CapabilityMap | null } {
+  const releasedAt =
+    info.absent?.releasedAt === 'cleared'
+      ? null
+      : (usableReleasedAt(info, now) ?? existing?.releasedAt ?? null)
+
+  let knowledgeCutoff = info.knowledgeCutoff ?? null
+  if (knowledgeCutoff !== null && !KNOWLEDGE_CUTOFF.test(knowledgeCutoff)) {
+    noteIngest(
+      ingestFailedEvent(
+        'models-poll',
+        provider.id,
+        `${info.rawId}: knowledgeCutoff not stored: ${JSON.stringify(knowledgeCutoff)} is not YYYY-MM or YYYY-MM-DD`,
+      ),
+    )
+    knowledgeCutoff = existing?.knowledgeCutoff ?? null
+  }
+
+  const openWeights = info.openWeights ?? null
+  const weightsUrl = openWeights === true ? (info.weightsUrl ?? null) : null
+
+  return {
+    ...info,
+    ...settleCapabilities(provider, info, existing, vocabulary),
+    releasedAt,
+    knowledgeCutoff,
+    openWeights,
+    weightsUrl,
   }
 }
 
@@ -357,6 +509,10 @@ function storedFacts(
     requestMap: row?.requestMap ?? null,
     aliases: row?.aliases ?? null,
     schemaEndpointId: row?.schemaEndpointId ?? null,
+    releasedAt: row?.releasedAt ?? null,
+    knowledgeCutoff: row?.knowledgeCutoff ?? null,
+    openWeights: row?.openWeights ?? null,
+    providerMetadata: row?.providerMetadata ?? null,
   }
 }
 
@@ -368,6 +524,8 @@ const SOURCED_FACTS = [
   'reasoning',
   'serverTools',
   'requestMap',
+  'knowledgeCutoff',
+  'openWeights',
 ] as const
 
 /** The facts `enrichListed` fills from the bound request schema. */
@@ -397,6 +555,11 @@ function resolveAbsent(
     Object.assign(next, {
       [fact]: (why === 'unavailable' ? stored : none)[fact],
     })
+    // The link is part of the open-weights fact.
+    if (fact === 'openWeights') {
+      next.weightsUrl =
+        why === 'unavailable' ? (existing?.weightsUrl ?? null) : null
+    }
   }
   const sources: ModelFactSources = { ...info.factSources }
   const prior = (existing?.factSources ?? {}) as ModelFactSources
@@ -558,7 +721,14 @@ export async function pollProviderModels(
   // against the invocation's 1,000 budget, and the first pass after deploy
   // backdates nearly every row (~1,900 across providers) — one-per-row
   // writes would exhaust the budget mid-poll.
-  const backdates: Array<{ id: string; firstSeenAt: number }> = []
+  // The same list carries a row's first `releasedAt` (stored null, now
+  // stated): after the deploy that adds the column that is every dated row.
+  const backdates: Array<{
+    id: string
+    firstSeenAt: number
+    releasedAt: number | null
+  }> = []
+  const vocabulary = exactVocabulary(listedModels)
 
   for (const listedModel of listedModels) {
     const raw =
@@ -638,10 +808,16 @@ export async function pollProviderModels(
     if (decision.keepPrior) {
       factSources = restorePriorPricing(factSources, existing?.factSources)
     }
-    const info: ModelInfo = keepValidReasoning(
-      provider.id,
-      { ...enriched, pricing: card, factSources: factSources ?? undefined },
+    const info = settleStatedFacts(
+      provider,
+      keepValidReasoning(
+        provider.id,
+        { ...enriched, pricing: card, factSources: factSources ?? undefined },
+        existing,
+      ),
       existing,
+      vocabulary,
+      now,
     )
     const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null
     // Only changed evidence is written: most rows restate it every poll.
@@ -659,12 +835,17 @@ export async function pollProviderModels(
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
         capabilities: info.capabilities ?? null,
+        providerMetadata: info.providerMetadata ?? null,
         reasoning: info.reasoning ?? null,
         serverTools: info.serverTools ?? null,
         requestMap: requestMapFor(provider.id, info),
         aliases: storedAliases(info.aliases),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
+        releasedAt: info.releasedAt ?? null,
+        knowledgeCutoff: info.knowledgeCutoff ?? null,
+        openWeights: info.openWeights ?? null,
+        weightsUrl: info.weightsUrl ?? null,
         // Providers that report a release date get it as firstSeenAt, so
         // models predating our monitoring carry their historical date.
         firstSeenAt: usableReleasedAt(info, now) ?? now,
@@ -698,15 +879,31 @@ export async function pollProviderModels(
       aliases: storedAliases(existing.aliases),
       schemaEndpointId: existing.schemaEndpointId,
       deprecated: existing.deprecatedAt !== null,
+      releasedAt: existing.releasedAt,
+      knowledgeCutoff: existing.knowledgeCutoff,
+      openWeights: existing.openWeights,
+      weightsUrl: existing.weightsUrl,
+      providerMetadata: existing.providerMetadata,
     }
-    const after = comparable(provider.id, {
-      ...info,
-      capabilities: preserveAsyncApiFlag(
-        existing.capabilities,
-        info.capabilities ?? null,
-      ),
-    })
-    const dirty = stableStringify(before) !== stableStringify(after)
+    const capabilities = preserveAsyncApiFlag(
+      existing.capabilities,
+      info.capabilities,
+    )
+    const after = comparable(provider.id, { ...info, capabilities })
+    // A first `releasedAt` on a stored row is not a change to the model: we
+    // learned a date it always had. It is written with the backdates, with
+    // no `model.updated`. A date that moves or goes still emits one.
+    const firstRelease = existing.releasedAt === null && info.releasedAt != null
+    // Likewise the listing object a row gains the first time: rows written
+    // before the column existed had nowhere to keep it.
+    const firstMetadata =
+      existing.providerMetadata === null && info.providerMetadata != null
+    const dirty =
+      stableStringify({
+        ...before,
+        ...(firstRelease ? { releasedAt: info.releasedAt } : {}),
+        ...(firstMetadata ? { providerMetadata: info.providerMetadata } : {}),
+      }) !== stableStringify(after)
 
     // Upstream reports a release date earlier than our observed firstSeenAt
     // → backdate in place. A silent correction (no model.updated event):
@@ -716,8 +913,25 @@ export async function pollProviderModels(
     if (backdatedFirstSeen !== null) outcome.backdated++
 
     if (!dirty) {
-      if (backdatedFirstSeen === null) cleanIds.push(id)
-      else backdates.push({ id, firstSeenAt: backdatedFirstSeen })
+      if (firstMetadata) {
+        // One write per row: few rows gain one (a provider's chat rows).
+        await db
+          .update(models)
+          .set({
+            providerMetadata: info.providerMetadata ?? null,
+            releasedAt: info.releasedAt ?? null,
+            firstSeenAt: backdatedFirstSeen ?? existing.firstSeenAt,
+            lastSeenAt: now,
+          })
+          .where(eq(models.id, id))
+      } else if (backdatedFirstSeen === null && !firstRelease) cleanIds.push(id)
+      else {
+        backdates.push({
+          id,
+          firstSeenAt: backdatedFirstSeen ?? existing.firstSeenAt,
+          releasedAt: info.releasedAt ?? null,
+        })
+      }
       continue
     }
 
@@ -734,13 +948,18 @@ export async function pollProviderModels(
         maxOutput: info.maxOutput ?? null,
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
-        capabilities: after.capabilities ?? null,
+        capabilities,
+        providerMetadata: info.providerMetadata ?? null,
         reasoning: info.reasoning ?? null,
         serverTools: info.serverTools ?? null,
         requestMap: requestMapFor(provider.id, info),
         aliases: storedAliases(info.aliases),
         factSources: info.factSources ?? null,
         schemaEndpointId: info.schemaEndpointId ?? null,
+        releasedAt: info.releasedAt ?? null,
+        knowledgeCutoff: info.knowledgeCutoff ?? null,
+        openWeights: info.openWeights ?? null,
+        weightsUrl: info.weightsUrl ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.
         deprecatedAt:
@@ -769,19 +988,21 @@ export async function pollProviderModels(
       .where(inArray(models.id, cleanIds.slice(i, i + 90)))
   }
 
-  // Backdates carry a per-row value, so bulk-update via CASE. Three bound
-  // params per row (CASE arm + IN member) + one for lastSeenAt → 30 rows
-  // stays under the 100-param limit.
-  for (let i = 0; i < backdates.length; i += 30) {
-    const chunk = backdates.slice(i, i + 30)
-    const arms = sql.join(
-      chunk.map((b) => sql`WHEN ${b.id} THEN ${b.firstSeenAt}`),
-      sql` `,
-    )
+  // Backdates carry per-row values, so bulk-update via CASE. Five bound
+  // params per row (two CASE arms + IN member) + one for lastSeenAt → 19
+  // rows stays under the 100-param limit.
+  for (let i = 0; i < backdates.length; i += 19) {
+    const chunk = backdates.slice(i, i + 19)
+    const arms = (value: (b: (typeof chunk)[number]) => number | null) =>
+      sql.join(
+        chunk.map((b) => sql`WHEN ${b.id} THEN ${value(b)}`),
+        sql` `,
+      )
     await db
       .update(models)
       .set({
-        firstSeenAt: sql`CASE ${models.id} ${arms} END`,
+        firstSeenAt: sql`CASE ${models.id} ${arms((b) => b.firstSeenAt)} END`,
+        releasedAt: sql`CASE ${models.id} ${arms((b) => b.releasedAt)} END`,
         lastSeenAt: now,
       })
       .where(

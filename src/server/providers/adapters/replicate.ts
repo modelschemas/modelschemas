@@ -755,11 +755,11 @@ function toModelInfo(model: ReplicateModel): ModelInfo | null {
     releasedAt:
       isoToEpochSeconds(model.created_at) ??
       isoToEpochSeconds(model.latest_version?.created_at),
-    capabilities: {
+    providerMetadata: {
       visibility: model.visibility,
       official: model.is_official,
     },
-    // A chat row carries request flags instead of the listing object.
+    // A chat row carries request flags as well.
     ...chat,
   }
 }

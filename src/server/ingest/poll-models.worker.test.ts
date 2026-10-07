@@ -171,17 +171,22 @@ describe('pollProviderModels', () => {
         {
           rawId,
           activity: 'video',
-          capabilities: { category: 'text-to-video', asyncapi: true },
+          providerMetadata: { category: 'text-to-video' },
         },
       ]),
     )
+    // Sync, not the listing, writes the flag.
+    await deps.db
+      .update(models)
+      .set({ capabilities: { asyncapi: true } })
+      .where(eq(models.id, modelDbId(id, rawId)))
     const again = await pollProviderModels(
       deps,
       stubProvider(id, [
         {
           rawId,
           activity: 'video',
-          capabilities: { category: 'text-to-video' },
+          providerMetadata: { category: 'text-to-video' },
         },
       ]),
     )
@@ -189,10 +194,8 @@ describe('pollProviderModels', () => {
     const row = await deps.db.query.models.findFirst({
       where: eq(models.id, modelDbId(id, rawId)),
     })
-    expect(row?.capabilities).toEqual({
-      category: 'text-to-video',
-      asyncapi: true,
-    })
+    expect(row?.capabilities).toEqual({ asyncapi: true })
+    expect(row?.providerMetadata).toEqual({ category: 'text-to-video' })
   })
 
   it('bulk-bumps lastSeenAt across chunk boundaries for unchanged models', async () => {
@@ -310,6 +313,280 @@ describe('pollProviderModels', () => {
     expect(row[0]?.contextWindow).toBe(500_000)
   })
 
+  it('stores the provider date as releasedAt, filling stored rows silently', async () => {
+    const id = 'poll-released'
+    const deps = await freshDeps(id)
+    const RELEASE = 1_700_000_000
+    const row = async (rawId: string) =>
+      (
+        await deps.db
+          .select()
+          .from(models)
+          .where(eq(models.id, modelDbId(id, rawId)))
+      )[0]
+    const updates = async () =>
+      (await deps.db.select().from(changes).where(eq(changes.providerId, id)))
+        .filter((change) => change.type === 'model.updated')
+        .map((change) => change.payload)
+
+    // New rows: the stated date, or null. firstSeenAt is as before.
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...fable, releasedAt: RELEASE }, haiku]),
+    )
+    expect(await row('claude-fable-5')).toMatchObject({
+      releasedAt: RELEASE,
+      firstSeenAt: RELEASE,
+    })
+    expect((await row('claude-haiku-4-5'))?.releasedAt).toBeNull()
+
+    // A stored row's first date (the post-deploy backfill): no model.updated.
+    const fill = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, releasedAt: RELEASE },
+        { ...haiku, releasedAt: RELEASE + 1 },
+      ]),
+    )
+    expect(fill).toMatchObject({ updated: 0 })
+    expect((await row('claude-haiku-4-5'))?.releasedAt).toBe(RELEASE + 1)
+    // The fable row was in the same bulk write and kept both dates.
+    expect(await row('claude-fable-5')).toMatchObject({
+      releasedAt: RELEASE,
+      firstSeenAt: RELEASE,
+    })
+    expect(await updates()).toHaveLength(0)
+
+    // Unchanged, and a listing that stops stating the date: nothing moves.
+    const again = await pollProviderModels(
+      deps,
+      stubProvider(id, [fable, { ...haiku, releasedAt: RELEASE + 1 }]),
+    )
+    expect(again).toMatchObject({ updated: 0, backdated: 0 })
+    expect((await row('claude-fable-5'))?.releasedAt).toBe(RELEASE)
+
+    // A date that moves is a change, and so is one the adapter clears.
+    const moved = await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        { ...fable, absent: { releasedAt: 'cleared' } },
+        { ...haiku, releasedAt: RELEASE + 2 },
+      ]),
+    )
+    expect(moved).toMatchObject({ updated: 2 })
+    expect((await row('claude-fable-5'))?.releasedAt).toBeNull()
+    expect(JSON.stringify(await updates())).toContain(
+      `"releasedAt":${String(RELEASE + 2)}`,
+    )
+  })
+
+  it('stores stated noes, and derives them for a whole flag list', async () => {
+    const id = 'poll-unsupported'
+    const deps = await freshDeps(id)
+    const exact = (rawId: string, capabilities: Array<string>): ModelInfo => ({
+      rawId,
+      activity: 'chat',
+      capabilities,
+      exactCapabilities: true,
+      factSources: {
+        capabilities: Object.fromEntries(
+          capabilities.map((flag) => [
+            flag,
+            { derivation: 'listing', sourceUrl: 'https://acme.example/m' },
+          ]),
+        ),
+      },
+    })
+    const listed = [
+      exact('both', ['tools', 'reasoning']),
+      exact('tools-only', ['tools']),
+      exact('none', []),
+      // Not exact: a missing flag is unknown, whatever its siblings list.
+      { rawId: 'open', activity: 'chat' as const, capabilities: ['tools'] },
+      // Stated outright, with no list of yeses at all.
+      {
+        rawId: 'stated',
+        activity: 'chat' as const,
+        capabilities: ['tools'],
+        unsupportedCapabilities: ['vision'],
+      },
+      { rawId: 'only-no', unsupportedCapabilities: ['tools'] },
+      { rawId: 'empty', capabilities: [] },
+    ]
+    await pollProviderModels(deps, stubProvider(id, listed))
+    const rows = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, id))
+    const of = (rawId: string) => rows.find((row) => row.rawId === rawId)
+    expect(of('both')?.capabilities).toEqual({ tools: true, reasoning: true })
+    expect(of('tools-only')?.capabilities).toEqual({
+      tools: true,
+      reasoning: false,
+    })
+    expect(of('tools-only')?.factSources).toMatchObject({
+      capabilities: {
+        tools: { sourceUrl: 'https://acme.example/m' },
+        reasoning: { sourceUrl: 'https://acme.example/m', path: 'unlisted' },
+      },
+    })
+    // The vocabulary is what the exact rows list: no global flag list.
+    expect(of('none')?.capabilities).toEqual({ tools: false, reasoning: false })
+    expect(of('open')?.capabilities).toEqual({ tools: true })
+    expect(of('stated')?.capabilities).toEqual({ tools: true, vision: false })
+    expect(of('stated')?.factSources).toMatchObject({
+      capabilities: { vision: { derivation: 'listing' } },
+    })
+    expect(of('only-no')?.capabilities).toEqual({ tools: false })
+    // A list that states nothing is nothing known, not an empty map.
+    expect(of('empty')?.capabilities).toBeNull()
+
+    // The same listing again changes nothing.
+    const again = await pollProviderModels(deps, stubProvider(id, listed))
+    expect(again).toMatchObject({ added: 0, updated: 0 })
+  })
+
+  it('refuses flags that are both yes and no, or not a flag list', async () => {
+    const id = 'poll-flag-gate'
+    const deps = await freshDeps(id)
+    const poll = (list: Array<ModelInfo>) =>
+      runIngestScope(async () => {
+        const outcome = await pollProviderModels(deps, stubProvider(id, list))
+        return { outcome, events: JSON.stringify(takeIngestEvents()) }
+      })
+    const stored = async (rawId: string) =>
+      (
+        await deps.db
+          .select()
+          .from(models)
+          .where(eq(models.id, modelDbId(id, rawId)))
+      )[0]?.capabilities
+    await poll([
+      { rawId: 'a', capabilities: ['tools'] },
+      { rawId: 'b', capabilities: ['tools'] },
+    ])
+
+    const bad = await poll([
+      {
+        rawId: 'a',
+        capabilities: ['tools', 'seed'],
+        unsupportedCapabilities: ['tools'],
+      },
+      // A provider's native object belongs in `providerMetadata`.
+      { rawId: 'b', capabilities: { category: 'text-to-image' } },
+      { rawId: 'new', capabilities: { category: 'llm' } },
+    ])
+    expect(bad.events).toContain(
+      'a: capabilities not stored: tools listed as both supported and unsupported',
+    )
+    expect(bad.events).toContain('b: capabilities not stored: not a flag list')
+    // Fail closed: each row keeps what it had, and nothing reads as changed.
+    expect(bad.outcome).toMatchObject({ added: 1, updated: 0 })
+    expect(await stored('a')).toEqual({ tools: true })
+    expect(await stored('b')).toEqual({ tools: true })
+    expect(await stored('new')).toBeNull()
+  })
+
+  it('stores the listing object as providerMetadata, the first one silently', async () => {
+    const id = 'poll-metadata'
+    const deps = await freshDeps(id)
+    const flux: ModelInfo = { rawId: 'flux', activity: 'image' }
+    const row = async () =>
+      (
+        await deps.db
+          .select()
+          .from(models)
+          .where(eq(models.id, modelDbId(id, 'flux')))
+      )[0]
+    await pollProviderModels(deps, stubProvider(id, [flux]))
+    expect((await row())?.providerMetadata).toBeNull()
+
+    // A stored row's first object (the column is new): no model.updated.
+    const withMetadata = { ...flux, providerMetadata: { category: 'a' } }
+    const first = await pollProviderModels(
+      deps,
+      stubProvider(id, [withMetadata]),
+    )
+    expect(first).toMatchObject({ updated: 0 })
+    expect(await row()).toMatchObject({
+      providerMetadata: { category: 'a' },
+      capabilities: null,
+    })
+    expect(
+      await pollProviderModels(deps, stubProvider(id, [withMetadata])),
+    ).toMatchObject({ updated: 0 })
+
+    // After that it is a fact like any other.
+    const moved = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...flux, providerMetadata: { category: 'b' } }]),
+    )
+    expect(moved).toMatchObject({ updated: 1 })
+    expect((await row())?.providerMetadata).toEqual({ category: 'b' })
+  })
+
+  it('stores a cutoff only in its format and a weights link only beside a yes', async () => {
+    const id = 'poll-stated-facts'
+    const deps = await freshDeps(id)
+    const poll = (list: Array<ModelInfo>) =>
+      runIngestScope(async () => {
+        const outcome = await pollProviderModels(deps, stubProvider(id, list))
+        return { outcome, events: takeIngestEvents() }
+      })
+    const row = async (rawId: string) =>
+      (
+        await deps.db
+          .select()
+          .from(models)
+          .where(eq(models.id, modelDbId(id, rawId)))
+      )[0]
+
+    await poll([
+      {
+        ...fable,
+        knowledgeCutoff: '2025-06',
+        openWeights: true,
+        weightsUrl: 'https://acme.example/weights',
+      },
+      {
+        ...haiku,
+        knowledgeCutoff: '2025-06-30',
+        openWeights: false,
+        weightsUrl: 'https://acme.example/nope',
+      },
+    ])
+    expect(await row('claude-fable-5')).toMatchObject({
+      knowledgeCutoff: '2025-06',
+      openWeights: true,
+      weightsUrl: 'https://acme.example/weights',
+      factSources: {
+        knowledgeCutoff: { derivation: 'listing' },
+        openWeights: { derivation: 'listing' },
+      },
+    })
+    expect(await row('claude-haiku-4-5')).toMatchObject({
+      knowledgeCutoff: '2025-06-30',
+      openWeights: false,
+      weightsUrl: null,
+    })
+
+    // A cutoff in another shape is refused; the stored one stays.
+    const bad = await poll([
+      { ...fable, knowledgeCutoff: 'June 2025', openWeights: true },
+      // `unavailable` keeps the pair; a bare omission would null it.
+      { ...haiku, absent: { knowledgeCutoff: 'unavailable' } },
+    ])
+    expect(JSON.stringify(bad.events)).toContain('knowledgeCutoff not stored')
+    expect(await row('claude-fable-5')).toMatchObject({
+      knowledgeCutoff: '2025-06',
+      weightsUrl: null,
+    })
+    expect(await row('claude-haiku-4-5')).toMatchObject({
+      knowledgeCutoff: '2025-06-30',
+      openWeights: null,
+    })
+  })
+
   it('reports skipped providers without touching the database', async () => {
     const id = 'poll-skipped'
     const deps = await freshDeps(id)
@@ -380,7 +657,7 @@ describe('pollProviderModels', () => {
       .select()
       .from(models)
       .where(eq(models.id, modelDbId(id, 'claude-sonnet-4-5')))
-    expect(row[0]?.capabilities).toEqual(['tools', 'temperature'])
+    expect(row[0]?.capabilities).toEqual({ tools: true, temperature: true })
     const sources = row[0]?.factSources as {
       contextWindow?: { derivation: string }
       capabilities?: Record<string, { derivation: string; endpointId?: string }>
@@ -1072,7 +1349,7 @@ describe('perModelSchemaFlags', () => {
       .select()
       .from(models)
       .where(eq(models.id, modelDbId(id, 'plain')))
-    expect(plain[0]?.capabilities).toEqual(['temperature'])
+    expect(plain[0]?.capabilities).toEqual({ temperature: true })
     expect(
       Object.keys(
         (plain[0]?.factSources as { capabilities: object }).capabilities,
@@ -1082,7 +1359,10 @@ describe('perModelSchemaFlags', () => {
       .select()
       .from(models)
       .where(eq(models.id, modelDbId(id, 'thinker')))
-    expect(thinker[0]?.capabilities).toEqual(['reasoning', 'temperature'])
+    expect(thinker[0]?.capabilities).toEqual({
+      reasoning: true,
+      temperature: true,
+    })
   })
 })
 
@@ -1641,7 +1921,7 @@ describe('docs failures (tryDocs)', () => {
     const good = await storedRow(deps, id, 'a')
     expect(good).toMatchObject({
       contextWindow: 200_000,
-      capabilities: ['tools', 'reasoning'],
+      capabilities: { tools: true, reasoning: true },
       schemaEndpointId: 'v1/chat',
     })
     const facts = (row: typeof good) => ({

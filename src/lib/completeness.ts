@@ -7,6 +7,8 @@
  * `docs/source-silent/<provider>.md` lists facts a provider does not publish;
  * those are left out of that provider's score and listed under `silent`.
  */
+import { isCapabilityMap, supportedFlags } from './capabilities.ts'
+
 export const FACT_KEYS = [
   'contextWindow',
   'maxOutput',
@@ -111,10 +113,6 @@ function hasRate(row: ModelRow, ...keys: Array<string>): boolean {
   return base !== null && keys.some((key) => typeof base[key] === 'number')
 }
 
-function capabilityList(row: ModelRow): Array<unknown> {
-  return Array.isArray(row.capabilities) ? row.capabilities : []
-}
-
 /** `need`: the fact applies to this row. `have`: the row carries it. */
 const FACTS: Record<
   FactKey,
@@ -136,12 +134,13 @@ const FACTS: Record<
   cacheRead: {
     have: (row) => hasRate(row, 'cache_read_tokens', 'input_cache_read'),
   },
-  capabilities: { have: (row) => Array.isArray(row.capabilities) },
+  capabilities: { have: (row) => isCapabilityMap(row.capabilities) },
   // Filled by any stored object, whatever its `mandatory`: null there means
   // the source is silent on turning thinking off, which is a stored fact.
   reasoning: {
     need: (row) =>
-      row.reasoning != null || capabilityList(row).includes('reasoning'),
+      row.reasoning != null ||
+      supportedFlags(row.capabilities).includes('reasoning'),
     have: (row) => row.reasoning != null,
   },
   // Only `effort` and `adaptive` rows need effort names; a `toggle` or

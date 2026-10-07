@@ -112,6 +112,39 @@ only: the row's price, limits, and other facts stay its own provider's.
 - Links refresh on each model poll (every 15 minutes) and a change emits
   `model.updated`.
 
+### Capability flags, dates and provider metadata
+
+`null` means "we do not know" on every model field.
+
+- `capabilities` (`Record<string, boolean> | null`) is a map of flags:
+  `{ "tools": true, "reasoning": false }`. `true`: the provider states the
+  model supports it. `false`: the provider states it does not. Key absent:
+  unknown. Never read a missing key as `false`; test
+  `capabilities?.tools === true` to offer a feature and `=== false` to rule
+  it out. `factSources.capabilities[flag]` is the source of each entry, a
+  `true` and a `false` alike; a `false` whose source has `path: 'unlisted'`
+  comes from the provider publishing the model's whole flag list without
+  that flag. `?capability=tools` matches rows whose map has that flag set
+  to `true` (exact flag name).
+- `providerMetadata` (`object | null`): the provider's own listing object,
+  as published and not normalised (fal `category`, BytePlus Ark features,
+  ElevenLabs languages, Replicate visibility, Reactor pricing name). It is
+  different for every provider and nothing in it is a capability flag.
+- `releasedAt` (epoch seconds `| null`): the provider's own stated release
+  or creation date. `firstSeenAt` still holds that date when there is one
+  and our first observation otherwise; `releasedAt` is how to tell them
+  apart. A row keeps its date when a listing stops stating it.
+- `knowledgeCutoff` (`string | null`): `YYYY-MM`, or `YYYY-MM-DD` when the
+  provider states a day. Never padded.
+- `openWeights` (`boolean | null`) and `weightsUrl` (`string | null`): true
+  only when the provider itself states the weights can be downloaded, with
+  its link; false only when it states they cannot. Never inferred from a
+  model name.
+
+`knowledgeCutoff` and `openWeights` are null on every row until provider
+adapters fill them. A row's first `releasedAt` and first `providerMetadata`
+are written without a `model.updated` change; a later change emits one.
+
 ## Examples
 
 Three TanStack Start apps in [`examples/`](./examples) exercise the
@@ -242,6 +275,27 @@ Settings:
 migrate-then-deploy).
 
 ## Releasing on npm
+
+**Breaking (0.1.x):** `capabilities` is a map of booleans, not a list of
+flag names: `["tools", "reasoning"]` is now `{ "tools": true, "reasoning":
+true }`, and a flag the provider states the model does not support is
+`false`. Replace `capabilities.includes('tools')` with
+`capabilities?.tools === true`. A missing key is unknown, not `false`. The
+provider-native objects five providers kept in `capabilities` (fal
+`{ category }`, BytePlus, ElevenLabs, Replicate, Reactor) moved to the new
+`providerMetadata` field, so `capabilities` is a boolean map or `null` on
+every row. `?capability=` matches a flag set to `true` by exact name; it
+was a substring match over the stored JSON, so `?capability=text-to-image`
+(a fal category) no longer matches anything. Use `?activity=` or read
+`providerMetadata.category`.
+
+**Added (0.1.x):** model rows gain `releasedAt`, `knowledgeCutoff`,
+`openWeights`, `weightsUrl` and `providerMetadata`, all nullable
+("Capability flags, dates and provider metadata" above).
+
+Both need D1 migrations `0013` (columns) and `0014` (stored capability
+lists become maps; native objects move to `provider_metadata`). Migrate
+first, then deploy: `bun run deploy:ci` does both in that order.
 
 **Breaking (0.1.x):** `reasoning.mode` gains `toggle` (an on/off thinking
 switch and nothing else), and `reasoning.mandatory` is `boolean | null`.

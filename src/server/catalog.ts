@@ -33,7 +33,7 @@ import { getServiceStatus } from '#/server/status.ts'
 export interface ModelFilters {
   activity?: Activity
   provider?: string
-  /** Substring match against the capabilities JSON. */
+  /** A flag the model's capability map states as `true`. */
   capability?: string
   /** Free-text match against id, raw id, and display name. */
   q?: string
@@ -170,10 +170,15 @@ function toApiModel(
     modalities: row.modalities,
     pricing: servePricing(row.pricing, opts.pricing ?? 'compact'),
     capabilities: row.capabilities,
+    providerMetadata: row.providerMetadata,
     reasoning: row.reasoning,
     serverTools: row.serverTools,
     requestMap: row.requestMap,
     aliases: storedAliases(row.aliases),
+    releasedAt: row.releasedAt,
+    knowledgeCutoff: row.knowledgeCutoff,
+    openWeights: row.openWeights,
+    weightsUrl: row.weightsUrl,
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
@@ -216,7 +221,10 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
   if (filters.activity) conditions.push(eq(models.activity, filters.activity))
   if (filters.provider) conditions.push(eq(models.providerId, filters.provider))
   if (filters.capability) {
-    conditions.push(like(models.capabilities, `%${filters.capability}%`))
+    // The flag is a bound value, quoted as one JSON path key.
+    conditions.push(
+      sql`json_extract(${models.capabilities}, ${`$.${JSON.stringify(filters.capability)}`}) = 1`,
+    )
   }
   if (filters.q) {
     const needle = `%${filters.q.toLowerCase()}%`

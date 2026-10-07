@@ -149,7 +149,15 @@ export interface ModelFactSources {
   maxOutput?: FactSource
   modalities?: FactSource
   pricing?: FactSource
+  /**
+   * One source per flag in the stored map, for a `true` and a `false`
+   * alike. `path: 'unlisted'` on a `false` means the provider published the
+   * model's whole flag list and the flag is not in it.
+   */
   capabilities?: Record<string, FactSource>
+  knowledgeCutoff?: FactSource
+  /** Covers `openWeights` and `weightsUrl`. */
+  openWeights?: FactSource
   reasoning?: FactSource
   /** Chat wire map read from this model's own request schema. */
   requestMap?: FactSource
@@ -247,6 +255,10 @@ export function reasoningViolation(value: unknown): string | null {
   return null
 }
 
+/** `ModelInfo.knowledgeCutoff` as stored: a month or a day, nothing else. */
+export const KNOWLEDGE_CUTOFF =
+  /^\d{4}-(0[1-9]|1[0-2])(-(0[1-9]|[12]\d|3[01]))?$/
+
 /** The stored model columns a listing fills; each can be marked absent. */
 export type ModelFact =
   | 'displayName'
@@ -261,6 +273,10 @@ export type ModelFact =
   | 'requestMap'
   | 'aliases'
   | 'schemaEndpointId'
+  | 'releasedAt'
+  | 'knowledgeCutoff'
+  | 'openWeights'
+  | 'providerMetadata'
 
 /**
  * Why a listing carries no value for a fact, when the adapter knows why.
@@ -295,6 +311,25 @@ export type ModelFact =
  * read, and the fact is written like any omission. `deprecated` is not a
  * fact here: a stored `deprecatedAt` cannot tell "upstream flagged it"
  * from "it dropped off the listing".
+ *
+ * The facts added after that table follow it, with one exception:
+ *
+ * | fact               | nothing, no reason                               |
+ * | ------------------ | ------------------------------------------------ |
+ * | `releasedAt`       | the stored date, no signal. A release date does  |
+ * |                    | not stop being true when a listing stops stating |
+ * |                    | it, and `firstSeenAt` keeps its backdate the     |
+ * |                    | same way. Only `cleared` nulls it                |
+ * | `knowledgeCutoff`  | null                                             |
+ * | `openWeights`      | null, and `weightsUrl` with it: the pair is one  |
+ * |                    | fact, marked absent as `openWeights`             |
+ * | `providerMetadata` | null                                             |
+ *
+ * `cleared` nulls each of them and `unavailable` keeps the stored value and
+ * source, as for any fact. `capabilities` is the whole stored map: a bare
+ * omission, `cleared` or `unavailable` covers its `false` entries
+ * (`unsupportedCapabilities`) with its `true` ones. An `exactCapabilities`
+ * row's `false` entries are derived from its list every poll.
  */
 export type FactAbsence = 'cleared' | 'unavailable'
 
@@ -307,6 +342,13 @@ export interface ModelInfo {
   maxOutput?: number | null
   modalities?: unknown
   pricing?: unknown
+  /**
+   * The flags the provider states the model supports, as a list. The
+   * poller joins it with `unsupportedCapabilities` into the stored map
+   * (`settleCapabilities`): listed here is `true`, listed there is `false`,
+   * in neither is left out. A stored map is also accepted, for a fact kept
+   * as `unavailable`. Anything else is refused.
+   */
   capabilities?: unknown
   /**
    * True when `capabilities` is the model's whole flag list, read from its
@@ -315,8 +357,38 @@ export interface ModelInfo {
    * siblings' fields.
    */
   exactCapabilities?: boolean
+  /**
+   * Flags the provider STATES this model does not support: the `false`
+   * entries of the stored map. Never a flag that is merely missing from a
+   * list that is not the model's whole one. Omit it on an
+   * `exactCapabilities` row: the poller derives it (`exactVocabulary`).
+   * Sources go in `factSources.capabilities`, keyed by flag. A flag also
+   * listed in `capabilities` is a bug: the poller refuses the row's flags.
+   */
+  unsupportedCapabilities?: Array<string> | null
+  /**
+   * The provider's own listing object, as published and not normalised
+   * (fal `category`, Ark `features`, ElevenLabs `languages`). Stored and
+   * served as `providerMetadata`. Nothing here is a capability flag until
+   * an adapter states it in `capabilities` / `unsupportedCapabilities`.
+   */
+  providerMetadata?: Record<string, unknown> | null
   /** Thinking configuration; null when the model does not reason or docs are silent. */
   reasoning?: ModelReasoning | null
+  /**
+   * Knowledge (training data) cutoff, `YYYY-MM` or `YYYY-MM-DD`: exactly as
+   * precise as the provider states it, never padded to a day. Null when the
+   * provider states none.
+   */
+  knowledgeCutoff?: string | null
+  /**
+   * True only when the provider itself states the weights can be openly
+   * downloaded, false only when it states they cannot. Never inferred from
+   * a model name, an id shape, or another provider's row. Null when unstated.
+   */
+  openWeights?: boolean | null
+  /** Where the provider says the weights are; stored only with `openWeights: true`. */
+  weightsUrl?: string | null
   /**
    * Provider-hosted tool type ids the model accepts in `tools`
    * (`web_search_20250305`, `google_search`, …). Null when unknown.
@@ -351,8 +423,9 @@ export interface ModelInfo {
   deprecated?: boolean
   /**
    * Upstream release/creation time (epoch seconds) when the provider reports
-   * one; used to backdate `models.firstSeenAt` (issue #1). Null/absent when
-   * the provider has no date for the model.
+   * one. Stored as `models.releasedAt`, and used to backdate
+   * `models.firstSeenAt` (issue #1). Null/absent when the provider has no
+   * date for the model.
    */
   releasedAt?: number | null
 }

@@ -299,7 +299,7 @@ describe('getServiceStatus', () => {
         maxOutput: 64_000,
         modalities: { input: ['text'], output: ['text'] },
         pricing: card,
-        capabilities: ['reasoning', 'tools'],
+        capabilities: { reasoning: true, tools: true },
         reasoning: { mode: 'effort', efforts: ['low', 'high'] },
         requestMap: { maxTokensField: 'max_tokens' },
         schemaEndpointId: 'v1/chat/completions',
@@ -308,7 +308,7 @@ describe('getServiceStatus', () => {
       // served as null, so it is no price here either.
       model('mixed', 'thin', {
         contextWindow: 8000,
-        capabilities: ['reasoning'],
+        capabilities: { reasoning: true },
         pricing: { tables: card.tables },
       }),
       // A models.dev price does not count.

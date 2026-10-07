@@ -18,7 +18,7 @@ export type SerializableModel = Omit<
   ApiModel,
   | 'modalities'
   | 'pricing'
-  | 'capabilities'
+  | 'providerMetadata'
   | 'reasoning'
   | 'serverTools'
   | 'requestMap'
@@ -26,7 +26,7 @@ export type SerializableModel = Omit<
 > & {
   modalities: Json
   pricing: Json
-  capabilities: Json
+  providerMetadata: Json
   reasoning: Json
   serverTools: Json
   requestMap: Json

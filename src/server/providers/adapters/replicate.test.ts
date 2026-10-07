@@ -151,7 +151,7 @@ describe('replicate listModels', () => {
         ['openai/whisper', 'audio'],
       ])
       // run_count is usage telemetry; storing it made every poll a model.updated (#92).
-      expect(result.models[0]?.capabilities).toEqual({
+      expect(result.models[0]?.providerMetadata).toEqual({
         visibility: 'public',
         official: true,
       })
@@ -685,7 +685,7 @@ describe('replicate listModels chat rows', () => {
       })
       const byId = new Map(models.map((m) => [m.rawId, m]))
       expect(byId.get('alibaba/qwen-image-3')?.activity).not.toBe('chat')
-      expect(byId.get('alibaba/qwen-image-3')?.capabilities).toEqual({
+      expect(byId.get('alibaba/qwen-image-3')?.providerMetadata).toEqual({
         visibility: 'public',
         official: true,
       })
