@@ -173,6 +173,11 @@ describe('gemini features (issue #77)', () => {
     expect(
       parsePageModalities(row('**Inputs** Text **Output** Text (or images)')),
     ).toBeNull()
+    expect(
+      parsePageModalities(
+        row('**Inputs** Text (short videos) **Output** Text'),
+      ),
+    ).toBeNull()
   })
 
   describe('model pages', () => {

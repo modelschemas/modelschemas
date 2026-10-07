@@ -79,7 +79,11 @@ const MEDIA: Record<string, string> = {
   images: 'image',
   audio: 'audio',
   video: 'video',
+  videos: 'video',
   pdf: 'file',
+  pdfs: 'file',
+  document: 'file',
+  documents: 'file',
 }
 const MEDIA_ORDER = [...new Set(Object.values(MEDIA))]
 

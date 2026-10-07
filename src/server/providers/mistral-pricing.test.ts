@@ -251,6 +251,53 @@ describe('mistral model page modalities', () => {
     expect(parse([...base, extra])).toBeNull()
   })
 
+  // A tooltip the walk cannot reach must not be dropped and the rest kept.
+  const image = tip('Image input')
+  const el = (tag: string, props: object) => ['$', tag, null, props]
+  const trigger = (asChild: unknown) =>
+    el('$L4f', {
+      children: [
+        el('$L50', asChild === undefined ? {} : { asChild }),
+        el('$L51', { children: 'Image input' }),
+      ],
+    })
+  it.each([
+    ['a reference with no row', '$Lnope'],
+    ['a tooltip in a Suspense', el('$Sreact.suspense', { children: '$Lc1' })],
+    ['a tooltip under a `content` prop', el('$L60', { content: image })],
+    ['a tooltip under a `fallback` prop', el('div', { fallback: image })],
+    ['object-valued children', el('div', { children: { nested: image } })],
+    ['a trigger with no asChild', trigger(undefined)],
+    ['a trigger with asChild "true"', trigger('true')],
+    ['a lone icon', el('svg', { 'aria-label': 'Image input' })],
+    ['text', 'Image input'],
+  ])('reads nothing when the block holds %s', (_name, extra) => {
+    expect(
+      parseMistralPageModalities(
+        mistralModelPage(['m-1'], [[...base, extra]], { c1: image }),
+      ),
+    ).toBeNull()
+  })
+
+  it('follows a reference to a tooltip, and reads through plain wrappers', () => {
+    const full = { input: ['text', 'image'], output: ['text'] }
+    for (const extra of ['$Lc1', [[image]], el('div', { children: [image] })]) {
+      expect(
+        parseMistralPageModalities(
+          mistralModelPage(['m-1'], [[...base, extra]], { c1: image }),
+        ),
+      ).toEqual(full)
+    }
+    // The arrows between the two sides are not tooltips.
+    const arrows = el('div', {
+      className: 'flex',
+      children: [el('svg', {}), el('svg', {})],
+    })
+    expect(
+      parse([tip('Text input'), image, arrows, tip('Text output')]),
+    ).toEqual(full)
+  })
+
   it('reads nothing from one side, no block, or blocks that differ', () => {
     expect(parse([tip('Text input'), tip('Image input')])).toBeNull()
     expect(parse([tip('Text input'), tip('Reasoning output')])).toBeNull()

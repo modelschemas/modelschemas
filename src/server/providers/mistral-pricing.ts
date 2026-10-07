@@ -346,39 +346,70 @@ function deref(rows: RscRows, node: Json): Json {
   return id ? (rows.get(id) ?? node) : node
 }
 
+const isSvg = (node: Json): boolean =>
+  Array.isArray(node) && node[0] === '$' && node[1] === 'svg'
+
 /**
- * Tooltip labels in a block. A tooltip is an element whose children hold an
- * `asChild` trigger; the label is its one other child's text. Anything else
- * in that place reads as `null`, which no caller can map.
+ * The label of every leaf of a Modalities block, references followed. The
+ * block is `div`s around tooltips, plus a `div` of arrow icons. A tooltip
+ * is a component with two children, an `asChild` trigger then the label
+ * component. Every other leaf (a reference with no row, another component,
+ * a tooltip of another shape, text, a lone icon, a node under a prop other
+ * than `children`) reads as `null`, which no caller can map: a tooltip
+ * this walk cannot reach must not be dropped while the rest are kept.
  */
 function tooltipLabels(
   rows: RscRows,
-  node: Json,
+  ref: Json,
   out: Array<string | null> = [],
 ): Array<string | null> {
-  if (!Array.isArray(node)) return out
-  const children = rscProps(node)?.children
-  if (
-    Array.isArray(children) &&
-    children.some((child) => rscProps(child)?.asChild === true)
-  ) {
-    const rest = children.filter((child) => rscProps(child)?.asChild !== true)
+  const node = deref(rows, ref)
+  if (node === null) return out
+  const props = rscProps(node)
+  if (!Array.isArray(node) || (!props && node[0] === '$')) {
+    out.push(null)
+    return out
+  }
+  if (!props) {
+    for (const item of node) tooltipLabels(rows, item, out)
+    return out
+  }
+  const tag = node[1]
+  const { children } = props
+  if (typeof tag !== 'string' || tag.startsWith('$')) {
+    const parts = Array.isArray(children)
+      ? children.map((child) => deref(rows, child))
+      : []
     const label =
-      rest.length === 1
-        ? rscProps(deref(rows, rest[0] ?? null))?.children
+      parts.length === 2 && rscProps(parts[0] ?? null)?.asChild === true
+        ? rscProps(parts[1] ?? null)?.children
         : null
     out.push(typeof label === 'string' ? label : null)
     return out
   }
-  for (const item of children === undefined ? node : [children]) {
-    tooltipLabels(rows, item, out)
+  const list =
+    children === undefined
+      ? []
+      : Array.isArray(children) && children[0] !== '$'
+        ? children
+        : [children]
+  // The arrows between the input and output tooltips.
+  if (tag !== 'svg' && list.length > 0 && list.every(isSvg)) return out
+  const nested = Object.entries(props).some(
+    ([name, value]) =>
+      name !== 'children' && typeof value === 'object' && value !== null,
+  )
+  if (tag === 'svg' || nested) {
+    out.push(null)
+    return out
   }
+  for (const item of list) tooltipLabels(rows, item, out)
   return out
 }
 
 function blockModalities(rows: RscRows, block: Json): MistralModalities | null {
   const found = { input: new Set<string>(), output: new Set<string>() }
-  for (const label of tooltipLabels(rows, deref(rows, block))) {
+  for (const label of tooltipLabels(rows, block)) {
     const match = label?.match(/^(.+) (input|output)$/i)
     if (!match) return null
     const word = (match[1] ?? '').toLowerCase()
