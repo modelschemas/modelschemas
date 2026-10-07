@@ -332,26 +332,31 @@ describe('replicate chat facts from a model schema', () => {
     expect(facts?.factSources?.modalities).toBeUndefined()
   })
 
-  it('states no modalities for a media input that is not declared a file', () => {
-    // `image_input: string[]` with no `format: uri`: text-only would be wrong.
+  it('reads an image input the description names, even without format uri', () => {
+    // llama-guard `image_input: string[]`: "List of images to send".
     const guard = replicateChatFacts(model('meta/llama-guard-4-12b'))
-    expect(guard?.modalities).toBeUndefined()
-    expect(guard?.factSources?.modalities).toBeUndefined()
+    expect(guard?.modalities).toEqual({
+      input: ['text', 'image'],
+      output: ['text'],
+    })
+    const undescribed = model('meta/llama-guard-4-12b')
+    ;(
+      inputProperties(undescribed).image_input as { description: string }
+    ).description = 'Optional attachment'
+    expect(replicateChatFacts(undescribed)?.modalities).toBeUndefined()
     // `max_image_resolution` (integer) and `video_fps` (number) are settings.
     expect(
       replicateChatFacts(model('anthropic/claude-sonnet-5'))?.modalities,
     ).toEqual({ input: ['text', 'image'], output: ['text'] })
   })
 
-  it('states no output cap when the maximum is the whole window', () => {
-    // Llama 4: max_tokens.maximum 131072 is the 128k window.
+  it('reads the output cap the schema states, including one above 128k', () => {
+    // Llama 4 states max_tokens.maximum 131072 as the output cap.
     const llama = replicateChatFacts(model('meta/llama-4-maverick-instruct'))
-    expect(llama?.maxOutput).toBeUndefined()
-    expect(llama?.factSources?.maxOutput).toBeUndefined()
-
-    const atCeiling = model('meta/llama-4-maverick-instruct')
-    inputProperties(atCeiling).max_tokens = { type: 'integer', maximum: 128000 }
-    expect(replicateChatFacts(atCeiling)?.maxOutput).toBe(128000)
+    expect(llama?.maxOutput).toBe(131072)
+    expect(llama?.factSources?.maxOutput?.path).toBe(
+      `${INPUT}/properties/max_tokens/maximum`,
+    )
   })
 
   it('states no output cap without one stated maximum', () => {
@@ -703,6 +708,52 @@ describe('replicate listModels chat rows', () => {
       expect(errored?.maxOutput).toBe(64000)
       // Hardware-billed community model: no page fetch, no price.
       expect(byId.get('prunaai/gpt-oss-120b-fast')?.pricing).toBeUndefined()
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('reads a context window and a missing output cap from the README', async () => {
+    const readme = [
+      '## Specs',
+      '',
+      '| | |',
+      '|---|---|',
+      '| **Context window** | 1,050,000 tokens |',
+      '| **Max output tokens** | 128,000 |',
+    ].join('\n')
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      if (href.endsWith('/readme')) {
+        return Promise.resolve(new Response(readme))
+      }
+      if (href.startsWith('https://api.replicate.com/')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ next: null, results: MODELS })),
+        )
+      }
+      return Promise.resolve(new Response('<html>no billing</html>'))
+    }) as typeof fetch
+    try {
+      const { models } = await provider.listModels({
+        REPLICATE_API_TOKEN: 'tok',
+      })
+      const gpt = models.find((row) => row.rawId === 'openai/gpt-5.4')
+      expect(gpt?.contextWindow).toBe(1_050_000)
+      expect(gpt?.maxOutput).toBe(128_000)
+      expect(gpt?.factSources?.contextWindow).toMatchObject({
+        derivation: 'docs-derived',
+        sourceUrl: 'https://api.replicate.com/v1/models/openai/gpt-5.4/readme',
+        path: 'context window',
+      })
+      expect(gpt?.factSources?.maxOutput?.path).toBe('max output tokens')
+      // The schema already states 64000. The README must not replace it.
+      const claude = models.find(
+        (row) => row.rawId === 'anthropic/claude-sonnet-5',
+      )
+      expect(claude?.maxOutput).toBe(64000)
+      expect(claude?.factSources?.maxOutput?.derivation).toBe('listing')
     } finally {
       globalThis.fetch = original
     }

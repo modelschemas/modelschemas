@@ -26,6 +26,7 @@ import {
   compileReplicateBilling,
   replicateBillingFromHtml,
 } from '../replicate-pricing.ts'
+import { replicateReadmeFacts } from '../replicate-readme.ts'
 import type { ReplicateBilling } from '../replicate-pricing.ts'
 import type {
   FactSource,
@@ -56,13 +57,6 @@ const SCHEMA_REF = '#/components/schemas/'
 
 const PROMPT_FIELDS = ['prompt', 'messages', 'message']
 const MAX_TOKENS_FIELD = /^max_(?:new_|completion_|output_)?tokens$/
-/**
- * Above this a `maximum` is the model's whole window, not an output cap
- * (Llama 4: 131072). Replicate states no context length to compare against,
- * so this is a ceiling, not a reading. ponytail: fixed ceiling; compare with
- * the stated window if Replicate ever publishes one.
- */
-const MAX_OUTPUT_CEILING = 128_000
 
 function stripV1(path: string): string {
   return path.startsWith('/v1/') ? path.slice(3) : path
@@ -215,21 +209,50 @@ function isScalarSetting(node: unknown): boolean {
   )
 }
 
+const MEDIA_NOUN = { image: 'images?', audio: 'audio', video: 'videos?' }
+
+/**
+ * A string the schema names for a medium and describes as that medium
+ * (`image_input`: "List of images to send"). No `format: uri`, but
+ * text-only would be a wrong claim and the description states the medium.
+ */
+function describedMedium(
+  node: unknown,
+  kind: keyof typeof MEDIA_NOUN,
+): boolean {
+  if (!isRecord(node)) return false
+  const items = isRecord(node.items) ? node.items.type : undefined
+  const textual =
+    node.type === 'string' || (node.type === 'array' && items === 'string')
+  if (!textual || typeof node.description !== 'string') return false
+  const noun = MEDIA_NOUN[kind]
+  return (
+    new RegExp(`\\b${noun}\\b`, 'i').test(node.description) &&
+    /\b(send|input|include|upload)\b/i.test(node.description)
+  )
+}
+
 /**
  * `text` plus one modality per file input. The whole fact is unstated when
  * a file input's name does not say what it carries, or when an input named
- * for a medium is not declared a file (`image_input: string[]`): text-only
- * would be a wrong claim there.
+ * for a medium is neither a file nor described as that medium.
  */
 function inputModalities(properties: Json): Array<string> | null {
-  const media = ['image', 'audio', 'video']
+  const media = ['image', 'audio', 'video'] as const
   const found = new Set<string>()
   for (const [name, node] of Object.entries(properties)) {
     const file = JSON.stringify(node).includes('"format":"uri"')
     const kind = media.find((word) => name.includes(word))
     if (!file && (!kind || isScalarSetting(node))) continue
-    if (!file || !kind) return null
-    found.add(kind)
+    if (file && kind) {
+      found.add(kind)
+      continue
+    }
+    if (kind && describedMedium(node, kind)) {
+      found.add(kind)
+      continue
+    }
+    return null
   }
   // Fixed order: a reordered schema must not read as a changed model.
   return ['text', ...media.filter((kind) => found.has(kind))]
@@ -237,8 +260,8 @@ function inputModalities(properties: Json): Array<string> | null {
 
 /**
  * The stated maximum of the output-token field. Null when the schema states
- * none, when two such fields disagree, or when it is too large to be an
- * output cap.
+ * none, or when two such fields disagree. The maximum is that field's cap,
+ * including one above 128k (Llama 4 states 131072 on `max_tokens`).
  */
 function maxOutputField(
   properties: Json,
@@ -256,7 +279,7 @@ function maxOutputField(
   const [maximum] = [...maxima]
   if (!name || maxima.size !== 1) return null
   if (typeof maximum !== 'number' || !Number.isInteger(maximum)) return null
-  return maximum > 0 && maximum <= MAX_OUTPUT_CEILING ? { name, maximum } : null
+  return maximum > 0 ? { name, maximum } : null
 }
 
 /** The names Replicate models give a level field. A model has at most one. */
@@ -547,6 +570,10 @@ function modelPageUrl(owner: string, name: string): string {
   return `https://replicate.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
 }
 
+function readmeUrl(owner: string, name: string): string {
+  return `${REPLICATE_MODELS_URL}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/readme`
+}
+
 function inlineBilling(model: ReplicateModel): ReplicateBilling | null {
   const raw = model.billing_config ?? model.billingConfig
   if (!raw || typeof raw !== 'object') return null
@@ -633,6 +660,85 @@ async function withPredictionPrice(
   }
 }
 
+/**
+ * Context window, and an output cap the schema leaves unset, from the
+ * model's README and listing description. A fetch failure leaves both
+ * null. The schema's own maximum is kept when the README also states one.
+ */
+async function withReadmeFacts(
+  model: ReplicateModel,
+  info: ModelInfo,
+  key: string,
+  kv?: KVNamespace,
+): Promise<ModelInfo> {
+  const owner = model.owner
+  const name = model.name
+  if (info.activity !== 'chat' || !owner || !name) return info
+  const page = readmeUrl(owner, name)
+  let markdown = ''
+  let hash: string | undefined
+  try {
+    const doc = await cachedDocs(kv, page, async () => {
+      const response = await fetch(page, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      })
+      // No README is a fact, not a failed fetch.
+      if (response.status === 404) {
+        return { markdown: '', hash: await sha256Text('') }
+      }
+      if (!response.ok) {
+        throw new Error(
+          `replicate: ${page} → ${String(response.status)} ${response.statusText}`,
+        )
+      }
+      const body = await response.text()
+      const trimmed = body.trimStart()
+      // An error document or the models list is not a README.
+      if (trimmed.startsWith('{') || trimmed.startsWith('<!')) {
+        throw new Error(`replicate: ${page} is not a README`)
+      }
+      return { markdown: body, hash: await sha256Text(body) }
+    })
+    markdown = doc.markdown
+    hash = doc.hash
+  } catch {
+    return info
+  }
+  const facts = replicateReadmeFacts(markdown, model.description ?? '')
+  const factSources = { ...info.factSources }
+  const listing = `${REPLICATE_MODELS_URL}/${owner}/${name}`
+  let changed = false
+  if (
+    info.contextWindow == null &&
+    facts.contextWindow != null &&
+    facts.context
+  ) {
+    info = { ...info, contextWindow: facts.contextWindow }
+    factSources.contextWindow =
+      facts.context.from === 'description'
+        ? { derivation: 'listing', sourceUrl: listing, path: 'description' }
+        : {
+            derivation: 'docs-derived',
+            sourceUrl: page,
+            ...(hash ? { sourceHash: hash } : {}),
+            path: facts.context.path,
+          }
+    changed = true
+  }
+  if (info.maxOutput == null && facts.maxOutput != null && facts.max) {
+    info = { ...info, maxOutput: facts.maxOutput }
+    factSources.maxOutput = {
+      derivation: 'docs-derived',
+      sourceUrl: page,
+      ...(hash ? { sourceHash: hash } : {}),
+      path: facts.max.path,
+    }
+    changed = true
+  }
+  return changed ? { ...info, factSources } : info
+}
+
 function toModelInfo(model: ReplicateModel): ModelInfo | null {
   if (typeof model.owner !== 'string' || typeof model.name !== 'string') {
     return null
@@ -671,8 +777,13 @@ async function listModels(
     return info ? [{ info, model }] : []
   })
   return {
-    models: await mapConcurrent(listed, 8, ({ info, model }) =>
-      withPredictionPrice(model, info, kv),
+    models: await mapConcurrent(listed, 8, async ({ info, model }) =>
+      withReadmeFacts(
+        model,
+        await withPredictionPrice(model, info, kv),
+        key,
+        kv,
+      ),
     ),
   }
 }
