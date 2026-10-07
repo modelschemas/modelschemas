@@ -1,10 +1,14 @@
 import { price } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
+import { mistralModelPage, tip } from './fixtures/mistral-model-page.ts'
 import {
   indexMistralApiIds,
+  indexMistralModalities,
+  mistralModelPricing,
   mistralRateCard,
   parseMistralApiIds,
+  parseMistralPageModalities,
   parseMistralPricing,
   parseMistralSamePrice,
 } from './mistral-pricing.ts'
@@ -164,6 +168,189 @@ describe('mistral pricing page', () => {
       'mistral-large-2512',
       'mistral-large-latest',
     ])
+  })
+})
+
+describe('mistral model page modalities', () => {
+  const parse = (...blocks: Array<Array<unknown>>) =>
+    parseMistralPageModalities(mistralModelPage(['m-1'], blocks))
+  const base = [tip('Text input'), tip('Text output')]
+
+  it('reads the tooltips of the Modalities block', () => {
+    expect(
+      parse([tip('Image input'), tip('Text input'), tip('Text output')]),
+    ).toEqual({ input: ['text', 'image'], output: ['text'] })
+    expect(parse([tip('Audio input'), tip('Text output')])).toEqual({
+      input: ['audio'],
+      output: ['text'],
+    })
+    // The side is matched whatever its case.
+    expect(
+      parse([tip('Text Input'), tip('Image input'), tip('Text OUTPUT')]),
+    ).toEqual({ input: ['text', 'image'], output: ['text'] })
+    // A reasoning marker is not a medium; the page's "Max output" span is
+    // outside the block.
+    expect(parse([...base, tip('Reasoning output')])).toEqual({
+      input: ['text'],
+      output: ['text'],
+    })
+    // A label served as its own lazy row.
+    expect(
+      parseMistralPageModalities(
+        mistralModelPage(
+          ['m-1'],
+          [
+            [
+              tip('Text input'),
+              [
+                '$',
+                '$L4f',
+                'k',
+                {
+                  children: [['$', '$L50', null, { asChild: true }], '$Lc0'],
+                },
+              ],
+            ],
+          ],
+          { c0: ['$', '$L51', null, { children: 'Text output' }] },
+        ),
+      ),
+    ).toEqual({ input: ['text'], output: ['text'] })
+    // A tooltip that gains a prop or a key is still a tooltip.
+    expect(
+      parse([
+        ...base,
+        tip('Image input', { side: 'top' }),
+        [
+          '$',
+          '$L4f',
+          'audio',
+          {
+            children: [
+              ['$', '$L50', null, { asChild: true }],
+              ['$', '$L51', 'k1', { children: 'Audio input' }],
+            ],
+          },
+        ],
+      ]),
+    ).toEqual({ input: ['text', 'image', 'audio'], output: ['text'] })
+  })
+
+  it.each([
+    ['an unknown medium', tip('Hologram input')],
+    ['a two-word medium', tip('Point cloud input')],
+    ['a medium with a digit', tip('3D input')],
+    ['a hyphenated medium', tip('3D-mesh input')],
+    ['a plural', tip('Images input')],
+    ['a reworded label', tip('Input: Image')],
+    ['a label with no side', tip('Accepts images')],
+    ['an empty tooltip', tip('')],
+    ['a tooltip that is not text', tip(['$', 'b', null, { children: 'x' }])],
+    ['reasoning as an input', tip('Reasoning input')],
+  ])('reads nothing when the block holds %s', (_name, extra) => {
+    expect(parse([...base, extra])).toBeNull()
+  })
+
+  // A tooltip the walk cannot reach must not be dropped and the rest kept.
+  const image = tip('Image input')
+  const el = (tag: string, props: object) => ['$', tag, null, props]
+  const trigger = (asChild: unknown) =>
+    el('$L4f', {
+      children: [
+        el('$L50', asChild === undefined ? {} : { asChild }),
+        el('$L51', { children: 'Image input' }),
+      ],
+    })
+  it.each([
+    ['a reference with no row', '$Lnope'],
+    ['a tooltip in a Suspense', el('$Sreact.suspense', { children: '$Lc1' })],
+    ['a tooltip under a `content` prop', el('$L60', { content: image })],
+    ['a tooltip under a `fallback` prop', el('div', { fallback: image })],
+    ['object-valued children', el('div', { children: { nested: image } })],
+    ['a trigger with no asChild', trigger(undefined)],
+    ['a trigger with asChild "true"', trigger('true')],
+    ['a lone icon', el('svg', { 'aria-label': 'Image input' })],
+    ['text', 'Image input'],
+  ])('reads nothing when the block holds %s', (_name, extra) => {
+    expect(
+      parseMistralPageModalities(
+        mistralModelPage(['m-1'], [[...base, extra]], { c1: image }),
+      ),
+    ).toBeNull()
+  })
+
+  it('follows a reference to a tooltip, and reads through plain wrappers', () => {
+    const full = { input: ['text', 'image'], output: ['text'] }
+    for (const extra of ['$Lc1', [[image]], el('div', { children: [image] })]) {
+      expect(
+        parseMistralPageModalities(
+          mistralModelPage(['m-1'], [[...base, extra]], { c1: image }),
+        ),
+      ).toEqual(full)
+    }
+    // The arrows between the two sides are not tooltips.
+    const arrows = el('div', {
+      className: 'flex',
+      children: [el('svg', {}), el('svg', {})],
+    })
+    expect(
+      parse([tip('Text input'), image, arrows, tip('Text output')]),
+    ).toEqual(full)
+  })
+
+  it('reads nothing from one side, no block, or blocks that differ', () => {
+    expect(parse([tip('Text input'), tip('Image input')])).toBeNull()
+    expect(parse([tip('Text input'), tip('Reasoning output')])).toBeNull()
+    expect(parse()).toBeNull()
+    expect(parseMistralPageModalities('<h1>Mistral Medium</h1>')).toBeNull()
+    // The page renders the block once per layout; both must agree, so a
+    // second model's block cannot be merged in.
+    expect(parse(base, base)).toEqual({ input: ['text'], output: ['text'] })
+    expect(parse(base, [tip('Audio input'), tip('Audio output')])).toBeNull()
+    // Tooltips outside a Modalities block are not read.
+    expect(
+      parseMistralPageModalities(
+        `<script>self.__next_f.push([1,${JSON.stringify(
+          `1:${JSON.stringify(base)}\n`,
+        )}])</script>`,
+      ),
+    ).toBeNull()
+  })
+
+  it('refuses a poll in which no model page states modalities', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      const body = href.endsWith('/pricing')
+        ? PAGE
+        : href.endsWith('/changelogs')
+          ? ''
+          : mistralModelPage([href.slice(href.lastIndexOf('/') + 1)], [])
+      return Promise.resolve(new Response(body))
+    }) as typeof fetch
+    try {
+      await expect(mistralModelPricing()).rejects.toThrow(
+        /mistral model pages: 0 of \d+ state modalities/,
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  it('drops an API id two pages state differently', () => {
+    const text = { input: ['text'], output: ['text'] }
+    const vision = { input: ['text', 'image'], output: ['text'] }
+    const byId = indexMistralModalities([
+      { slug: 'a-1', ids: ['a-1', 'a-latest'], hash: 'h1', modalities: text },
+      { slug: 'a-2', ids: ['a-2', 'a-latest'], hash: 'h2', modalities: vision },
+      { slug: 'b-1', ids: ['b-1'], hash: 'h3', modalities: null },
+    ])
+    expect([...byId.keys()]).toEqual(['a-1', 'a-2'])
+    expect(byId.get('a-2')).toEqual({
+      modalities: vision,
+      url: 'https://docs.mistral.ai/models/a-2',
+      hash: 'h2',
+    })
   })
 })
 

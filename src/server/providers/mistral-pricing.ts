@@ -11,6 +11,9 @@
  * The table keys docs slugs (`mistral-large-3-25-12`). The model page names
  * the API ids that slug serves (`mistral-large-2512`, `mistral-large-latest`).
  * An API id named by two slugs at different rates gets no card.
+ *
+ * The same model page states the model's modalities, as one icon per medium
+ * with a tooltip label ("Text input", "Image input", "Text output").
  */
 import {
   cardPrice,
@@ -271,11 +274,188 @@ export function parseMistralApiIds(html: string, slug: string): Array<string> {
   return best
 }
 
+export interface MistralModalities {
+  input: Array<string>
+  output: Array<string>
+}
+
+/** Tooltip word → medium, in stored order. */
+const MISTRAL_MEDIA: Record<string, string> = {
+  text: 'text',
+  image: 'image',
+  audio: 'audio',
+  video: 'video',
+  document: 'file',
+}
+
+type Json = string | number | boolean | null | Array<Json> | JsonObject
+interface JsonObject {
+  [key: string]: Json
+}
+
+/** Props of an RSC element `["$", tag, key, props]`, else null. */
+function rscProps(node: Json): JsonObject | null {
+  if (!Array.isArray(node) || node[0] !== '$') return null
+  const props = node[3]
+  return typeof props === 'object' && props !== null && !Array.isArray(props)
+    ? props
+    : null
+}
+
+/** The page's RSC rows by id. Rows that are not JSON (text, imports) are skipped. */
+function rscRows(html: string): RscRows {
+  const stream = [
+    ...html.matchAll(/self\.__next_f\.push\(\[1,("(?:[^"\\]|\\.)*")\]\)/g),
+  ]
+    .map((match) => JSON.parse(match[1] ?? '""') as string)
+    .join('')
+  const rows = new Map<string, Json>()
+  for (const line of stream.split('\n')) {
+    const row = line.match(/^([0-9a-f]+):(.*)$/)
+    if (!row?.[1]) continue
+    try {
+      rows.set(row[1], JSON.parse(row[2] ?? '') as Json)
+    } catch {
+      // Not a JSON row.
+    }
+  }
+  return rows
+}
+
+/** Every node that directly follows a "Modalities" heading element. */
+function modalityBlocks(node: Json, out: Array<Json> = []): Array<Json> {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      const children = rscProps(item)?.children
+      const label = Array.isArray(children) ? children.at(-1) : children
+      const next = node[index + 1]
+      if (label === 'Modalities' && next !== undefined) out.push(next)
+      modalityBlocks(item, out)
+    })
+  } else if (typeof node === 'object' && node !== null) {
+    for (const value of Object.values(node)) modalityBlocks(value, out)
+  }
+  return out
+}
+
+type RscRows = Map<string, Json>
+
+/** A `$L<id>` reference to a row of the page, followed; anything else as is. */
+function deref(rows: RscRows, node: Json): Json {
+  const id = typeof node === 'string' ? node.match(/^\$L(.+)$/)?.[1] : null
+  return id ? (rows.get(id) ?? node) : node
+}
+
+const isSvg = (node: Json): boolean =>
+  Array.isArray(node) && node[0] === '$' && node[1] === 'svg'
+
+/**
+ * The label of every leaf of a Modalities block, references followed. The
+ * block is `div`s around tooltips, plus a `div` of arrow icons. A tooltip
+ * is a component with two children, an `asChild` trigger then the label
+ * component. Every other leaf (a reference with no row, another component,
+ * a tooltip of another shape, text, a lone icon, a node under a prop other
+ * than `children`) reads as `null`, which no caller can map: a tooltip
+ * this walk cannot reach must not be dropped while the rest are kept.
+ */
+function tooltipLabels(
+  rows: RscRows,
+  ref: Json,
+  out: Array<string | null> = [],
+): Array<string | null> {
+  const node = deref(rows, ref)
+  if (node === null) return out
+  const props = rscProps(node)
+  if (!Array.isArray(node) || (!props && node[0] === '$')) {
+    out.push(null)
+    return out
+  }
+  if (!props) {
+    for (const item of node) tooltipLabels(rows, item, out)
+    return out
+  }
+  const tag = node[1]
+  const { children } = props
+  if (typeof tag !== 'string' || tag.startsWith('$')) {
+    const parts = Array.isArray(children)
+      ? children.map((child) => deref(rows, child))
+      : []
+    const label =
+      parts.length === 2 && rscProps(parts[0] ?? null)?.asChild === true
+        ? rscProps(parts[1] ?? null)?.children
+        : null
+    out.push(typeof label === 'string' ? label : null)
+    return out
+  }
+  const list =
+    children === undefined
+      ? []
+      : Array.isArray(children) && children[0] !== '$'
+        ? children
+        : [children]
+  // The arrows between the input and output tooltips.
+  if (tag !== 'svg' && list.length > 0 && list.every(isSvg)) return out
+  const nested = Object.entries(props).some(
+    ([name, value]) =>
+      name !== 'children' && typeof value === 'object' && value !== null,
+  )
+  if (tag === 'svg' || nested) {
+    out.push(null)
+    return out
+  }
+  for (const item of list) tooltipLabels(rows, item, out)
+  return out
+}
+
+function blockModalities(rows: RscRows, block: Json): MistralModalities | null {
+  const found = { input: new Set<string>(), output: new Set<string>() }
+  for (const label of tooltipLabels(rows, block)) {
+    const match = label?.match(/^(.+) (input|output)$/i)
+    if (!match) return null
+    const word = (match[1] ?? '').toLowerCase()
+    const side = (match[2] ?? '').toLowerCase() === 'input' ? 'input' : 'output'
+    // A reasoning model's marker, not a medium.
+    if (word === 'reasoning' && side === 'output') continue
+    const medium = MISTRAL_MEDIA[word]
+    if (!medium) return null
+    found[side].add(medium)
+  }
+  if (found.input.size === 0 || found.output.size === 0) return null
+  const ordered = (have: Set<string>) =>
+    Object.values(MISTRAL_MEDIA).filter((medium) => have.has(medium))
+  return { input: ordered(found.input), output: ordered(found.output) }
+}
+
+/**
+ * Modalities a model page states: the tooltips ("Text input", "Image
+ * input", "Text output") of the block beside its "Modalities" heading, read
+ * from the RSC payload. Null unless every tooltip in the block is a known
+ * medium on a known side, both sides are stated, and every such block on
+ * the page (it renders one per layout) says the same. A partial list would
+ * read as the whole answer.
+ */
+export function parseMistralPageModalities(
+  html: string,
+): MistralModalities | null {
+  const rows = rscRows(html)
+  const blocks = [...rows.values()]
+    .flatMap((row) => modalityBlocks(row))
+    .map((block) => blockModalities(rows, block))
+  const [first] = blocks
+  if (!first) return null
+  return blocks.every(
+    (block) => JSON.stringify(block) === JSON.stringify(first),
+  )
+    ? first
+    : null
+}
+
 export interface MistralModelPage {
   slug: string
   ids: Array<string>
   hash: string
   serverTools?: Array<string>
+  modalities?: MistralModalities | null
 }
 
 /**
@@ -312,7 +492,50 @@ export function indexMistralApiIds(
   return byId
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'serverTools'>
+type PricedFacts = Pick<
+  ModelInfo,
+  'pricing' | 'factSources' | 'serverTools' | 'modalities'
+>
+
+interface MistralStatedModalities {
+  modalities: MistralModalities
+  url: string
+  hash: string
+}
+
+/**
+ * API id → modalities its model page states. An id two pages state
+ * differently gets none, like a price.
+ *
+ * ponytail: only the pages the pricing table links are fetched, so an
+ * unpriced id (`voxtral-small-latest`) has no modalities. Reading the rest
+ * means ~50 more 1 MB pages per poll off the /models index.
+ */
+export function indexMistralModalities(
+  pages: Array<MistralModelPage>,
+): Map<string, MistralStatedModalities> {
+  const out = new Map<string, MistralStatedModalities>()
+  const conflicts = new Set<string>()
+  for (const page of pages) {
+    if (!page.modalities) continue
+    const stated = {
+      modalities: page.modalities,
+      url: MISTRAL_MODEL_PAGE(page.slug),
+      hash: page.hash,
+    }
+    for (const id of page.ids) {
+      const prior = out.get(id)
+      if (!prior) out.set(id, stated)
+      else if (
+        JSON.stringify(prior.modalities) !== JSON.stringify(page.modalities)
+      ) {
+        conflicts.add(id)
+      }
+    }
+  }
+  for (const id of conflicts) out.delete(id)
+  return out
+}
 
 interface MistralHostedTools {
   tools: Array<string>
@@ -385,6 +608,7 @@ export async function mistralModelPricing(
           ids,
           hash: await sha256Text(body),
           serverTools: parseMistralPageTools(body),
+          modalities: parseMistralPageModalities(body),
         }
       })
       return {
@@ -392,6 +616,7 @@ export async function mistralModelPricing(
         ids: page.ids,
         hash: page.hash,
         serverTools: page.serverTools,
+        modalities: page.modalities,
       }
     })
     const byId = indexMistralApiIds(bySlug, pages)
@@ -409,9 +634,17 @@ export async function mistralModelPricing(
       ].join('\n'),
     )
     const tools = indexMistralServerTools(pages)
+    // Every page read and none states modalities is a reshaped site, not
+    // a catalog without media. Throwing keeps the stored column.
+    if (!pages.some((page) => page.modalities)) {
+      throw new Error(
+        `mistral model pages: 0 of ${String(pages.length)} state modalities`,
+      )
+    }
     return {
       rates: Object.fromEntries(byId),
       tools: Object.fromEntries(tools),
+      modalities: Object.fromEntries(indexMistralModalities(pages)),
       hash,
       extractedAt: new Date().toISOString(),
     }
@@ -432,11 +665,16 @@ export async function mistralModelPricing(
     const toolFacts = hosted
       ? tagDocsFacts({ serverTools: hosted.tools }, hosted.url, hosted.hash)
       : {}
-    const factSources = { ...pricingFacts, ...toolFacts }
-    if (!pricing && !hosted) return {}
+    const stated = doc.modalities[rawId]
+    const modalityFacts = stated
+      ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
+      : {}
+    const factSources = { ...pricingFacts, ...toolFacts, ...modalityFacts }
+    if (!pricing && !hosted && !stated) return {}
     return {
       ...(pricing ? { pricing } : {}),
       ...(hosted ? { serverTools: hosted.tools } : {}),
+      ...(stated ? { modalities: stated.modalities } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
   }

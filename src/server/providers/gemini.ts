@@ -282,7 +282,8 @@ interface GeminiModelList {
 /**
  * Request features the Models API row states: `thinking`, and a sampling
  * default present ⇒ that param is accepted. Tool use and structured output
- * are not on the row and stay unset. Modalities are not on the row either.
+ * are not on the row and stay unset. Modalities are not on the row either:
+ * they come from the model's docs page (`gemini-features.ts`).
  */
 export function geminiCapabilities(
   m: Pick<GeminiModel, 'temperature' | 'topP' | 'topK' | 'thinking'>,
@@ -316,8 +317,12 @@ async function listModels(
     pageToken = body.nextPageToken
   } while (pageToken)
   const rawIdOf = (m: GeminiModel) => m.name.replace(/^models\//, '')
-  const features = await geminiModelFeatures(listed.map(rawIdOf), kv)
+  const { features, docsFailures } = await geminiModelFeatures(
+    listed.map(rawIdOf),
+    kv,
+  )
   return {
+    docsFailures,
     models: listed.map((m) => {
       const rawId = rawIdOf(m)
       const methods = m.supportedGenerationMethods ?? []
@@ -334,6 +339,7 @@ async function listModels(
             : geminiGenerationEndpointId(activity, methods),
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
+        modalities: feat.modalities,
         capabilities: geminiCapabilities(m),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
@@ -344,6 +350,7 @@ async function listModels(
         reasoning: feat.reasoning,
         serverTools: feat.serverTools,
         factSources: { ...priced.factSources, ...feat.factSources },
+        ...(feat.absent ? { absent: feat.absent } : {}),
       }
     }),
   }

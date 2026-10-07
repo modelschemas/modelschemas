@@ -8,15 +8,26 @@
  * rows name Gemini 2.5 families. Both key by family, so an id resolves to
  * the longest family it extends with a `-preview…`/`-latest`/`-NNN` suffix.
  * The page states in prose that no Gemini 3 model turns thinking fully off.
+ * Modalities: the same model page has a `Supported data types` row.
  */
 import {
   assertParsed,
   cachedDocs,
+  docsReport,
+  docsRun,
   mapConcurrent,
   markdownTableRows,
+  tryDocs,
+  unavailable,
 } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { FactSource, ModelFactSources, ModelReasoning } from './types.ts'
+import type {
+  DocsFailures,
+  FactSource,
+  ModelFactSources,
+  ModelInfo,
+  ModelReasoning,
+} from './types.ts'
 
 export const GEMINI_MODELS_INDEX_URL =
   'https://ai.google.dev/gemini-api/docs/models.md.txt'
@@ -59,6 +70,63 @@ export function parsePageTools(markdown: string): Array<string> {
     if (field && (m[2] ?? '').trim().startsWith('Supported')) out.push(field)
   }
   return out
+}
+
+/** Words a `Supported data types` cell uses → medium, in stored order. */
+const MEDIA: Record<string, string> = {
+  text: 'text',
+  image: 'image',
+  images: 'image',
+  audio: 'audio',
+  video: 'video',
+  videos: 'video',
+  pdf: 'file',
+  pdfs: 'file',
+  document: 'file',
+  documents: 'file',
+}
+const MEDIA_ORDER = [...new Set(Object.values(MEDIA))]
+
+/**
+ * `Text, Image, Video, Audio, and PDF` → media, or null on any other word.
+ * A parenthetical is a qualifier (`Audio (MP3)`, `Video (up to 10s)`) and is
+ * dropped, unless it names a medium itself (`Text (and Image, Audio)`): then
+ * the list is inside it and the cell is not read.
+ */
+function mediaList(cell: string): Array<string> | null {
+  const found = new Set<string>()
+  for (const [, inside = ''] of cell.matchAll(/\(([^)]*)\)/g)) {
+    const words = inside.toLowerCase().match(/[a-z]+/g) ?? []
+    if (words.some((word) => word in MEDIA)) return null
+  }
+  const items = cell
+    .replace(/\([^)]*\)/g, '')
+    .split(/,|\band\b/i)
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item !== '')
+  for (const item of items) {
+    const medium = MEDIA[item]
+    if (!medium) return null
+    found.add(medium)
+  }
+  return found.size > 0 ? MEDIA_ORDER.filter((m) => found.has(m)) : null
+}
+
+/**
+ * A model page's `| Supported data types | **Inputs** … **Output** … |` row.
+ * Null when the row is missing or either side names something that is not a
+ * medium ("Text embeddings", "Video with audio"): a partial list would read
+ * as the whole answer.
+ */
+export function parsePageModalities(
+  markdown: string,
+): { input: Array<string>; output: Array<string> } | null {
+  const row = markdown.match(
+    /^\| Supported data types \|\s*\*\*Inputs?\*\*(.*?)\*\*Outputs?\*\*(.*?)\|\s*$/m,
+  )
+  const input = mediaList(row?.[1] ?? '')
+  const output = mediaList(row?.[2] ?? '')
+  return input && output ? { input, output } : null
 }
 
 /** `Gemini 3.8 \& 3.7 Flash` → [`gemini-3.8-flash`, `gemini-3.7-flash`]. */
@@ -123,20 +191,26 @@ export function familyOf(
   return best
 }
 
-/** Reasoning + server tools per listed id, with provenance. */
+type GeminiFeatures = Pick<ModelInfo, 'absent'> & {
+  reasoning: ModelReasoning | null
+  serverTools: Array<string> | null
+  modalities: { input: Array<string>; output: Array<string> } | null
+  factSources: ModelFactSources
+}
+
+/**
+ * Reasoning, server tools and modalities per listed id, with provenance.
+ * A model page that fails to load is that family's alone: its rows keep the
+ * stored tools and modalities (`absent`) and the failure is in
+ * `docsFailures`.
+ */
 export async function geminiModelFeatures(
   rawIds: Array<string>,
   kv?: KVNamespace,
-): Promise<
-  (
-    rawId: string,
-    thinking: boolean,
-  ) => {
-    reasoning: ModelReasoning | null
-    serverTools: Array<string> | null
-    factSources: ModelFactSources
-  }
-> {
+): Promise<{
+  features: (rawId: string, thinking: boolean) => GeminiFeatures
+  docsFailures: DocsFailures
+}> {
   const [slugs, thinking] = await Promise.all([
     cachedDocs(kv, GEMINI_MODELS_INDEX_URL, async () => {
       const parsed = parseModelIndex(await fetchText(GEMINI_MODELS_INDEX_URL))
@@ -161,24 +235,33 @@ export async function geminiModelFeatures(
       }),
     ),
   ]
-  const pages = await mapConcurrent(needed, 8, async (slug) => {
-    try {
-      return await cachedDocs(kv, GEMINI_MODEL_PAGE(slug), async () => {
-        const markdown = await fetchText(GEMINI_MODEL_PAGE(slug))
+  const docs = docsRun()
+  const pages = await mapConcurrent(needed, 8, (slug) => {
+    const url = GEMINI_MODEL_PAGE(slug)
+    return tryDocs(docs, url, (cached) =>
+      cached(kv, url, async () => {
+        const markdown = await fetchText(url)
         return {
           slug,
           tools: parsePageTools(markdown),
+          modalities: parsePageModalities(markdown),
           hash: await sha256Text(markdown),
         }
-      })
-    } catch {
-      return null
-    }
+      }),
+    )
   })
   const tools = Object.fromEntries(
     pages.flatMap((page) => (page ? [[page.slug, page]] : [])),
   )
-  return (rawId, modelThinks) => {
+  const read = Object.values(tools)
+  // Every page read and none states modalities is a reshaped site, not a
+  // catalog without media. Throwing keeps the stored column.
+  if (read.length > 0 && !read.some((page) => page.modalities)) {
+    throw new Error(
+      `gemini model pages: 0 of ${String(read.length)} state modalities`,
+    )
+  }
+  const features = (rawId: string, modelThinks: boolean): GeminiFeatures => {
     const factSources: ModelFactSources = {}
     const family = modelThinks
       ? familyOf(rawId, Object.keys(thinking.reasoning))
@@ -200,20 +283,39 @@ export async function geminiModelFeatures(
         path: 'silent',
       }
     }
-    const slug = familyOf(rawId, Object.keys(tools))
+    // The id's family among every indexed page, so a page that failed
+    // cannot hand its rows to a shorter sibling family that loaded.
+    const slug = familyOf(rawId, slugs)
     const page = slug ? tools[slug] : undefined
-    if (!slug || !page || page.tools.length === 0) {
-      return { reasoning, serverTools: null, factSources }
+    if (!slug || !page) {
+      return {
+        reasoning,
+        serverTools: null,
+        modalities: null,
+        factSources,
+        ...(slug ? unavailable('serverTools', 'modalities') : {}),
+      }
     }
-    const source: FactSource = {
+    const source = (path: string): FactSource => ({
       derivation: 'docs-derived',
       sourceUrl: GEMINI_MODEL_PAGE(slug),
       sourceHash: page.hash,
-      path: 'Capabilities',
+      path,
+    })
+    if (page.modalities) {
+      factSources.modalities = source('Supported data types')
     }
-    factSources.serverTools = Object.fromEntries(
-      page.tools.map((tool) => [tool, source]),
-    )
-    return { reasoning, serverTools: page.tools, factSources }
+    if (page.tools.length > 0) {
+      factSources.serverTools = Object.fromEntries(
+        page.tools.map((tool) => [tool, source('Capabilities')]),
+      )
+    }
+    return {
+      reasoning,
+      serverTools: page.tools.length > 0 ? page.tools : null,
+      modalities: page.modalities,
+      factSources,
+    }
   }
+  return { features, docsFailures: docsReport(docs) }
 }

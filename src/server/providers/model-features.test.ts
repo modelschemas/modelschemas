@@ -7,6 +7,8 @@ import {
 } from './anthropic-features.ts'
 import {
   familyOf,
+  geminiModelFeatures,
+  parsePageModalities,
   parsePageTools,
   parseThinkingPage,
 } from './gemini-features.ts'
@@ -126,6 +128,141 @@ describe('gemini features (issue #77)', () => {
       familyOf('gemini-2.5-computer-use-preview-10-2025', parsed.keys()),
     ).toBeNull()
     expect(familyOf('deep-research-preview-04-2026', parsed.keys())).toBeNull()
+  })
+
+  it('reads the Supported data types row, or nothing', () => {
+    const row = (cells: string) => `x\n| Supported data types | ${cells} |\n`
+    expect(
+      parsePageModalities(
+        row('**Inputs** Audio, images, video, text, and PDF **Output** Text'),
+      ),
+    ).toEqual({
+      input: ['text', 'image', 'audio', 'video', 'file'],
+      output: ['text'],
+    })
+    expect(
+      parsePageModalities(
+        row(
+          '**Inputs** Audio (speech) **Output** Audio (translated speech) and Text (transcript)',
+        ),
+      ),
+    ).toEqual({ input: ['audio'], output: ['text', 'audio'] })
+    // A word that is not a medium leaves the whole fact unknown.
+    expect(
+      parsePageModalities(row('**Input** Text **Output** Text embeddings')),
+    ).toBeNull()
+    expect(
+      parsePageModalities(
+        row('**Input** Text, Image **Output** Video with audio'),
+      ),
+    ).toBeNull()
+    expect(parsePageModalities('| Capabilities | x |')).toBeNull()
+    // A parenthetical is dropped as a qualifier unless it names a medium.
+    expect(
+      parsePageModalities(
+        row(
+          '**Input** Text, Image, Video (up to 10s for editing) **Output** Audio (MP3), Text (Lyrics)',
+        ),
+      ),
+    ).toEqual({ input: ['text', 'image', 'video'], output: ['text', 'audio'] })
+    expect(
+      parsePageModalities(
+        row('**Inputs** Text (and Image, Audio) **Output** Text'),
+      ),
+    ).toBeNull()
+    expect(
+      parsePageModalities(row('**Inputs** Text **Output** Text (or images)')),
+    ).toBeNull()
+    expect(
+      parsePageModalities(
+        row('**Inputs** Text (short videos) **Output** Text'),
+      ),
+    ).toBeNull()
+  })
+
+  describe('model pages', () => {
+    const INDEX = 'https://ai.google.dev/gemini-api/docs/models'
+    const page = (types: string) =>
+      `| Supported data types | ${types} |\n| Capabilities | **[Search grounding](u)** Supported |\n`
+    const withPages = async <T>(
+      pages: Record<string, string | null>,
+      run: () => Promise<T>,
+    ): Promise<T> => {
+      const original = globalThis.fetch
+      globalThis.fetch = ((url: string) => {
+        const href = String(url)
+        const slug = href.match(/\/models\/([^/]+)\.md\.txt$/)?.[1]
+        const body = href.endsWith('/thinking.md.txt')
+          ? thinking
+          : slug
+            ? pages[slug]
+            : Object.keys(pages)
+                .map((name) => `${INDEX}/${name}`)
+                .join('\n')
+        return Promise.resolve(
+          typeof body === 'string'
+            ? new Response(body)
+            : new Response('upstream down', { status: 503 }),
+        )
+      }) as typeof fetch
+      try {
+        return await run()
+      } finally {
+        globalThis.fetch = original
+      }
+    }
+
+    it('keeps stored facts, and records the failure, when a page fails to load', async () => {
+      const { features, docsFailures } = await withPages(
+        {
+          'gemini-2.5-flash': page('**Inputs** Text, images **Output** Text'),
+          'gemini-2.5-flash-lite': null,
+        },
+        () =>
+          geminiModelFeatures([
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemma-4-31b-it',
+          ]),
+      )
+      expect(features('gemini-2.5-flash', false)).toMatchObject({
+        modalities: { input: ['text', 'image'], output: ['text'] },
+        serverTools: ['googleSearch'],
+        factSources: {
+          modalities: {
+            derivation: 'docs-derived',
+            sourceUrl: `${INDEX}/gemini-2.5-flash.md.txt`,
+            path: 'Supported data types',
+          },
+        },
+      })
+      expect(features('gemini-2.5-flash', false).absent).toBeUndefined()
+      // The page that failed: the poll keeps what is stored, and the row is
+      // not handed to the `gemini-2.5-flash` page that did load.
+      expect(features('gemini-2.5-flash-lite', false)).toMatchObject({
+        modalities: null,
+        serverTools: null,
+        absent: { modalities: 'unavailable', serverTools: 'unavailable' },
+      })
+      expect(docsFailures.failed).toBe(1)
+      expect(docsFailures.first[0]?.source).toBe(
+        `${INDEX}/gemini-2.5-flash-lite.md.txt`,
+      )
+      // No page at all is a plain unknown.
+      expect(features('gemma-4-31b-it', false).absent).toBeUndefined()
+    })
+
+    it('refuses a poll in which no page that loaded states modalities', async () => {
+      await expect(
+        withPages(
+          {
+            'gemini-2.5-flash': '| Supported modalities | Text |',
+            'gemini-2.5-pro': '| Supported modalities | Text |',
+          },
+          () => geminiModelFeatures(['gemini-2.5-flash', 'gemini-2.5-pro']),
+        ),
+      ).rejects.toThrow('gemini model pages: 0 of 2 state modalities')
+    })
   })
 
   it('maps Supported capabilities to generateContent tool fields', () => {

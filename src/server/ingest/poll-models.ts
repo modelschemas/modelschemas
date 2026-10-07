@@ -370,7 +370,7 @@ const SOURCED_FACTS = [
 ] as const
 
 /** The facts `enrichListed` fills from the bound request schema. */
-const WALKED_FACTS = ['capabilities', 'modalities'] as const
+const WALKED_FACTS = ['capabilities'] as const
 
 /**
  * Apply `info.absent` (see `FactAbsence`) to every fact but pricing, which

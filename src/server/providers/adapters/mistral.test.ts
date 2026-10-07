@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { mistralModelPage, tip } from '../fixtures/mistral-model-page.ts'
 import { provider } from './mistral.ts'
 
 describe('mistral classify', () => {
@@ -77,6 +78,7 @@ describe('mistral listModels', () => {
             pricing: _pricing,
             factSources: _sources,
             reasoning: _reasoning,
+            modalities: _modalities,
             ...rest
           }) => rest,
         ),
@@ -88,6 +90,70 @@ describe('mistral listModels', () => {
         },
         { rawId: 'mistral-embed', releasedAt: null, activity: 'embeddings' },
       ])
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
+describe('mistral listModels modalities', () => {
+  it('puts the modalities a model page states on the rows it names', async () => {
+    const pages: Record<string, string> = {
+      'https://api.mistral.ai/v1/models': JSON.stringify({
+        data: [
+          {
+            id: 'mistral-small-latest',
+            capabilities: { completion_chat: true },
+          },
+          { id: 'mistral-unpriced', capabilities: { completion_chat: true } },
+        ],
+      }),
+      'https://docs.mistral.ai/inference/pricing': `<h2>Flagship models</h2>
+<p>Prices /M Tokens</p>
+<table>
+<tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.1</td><td>—</td><td>$0.3</td></tr>
+</table>`,
+      'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
+        mistralModelPage(
+          ['mistral-small-2603', 'mistral-small-latest'],
+          [
+            [
+              tip('Text input'),
+              tip('Image input'),
+              tip('Reasoning output'),
+              tip('Text output'),
+            ],
+          ],
+        ),
+      'https://docs.mistral.ai/studio/conversations/reasoning.md':
+        '- `mistral-small-latest`: Supports adjustable reasoning via the `reasoning_effort` parameter.',
+    }
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const body = pages[String(url)]
+      return Promise.resolve(
+        body === undefined
+          ? new Response('not found', { status: 404 })
+          : new Response(body),
+      )
+    }) as typeof fetch
+    try {
+      const { models } = await provider.listModels({ MISTRAL_API_KEY: 'k' })
+      const [small, unpriced] = models
+      expect(small?.modalities).toEqual({
+        input: ['text', 'image'],
+        output: ['text'],
+      })
+      expect(small?.factSources?.modalities).toMatchObject({
+        derivation: 'docs-derived',
+        sourceUrl: 'https://docs.mistral.ai/models/mistral-small-4-0-26-03',
+        path: 'modalities',
+      })
+      expect(small?.pricing).toBeTruthy()
+      // No page names this id: unknown, not a guess.
+      expect(unpriced?.modalities).toBeUndefined()
+      expect(unpriced?.factSources?.modalities).toBeUndefined()
     } finally {
       globalThis.fetch = original
     }
