@@ -148,7 +148,10 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // for six hours.
 // v22: DashScope compat cache includes `scope`. A v21 entry has no scope,
 // so a chat id the page does not name would still get the compat map.
-const DOCS_CACHE_VERSION = 'v22'
+// v23: Gemini's cached index is `{url, ids}` rows, thinking pages cache
+// budget bodies, and model pages cache per-id sections. A v22 entry has
+// none of those, so every Gemini fact read from it would stay null.
+const DOCS_CACHE_VERSION = 'v23'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

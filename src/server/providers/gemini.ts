@@ -7,6 +7,11 @@
 import type { Activity } from '#/db/schema.ts'
 import { geminiModelFeatures } from './gemini-features.ts'
 import { geminiModelPricing } from './gemini-pricing.ts'
+import {
+  GEMINI_DISCOVERY_URL,
+  geminiRequestMap,
+  geminiWire,
+} from './gemini-request.ts'
 import { geminiGenerationEndpointId } from './model-meta.ts'
 import {
   GEMINI_RELEASE_DATES,
@@ -22,8 +27,6 @@ import type {
   SpecFetchResult,
 } from './types.ts'
 
-const GEMINI_DISCOVERY_URL =
-  'https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta'
 const GEMINI_MODELS_URL =
   'https://generativelanguage.googleapis.com/v1beta/models'
 
@@ -304,7 +307,8 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('gemini', 'GEMINI_API_KEY') }
   }
-  const pricing = await geminiModelPricing(kv)
+  const pricingPromise = geminiModelPricing(kv)
+  const wirePromise = geminiWire(kv)
   const listed: Array<GeminiModel> = []
   let pageToken: string | undefined
   do {
@@ -317,10 +321,11 @@ async function listModels(
     pageToken = body.nextPageToken
   } while (pageToken)
   const rawIdOf = (m: GeminiModel) => m.name.replace(/^models\//, '')
-  const { features, docsFailures } = await geminiModelFeatures(
-    listed.map(rawIdOf),
-    kv,
-  )
+  const [pricing, wire, { features, docsFailures }] = await Promise.all([
+    pricingPromise,
+    wirePromise,
+    geminiModelFeatures(listed.map(rawIdOf), kv),
+  ])
   return {
     docsFailures,
     models: listed.map((m) => {
@@ -329,6 +334,13 @@ async function listModels(
       const activity = geminiModelActivity(rawId, methods)
       const priced = pricing(rawId)
       const feat = features(rawId, m.thinking === true)
+      const usesConfig =
+        methods.includes('generateContent') ||
+        methods.includes('bidiGenerateContent')
+      const requestMap =
+        activity === 'chat' && usesConfig
+          ? geminiRequestMap(wire.fields, feat.reasoning, feat.budget)
+          : null
       return {
         rawId,
         displayName: m.displayName ?? null,
@@ -349,7 +361,12 @@ async function listModels(
         pricing: priced.pricing,
         reasoning: feat.reasoning,
         serverTools: feat.serverTools,
-        factSources: { ...priced.factSources, ...feat.factSources },
+        ...(requestMap ? { requestMap } : {}),
+        factSources: {
+          ...priced.factSources,
+          ...feat.factSources,
+          ...(requestMap ? { requestMap: wire.source } : {}),
+        },
         ...(feat.absent ? { absent: feat.absent } : {}),
       }
     }),

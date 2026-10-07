@@ -8,8 +8,12 @@ import {
 import {
   familyOf,
   geminiModelFeatures,
+  parseModelIndexDocs,
   parsePageModalities,
+  parsePageSections,
+  parsePageThinking,
   parsePageTools,
+  parseThinkingBudgets,
   parseThinkingPage,
 } from './gemini-features.ts'
 import { grokReasoningGap, parseGrokReasoning } from './grok.ts'
@@ -93,7 +97,9 @@ describe('gemini features (issue #77)', () => {
 | Model | Default setting (Thinking budget is not set) | Range | Disable thinking | Turn on dynamic thinking |
 |---|---|---|---|---|
 | **2.5 Pro** | Dynamic thinking | \`128\` to \`32768\` | N/A: Cannot disable thinking | \`thinkingBudget = -1\` (Default) |
-| **2.5 Flash** | Dynamic thinking | \`0\` to \`24576\` | \`thinkingBudget = 0\` | \`thinkingBudget = -1\` (Default) |`
+| **2.5 Flash** | Dynamic thinking | \`0\` to \`24576\` | \`thinkingBudget = 0\` | \`thinkingBudget = -1\` (Default) |
+| **Robotics-ER 1.6 Preview** | Dynamic thinking | \`0\` to \`24576\` | \`thinkingBudget = 0\` | \`thinkingBudget = -1\` (Default) |
+| **2.5 Flash Live Native Audio Preview (09-2025)** | Dynamic thinking | \`0\` to \`24576\` | \`thinkingBudget = 0\` | \`thinkingBudget = -1\` (Default) |`
 
   it('keys levels by family column and budgets by family row', () => {
     const parsed = parseThinkingPage(thinking)
@@ -110,6 +116,27 @@ describe('gemini features (issue #77)', () => {
     expect(parsed.get('gemini-2.5-flash')).toEqual({
       mode: 'budget',
       mandatory: false,
+    })
+    expect(parsed.get('gemini-2.5-flash-native-audio-preview-09-2025')).toEqual(
+      { mode: 'budget', mandatory: false },
+    )
+    expect(parsed.get('gemini-2.5-flash-native-audio-latest')).toBeUndefined()
+    expect(
+      parsed.get('gemini-2.5-flash-live-native-audio-preview'),
+    ).toBeUndefined()
+    expect(parsed.get('gemini-robotics-er-1.6-preview')).toBeUndefined()
+    expect(
+      parseThinkingBudgets(thinking).get(
+        'gemini-2.5-flash-native-audio-preview-09-2025',
+      ),
+    ).toEqual({ on: -1, off: 0 })
+    expect(parseThinkingBudgets(thinking).get('gemini-2.5-pro')).toEqual({
+      on: -1,
+      off: null,
+    })
+    expect(parseThinkingBudgets(thinking).get('gemini-2.5-flash')).toEqual({
+      on: -1,
+      off: 0,
     })
   })
 
@@ -178,6 +205,17 @@ describe('gemini features (issue #77)', () => {
         row('**Inputs** Text (short videos) **Output** Text'),
       ),
     ).toBeNull()
+    // Timestamp metadata is not a medium. The other words still count.
+    expect(
+      parsePageModalities(
+        row(
+          '**Inputs** Audio (up to 1 hour) **Output** Text, Word annotations',
+        ),
+      ),
+    ).toEqual({ input: ['audio'], output: ['text'] })
+    expect(
+      parsePageModalities(row('**Inputs** Audio **Output** Word annotations')),
+    ).toBeNull()
   })
 
   describe('model pages', () => {
@@ -187,18 +225,29 @@ describe('gemini features (issue #77)', () => {
     const withPages = async <T>(
       pages: Record<string, string | null>,
       run: () => Promise<T>,
+      options?: {
+        index?: string
+        extras?: Record<string, string | null>
+      },
     ): Promise<T> => {
       const original = globalThis.fetch
+      const indexBody =
+        options?.index ??
+        Object.keys(pages)
+          .map((name) => `${INDEX}/${name}`)
+          .join('\n')
+      const extras = options?.extras ?? {}
       globalThis.fetch = ((url: string) => {
         const href = String(url)
         const slug = href.match(/\/models\/([^/]+)\.md\.txt$/)?.[1]
+        const extra = Object.keys(extras).find((key) => href.endsWith(key))
         const body = href.endsWith('/thinking.md.txt')
           ? thinking
-          : slug
+          : slug && Object.hasOwn(pages, slug)
             ? pages[slug]
-            : Object.keys(pages)
-                .map((name) => `${INDEX}/${name}`)
-                .join('\n')
+            : extra
+              ? extras[extra]
+              : indexBody
         return Promise.resolve(
           typeof body === 'string'
             ? new Response(body)
@@ -263,22 +312,220 @@ describe('gemini features (issue #77)', () => {
         ),
       ).rejects.toThrow('gemini model pages: 0 of 2 state modalities')
     })
-  })
 
-  it('maps Supported capabilities to generateContent tool fields', () => {
-    const row =
-      '| Capabilities | **[Code execution](u)** Supported **[Computer use](u)** Supported (Preview) **[File search](u)** Not supported **[Search grounding](u)** Supported **[Thinking](u)** Supported |'
-    expect(parsePageTools(`x\n${row}\n`)).toEqual([
-      'codeExecution',
-      'computerUse',
-      'googleSearch',
-    ])
-  })
+    it('maps Supported capabilities to generateContent tool fields', () => {
+      const row =
+        '| Capabilities | **[Code execution](u)** Supported **[Computer use](u)** Supported (Preview) **[File search](u)** Not supported **[Search grounding](u)** Supported **[Thinking](u)** Supported |'
+      expect(parsePageTools(`x\n${row}\n`)).toEqual([
+        'codeExecution',
+        'computerUse',
+        'googleSearch',
+      ])
+    })
 
-  it('leaves tools empty when the page marks none supported', () => {
-    const row =
-      '| Capabilities | **[Code execution](u)** Not supported **[Search grounding](u)** Not supported |'
-    expect(parsePageTools(`x\n${row}\n`)).toEqual([])
+    it('leaves tools empty when the page marks none supported', () => {
+      const row =
+        '| Capabilities | **[Code execution](u)** Not supported **[Search grounding](u)** Not supported |'
+      expect(parsePageTools(`x\n${row}\n`)).toEqual([])
+    })
+
+    it('reads backtick thinking levels and drops a level the same paragraph rejects', () => {
+      expect(
+        parsePageThinking(
+          'Configurable Thinking levels (`minimal`, `medium` default, and `high`).',
+        ),
+      ).toEqual({
+        mode: 'effort',
+        mandatory: null,
+        efforts: ['minimal', 'medium', 'high'],
+      })
+      expect(
+        parsePageThinking(
+          'Configure background reasoning using `thinking_config` (`thinking_level`: `low`, `medium`, or `high`). Note that `MINIMAL` is not supported.',
+        ),
+      ).toEqual({
+        mode: 'effort',
+        mandatory: null,
+        efforts: ['low', 'medium', 'high'],
+      })
+      expect(
+        parsePageThinking(
+          'Thinking levels (`low`, `high`). You cannot disable thinking for this model.',
+        )?.mandatory,
+      ).toBe(true)
+      expect(
+        parsePageThinking('generation_config.thinking_level: "high"'),
+      ).toBeNull()
+      expect(
+        parsePageThinking(
+          'Thinking levels (`low`).\n\nThinking levels (`high`).',
+        ),
+      ).toBeNull()
+    })
+
+    it('binds endpoint ids on the models index and version ids on the page', () => {
+      const index = [
+        '| [Gemini Omni Flash](https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash) | ``` gemini-omni-1.1-flash ``` |',
+        '| [Gemini 3.1 Pro](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview) | ``` gemini-3.1-pro-preview ``` |',
+        '| [Gemini Robotics ER 2](https://ai.google.dev/gemini-api/docs/robotics-overview) | ``` gemini-robotics-er-2-preview ``` |',
+        'https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash',
+      ].join('\n')
+      const docs = parseModelIndexDocs(index)
+      expect(docs).toEqual([
+        {
+          url: 'https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash',
+          ids: ['gemini-omni-1.1-flash'],
+        },
+        {
+          url: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview',
+          ids: ['gemini-3.1-pro-preview'],
+        },
+        {
+          url: 'https://ai.google.dev/gemini-api/docs/robotics-overview',
+          ids: ['gemini-robotics-er-2-preview'],
+        },
+        {
+          url: 'https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash',
+          ids: [],
+        },
+      ])
+      const omni = `## gemini-omni-1.1-flash\n| Model code | **Gemini API** \`gemini-omni-1.1-flash\` |\n| Supported data types | **Input** Text, Image, Video (up to 10s for editing and extension) **Output** Video |\n| Versions | - Stable: \`gemini-omni-1.1-flash\` - Preview: \`gemini-omni-flash-preview\` |`
+      const pro = `## gemini-3.1-pro-preview\n| Model code | \`gemini-3.1-pro-preview\` |\n| Supported data types | **Inputs** Text **Output** Text |\n| Versions | - Preview: \`gemini-3.1-pro-preview\` - Preview: \`gemini-3.1-pro-preview-customtools\` |`
+      const overview = [
+        '### Gemini Robotics ER 2 Preview',
+        '| Model code | `gemini-robotics-er-2-preview` |',
+        '| Supported data types | **Inputs** Text, images, video, audio **Output** Text |',
+        'generation_config={"thinking_level": "high"}',
+        '### Gemini Robotics ER 2 Streaming Preview',
+        '| Model code | `gemini-robotics-er-2-streaming-preview` |',
+        '| Supported data types | **Inputs** Audio **Output** Text |',
+      ].join('\n')
+      const sections = parsePageSections(overview)
+      expect(sections.map((section) => section.ids)).toEqual([
+        ['gemini-robotics-er-2-preview'],
+        ['gemini-robotics-er-2-streaming-preview'],
+      ])
+      expect(parsePageThinking(overview)).toBeNull()
+      return withPages(
+        {
+          'gemini-omni-flash': omni,
+          'gemini-3.1-pro-preview': pro,
+          'gemini-2.5-flash':
+            '| Supported data types | **Inputs** Text **Output** Text |',
+        },
+        async () => {
+          const { features } = await geminiModelFeatures([
+            'gemini-omni-1.1-flash',
+            'gemini-omni-flash-preview',
+            'gemini-3.1-pro-preview',
+            'gemini-3.1-pro-preview-customtools',
+            'gemini-robotics-er-2-preview',
+            'gemini-robotics-er-2-streaming-preview',
+          ])
+          expect(features('gemini-omni-1.1-flash', false).modalities).toEqual({
+            input: ['text', 'image', 'video'],
+            output: ['video'],
+          })
+          expect(
+            features('gemini-omni-flash-preview', false).modalities?.output,
+          ).toEqual(['video'])
+          expect(
+            features('gemini-3.1-pro-preview-customtools', false).modalities,
+          ).toEqual({ input: ['text'], output: ['text'] })
+          expect(
+            features('gemini-robotics-er-2-preview', false).modalities?.input,
+          ).toEqual(['text', 'image', 'audio', 'video'])
+          expect(
+            features('gemini-robotics-er-2-streaming-preview', false)
+              .modalities,
+          ).toEqual({ input: ['audio'], output: ['text'] })
+          expect(
+            features('gemini-robotics-er-2-streaming-preview', true).reasoning,
+          ).toBeNull()
+        },
+        {
+          index,
+          extras: { '/robotics-overview.md.txt': overview },
+        },
+      )
+    })
+
+    it('keeps page thinking levels only when the API says the model thinks', () => {
+      const body = [
+        '- Configurable Thinking levels (`minimal`, `medium` default, and `high`).',
+        '## gemini-nano-banana-2.1',
+        '| Model code | `gemini-nano-banana-2.1` |',
+        '| Supported data types | **Inputs** Text, Image **Output** Image and Text |',
+      ].join('\n')
+      return withPages({ 'gemini-nano-banana-2.1': body }, async () => {
+        const { features } = await geminiModelFeatures([
+          'gemini-nano-banana-2.1',
+        ])
+        expect(features('gemini-nano-banana-2.1', true)).toMatchObject({
+          reasoning: {
+            mode: 'effort',
+            mandatory: null,
+            efforts: ['minimal', 'medium', 'high'],
+          },
+          factSources: {
+            reasoning: {
+              path: 'thinking level',
+              sourceUrl: `${INDEX}/gemini-nano-banana-2.1.md.txt`,
+            },
+          },
+        })
+        expect(features('gemini-nano-banana-2.1', false).reasoning).toBeNull()
+      })
+    })
+
+    it('keeps the dedicated model-code page when a versions row repeats the id', async () => {
+      const index = [
+        '| [Gemini 3.5 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash) | ``` gemini-3.5-flash ``` |',
+        '| [Gemini 3 Flash](https://ai.google.dev/gemini-api/docs/models/gemini-3-flash-preview) | ``` gemini-3-flash-preview ``` |',
+      ].join('\n')
+      const flash35 = [
+        '## gemini-3.5-flash',
+        '| Model code | `gemini-3.5-flash` |',
+        '| Versions | - Stable: `gemini-3.5-flash` - Preview: `gemini-3-flash-preview` |',
+        '| Supported data types | **Inputs** Audio **Output** Text |',
+      ].join('\n')
+      const flash3 = [
+        '## gemini-3-flash-preview',
+        '| Model code | `gemini-3-flash-preview` |',
+        '| Supported data types | **Inputs** Text **Output** Text |',
+      ].join('\n')
+      const { features } = await withPages(
+        {
+          'gemini-3.5-flash': flash35,
+          'gemini-3-flash-preview': flash3,
+        },
+        () =>
+          geminiModelFeatures(['gemini-3.5-flash', 'gemini-3-flash-preview']),
+        { index },
+      )
+      expect(features('gemini-3-flash-preview', false).modalities).toEqual({
+        input: ['text'],
+        output: ['text'],
+      })
+      expect(features('gemini-3.5-flash', false).modalities).toEqual({
+        input: ['audio'],
+        output: ['text'],
+      })
+    })
+
+    it('refuses a model id that two pages both document', async () => {
+      const documented = (id: string) =>
+        `## ${id}\n| Model code | \`${id}\` |\n| Supported data types | **Inputs** Text **Output** Text |\n`
+      await expect(
+        withPages(
+          {
+            'gemini-a': documented('shared-id'),
+            'gemini-b': documented('shared-id'),
+          },
+          () => geminiModelFeatures(['gemini-a', 'gemini-b']),
+        ),
+      ).rejects.toThrow('gemini model pages: shared-id is documented twice')
+    })
   })
 })
 
