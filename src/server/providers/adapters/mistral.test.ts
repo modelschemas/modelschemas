@@ -77,6 +77,7 @@ describe('mistral listModels', () => {
             pricing: _pricing,
             factSources: _sources,
             reasoning: _reasoning,
+            modalities: _modalities,
             ...rest
           }) => rest,
         ),

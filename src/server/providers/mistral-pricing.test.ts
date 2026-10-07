@@ -185,6 +185,17 @@ describe('mistral model page modalities', () => {
         [tip('Audio input'), tip('Text output')].join(),
       ),
     ).toEqual({ input: ['audio'], output: ['text'] })
+    // A reasoning marker and a `span` label are not media.
+    expect(
+      parseMistralPageModalities(
+        [
+          tip('Text input'),
+          tip('Reasoning output'),
+          tip('Text output'),
+          `[\\"$\\",\\"span\\",null,{\\"children\\":\\"Max output\\"}]`,
+        ].join(),
+      ),
+    ).toEqual({ input: ['text'], output: ['text'] })
     expect(parseMistralPageModalities(tip('Text input'))).toBeNull()
     expect(
       parseMistralPageModalities(

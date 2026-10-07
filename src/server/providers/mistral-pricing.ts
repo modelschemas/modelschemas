@@ -289,19 +289,23 @@ const MISTRAL_MEDIA: Record<string, string> = {
 }
 
 /**
- * Modalities a model page states. The tooltips are in the RSC payload as
- * `"children":"Text input"` (quotes escaped). Null when the page has none,
- * names a medium this map lacks, or states only one side: a partial list
- * would read as the whole answer.
+ * Modalities a model page states. Each tooltip is a component in the RSC
+ * payload whose only prop is its label: `["$","$L53",null,{"children":"Text
+ * input"}]` (quotes escaped). A `span` label such as "Max output" is not
+ * one. "Reasoning output" marks a reasoning model, which is not a medium.
+ * Null when the page has none, names a medium this map lacks, or states
+ * only one side: a partial list would read as the whole answer.
  */
 export function parseMistralPageModalities(
   html: string,
 ): MistralModalities | null {
   const found = { input: new Set<string>(), output: new Set<string>() }
   for (const match of html.matchAll(
-    /children\\?":\\?"([A-Za-z]+) (input|output)\\?"/g,
+    /\$L[0-9a-f]+\\?",null,\{\\?"children\\?":\\?"([A-Za-z]+) (input|output)\\?"\}/g,
   )) {
-    const medium = MISTRAL_MEDIA[(match[1] ?? '').toLowerCase()]
+    const word = (match[1] ?? '').toLowerCase()
+    if (word === 'reasoning') continue
+    const medium = MISTRAL_MEDIA[word]
     if (!medium) return null
     found[match[2] === 'input' ? 'input' : 'output'].add(medium)
   }
@@ -367,6 +371,10 @@ interface MistralStatedModalities {
 /**
  * API id → modalities its model page states. An id two pages state
  * differently gets none, like a price.
+ *
+ * ponytail: only the pages the pricing table links are fetched, so an
+ * unpriced id (`voxtral-small-latest`) has no modalities. Reading the rest
+ * means ~50 more 1 MB pages per poll off the /models index.
  */
 export function indexMistralModalities(
   pages: Array<MistralModelPage>,
