@@ -74,6 +74,21 @@ const GPT_51_LEVELS: EffortLevelMap = {
   max: null,
 }
 
+/**
+ * SambaNova `ChatCompletionRequest.reasoning_effort`: low, medium, high.
+ * The enum has no off.
+ * https://raw.githubusercontent.com/sambanova/sambanova-inference-api-spec/refs/heads/main/openapi.documented.json
+ */
+const SAMBANOVA_LEVELS: EffortLevelMap = {
+  off: null,
+  minimal: null,
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: null,
+  max: null,
+}
+
 /** `minimax/MiniMax-M3.1-Flash-Preview`: the spec's `reasoning_effort` enum. It cannot stop thinking. */
 const MINIMAX_M31_FLASH_LEVELS: EffortLevelMap = {
   off: null,
@@ -417,6 +432,23 @@ export function chatRequestMap(
         maxTokensField: 'max_tokens',
         developerRole: false,
         reasoningEffort: false,
+      })
+    // SambaNova's own chat schema, not the OpenAI document schemas are
+    // generated from. `max_tokens` is what the guides send;
+    // `max_completion_tokens` describes the same cap. Roles are system,
+    // user, assistant, and tool. `reasoning_effort` is on the shared body
+    // (low | medium | high) with no off value.
+    // https://raw.githubusercontent.com/sambanova/sambanova-inference-api-spec/refs/heads/main/openapi.documented.json
+    case 'sambanova':
+      return blank({
+        thinking: {
+          on: { reasoning_effort: 'high' },
+          off: null,
+          levels: SAMBANOVA_LEVELS,
+        },
+        maxTokensField: 'max_tokens',
+        developerRole: false,
+        reasoningEffort: true,
       })
     default:
       return null

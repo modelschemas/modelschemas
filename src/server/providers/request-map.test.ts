@@ -229,6 +229,25 @@ describe('chatRequestMap', () => {
     expect(chatRequestMap('grok', 'grok-4', 'chat')?.reasoningEffort).toBe(
       false,
     )
+    const sambanova = chatRequestMap('sambanova', 'gpt-oss-120b', 'chat')
+    expect(sambanova?.maxTokensField).toBe('max_tokens')
+    expect(sambanova?.developerRole).toBe(false)
+    expect(sambanova?.reasoningEffort).toBe(true)
+    expect(sambanova?.thinking).toEqual({
+      on: { reasoning_effort: 'high' },
+      off: null,
+      levels: {
+        off: null,
+        minimal: null,
+        low: 'low',
+        medium: 'medium',
+        high: 'high',
+        xhigh: null,
+        max: null,
+      },
+    })
+    expect(sambanova?.store ?? null).toBeNull()
+    expect(sambanova?.cacheControl ?? null).toBeNull()
   })
 
   it('maps Kimi thinking per model, from the Moonshot chat spec', () => {
