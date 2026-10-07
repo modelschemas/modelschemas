@@ -270,9 +270,9 @@ function Landing() {
                   </th>
                   <th
                     className="num"
-                    title="Share of the chat facts @tanstack/ai-models needs that are filled: context window, max output, modalities, price, cache price, capabilities, reasoning, effort levels, request map, endpoint. Facts the provider does not publish are left out."
+                    title="Chat completeness: the share of the chat facts @tanstack/ai-models needs that are filled for this provider's chat models: context window, max output, modalities, price, cache price, capabilities, reasoning, effort levels, request map, endpoint. Facts the provider does not publish are left out."
                   >
-                    completeness
+                    chat
                   </th>
                   <th className="num">polled</th>
                   <th className="num">synced</th>
@@ -325,7 +325,7 @@ function Landing() {
                     <td className="num" data-label="priced">
                       {showPct(pct(p.counts.priced, p.counts.models))}
                     </td>
-                    <td className="num" data-label="completeness">
+                    <td className="num" data-label="chat">
                       {p.completeness.score === null ? (
                         '—'
                       ) : (
