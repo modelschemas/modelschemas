@@ -1,22 +1,26 @@
 /**
  * Hugging Face Inference Providers — the public router model list.
  *
- * A router row is served by several hosts, each with its own context
- * length, price, and tool support. The default route is the fastest one by
- * a live probe figure, and a caller can also ask for the cheapest, their
- * preferred, or a named provider. So a fact is stored only when every entry
- * in `providers[]` states it and they all agree — the value then holds on
- * any route. A provider that states nothing (a missing figure means no
- * probe data, not unroutable) leaves the fact null. No provider is picked,
- * and nothing is averaged. Field meanings and units:
+ * A router row is served by several hosts. The bare model id routes to
+ * `:fastest`: the live provider with the highest `throughput` (tokens per
+ * second). That entry's context, price, and flags are the row — the bill
+ * and the window a caller gets with no suffix. `:cheapest`, `:preferred`,
+ * and a named provider are other routes, not this row. A tie stores a fact
+ * only when the tied entries agree. An entry with no throughput was not
+ * probed, so it is not a candidate and does not veto the probed route.
+ * When no live entry was probed, a fact is stored only when every live
+ * entry states it and they agree. Nothing is averaged. Policy:
+ * https://huggingface.co/docs/inference-providers/index
+ * Field meanings and units:
  * https://huggingface.co/docs/inference-providers/hub-api
  *
- * A price that is not settled is `absent: cleared`, not just null: the
- * listing was read and says so, so the poller drops a stored card once the
- * providers stop agreeing instead of keeping it as a parser miss. A price
- * that could not be read is never `cleared`: one odd entry makes its row's
- * price `unavailable` (the stored card stays) and is reported as a docs
- * failure, and a listing-wide change throws (`UNREAD_PRICE_SHARE`).
+ * A price the chosen route does not state (missing, zero, or an `is_free`
+ * promo) is `absent: cleared`, not just null: the listing was read and
+ * says so, so the poller drops a stored card instead of keeping it as a
+ * parser miss. A price that could not be read is never `cleared`: one odd
+ * entry makes its row's price `unavailable` (the stored card stays) and is
+ * reported as a docs failure, and a listing-wide change throws
+ * (`UNREAD_PRICE_SHARE`).
  *
  * The request schema is Hugging Face's own chat-completion JSON Schema
  * (huggingface.js `tasks`), wrapped into one OpenAPI path at sync time.
@@ -87,12 +91,55 @@ function routes(providers: unknown): Array<Row> {
   throw new Error('huggingface: a providers list is in an unread shape')
 }
 
-/** The one value every provider states, or null. */
+/** The one value every entry states, or null. */
 function agreed<T>(route: Array<Row>, read: (p: Row) => T | null): T | null {
   const [first, ...rest] = route.map(read)
   if (first === undefined || first === null) return null
   const key = JSON.stringify(first)
   return rest.every((value) => JSON.stringify(value) === key) ? first : null
+}
+
+function providerId(p: Row): string {
+  const id = p.provider
+  if (typeof id !== 'string' || id.length === 0 || /[[\],\s]/.test(id)) {
+    throw new Error('huggingface: a provider entry has no provider id')
+  }
+  return id
+}
+
+/** Probe throughput in tokens per second, or null when this entry has none. */
+function throughput(p: Row): number | null {
+  const n = p.throughput
+  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null
+}
+
+/**
+ * The bare model id's route, and the `providers…` prefix for its fact path.
+ * Live entries at the highest throughput, or every live entry when none
+ * was probed. An `error` host is not a route.
+ */
+function defaultRoute(route: Array<Row>): {
+  entries: Array<Row>
+  path: string
+} {
+  for (const entry of route) {
+    providerId(entry)
+    if (entry.status !== 'live' && entry.status !== 'error') {
+      throw new Error(
+        `huggingface: provider ${JSON.stringify(entry.provider)} status is in an unread shape`,
+      )
+    }
+  }
+  const live = route.filter((entry) => entry.status === 'live')
+  let best: number | null = null
+  for (const entry of live) {
+    const n = throughput(entry)
+    if (n !== null && (best === null || n > best)) best = n
+  }
+  if (best === null) return { entries: live, path: 'providers[]' }
+  const winners = live.filter((entry) => throughput(entry) === best)
+  const names = [...new Set(winners.map(providerId))].sort()
+  return { entries: winners, path: `providers[provider=${names.join(',')}]` }
 }
 
 function contextLength(p: Row): number | null {
@@ -146,10 +193,15 @@ async function routeFacts(
     'contextWindow' | 'pricing' | 'capabilities' | 'factSources' | 'absent'
   >
 > {
-  const contextWindow = agreed(route, contextLength)
-  // One entry whose price cannot be read withholds this row's price only.
+  const selected = defaultRoute(route)
+  const contextWindow = agreed(selected.entries, contextLength)
+  // One entry whose price cannot be read withholds this row's price only,
+  // including a host that is not the default route.
   const read = await tryDocs(run, `${HUGGINGFACE_MODELS_URL}#${rawId}`, () =>
-    Promise.resolve().then(() => ({ quote: agreed(route, price) })),
+    Promise.resolve().then(() => {
+      for (const entry of route) price(entry)
+      return { quote: agreed(selected.entries, price) }
+    }),
   )
   const quote = read?.quote ?? null
   const pricing = quote
@@ -160,9 +212,12 @@ async function routeFacts(
       )
     : null
   // The flag list reads "absent = unsupported", so it is stored only when
-  // both flags are settled.
-  const tools = agreed(route, flag('supports_tools'))
-  const structured = agreed(route, flag('supports_structured_output'))
+  // both flags are settled on the chosen route.
+  const tools = agreed(selected.entries, flag('supports_tools'))
+  const structured = agreed(
+    selected.entries,
+    flag('supports_structured_output'),
+  )
   const capabilities =
     tools === null || structured === null
       ? null
@@ -171,20 +226,15 @@ async function routeFacts(
           ...(structured ? ['structured_outputs', 'response_format'] : []),
         ]
 
+  const at = (name: string) => listed(`${selected.path}.${name}`)
   const factSources: ModelFactSources = {}
-  if (contextWindow !== null) {
-    factSources.contextWindow = listed('providers[].context_length')
-  }
-  if (pricing !== null) factSources.pricing = listed('providers[].pricing')
+  if (contextWindow !== null) factSources.contextWindow = at('context_length')
+  if (pricing !== null) factSources.pricing = at('pricing')
   if (capabilities && capabilities.length > 0) {
     factSources.capabilities = Object.fromEntries(
       capabilities.map((name) => [
         name,
-        listed(
-          name === 'tools'
-            ? 'providers[].supports_tools'
-            : 'providers[].supports_structured_output',
-        ),
+        at(name === 'tools' ? 'supports_tools' : 'supports_structured_output'),
       ]),
     )
   }
