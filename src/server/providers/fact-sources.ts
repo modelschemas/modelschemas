@@ -76,6 +76,7 @@ export function emptySources(sources: ModelFactSources): boolean {
     sources.modalities === undefined &&
     sources.pricing === undefined &&
     sources.reasoning === undefined &&
+    sources.requestMap === undefined &&
     (sources.capabilities === undefined ||
       Object.keys(sources.capabilities).length === 0) &&
     (sources.serverTools === undefined ||

@@ -17,14 +17,24 @@
 import type { Activity } from '#/db/schema.ts'
 import { activities } from '#/db/schema.ts'
 import { extractAsyncApiSchemas } from '#/server/ingest/asyncapi.ts'
+import { compileFalTokenCard } from '#/server/ingest/fal-token-rate.ts'
 import { contentHash } from '#/server/kv.ts'
 import { falChatFacts } from './fal-chat-facts.ts'
-import { docsReport, docsRun, tryDocs, unavailable } from './model-facts.ts'
+import {
+  docsReport,
+  docsRun,
+  mapConcurrent,
+  markdownSection,
+  tryDocs,
+  unavailable,
+} from './model-facts.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import { sha256Text, skippedResult } from './types.ts'
 import type {
   BundledEndpoint,
+  FactSource,
   ListModelsResult,
+  ModelFactSources,
   ModelInfo,
   OpenApiDocument,
   OpenApiOperation,
@@ -365,7 +375,75 @@ async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
   }
 }
 
-async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
+interface ChatTokenPrice {
+  card: NonNullable<ModelInfo['pricing']>
+  source: FactSource
+}
+
+/**
+ * Token cards for chat endpoints, from each endpoint's own llms.txt.
+ * The hourly extract still owns the other ~1500 endpoints and any Pricing
+ * section this parser will not stand behind. A missing Pricing heading is
+ * a failed fetch (not cached); a heading with no token price is a real
+ * page and stores nothing.
+ */
+async function loadChatTokenPrices(
+  rawIds: Array<string>,
+  docs: ReturnType<typeof docsRun>,
+  kv: KVNamespace | undefined,
+): Promise<Map<string, ChatTokenPrice | 'unavailable'>> {
+  const out = new Map<string, ChatTokenPrice | 'unavailable'>()
+  if (rawIds.length === 0) return out
+  const loaded = await mapConcurrent(rawIds, 4, async (rawId) => {
+    const url = falLlmsTxtUrl(rawId)
+    const result = await tryDocs(docs, url, async (cached) => {
+      const text = await cached(kv, url, async () => {
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        })
+        if (!response.ok) {
+          throw new Error(
+            `fal ${rawId} llms.txt: ${String(response.status)} ${response.statusText}`,
+          )
+        }
+        return await response.text()
+      })
+      const section = markdownSection(text, 'Pricing').trim()
+      if (section.length === 0) {
+        throw new Error(`fal ${rawId} llms.txt: no Pricing section`)
+      }
+      const hash = await sha256Text(section)
+      const card = compileFalTokenCard(section, {
+        url,
+        hash,
+        extractedAt: new Date().toISOString(),
+      })
+      const source: FactSource = {
+        derivation: 'docs-extracted',
+        sourceUrl: url,
+        sourceHash: hash,
+        path: 'Pricing',
+      }
+      return card === null ? { card: null, source } : { card, source }
+    })
+    return { rawId, result }
+  })
+  for (const item of loaded) {
+    if (item.result === null) out.set(item.rawId, 'unavailable')
+    else if (item.result.card !== null) {
+      out.set(item.rawId, {
+        card: item.result.card,
+        source: item.result.source,
+      })
+    }
+  }
+  return out
+}
+
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const apiKey = env.FAL_KEY
   if (!apiKey) {
     return { models: [], ...skippedResult('fal', 'FAL_KEY') }
@@ -420,22 +498,39 @@ async function listModels(env: ProviderSecrets): Promise<ListModelsResult> {
     'modalities',
     'capabilities',
     'reasoning',
+    'requestMap',
   )
-  const models: Array<ModelInfo> = falModels.map((m) => ({
-    rawId: m.endpoint_id,
-    displayName: m.metadata.display_name ?? null,
-    activity: falCategoryActivity(m.metadata.category),
-    deprecated: m.metadata.status === 'deprecated',
-    releasedAt: isoToEpochSeconds(m.metadata.date),
-    capabilities: { category: m.metadata.category },
-    // A chat row with a request schema swaps the category object for the
-    // flag list every other provider's chat rows carry.
-    ...(chatFacts
-      ? chatFacts.get(m.endpoint_id)
-      : chatIds.includes(m.endpoint_id)
-        ? chatUnavailable
-        : {}),
-  }))
+  const tokenPrices = await loadChatTokenPrices(chatIds, docs, kv)
+  const models: Array<ModelInfo> = falModels.map((m) => {
+    const facts = chatFacts?.get(m.endpoint_id)
+    const price = tokenPrices.get(m.endpoint_id)
+    const card = price && price !== 'unavailable' ? price : null
+    const absent = {
+      ...(facts || !chatIds.includes(m.endpoint_id)
+        ? {}
+        : (chatUnavailable.absent ?? {})),
+      ...(price === 'unavailable' ? { pricing: 'unavailable' as const } : {}),
+    }
+    const factSources: ModelFactSources = {
+      ...(facts?.factSources ?? {}),
+      ...(card ? { pricing: card.source } : {}),
+    }
+    const { factSources: _listedSources, ...rest } = facts ?? {}
+    return {
+      rawId: m.endpoint_id,
+      displayName: m.metadata.display_name ?? null,
+      activity: falCategoryActivity(m.metadata.category),
+      deprecated: m.metadata.status === 'deprecated',
+      releasedAt: isoToEpochSeconds(m.metadata.date),
+      capabilities: { category: m.metadata.category },
+      // A chat row with a request schema swaps the category object for the
+      // flag list every other provider's chat rows carry.
+      ...rest,
+      ...(card ? { pricing: card.card } : {}),
+      ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
+      ...(Object.keys(absent).length > 0 ? { absent } : {}),
+    }
+  })
   return { models, docsFailures: docsReport(docs) }
 }
 

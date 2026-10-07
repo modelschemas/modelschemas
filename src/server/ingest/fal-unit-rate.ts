@@ -7,6 +7,8 @@
 import { compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
+import { compileFalTokenCard } from './fal-token-rate.ts'
+
 /** `$0.04`, `$**0.04**`, `**0.17** $` — FAL emits all three. */
 const MONEY = String.raw`(?:\$[ \t]*\*{0,2}[ \t]*([0-9]+(?:\.[0-9]+)?)[ \t]*\*{0,2}|\*{0,2}[ \t]*([0-9]+(?:\.[0-9]+)?)[ \t]*\*{0,2}[ \t]*\$)`
 
@@ -213,5 +215,10 @@ export function priceFalNamedSection(
   source: RateCard['source'],
 ): RateCard | null {
   if (usdAmounts(section).length === 0) return null
-  return compileFalUnitCard(section, requestProperties, source)
+  // Unit rate first: a per-image line must not be reread as tokens.
+  // Token sections name "units" or "tokens", which this unit list refuses.
+  return (
+    compileFalUnitCard(section, requestProperties, source) ??
+    compileFalTokenCard(section, source)
+  )
 }

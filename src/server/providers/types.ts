@@ -151,6 +151,8 @@ export interface ModelFactSources {
   pricing?: FactSource
   capabilities?: Record<string, FactSource>
   reasoning?: FactSource
+  /** Chat wire map read from this model's own request schema. */
+  requestMap?: FactSource
   /** One source per tool type id in `serverTools`. */
   serverTools?: Record<string, FactSource>
 }

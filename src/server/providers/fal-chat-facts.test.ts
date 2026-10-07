@@ -89,6 +89,36 @@ describe('falChatFacts', () => {
     expect(got.factSources?.capabilities?.temperature?.sourceUrl).toBe(
       falEndpointSpecUrl(LISTING, rawId),
     )
+    expect(got.requestMap).toEqual({
+      thinking: {
+        on: { thinking: 'enabled', reasoning_effort: 'high' },
+        off: { thinking: 'disabled' },
+        levels: {
+          off: null,
+          minimal: 'minimal',
+          low: 'low',
+          medium: 'medium',
+          high: 'high',
+          xhigh: null,
+          max: null,
+        },
+      },
+      maxTokensField: 'max_completion_tokens',
+      developerRole: null,
+      replayReasoningContent: null,
+      store: null,
+      strictTools: null,
+      sessionAffinity: null,
+      cacheControl: null,
+      toolStream: null,
+      reasoningEffort: true,
+    })
+    expect(got.factSources?.requestMap).toEqual({
+      derivation: 'upstream-spec',
+      sourceUrl: falEndpointSpecUrl(LISTING, rawId),
+      endpointId: rawId,
+      path: '/properties/max_completion_tokens',
+    })
   })
 
   it('reads `max_tokens` and a single media field', () => {
@@ -111,6 +141,16 @@ describe('falChatFacts', () => {
     )
     expect(got.capabilities).not.toContain('reasoning')
     expect(got.contextWindow).toBeUndefined()
+    expect(got.requestMap).toMatchObject({
+      thinking: {
+        on: { reasoning_mode: 'think' },
+        off: { reasoning_mode: 'no_think' },
+        levels: null,
+      },
+      maxTokensField: 'max_tokens',
+      reasoningEffort: null,
+    })
+    expect(got.factSources?.requestMap?.path).toBe('/properties/max_tokens')
   })
 
   it('reads a spec whose path uses the app alias, not the endpoint id', () => {
@@ -142,12 +182,19 @@ describe('falChatFacts', () => {
       input: ['text', 'video'],
       output: ['text'],
     })
+    // `reasoning: boolean` asks for the trace. It is not the thinking body.
+    expect(got.requestMap).toMatchObject({
+      thinking: null,
+      maxTokensField: 'max_tokens',
+      reasoningEffort: null,
+    })
   })
 
   it('names no text input without a `prompt` field', () => {
     const got = facts(fixture('openrouter/router/decisions'))
     expect(got.modalities).toBeUndefined()
     expect(got.capabilities).toEqual([])
+    expect(got.requestMap).toBeUndefined()
   })
 
   it('leaves an endpoint with an empty request schema untouched', () => {
@@ -232,6 +279,27 @@ describe('falDescriptionContextWindow', () => {
   })
 })
 
+/** A Pricing section that names no dollar amount. Not a failed fetch. */
+const NO_TOKEN_PRICE = `# Model
+
+## Pricing
+
+You will be charged based on the number of input and output tokens.
+
+## API
+`
+
+const SEED_LLMS = `# Seed
+
+## Pricing
+
+Your request will cost **$0.0001** per 1000 units. For inputs under 128k tokens, the units per input token is 1. For inputs of over 128k tokens, 2 units will be charged per token. Similarly, each output token costs 4 units, provided the total output length (reasoning + output) is under 128k tokens, and 8 units per token otherwise.
+
+For more details, see [fal.ai pricing](https://fal.ai/pricing).
+
+## API
+`
+
 describe('fal listModels', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -252,19 +320,27 @@ describe('fal listModels', () => {
     )
   }
 
+  function respond(
+    input: string,
+    llms: (pathname: string) => string,
+  ): Response {
+    const url = new URL(input)
+    if (url.hostname === 'fal.ai') return new Response(llms(url.pathname))
+    return url.searchParams.has('endpoint_id')
+      ? page(fixtures)
+      : page([image, ...listed])
+  }
+
   it('fills chat rows from one spec request by endpoint id', async () => {
     const urls: Array<URL> = []
     vi.stubGlobal('fetch', (input: string) => {
       const url = new URL(input)
       urls.push(url)
-      return Promise.resolve(
-        url.searchParams.has('endpoint_id')
-          ? page(fixtures)
-          : page([image, ...listed]),
-      )
+      return Promise.resolve(respond(input, () => NO_TOKEN_PRICE))
     })
     const { models } = await falProvider.listModels({ FAL_KEY: 'k' })
-    expect(urls).toHaveLength(2)
+    // Listing, the chat spec page, then one llms.txt per chat endpoint.
+    expect(urls).toHaveLength(2 + listed.length)
     expect(urls[0]?.searchParams.has('expand')).toBe(false)
     expect(urls[1]?.searchParams.get('expand')).toBe('openapi-3.0')
     expect(urls[1]?.searchParams.getAll('endpoint_id').sort()).toEqual(
@@ -281,20 +357,59 @@ describe('fal listModels', () => {
       contextWindow: 256_000,
       maxOutput: 65_536,
     })
+    expect(byId.get('fal-ai/bytedance/seed/v2/mini')?.pricing).toBeUndefined()
+    expect(byId.get('openrouter/router/video')?.requestMap).toMatchObject({
+      maxTokensField: 'max_tokens',
+      thinking: null,
+    })
     // No request schema: the row keeps FAL's category object.
     expect(
       byId.get('openrouter/router/openai/v1/chat/completions')?.capabilities,
     ).toEqual({ category: 'llm' })
   })
 
-  it('lists every row and withholds chat facts when a chat spec is missing', async () => {
+  it('stores a chat token card from that endpoint llms.txt', async () => {
     vi.stubGlobal('fetch', (input: string) =>
       Promise.resolve(
-        new URL(input).searchParams.has('endpoint_id')
-          ? page(fixtures.slice(1))
-          : page([image, ...listed]),
+        respond(input, (pathname) =>
+          pathname.includes('bytedance/seed/v2/mini')
+            ? SEED_LLMS
+            : NO_TOKEN_PRICE,
+        ),
       ),
     )
+    const { models } = await falProvider.listModels({ FAL_KEY: 'k' })
+    const seed = models.find((m) => m.rawId === 'fal-ai/bytedance/seed/v2/mini')
+    const rate = (
+      seed?.pricing as {
+        tables?: { rate?: { base?: Record<string, number> } }
+      }
+    ).tables?.rate?.base
+    expect(rate).toEqual({
+      input_tokens: 0.0001 / 1000,
+      output_tokens: (0.0001 / 1000) * 4,
+    })
+    expect(seed?.factSources?.pricing).toMatchObject({
+      derivation: 'docs-extracted',
+      sourceUrl: 'https://fal.ai/models/fal-ai/bytedance/seed/v2/mini/llms.txt',
+      path: 'Pricing',
+    })
+    expect(
+      models.find((m) => m.rawId === 'openrouter/router/video')?.pricing,
+    ).toBeUndefined()
+  })
+
+  it('lists every row and withholds chat facts when a chat spec is missing', async () => {
+    vi.stubGlobal('fetch', (input: string) => {
+      const url = new URL(input)
+      if (url.hostname === 'fal.ai')
+        return Promise.resolve(new Response(NO_TOKEN_PRICE))
+      return Promise.resolve(
+        url.searchParams.has('endpoint_id')
+          ? page(fixtures.slice(1))
+          : page([image, ...listed]),
+      )
+    })
     const result = await falProvider.listModels({ FAL_KEY: 'k' })
     expect(result.docsFailures?.first).toMatchObject([
       {
@@ -314,6 +429,7 @@ describe('fal listModels', () => {
           modalities: 'unavailable',
           capabilities: 'unavailable',
           reasoning: 'unavailable',
+          requestMap: 'unavailable',
         })
       } else {
         expect(model.absent).toBeUndefined()
