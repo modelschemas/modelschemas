@@ -109,6 +109,18 @@ describe('azure SKU names', () => {
     expect(parseAzureSku('5.4 mini pp Inp Gl')?.name).toBe('54minipp')
     expect(parseAzureSku('54 mini Inp Flex Gl')?.name).toBe('54miniflex')
     expect(parseAzureSku('gpt-4o-aud-1217 Inp glbl')?.name).toBe('gpt4oaud')
+    expect(parseAzureSku('gpt-4-Turbo-Batch-128K Inp-glbl')?.name).toBe(
+      'gpt4turbobatch128k',
+    )
+  })
+
+  it('reads the gpt-4 turbo128k meter as gpt-4', () => {
+    expect(parseAzureSku('gpt-4-turbo128K Inp-glbl')).toEqual({
+      name: 'gpt4',
+      version: null,
+      lever: 'input_tokens',
+      long: false,
+    })
   })
 })
 
@@ -264,5 +276,23 @@ describe('azure model rates', () => {
     expect(azureMetered(meters, 'gpt-5.6')).toBe(false)
     expect(azureMetered(meters, 'chat-latest')).toBe(true)
     expect(azureMetered(meters, 'chat-latest', ['gpt-chat-latest'])).toBe(false)
+  })
+
+  it('prices gpt-4 and computer-use-preview global meters', () => {
+    const extra = parseAzureMeters([
+      item('gpt-4-turbo128K Inp-glbl', '1K', 0.01),
+      item('gpt-4-turbo128K Outp-glbl', '1K', 0.03),
+      item('computer-use-inpt-glbl', '1K', 0.003),
+      item('computer-use-outp-glbl', '1K', 0.012),
+      item('computer-use-batch-inpt-glbl', '1K', 0.0015),
+    ])
+    expect(azureModelRates(extra, 'gpt-4', '2024-04-09')?.base).toEqual({
+      input_tokens: 1e-5,
+      output_tokens: 3e-5,
+    })
+    expect(azureModelRates(extra, 'computer-use-preview', null)?.base).toEqual({
+      input_tokens: 3e-6,
+      output_tokens: 1.2e-5,
+    })
   })
 })

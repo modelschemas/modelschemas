@@ -7,7 +7,9 @@
 import {
   AZURE_MODELS_URL,
   AZURE_REASONING_URL,
+  azureChatMaxTokensField,
   azureModelInfo,
+  parseAzureEffortRules,
   parseAzureFeatureMatrix,
   parseAzureModels,
 } from '../azure-models.ts'
@@ -50,12 +52,29 @@ async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  const [models, matrix, prices] = await Promise.all([
+  const [models, reasoning, prices, chatTokens] = await Promise.all([
     learnDoc(kv, AZURE_MODELS_URL, parseAzureModels),
-    learnDoc(kv, AZURE_REASONING_URL, parseAzureFeatureMatrix),
+    cachedDocs(kv, AZURE_REASONING_URL, async () => {
+      const markdown = await fetchText(AZURE_REASONING_URL, {
+        headers: { Accept: 'text/markdown' },
+      })
+      const matrix = parseAzureFeatureMatrix(markdown)
+      assertParsed(matrix, `azure ${AZURE_REASONING_URL}`)
+      return {
+        rows: Object.fromEntries(matrix),
+        rules: parseAzureEffortRules(markdown),
+        columnIds: [...matrix.keys()],
+        hash: await sha256Text(markdown),
+      }
+    }),
     cachedDocs(kv, AZURE_PRICES_URL, fetchAzurePrices),
+    cachedDocs(kv, AZURE_SPEC_URL, async () => {
+      const { spec, hash } = await fetchOpenApi(AZURE_SPEC_URL)
+      return { maxTokensField: azureChatMaxTokensField(spec), hash }
+    }),
   ])
-  const hashes = { models: models.hash, reasoning: matrix.hash }
+  const hashes = { models: models.hash, reasoning: reasoning.hash }
+  const columnIds = new Set(reasoning.columnIds)
   const tabulated = Object.values(models.rows)
     .filter((row) => row.tabulated)
     .map((row) => row.rawId)
@@ -66,7 +85,11 @@ async function listModels(
           row.tabulated || azureMetered(prices.meters, row.rawId, tabulated),
       )
       .map((row) => {
-        const info = azureModelInfo(row, matrix.rows[row.rawId], hashes)
+        const info = azureModelInfo(row, reasoning.rows[row.rawId], hashes, {
+          rules: reasoning.rules,
+          columnIds,
+          chatMaxTokens: chatTokens.maxTokensField,
+        })
         if (row.activity !== 'chat') return info
         const priced = azureModelPricing(prices, row.rawId, row.version)
         return {

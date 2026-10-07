@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   AZURE_MODELS_URL,
   AZURE_REASONING_URL,
+  azureChatMaxTokensField,
   azureContextWindow,
   azureModelInfo,
+  parseAzureEffortRules,
   parseAzureFeatureMatrix,
   parseAzureModels,
 } from './azure-models.ts'
+import type { AzureFeatureColumn, AzureModelRow } from './azure-models.ts'
 
 /** Excerpt of the models article's markdown twin (2026-10-06). CRLF kept. */
 const MODELS_PAGE = [
@@ -292,6 +295,10 @@ describe('azure reasoning feature matrix', () => {
       modalities: { input: ['text', 'image'], output: ['text'] },
       chatCompletions: true,
       responses: true,
+      effort: true,
+      effortIncludesNone: true,
+      developerMessages: null,
+      maxCompletionTokens: null,
     })
     expect(matrix.get('o3-mini')).toMatchObject({
       modalities: { input: ['text'], output: [] },
@@ -374,5 +381,324 @@ describe('azure catalog row', () => {
       capabilities: null,
       schemaEndpointId: null,
     })
+  })
+})
+
+/** Clauses copied from the reasoning article's markdown twin (2026-10-08). */
+const EFFORT_RULES = [
+  "`max` works only with GPT-6 or GPT-5.6 models and the Responses API. `xhigh` works only with GPT-6, GPT-5.6, GPT-5.5, GPT-5.4, and `gpt-5.1-codex-max` models. `minimal` works only with the original GPT-5 reasoning models. `minimal` doesn't work with `gpt-5.1` or greater. **Options (model-dependent)**: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`",
+  '^5^`gpt-5-pro` only supports `reasoning_effort``high`, this is the default value even when not explicitly passed to the model.',
+  "^7^`gpt-5.6`, `gpt-5.5`, `gpt-5.4`, `gpt-5.2`, `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.1-codex-max`, and `gpt-5.1-codex-mini` support `'None'` as a value for the `reasoning_effort` parameter.",
+  '^\\*^`gpt-5-codex` also does not support `reasoning_effort``minimal`.',
+].join('\n')
+
+const COLUMN_IDS = new Set([
+  'gpt-6-astra',
+  'gpt-6-sol',
+  'gpt-6-luna',
+  'gpt-6.1-sol',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'gpt-5.5',
+  'gpt-5.4',
+  'gpt-5.4-nano',
+  'gpt-5.4-mini',
+  'gpt-5.4-pro',
+  'gpt-5.3-codex',
+  'gpt-5.2',
+  'gpt-5.2-codex',
+  'gpt-5.1',
+  'gpt-5.1-codex',
+  'gpt-5.1-codex-mini',
+  'gpt-5.1-codex-max',
+  'gpt-5',
+  'gpt-5-mini',
+  'gpt-5-nano',
+  'gpt-5-pro',
+  'gpt-5-codex',
+  'o3',
+  'o1',
+  'codex-mini',
+])
+
+function column(partial: Partial<AzureFeatureColumn> = {}): AzureFeatureColumn {
+  return {
+    capabilities: ['reasoning'],
+    modalities: null,
+    chatCompletions: true,
+    responses: true,
+    effort: true,
+    effortIncludesNone: false,
+    developerMessages: true,
+    maxCompletionTokens: true,
+    ...partial,
+  }
+}
+
+function catalogRow(
+  rawId: string,
+  partial: Partial<AzureModelRow> = {},
+): AzureModelRow {
+  return {
+    rawId,
+    tabulated: true,
+    version: null,
+    retired: false,
+    activity: 'chat',
+    contextWindow: 128_000,
+    maxOutput: 16_384,
+    modalities: null,
+    capabilities: [],
+    chatCompletions: true,
+    responses: true,
+    fixedReasoningEffort: false,
+    noneExcluded: false,
+    ...partial,
+  }
+}
+
+describe('azure reasoning effort rules', () => {
+  const rules = parseAzureEffortRules(EFFORT_RULES)
+  const facts = {
+    rules,
+    columnIds: COLUMN_IDS,
+    chatMaxTokens: 'max_completion_tokens' as const,
+  }
+  const resolved = (
+    rawId: string,
+    partial: Partial<AzureFeatureColumn> = {},
+    row: Partial<AzureModelRow> = {},
+  ) => azureModelInfo(catalogRow(rawId, row), column(partial), HASHES, facts)
+
+  it('parses the option restrictions', () => {
+    expect(rules).toMatchObject({
+      maxFamilies: ['gpt-6', 'gpt-5.6'],
+      maxNeedsResponses: true,
+      xhighFamilies: [
+        'gpt-6',
+        'gpt-5.6',
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-5.1-codex-max',
+      ],
+      minimalExcluded: ['gpt-5-codex'],
+      noneFamilies: [
+        'gpt-5.6',
+        'gpt-5.5',
+        'gpt-5.4',
+        'gpt-5.2',
+        'gpt-5.1',
+        'gpt-5.1-codex',
+        'gpt-5.1-codex-max',
+        'gpt-5.1-codex-mini',
+      ],
+      onlySupports: [{ id: 'gpt-5-pro', level: 'high' }],
+    })
+  })
+
+  it('throws when the options line is missing', () => {
+    expect(() => parseAzureEffortRules('no options here')).toThrow(
+      'effort options did not parse',
+    )
+  })
+
+  it('fills effort lists from the clauses', () => {
+    expect(
+      resolved('gpt-6-sol', { effortIncludesNone: true }).reasoning,
+    ).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(
+      resolved('gpt-6.1-sol', { effortIncludesNone: true }).reasoning?.efforts,
+    ).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max'])
+    expect(resolved('gpt-5.6-sol').reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(resolved('gpt-5.5').reasoning?.efforts).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ])
+    expect(resolved('gpt-5.4').reasoning?.efforts).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ])
+    expect(resolved('gpt-5.4-mini').reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'medium', 'high'],
+    })
+    expect(resolved('gpt-5.2').reasoning?.efforts).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+    ])
+    expect(resolved('gpt-5.2-codex').reasoning?.efforts).toEqual([
+      'low',
+      'medium',
+      'high',
+    ])
+    expect(
+      resolved('gpt-5.1-codex-max', {}, { noneExcluded: true }).reasoning,
+    ).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts: ['low', 'medium', 'high', 'xhigh'],
+    })
+    expect(resolved('gpt-5-pro').reasoning).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts: ['high'],
+    })
+    expect(resolved('gpt-5-mini').reasoning?.efforts).toEqual([
+      'minimal',
+      'low',
+      'medium',
+      'high',
+    ])
+    expect(resolved('gpt-5-codex').reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'medium', 'high'],
+    })
+    expect(resolved('o3').reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'medium', 'high'],
+    })
+  })
+
+  it('maps reasoning_effort and leaves the chat token field off responses-only models', () => {
+    const sol = resolved('gpt-5.6-sol')
+    expect(sol.requestMap).toMatchObject({
+      thinking: {
+        on: { reasoning_effort: 'high' },
+        off: { reasoning_effort: 'none' },
+      },
+      maxTokensField: 'max_completion_tokens',
+      developerRole: true,
+      reasoningEffort: true,
+    })
+    expect(sol.factSources?.reasoning).toMatchObject({
+      sourceUrl: AZURE_REASONING_URL,
+      path: 'reasoning_effort',
+    })
+    const pro = resolved('gpt-5.4-pro', {
+      chatCompletions: false,
+      maxCompletionTokens: false,
+    })
+    expect(pro.requestMap?.maxTokensField).toBeNull()
+    expect(pro.requestMap?.thinking?.off).toBeNull()
+  })
+
+  it('records a fixed reasoning level as no effort parameter', () => {
+    const latest = resolved(
+      'gpt-chat-latest',
+      {
+        effort: false,
+        capabilities: [],
+        developerMessages: null,
+        maxCompletionTokens: null,
+      },
+      { fixedReasoningEffort: true, capabilities: ['reasoning'] },
+    )
+    expect(latest.reasoning).toBeUndefined()
+    expect(latest.requestMap).toMatchObject({
+      thinking: null,
+      reasoningEffort: false,
+      maxTokensField: 'max_completion_tokens',
+    })
+  })
+})
+
+describe('azure GPT-4 section prose', () => {
+  const page = [
+    '::: zone pivot="azure-openai"',
+    '',
+    '## GPT-4 and GPT-4 Turbo models',
+    '',
+    'The listed models support the Chat Completions API. GPT-4o versions `2024-05-13`, `2024-08-06`, and `2024-11-20`, and GPT-4o-mini version `2024-07-18`, also support the [Responses API](../../openai/how-to/responses).',
+    '',
+    '| Model ID | Description | Max request (tokens) | Training data (up to) |',
+    '| --- | --- | --- | --- |',
+    '| `gpt-4o` (2024-11-20)  GPT-4o (Omni) | - Structured outputs. - Text and image processing. | Input: 128,000  Output: 16,384 | October 2023 |',
+    '| `gpt-4o-mini` (2024-07-18)  GPT-4o mini | - Text and image processing. | Input: 128,000  Output: 16,384 | October 2023 |',
+    '| `gpt-4`^1^ (turbo-2024-04-09) GPT-4 Turbo with Vision | New generally available model. | Input: 128,000  Output: 4,096 | December 2023 |',
+    '| `gpt-5.1-codex-max` (2025-12-04) | - Responses API only. | Input: 128,000 Output: 16,384 | October 2023 |',
+    '| `gpt-chat-latest` (2026-08-06) | - Chat Completions API. | Input: 128,000 Output: 16,384 | February 2026 |',
+    '',
+    "`gpt-chat-latest` uses a fixed, nonzero reasoning level, so it can generate reasoning tokens for some requests. Unlike other reasoning models, you can't configure this level with the `reasoning_effort` parameter.",
+    '',
+    'Reasoning effort `none` is not supported with `gpt-5.1-codex-max`.',
+    '',
+    '::: zone-end',
+  ].join('\n')
+  const rows = parseAzureModels(page)
+
+  it('reads the section API sentence, vision name, and effort notes', () => {
+    expect(rows.get('gpt-4')).toMatchObject({
+      chatCompletions: true,
+      responses: false,
+      modalities: { input: ['text', 'image'], output: [] },
+    })
+    expect(rows.get('gpt-4o')).toMatchObject({
+      version: '2024-11-20',
+      chatCompletions: true,
+      responses: true,
+    })
+    expect(rows.get('gpt-4o-mini')).toMatchObject({
+      chatCompletions: true,
+      responses: true,
+    })
+    expect(rows.get('gpt-chat-latest')?.fixedReasoningEffort).toBe(true)
+    expect(rows.get('gpt-5.1-codex-max')?.noneExcluded).toBe(true)
+  })
+})
+
+describe('azure chat spec max tokens', () => {
+  it('reads the deprecation of max_tokens', () => {
+    expect(
+      azureChatMaxTokensField({
+        paths: {
+          '/chat/completions': {
+            post: {
+              requestBody: {
+                content: {
+                  'application/json': {
+                    schema: {
+                      properties: {
+                        messages: { type: 'array' },
+                        max_completion_tokens: { type: 'integer' },
+                        max_tokens: {
+                          description:
+                            'This value is now deprecated in favor of `max_completion_tokens`, and is not compatible with o1 series models.',
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ).toBe('max_completion_tokens')
+  })
+
+  it('throws when the chat body does not say that', () => {
+    expect(() =>
+      azureChatMaxTokensField({ paths: { '/chat/completions': {} } }),
+    ).toThrow('max_completion_tokens')
   })
 })
