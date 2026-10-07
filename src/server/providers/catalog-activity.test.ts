@@ -155,6 +155,18 @@ describe('cerebras model pages', () => {
     expect(facts?.contextWindow).toBe(131_000)
   })
 
+  it('prefers the paid parenthetical context window over 128k', () => {
+    const facts = parseCerebrasModelPage(`
+Context window: 64K tokens (65,536) for Free Trial and 128K tokens (131,072) for paid tiers and trial customers.
+<ModelInfo
+  contextLength={{
+    paidTiers: "128k tokens"
+  }}
+/>
+`)
+    expect(facts?.contextWindow).toBe(131_072)
+  })
+
   it('prefers the paid parenthetical output cap over 40k', () => {
     const facts = parseCerebrasModelPage(`
 Maximum output: 32K tokens (32,768) for Free Trial and 40K tokens (40,960) for paid tiers.
