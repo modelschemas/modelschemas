@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
+import { DASHSCOPE_COMPAT_URL } from '../dashscope-compat.ts'
+import { dashscopeModelPageUrl } from '../dashscope-model-limits.ts'
 import { OPENAI_OPENAPI_URL } from '../openai-compat.ts'
-import { provider } from './dashscope.ts'
+import {
+  dashscopeListedCard,
+  dashscopeListedModel,
+  promptFloor,
+  provider,
+} from './dashscope.ts'
 
 const OPENAI_FIXTURE = JSON.stringify({
   openapi: '3.1.0',
@@ -113,6 +120,7 @@ describe('dashscope adapter', () => {
         url: 'https://dashscope-intl.aliyuncs.com/api/v1/models?page_no=1&page_size=100&language=en-US',
         auth: 'Bearer test-key',
       },
+      { url: DASHSCOPE_COMPAT_URL, auth: null },
     ])
     expect(result.skipped).toBeUndefined()
     expect(result.models).toEqual([
@@ -125,5 +133,281 @@ describe('dashscope adapter', () => {
         releasedAt: null,
       },
     ])
+    expect(result.docsFailures?.failed).toBe(1)
+  })
+})
+
+const TOKEN = 'Per 1M tokens'
+
+function rateCell(
+  card: Awaited<ReturnType<typeof dashscopeListedCard>>,
+  key: string,
+): Record<string, number> {
+  if (!card) throw new Error('expected a card')
+  const rate = card.tables.rate
+  if (!rate) throw new Error('expected a rate table')
+  const cell = rate[key]
+  if (!cell || typeof cell !== 'object') {
+    throw new Error(`expected rate.${key}`)
+  }
+  return Object.fromEntries(
+    Object.entries(cell).filter(
+      (entry): entry is [string, number] => typeof entry[1] === 'number',
+    ),
+  )
+}
+
+describe('dashscope listing cards', () => {
+  it('reads an upper bound as the base tier and the next floor above it', () => {
+    expect(promptFloor('Input<=32k')).toBe(0)
+    expect(promptFloor('32k<Input<=128k')).toBe(32_000)
+    expect(promptFloor('256k<Input<=1m')).toBe(256_000)
+    expect(promptFloor('not-a-tier')).toBeNull()
+  })
+
+  it('prices the non-thinking standard tier and its prompt floors', async () => {
+    const card = await dashscopeListedCard([
+      {
+        range_name: 'Input<=32k',
+        prices: [
+          { type: 'input_token', price: '1.2', price_unit: TOKEN },
+          { type: 'output_token', price: '6', price_unit: TOKEN },
+          { type: 'thinking_output_token', price: '12', price_unit: TOKEN },
+          { type: 'input_token_cache', price: '0.24', price_unit: TOKEN },
+          { type: 'input_token_batch', price: '0.6', price_unit: TOKEN },
+        ],
+      },
+      {
+        range_name: '32k<Input<=128k',
+        prices: [
+          { type: 'input_token', price: '2.4', price_unit: TOKEN },
+          { type: 'output_token', price: '12', price_unit: TOKEN },
+          { type: 'input_token_cache', price: '0.48', price_unit: TOKEN },
+        ],
+      },
+    ])
+    const base = rateCell(card, 'base')
+    expect(base.input_tokens).toBeCloseTo(1.2 / 1e6)
+    expect(base.output_tokens).toBeCloseTo(6 / 1e6, 10)
+    expect(base.cache_read_tokens).toBeCloseTo(0.24 / 1e6, 10)
+    expect(base.output_tokens).not.toBeCloseTo(12 / 1e6, 10)
+    const tier = rateCell(card, '32000')
+    expect(tier.input_tokens).toBeCloseTo(2.4 / 1e6)
+  })
+
+  it('bills thinking rates when the row publishes no plain token price', async () => {
+    const card = await dashscopeListedCard([
+      {
+        range_name: 'Default',
+        prices: [
+          { type: 'thinking_input_token', price: '0.23', price_unit: TOKEN },
+          { type: 'thinking_output_token', price: '2.3', price_unit: TOKEN },
+        ],
+      },
+    ])
+    const base = rateCell(card, 'base')
+    expect(base.input_tokens).toBeCloseTo(0.23 / 1e6)
+    expect(base.output_tokens).toBeCloseTo(2.3 / 1e6)
+  })
+
+  it('uses explicit cache read when implicit cache is absent', async () => {
+    const card = await dashscopeListedCard([
+      {
+        range_name: 'Input<=256k',
+        prices: [
+          { type: 'input_token', price: '0.5', price_unit: TOKEN },
+          { type: 'output_token', price: '3', price_unit: TOKEN },
+          {
+            type: 'input_token_cache_read',
+            price: '0.05',
+            price_unit: TOKEN,
+          },
+        ],
+      },
+    ])
+    const base = rateCell(card, 'base')
+    expect(base.cache_read_tokens).toBeCloseTo(0.05 / 1e6)
+  })
+
+  it('drops peak/off-peak quotes and modality-split quotes', async () => {
+    const peak = await dashscopeListedCard([
+      {
+        range_name: 'Default',
+        prices: [
+          {
+            type: 'input_token',
+            price: '0.15',
+            price_unit: TOKEN,
+            time_band: 'offpeak',
+          },
+          {
+            type: 'input_token',
+            price: '0.3',
+            price_unit: TOKEN,
+            time_band: 'peak',
+          },
+          {
+            type: 'output_token',
+            price: '0.6',
+            price_unit: TOKEN,
+            time_band: 'offpeak',
+          },
+          {
+            type: 'output_token',
+            price: '1.2',
+            price_unit: TOKEN,
+            time_band: 'peak',
+          },
+        ],
+      },
+    ])
+    const split = await dashscopeListedCard([
+      {
+        range_name: 'Default',
+        prices: [
+          { type: 'text_input_token', price: '0.43', price_unit: TOKEN },
+          { type: 'audio_input_token', price: '3.81', price_unit: TOKEN },
+          {
+            type: 'purein_text_output_token',
+            price: '1.66',
+            price_unit: TOKEN,
+          },
+        ],
+      },
+    ])
+    expect(peak).toBeNull()
+    expect(split).toBeNull()
+  })
+
+  it('uses reasoning max output when max output is null', async () => {
+    const model = await dashscopeListedModel({
+      model: 'qwen3-235b-a22b-thinking-2507',
+      capabilities: ['TG'],
+      features: [],
+      inference_metadata: {
+        request_modality: ['Text'],
+        response_modality: ['Text'],
+      },
+      model_info: {
+        context_window: 131072,
+        max_output_tokens: null,
+        reasoning_max_output_tokens: 32768,
+      },
+    })
+    expect(model?.maxOutput).toBe(32768)
+    expect(model?.factSources?.maxOutput?.path).toBe(
+      'model_info.reasoning_max_output_tokens',
+    )
+  })
+})
+
+const COMPAT_PAGE = `
+## Request parameters
+<table><tbody>
+<tr><td><p>messages</p></td><td><p>array</p></td><td><p>-</p></td><td><p>Valid roles: system, user, assistant.</p></td></tr>
+<tr><td><p>temperature</p></td><td><p>float</p></td><td><p>-</p></td><td><p>Controls randomness.</p></td></tr>
+<tr><td><p>max_tokens</p></td><td><p>integer</p></td><td><p>-</p></td><td><p>The maximum number of tokens the model can generate.</p></td></tr>
+</tbody></table>
+## Response parameters
+`
+
+const OMNI_PAGE = `# qwen3-omni-flash
+
+## Context Limits
+
+<table><tbody><tr><td><p>Context Window</p></td><td><p>65536</p></td><td><p>Max Output Length</p></td><td><p>16384</p></td></tr></tbody></table>
+
+### qwen3-omni-flash-2025-09-15
+
+#### Context Limits
+
+<table><tbody><tr><td><p>Context Window</p></td><td><p>65536</p></td><td><p>Max Output Length</p></td><td><p>16384</p></td></tr></tbody></table>
+`
+
+describe('dashscope listModels docs', () => {
+  it('stamps the compat request map on chat rows', async () => {
+    const { result, calls } = await withStubbedFetch(
+      (url) => {
+        if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
+        return new Response(
+          JSON.stringify({
+            output: {
+              total: 1,
+              models: [
+                {
+                  model: 'qwen-plus',
+                  name: 'Qwen Plus',
+                  capabilities: ['TG'],
+                  features: ['function-calling'],
+                  inference_metadata: {
+                    request_modality: ['Text'],
+                    response_modality: ['Text'],
+                  },
+                  model_info: {
+                    context_window: 1000000,
+                    max_output_tokens: 32768,
+                  },
+                },
+              ],
+            },
+          }),
+        )
+      },
+      () => provider.listModels({ DASHSCOPE_API_KEY: 'test-key' }),
+    )
+    expect(calls.map((call) => call.url)).toEqual([
+      'https://dashscope-intl.aliyuncs.com/api/v1/models?page_no=1&page_size=100&language=en-US',
+      DASHSCOPE_COMPAT_URL,
+    ])
+    const model = result.models[0]
+    expect(model?.requestMap?.maxTokensField).toBe('max_tokens')
+    expect(model?.requestMap?.developerRole).toBe(false)
+    expect(model?.capabilities).toEqual(['tools', 'temperature', 'max_tokens'])
+    expect(model?.factSources?.capabilities?.temperature?.sourceUrl).toBe(
+      DASHSCOPE_COMPAT_URL,
+    )
+    expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
+  })
+
+  it('fills a null context window from the model page', async () => {
+    const page = dashscopeModelPageUrl('qwen3-omni-flash-2025-09-15')
+    const { result, calls } = await withStubbedFetch(
+      (url) => {
+        if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
+        if (url === page) return new Response(OMNI_PAGE)
+        return new Response(
+          JSON.stringify({
+            output: {
+              total: 1,
+              models: [
+                {
+                  model: 'qwen3-omni-flash-2025-09-15',
+                  capabilities: ['Multimodal-Omni'],
+                  features: [],
+                  inference_metadata: {
+                    request_modality: ['Text'],
+                    response_modality: ['Text'],
+                  },
+                  model_info: {
+                    context_window: null,
+                    max_output_tokens: null,
+                  },
+                },
+              ],
+            },
+          }),
+        )
+      },
+      () => provider.listModels({ DASHSCOPE_API_KEY: 'test-key' }),
+    )
+    expect(calls.map((call) => call.url)).toContain(page)
+    expect(page).toBe(
+      'https://www.alibabacloud.com/help/en/model-studio/qwen3-omni-flash.md',
+    )
+    const model = result.models[0]
+    expect(model?.contextWindow).toBe(65536)
+    expect(model?.maxOutput).toBe(16384)
+    expect(model?.factSources?.contextWindow?.sourceUrl).toBe(page)
+    expect(model?.requestMap?.maxTokensField).toBe('max_tokens')
   })
 })
