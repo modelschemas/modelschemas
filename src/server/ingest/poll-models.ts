@@ -565,6 +565,11 @@ export async function pollProviderModels(
         ? { ...listedModel, schemaEndpointId: null }
         : listedModel
     const id = modelDbId(provider.id, raw.rawId)
+    // Two raw ids can slug to one row (Mistral lists `mistral-medium-3-5`
+    // and `mistral-medium-3.5`). The first spelling is the row; a later one
+    // is skipped before any check, so it cannot count against the row.
+    if (seenIds.has(id)) continue
+    seenIds.add(id)
     const existing = existingById.get(id)
     const enriched = resolveAbsent(
       enrichListed(provider, raw, walks),
@@ -635,8 +640,6 @@ export async function pollProviderModels(
       { ...enriched, pricing: card, factSources: factSources ?? undefined },
       existing,
     )
-    if (seenIds.has(id)) continue // defensive: provider returned a dup
-    seenIds.add(id)
     const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null
     // Only changed evidence is written: most rows restate it every poll.
     if (!sameEvidence(existing, identity)) identities.push({ id, identity })
