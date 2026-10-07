@@ -82,3 +82,8 @@ bun run compare:models-dev --check --min 0.9   # exit 1 below 90% parity
   by case and dots-vs-hyphens. Siblings and dated variants never match.
 - models.dev is not ground truth. "Behind" means a value exists there, not
   that it is correct; check a disagreement against the provider's own page.
+- A capability flag missing from a row's list is `false` only when some
+  chat row of that provider lists the flag. Otherwise it is unknown, and we
+  are behind.
+- A models.dev rate of zero counts as a value. The footer says how many
+  there are and gives the headline without them.

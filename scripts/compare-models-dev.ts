@@ -129,6 +129,28 @@ export function normaliseId(id: string): string {
   return id.toLowerCase().replaceAll('.', '-')
 }
 
+/** A Bedrock-style regional inference-profile prefix: `us.vendor.model`. */
+const REGION_PREFIX = /^(?:us|us-gov|eu|au|apac|global|in|jp|ca)\./
+
+/**
+ * A row's stored aliases in the order the alias pass tries them: the model
+ * itself before a regional profile of it. A regional alias (`au.vendor.x`)
+ * also names the model it routes to (`vendor.x`), so that id is a candidate
+ * too, ahead of any regional one — otherwise the row would be compared with
+ * one region's limits and prices.
+ */
+export function aliasCandidates(row: OurRow): Array<string> {
+  const aliases = row.aliases ?? []
+  const regional = aliases.filter((alias) => REGION_PREFIX.test(alias))
+  return [
+    ...new Set([
+      ...aliases.filter((alias) => !REGION_PREFIX.test(alias)),
+      ...regional.map((alias) => alias.replace(REGION_PREFIX, '')),
+      ...regional,
+    ]),
+  ]
+}
+
 /**
  * Exact raw id, then our stored aliases, then {@link normaliseId} — each
  * pass over what the earlier ones left, and each of their models claimed at
@@ -160,7 +182,7 @@ export function matchModels(
 
   pass('exact', (row) => row.rawId)
   pass('alias', (row) =>
-    row.aliases?.find((alias) => theirs.has(alias) && !claimed.has(alias)),
+    aliasCandidates(row).find((id) => theirs.has(id) && !claimed.has(id)),
   )
 
   const group = (ids: Array<string>) => {
@@ -194,6 +216,7 @@ export const STATUSES = [
   'agreeRounding',
   'disagree',
   'nonUsd',
+  'nonToken',
   'onlyOurs',
   'onlyTheirs',
   'neither',
@@ -209,6 +232,9 @@ export type Status = (typeof STATUSES)[number]
  */
 export const ROUNDING_TOLERANCE = 0.05
 
+/** Our `priced` value for a card with no input and output token rate. */
+export const NON_TOKEN = 'non-token card'
+
 export function classify(
   ours: Value | undefined,
   theirs: Value | undefined,
@@ -221,6 +247,9 @@ export function classify(
   if (options.currency !== undefined && options.currency !== 'USD') {
     return 'nonUsd'
   }
+  // Likewise a card that bills per request or per audio token: we hold a
+  // price, but there is no per-text-token rate to set beside theirs.
+  if (ours === NON_TOKEN) return 'nonToken'
   if (ours === theirs) return 'agree'
   if (
     options.rounding &&
@@ -281,11 +310,38 @@ function currency(row: OurRow): string | undefined {
   }
 }
 
-/** A capability flag: unknown, not false, when we store no capability list. */
-function flag(row: OurRow, name: string): boolean | undefined {
-  return Array.isArray(row.capabilities)
-    ? row.capabilities.includes(name)
-    : undefined
+/** What a fact needs to know beyond the row: its provider's other rows. */
+type Context = {
+  /** Every capability flag some chat row of this provider lists. */
+  emitted: ReadonlySet<string>
+}
+
+const capabilityList = (row: OurRow): Array<unknown> =>
+  Array.isArray(row.capabilities) ? row.capabilities : []
+
+/**
+ * A capability flag. A list that lacks the flag says `false` only when the
+ * provider's adapter emits that flag at all — some chat row of the provider
+ * lists it. Otherwise the absence is silence, as with no list or an empty
+ * one: unknown, never a held `false`.
+ */
+function flag(
+  row: OurRow,
+  name: string,
+  context: Context,
+): boolean | undefined {
+  const list = capabilityList(row)
+  if (list.includes(name)) return true
+  return list.length > 0 && context.emitted.has(name) ? false : undefined
+}
+
+function ourPrice(row: OurRow): Value | undefined {
+  const tokens = pair(
+    rate(row, 'input_tokens', 'prompt'),
+    rate(row, 'output_tokens', 'completion'),
+  )
+  if (tokens !== undefined) return tokens
+  return row.pricing && !isModelsDev(row) ? NON_TOKEN : undefined
 }
 
 function ourReasoningOptions(row: OurRow): string | undefined {
@@ -293,10 +349,11 @@ function ourReasoningOptions(row: OurRow): string | undefined {
   if (!mode) return undefined
   // `adaptive` is effort-driven; they have no separate word for it.
   if (mode !== 'effort' && mode !== 'adaptive') return mode
+  // An effort mode with no effort names states no options.
   const efforts = row.reasoning?.efforts ?? []
   return efforts.length > 0
     ? `effort:${[...efforts].sort().join(',')}`
-    : 'effort'
+    : undefined
 }
 
 function theirReasoningOptions(model: TheirModel): string | undefined {
@@ -319,12 +376,13 @@ type Fact = {
   ledger?: LedgerKey
   rounding?: boolean
   price?: boolean
-  ours: (row: OurRow) => Value | undefined
+  ours: (row: OurRow, context: Context) => Value | undefined
   theirs: (model: TheirModel) => Value | undefined
 }
 
-const pair = (a: number | undefined, b: number | undefined) =>
-  a === undefined || b === undefined ? undefined : `${a}/${b}`
+function pair(a: number | undefined, b: number | undefined) {
+  return a === undefined || b === undefined ? undefined : `${a}/${b}`
+}
 
 export const FACTS = {
   contextWindow: {
@@ -358,11 +416,7 @@ export const FACTS = {
     label: 'price',
     ledger: 'priced',
     price: true,
-    ours: (row) =>
-      pair(
-        rate(row, 'input_tokens', 'prompt'),
-        rate(row, 'output_tokens', 'completion'),
-      ),
+    ours: ourPrice,
     theirs: (model) => pair(model.cost?.input, model.cost?.output),
   },
   cacheRead: {
@@ -381,19 +435,20 @@ export const FACTS = {
   tools: {
     label: 'tools',
     ledger: 'capabilities',
-    ours: (row) => flag(row, 'tools'),
+    ours: (row, context) => flag(row, 'tools', context),
     theirs: (model) => model.tool_call,
   },
   structuredOutput: {
     label: 'struct',
     ledger: 'capabilities',
-    ours: (row) => flag(row, 'structured_outputs'),
+    ours: (row, context) => flag(row, 'structured_outputs', context),
     theirs: (model) => model.structured_output,
   },
   reasoning: {
     label: 'reason',
     ledger: 'reasoning',
-    ours: (row) => (row.reasoning ? true : flag(row, 'reasoning')),
+    ours: (row, context) =>
+      row.reasoning ? true : flag(row, 'reasoning', context),
     theirs: (model) => model.reasoning,
   },
   reasoningOptions: {
@@ -405,7 +460,7 @@ export const FACTS = {
   temperature: {
     label: 'temp',
     ledger: 'capabilities',
-    ours: (row) => flag(row, 'temperature'),
+    ours: (row, context) => flag(row, 'temperature', context),
     theirs: (model) => model.temperature,
   },
 } satisfies Record<string, Fact>
@@ -448,6 +503,10 @@ export type ProviderComparison = {
   notListed: Array<string>
   /** Their chat-like models we list, but not as a chat row. */
   listedNotChat: Array<string>
+  /** Their unmatched ids that one of our chat rows already names as an alias. */
+  aliasOfChatRow: Array<string>
+  /** Our chat rows whose input modalities do not include `text`. */
+  inputWithoutText: number
   /** Facts the source-silent ledger covers for this provider. */
   silent: Array<FactKey>
   facts: Record<FactKey, FactCounts>
@@ -475,6 +534,11 @@ export type Comparison = {
   note: string
   headline: Headline
   headlineExcludingLedgered: Headline
+  headlineExcludingZeroRates: Headline
+  /** Matched pairs where models.dev's rate is zero; each counts as a value. */
+  zeroRates: Record<PriceFactKey, number>
+  /** Our chat rows, matched or not, whose input modalities lack `text`. */
+  inputWithoutText: { total: number; byProvider: Record<string, number> }
   noField: Record<NoFieldKey, number>
   notInModelsDev: Array<string>
   providers: Array<ProviderComparison>
@@ -483,7 +547,15 @@ export type Comparison = {
 export const NOTE =
   'Compare-only: models.dev is never a source for this catalog. Its values ' +
   'are not ground truth — "only they have it" (behind) means a value exists ' +
-  'there, not that a correct one does. A price of 0/0 there counts as a value.'
+  'there, not that a correct one does.'
+
+const PRICE_FACTS = ['priced', 'cacheRead', 'cacheWrite'] as const
+type PriceFactKey = (typeof PRICE_FACTS)[number]
+
+/** A models.dev rate of zero: often "plan-included" or "unknown", not free. */
+const isZeroRate = (key: FactKey, cell: Cell): boolean =>
+  (PRICE_FACTS as ReadonlyArray<string>).includes(key) &&
+  (cell.theirs === 0 || cell.theirs === '0/0')
 
 // ponytail: "chat-like" is text out, minus embedding/rerank names; models.dev
 // has no activity field. Read the lists, not just the counts.
@@ -494,23 +566,36 @@ function chatLike(model: TheirModel): boolean {
   )
 }
 
-const BOTH: Array<Status> = ['agree', 'agreeRounding', 'disagree', 'nonUsd']
+const BOTH: Array<Status> = [
+  'agree',
+  'agreeRounding',
+  'disagree',
+  'nonUsd',
+  'nonToken',
+]
 
-/** Parity both ways over matched pairs; `excludeLedgered` drops silent facts. */
+/**
+ * Parity both ways over matched pairs. `ledgered` drops the facts a
+ * provider's ledger covers; `zeroRates` drops the cells where models.dev's
+ * rate is zero.
+ */
 export function headline(
   providers: Array<ProviderComparison>,
-  excludeLedgered = false,
+  exclude: { ledgered?: boolean; zeroRates?: boolean } = {},
 ): Headline {
   let both = 0
   let onlyOurs = 0
   let onlyTheirs = 0
   for (const provider of providers) {
     for (const key of FACT_KEYS) {
-      if (excludeLedgered && provider.silent.includes(key)) continue
-      const counts = provider.facts[key]
-      for (const status of BOTH) both += counts[status]
-      onlyOurs += counts.onlyOurs
-      onlyTheirs += counts.onlyTheirs
+      if (exclude.ledgered && provider.silent.includes(key)) continue
+      for (const model of provider.models) {
+        const cell = model.facts[key]
+        if (exclude.zeroRates && isZeroRate(key, cell)) continue
+        if (BOTH.includes(cell.status)) both += 1
+        else if (cell.status === 'onlyOurs') onlyOurs += 1
+        else if (cell.status === 'onlyTheirs') onlyTheirs += 1
+      }
     }
   }
   const parity = (have: number, of: number): Parity => ({
@@ -527,6 +612,9 @@ export function headline(
 
 export const behind = (provider: ProviderComparison): number =>
   FACT_KEYS.reduce((sum, key) => sum + provider.facts[key].onlyTheirs, 0)
+
+const emittedFlags = (row: OurRow): Array<string> =>
+  capabilityList(row).filter((name) => typeof name === 'string')
 
 function compareProvider(
   provider: string,
@@ -561,11 +649,12 @@ function compareProvider(
     NO_FIELD_KEYS.map((key) => [key, 0]),
   ) as Record<NoFieldKey, number>
 
+  const context: Context = { emitted: new Set(chat.flatMap(emittedFlags)) }
   const models = matches.map((match) => {
     const cells = {} as Record<FactKey, Cell>
     for (const key of FACT_KEYS) {
       const fact: Fact = FACTS[key]
-      const ours = fact.ours(match.row)
+      const ours = fact.ours(match.row, context)
       const their = fact.theirs(match.theirs)
       const status = classify(ours, their, {
         rounding: fact.rounding,
@@ -596,11 +685,15 @@ function compareProvider(
   const listed = new Set(
     rows.flatMap((row) => [row.rawId, ...(row.aliases ?? [])]).map(normaliseId),
   )
+  // Their id for a model one of our chat rows already names: not a model we
+  // list as something other than chat, and not one we lack.
+  const chatAliases = new Set(chat.flatMap(aliasCandidates))
   const claimed = new Set(matches.map((match) => match.theirs.id))
-  const extra = [...theirModels]
+  const unclaimed = [...theirModels]
     .filter(([id, entry]) => !claimed.has(id) && chatLike(entry.model))
     .map(([id]) => id)
     .sort()
+  const extra = unclaimed.filter((id) => !chatAliases.has(id))
 
   return {
     provider,
@@ -615,6 +708,11 @@ function compareProvider(
     unmatchedOurs: unmatched.map((row) => row.rawId).sort(),
     notListed: extra.filter((id) => !listed.has(normaliseId(id))),
     listedNotChat: extra.filter((id) => listed.has(normaliseId(id))),
+    aliasOfChatRow: unclaimed.filter((id) => chatAliases.has(id)),
+    inputWithoutText: chat.filter(
+      (row) =>
+        row.modalities?.input?.length && !row.modalities.input.includes('text'),
+    ).length,
     silent,
     facts,
     noField,
@@ -642,11 +740,29 @@ export function compare(
       (a, b) => behind(b) - behind(a) || a.provider.localeCompare(b.provider),
     )
 
+  const zeroRates = Object.fromEntries(
+    PRICE_FACTS.map((key) => [
+      key,
+      providers
+        .flatMap((provider) => provider.models)
+        .filter((model) => isZeroRate(key, model.facts[key])).length,
+    ]),
+  ) as Record<PriceFactKey, number>
+  const withoutText = providers.filter((p) => p.inputWithoutText > 0)
+
   return {
     generatedAt: now.toISOString(),
-    note: NOTE,
+    note: `${NOTE} A models.dev rate of zero counts as a value: price 0/0 on ${zeroRates.priced} matched models, cache_read 0 on ${zeroRates.cacheRead}, cache_write 0 on ${zeroRates.cacheWrite}.`,
     headline: headline(providers),
-    headlineExcludingLedgered: headline(providers, true),
+    headlineExcludingLedgered: headline(providers, { ledgered: true }),
+    headlineExcludingZeroRates: headline(providers, { zeroRates: true }),
+    zeroRates,
+    inputWithoutText: {
+      total: withoutText.reduce((sum, p) => sum + p.inputWithoutText, 0),
+      byProvider: Object.fromEntries(
+        withoutText.map((p) => [p.provider, p.inputWithoutText]),
+      ),
+    },
     noField: Object.fromEntries(
       NO_FIELD_KEYS.map((key) => [
         key,
@@ -668,13 +784,23 @@ const percent = (parity: Parity) =>
 
 function headlineLines(report: Comparison): Array<string> {
   const { headline: all, headlineExcludingLedgered: scored } = report
+  const nonZero = report.headlineExcludingZeroRates
+  const { total, byProvider } = report.inputWithoutText
   return [
     `Across ${all.matched} matched chat models and ${FACT_KEYS.length} comparable facts:`,
     `  we have ${percent(all.oursOfTheirs)} of the fact-values models.dev has`,
     `  models.dev has ${percent(all.theirsOfOurs)} of the fact-values we have`,
     `  excluding ledgered facts: we have ${percent(scored.oursOfTheirs)}; models.dev has ${percent(scored.theirsOfOurs)}`,
+    `  excluding models.dev zero rates: we have ${percent(nonZero.oursOfTheirs)}; models.dev has ${percent(nonZero.theirsOfOurs)}`,
     `They have, we have no field: ${NO_FIELD_KEYS.map((key) => `${key} ${report.noField[key]}`).join(', ')}`,
     `Not in models.dev: ${report.notInModelsDev.join(', ') || 'none'}`,
+    `Our chat rows whose input modalities lack "text": ${total}${
+      total
+        ? ` (${Object.entries(byProvider)
+            .map(([provider, count]) => `${provider} ${count}`)
+            .join(', ')})`
+        : ''
+    } — a catalog bug, compared as stored`,
     report.note,
   ]
 }
@@ -761,7 +887,7 @@ export function formatProvider(provider: ProviderComparison): string {
     const counts = provider.facts[key]
     lines.push(
       '',
-      `${key}${provider.silent.includes(key) ? ' (ledgered)' : ''}: agree ${counts.agree}, rounding ${counts.agreeRounding}, disagree ${counts.disagree}, non-USD ${counts.nonUsd}, only ours ${counts.onlyOurs}, only theirs ${counts.onlyTheirs}, neither ${counts.neither}`,
+      `${key}${provider.silent.includes(key) ? ' (ledgered)' : ''}: agree ${counts.agree}, rounding ${counts.agreeRounding}, disagree ${counts.disagree}, non-USD ${counts.nonUsd}, non-token ${counts.nonToken}, only ours ${counts.onlyOurs}, only theirs ${counts.onlyTheirs}, neither ${counts.neither}`,
       ...behindRows.map(
         (model) =>
           `  behind    ${model.ours}: theirs ${model.facts[key].theirs}`,
@@ -777,6 +903,7 @@ export function formatProvider(provider: ProviderComparison): string {
   list('our chat rows with no models.dev model', provider.unmatchedOurs)
   list('their chat-like models we do not list', provider.notListed)
   list('their chat-like models we list as non-chat', provider.listedNotChat)
+  list('their ids that alias one of our chat rows', provider.aliasOfChatRow)
   return lines.join('\n')
 }
 
