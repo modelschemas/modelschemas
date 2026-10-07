@@ -155,8 +155,6 @@ export interface ModelFactSources {
   requestMap?: FactSource
   /** One source per tool type id in `serverTools`. */
   serverTools?: Record<string, FactSource>
-  /** The chat request map, when read from this model's published schema. */
-  requestMap?: FactSource
 }
 
 /**
