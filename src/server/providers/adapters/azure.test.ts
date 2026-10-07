@@ -24,11 +24,43 @@ const MODELS = `::: zone pivot="azure-openai"
 ::: zone-end
 `
 
-const REASONING = `| **Feature** | **o3**,**2025-04-16** |
-| --- | --- |
-| **Reasoning effort** | ✅ |
-| Chat Completions API | ✅ |
-`
+const REASONING = [
+  '| **Feature** | **o3**,**2025-04-16** |',
+  '| --- | --- |',
+  '| **Reasoning effort** | ✅ |',
+  '| Chat Completions API | ✅ |',
+  '',
+  "`max` works only with GPT-6 or GPT-5.6 models and the Responses API. `xhigh` works only with GPT-6, GPT-5.6, GPT-5.5, GPT-5.4, and `gpt-5.1-codex-max` models. `minimal` works only with the original GPT-5 reasoning models. `minimal` doesn't work with `gpt-5.1` or greater. **Options (model-dependent)**: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`",
+  '^5^`gpt-5-pro` only supports `reasoning_effort``high`, this is the default value even when not explicitly passed to the model.',
+  "^7^`gpt-5.6`, `gpt-5.5`, `gpt-5.4`, `gpt-5.2`, `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.1-codex-max`, and `gpt-5.1-codex-mini` support `'None'` as a value for the `reasoning_effort` parameter.",
+  '^\\*^`gpt-5-codex` also does not support `reasoning_effort``minimal`.',
+].join('\n')
+
+const CHAT_SPEC = {
+  openapi: '3.2.0',
+  paths: {
+    '/chat/completions': {
+      post: {
+        requestBody: {
+          content: {
+            'application/json': {
+              schema: {
+                properties: {
+                  messages: { type: 'array' },
+                  max_completion_tokens: { type: 'integer' },
+                  max_tokens: {
+                    description:
+                      'This value is now deprecated in favor of `max_completion_tokens`, and is not compatible with o1 series models.',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+}
 
 const PAGE_TWO = 'https://prices.azure.com/api/retail/prices?page=2'
 const PRICES: Record<string, unknown> = {
@@ -63,6 +95,7 @@ function stubFetch(
   models: string,
   urls: Array<string> = [],
   pricingPage = PRICING_PAGE,
+  reasoning = REASONING,
 ) {
   globalThis.fetch = ((input: string, init?: RequestInit) => {
     const url = String(input)
@@ -70,7 +103,7 @@ function stubFetch(
     if (url === AZURE_MODELS_URL || url === AZURE_REASONING_URL) {
       expect(new Headers(init?.headers).get('Accept')).toBe('text/markdown')
       return Promise.resolve(
-        new Response(url === AZURE_MODELS_URL ? models : REASONING),
+        new Response(url === AZURE_MODELS_URL ? models : reasoning),
       )
     }
     if (url in PRICES) return Promise.resolve(Response.json(PRICES[url]))
@@ -78,9 +111,7 @@ function stubFetch(
       return Promise.resolve(new Response(pricingPage))
     }
     if (url === AZURE_SPEC_URL) {
-      return Promise.resolve(
-        Response.json({ openapi: '3.2.0', paths: { '/chat/completions': {} } }),
-      )
+      return Promise.resolve(Response.json(CHAT_SPEC))
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`))
   }) as typeof fetch
@@ -109,6 +140,19 @@ describe('azure', () => {
         'response_format',
       ],
       schemaEndpointId: 'chat/completions',
+      reasoning: {
+        mode: 'effort',
+        mandatory: null,
+        efforts: ['low', 'medium', 'high'],
+      },
+      requestMap: {
+        thinking: {
+          on: { reasoning_effort: 'high' },
+          off: null,
+        },
+        maxTokensField: 'max_completion_tokens',
+        reasoningEffort: true,
+      },
       pricing: {
         tables: { rate: { base: { input_tokens: 2e-6, output_tokens: 8e-6 } } },
       },
@@ -122,6 +166,18 @@ describe('azure', () => {
     stubFetch(MODELS, [], '<td>GPT-5.4 Global</td>')
     await expect(provider.listModels({})).rejects.toThrow(
       'labels no context-length threshold',
+    )
+  })
+
+  it('throws when the reasoning article states no effort rules', async () => {
+    stubFetch(
+      MODELS,
+      [],
+      PRICING_PAGE,
+      '| **Feature** | **o3** |\n| --- |\n| **Reasoning effort** | ✅ |\n',
+    )
+    await expect(provider.listModels({})).rejects.toThrow(
+      'effort options did not parse',
     )
   })
 

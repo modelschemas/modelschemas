@@ -143,7 +143,10 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v16: Mistral model pages gain maxOutput and page pricing, and the pricing
 // doc stores the table without those pages. A v14 entry would keep Large 4's
 // sale row skipped and leave the new fields null for six hours.
-const DOCS_CACHE_VERSION = 'v16'
+// v21: Azure rows gain effort lists, request maps, and the gpt-4 /
+// computer-use-preview meter match. A v16 entry would leave those null
+// for six hours. v19 and v20 are still open fill-gaps PRs.
+const DOCS_CACHE_VERSION = 'v21'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

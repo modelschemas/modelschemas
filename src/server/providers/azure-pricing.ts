@@ -79,6 +79,9 @@ export function parseAzureSku(skuName: string): AzureSku | null {
   const name: Array<string> = []
   for (const word of words) {
     if (GLOBAL.has(word) || STANDARD.has(word)) continue
+    // `gpt-4-turbo128K` is the Global Standard meter for the `gpt-4` row.
+    // `gpt-4-Turbo-Batch-128K` stays a different name: its words are split.
+    if (word === 'turbo128k') continue
     if (INPUT.has(word)) input = true
     else if (OUTPUT.has(word)) output = true
     else if (CACHED.has(word)) cached = true
@@ -139,7 +142,14 @@ function ratesOf(meters: Array<AzureMeter>): Record<string, number> | null {
 
 function names(meter: AzureMeter, rawId: string): boolean {
   const id = rawId.toLowerCase().replace(/[^a-z0-9]/g, '')
-  return meter.name === id || `gpt${meter.name}` === id
+  // `computer-use-inpt-glbl` is the meter for `computer-use-preview`.
+  // The suffix is only appended, so a meter that already names the full id
+  // still matches that id and not a shorter one.
+  return (
+    meter.name === id ||
+    `gpt${meter.name}` === id ||
+    `${meter.name}preview` === id
+  )
 }
 
 /**
