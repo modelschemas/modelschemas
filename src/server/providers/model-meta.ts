@@ -9,6 +9,8 @@
  */
 import type { Activity } from '#/db/schema.ts'
 
+import { jinaChatModel } from './jina-chat.ts'
+
 const ACRONYMS = new Set(['gpt', 'tts', 'stt', 'asr'])
 
 /** Human-readable label when the provider's list endpoint has no name. */
@@ -422,16 +424,19 @@ export function perplexityModelActivity(): Activity {
 }
 
 /**
- * Jina names output modalities. Text out is chat except rerank and
- * ColBERT, which are not the chat route.
+ * Chat is a model Jina's OpenAPI ChatCompletionRequest names
+ * (https://api.jina.ai/openapi.json). Embeddings stay embeddings.
+ * Reader, rerank, and ColBERT are not that route.
  */
-export function jinaModelActivity(m: {
-  id: string
-  output_modalities?: Array<string>
-}): Activity | null {
-  const out = m.output_modalities ?? []
-  if (out.includes('embeddings')) return 'embeddings'
-  if (out.includes('text') && !/rerank|colbert/i.test(m.id)) return 'chat'
+export function jinaModelActivity(
+  m: {
+    id: string
+    output_modalities?: Array<string>
+  },
+  chatIds: ReadonlySet<string>,
+): Activity | null {
+  if (jinaChatModel(m.id, chatIds)) return 'chat'
+  if ((m.output_modalities ?? []).includes('embeddings')) return 'embeddings'
   return null
 }
 

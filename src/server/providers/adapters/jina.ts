@@ -4,6 +4,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { perTokenListingCard } from '../catalog-prices.ts'
+import { jinaChatModel, parseJinaChatRequest } from '../jina-chat.ts'
 import { listOpenAiCompatibleModels } from '../openai-compat.ts'
 import { compatGenerationEndpointId, jinaModelActivity } from '../model-meta.ts'
 import { fetchOpenApi } from '../types.ts'
@@ -44,18 +45,38 @@ export const provider: ProviderConfig = {
   modelsEndpoint: JINA_MODELS_URL,
   defaultDerivation: 'upstream-spec',
   fetchSpec,
-  listModels: (env) =>
-    listOpenAiCompatibleModels({
+  listModels: async (env) => {
+    if (!env.JINA_API_KEY) {
+      return listOpenAiCompatibleModels({
+        providerId: 'jina',
+        url: JINA_MODELS_URL,
+        env,
+        envVar: 'JINA_API_KEY',
+      })
+    }
+    // Chat ids and the request map come from the same document fetchSpec
+    // stores. A spec that names no chat model throws, so a poll does not
+    // unclassify every text row.
+    const { spec } = await fetchOpenApi(JINA_OPENAPI_URL)
+    const chat = parseJinaChatRequest(spec)
+    return listOpenAiCompatibleModels({
       providerId: 'jina',
       url: JINA_MODELS_URL,
       env,
       envVar: 'JINA_API_KEY',
-      activity: jinaModelActivity,
+      activity: (row) => jinaModelActivity(row, chat.modelIds),
       extend: async (row) => {
         const pricing = await perTokenListingCard(row.pricing, JINA_MODELS_URL)
-        return pricing ? { pricing } : {}
+        const requestMap = jinaChatModel(row.id, chat.modelIds)
+          ? chat.requestMap
+          : null
+        return {
+          ...(pricing ? { pricing } : {}),
+          ...(requestMap ? { requestMap } : {}),
+        }
       },
-    }),
+    })
+  },
   classify,
   generationEndpointId: ({ activity }) =>
     compatGenerationEndpointId(activity, 'v1/'),
