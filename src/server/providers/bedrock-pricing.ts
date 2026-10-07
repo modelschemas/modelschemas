@@ -55,6 +55,8 @@ interface MeterFile {
 export interface BedrockPriceBook {
   offerById: Map<string, Record<string, number>>
   offerByName: Map<string, Record<string, number>>
+  /** Offer display name, dotted decimals collapsed (`25.02` → `2502`). */
+  offerBySlug: Map<string, Record<string, number>>
   pageByName: Map<string, Record<string, number>>
   offerHash: string
   pageHash: string
@@ -149,14 +151,35 @@ function usageModelId(usagetype: string): string | null {
     .replace(/-cache-(?:read|write)(?:-.*)?$/, '')
 }
 
-function cacheWriteLever(text: string): string | null {
-  if (/1h|1-hour/.test(text)) return 'cache_write_1h_tokens'
-  if (/(?:^|[^a-z0-9])5m(?:[^a-z0-9]|$)|5-minute/.test(text)) {
-    return 'cache_write_tokens'
-  }
-  // 30-minute writes have no lever. Leaving them off beats storing them as 5-minute.
-  if (/\d+\s*m\b|\d+\s*-?\s*min|\d+\s*h\b/.test(text)) return null
+/**
+ * 5-minute and unnamed writes use `cache_write_tokens`. A 1-hour write is
+ * its own lever. 30-minute and any other duration have no lever.
+ */
+const FIVE_MINUTES = /(?:^|[^a-z0-9])5(?:m|[\s-]*min(?:ute)?s?)(?:[^a-z0-9]|$)/
+const ONE_HOUR = /(?:^|[^a-z0-9])1(?:h|[\s-]*hours?)(?:[^a-z0-9]|$)/
+const OTHER_DURATION =
+  /(?:^|[^a-z0-9])\d+\s*(?:m|h)\b|\d+\s*-?\s*(?:min(?:ute)?s?|hours?)\b/
+
+export function cacheWriteLever(text: string): string | null {
+  const name = text.toLowerCase()
+  if (ONE_HOUR.test(name)) return 'cache_write_1h_tokens'
+  if (FIVE_MINUTES.test(name)) return 'cache_write_tokens'
+  if (OTHER_DURATION.test(name)) return null
   return 'cache_write_tokens'
+}
+
+/** True when the header itself names a cache duration, including 30 minutes. */
+export function cacheWriteNamesDuration(text: string): boolean {
+  return OTHER_DURATION.test(text.toLowerCase())
+}
+
+/** `Pixtral Large 25.02` → `pixtral-large-2502`, the form inside the model id. */
+export function bedrockOfferSlug(model: string): string {
+  return model
+    .toLowerCase()
+    .replace(/(\d)\.(\d)/g, '$1$2')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 function textLever(inferenceType: string, usagetype: string): string | null {
@@ -207,6 +230,8 @@ interface Group {
   conflict: boolean
   name: string
   nameConflict: boolean
+  slug: string
+  slugConflict: boolean
 }
 
 /**
@@ -216,6 +241,7 @@ interface Group {
 export function parseBedrockOffer(offer: OfferFile): {
   byId: Map<string, Record<string, number>>
   byName: Map<string, Record<string, number>>
+  bySlug: Map<string, Record<string, number>>
 } {
   const products = offer.products
   const terms = offer.terms?.OnDemand
@@ -240,6 +266,7 @@ export function parseBedrockOffer(offer: OfferFile): {
     if (rate === null) continue
     const id = usageModelId(usagetype)
     const name = bedrockNameKey(attributes.model ?? '')
+    const slug = bedrockOfferSlug(attributes.model ?? '')
     const key = id ?? (name ? `name:${name}` : '')
     if (!key) continue
     const group = groups.get(key) ?? {
@@ -248,9 +275,13 @@ export function parseBedrockOffer(offer: OfferFile): {
       conflict: false,
       name: '',
       nameConflict: false,
+      slug: '',
+      slugConflict: false,
     }
     if (name && group.name && group.name !== name) group.nameConflict = true
     if (name && !group.name) group.name = name
+    if (slug && group.slug && group.slug !== slug) group.slugConflict = true
+    if (slug && !group.slug) group.slug = slug
     if (media) group.media = true
     if (lever) {
       const prev = group.rates[lever]
@@ -262,6 +293,7 @@ export function parseBedrockOffer(offer: OfferFile): {
 
   const byId = new Map<string, Record<string, number>>()
   const byName = new Map<string, Record<string, number>>()
+  const bySlug = new Map<string, Record<string, number>>()
   const dropped = new Set<string>()
   for (const [key, group] of groups) {
     if (group.media || group.conflict || !complete(group.rates)) continue
@@ -272,10 +304,16 @@ export function parseBedrockOffer(offer: OfferFile): {
     if (!group.nameConflict && group.name) {
       assign(byName, dropped, group.name, group.rates)
     }
+    // `Pixtral Large 25.02` is `pixtral-large-2502` inside the card id.
+    // Short slugs (`r1`, `glm-5`) stay off this map so they cannot land
+    // on a longer id.
+    if (!group.slugConflict && group.slug.length >= 12) {
+      assign(bySlug, dropped, group.slug, group.rates)
+    }
   }
   const rows = new Map<string, Record<string, number>>([...byId, ...byName])
   assertParsed(rows, 'amazon-bedrock price list')
-  return { byId, byName }
+  return { byId, byName, bySlug }
 }
 
 function cellText(cell: string): string {
@@ -290,15 +328,15 @@ function cellText(cell: string): string {
     .trim()
 }
 
-function columnLever(header: string): string | null {
-  const name = header.toLowerCase()
-  if (!/price per 1m/.test(name)) return null
+function columnLever(header: string, perMillionNote: boolean): string | null {
+  const name = header.toLowerCase().replace(/\*/g, '').trim()
+  if (/cache/.test(name) && /read/.test(name)) return 'cache_read_tokens'
+  if (/cache/.test(name) && /write/.test(name)) return cacheWriteLever(name)
+  const priced =
+    /price per 1m/.test(name) ||
+    (perMillionNote && /^(input|output)$/.test(name))
+  if (!priced) return null
   if (/batch|image|video|audio|speech|\(text\)/.test(name)) return null
-  if (/1h cache write/.test(name)) return 'cache_write_1h_tokens'
-  if (/5m cache write/.test(name)) return 'cache_write_tokens'
-  if (/\d+m cache write/.test(name)) return null
-  if (/cache write/.test(name)) return 'cache_write_tokens'
-  if (/cache read/.test(name)) return 'cache_read_tokens'
   if (/output/.test(name)) return OUTPUT
   if (/input/.test(name)) return INPUT
   return null
@@ -308,7 +346,7 @@ function perMillion(
   cell: string,
   region: Record<string, { price?: string }>,
 ): number | null {
-  const literal = cellText(cell).match(/\$(\d+(?:,\d{3})*(?:\.\d+)?)/)
+  const literal = cellText(cell).match(/\$\s*(\d+(?:,\d{3})*(?:\.\d+)?)/)
   if (literal?.[1]) return Number(literal[1].replace(/,/g, ''))
   const code = cell
     .replace(/\s+/g, '')
@@ -342,7 +380,9 @@ export function parseBedrockPricingPage(
   const out = new Map<string, Record<string, number>>()
   const dropped = new Set<string>()
   const stack: Array<{ level: number; text: string }> = []
-  const token = /<h([1-4])[^>]*>([\s\S]*?)<\/h\1>|<table[\s\S]*?<\/table>/gi
+  let pendingLabel = ''
+  const token =
+    /<h([1-4])[^>]*>([\s\S]*?)<\/h\1>|<div class="lb-txt-none lb-txt">\s*([^<]+?)\s*<\/div>|<table[\s\S]*?<\/table>/gi
   for (const match of flat.matchAll(token)) {
     const level = match[1]
     if (level) {
@@ -353,9 +393,20 @@ export function parseBedrockPricingPage(
       stack.push({ level: depth, text: heading })
       continue
     }
+    const label = match[3]
+    if (label) {
+      const text = cellText(label)
+      if (text && !/pricing|on-demand|^regions/i.test(text)) pendingLabel = text
+      continue
+    }
     const headings = stack.map((item) => item.text).join(' ')
     if (SKIP_HEADING.test(headings)) continue
     const table = match[0]
+    const after = flat.slice(
+      match.index + table.length,
+      match.index + table.length + 800,
+    )
+    const perMillionNote = /per 1 million tokens/i.test(`${table}\n${after}`)
     const rows = [...table.matchAll(/<tr[\s\S]*?<\/tr>/gi)].map((row) =>
       [...row[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) =>
         cellText(cell[1] ?? ''),
@@ -363,19 +414,35 @@ export function parseBedrockPricingPage(
     )
     const head = rows[0]
     if (!head) continue
-    const levers = head.map(columnLever)
+    const levers = head.map((cell) => columnLever(cell, perMillionNote))
     if (!levers.includes(INPUT) || !levers.includes(OUTPUT)) continue
-    const nameCol = head.findIndex((cell) => /model/i.test(cell))
-    const modelCol = nameCol >= 0 ? nameCol : 0
-    for (const row of rows.slice(1)) {
-      const name = (row[modelCol] ?? '').replace(/\*+/g, '').trim()
-      if (!name || /long context/i.test(name)) continue
+    const ratesOf = (row: Array<string>): Record<string, number> => {
       const rates: Record<string, number> = {}
       row.forEach((cell, index) => {
         const lever = levers[index]
         const amount = perMillion(cell, region)
         if (lever && amount !== null && amount >= 0) rates[lever] = amount / 1e6
       })
+      return rates
+    }
+    // A tab names the model. Rows are tiers. US CRIS is the standard rate.
+    if (head.some((cell) => /inference option/i.test(cell))) {
+      const chosen = rows.slice(1).find((row) => {
+        const tier = row[0] ?? ''
+        return /us cris|in-region|regional/i.test(tier) && !/global/i.test(tier)
+      })
+      const rates = chosen ? ratesOf(chosen) : null
+      const key = bedrockNameKey(pendingLabel)
+      if (!rates || !key || !complete(rates)) continue
+      assign(out, dropped, key, rates)
+      continue
+    }
+    const nameCol = head.findIndex((cell) => /model/i.test(cell))
+    const modelCol = nameCol >= 0 ? nameCol : 0
+    for (const row of rows.slice(1)) {
+      const name = (row[modelCol] ?? '').replace(/\*+/g, '').trim()
+      if (!name || /long context/i.test(name)) continue
+      const rates = ratesOf(row)
       const key = bedrockNameKey(name)
       if (!key || !complete(rates)) continue
       assign(out, dropped, key, rates)
@@ -401,6 +468,40 @@ export function matchBedrockModelId(
   return best
 }
 
+/**
+ * Longest offer slug inside `rawId`. A following digit continues the
+ * version (`250` is not `2502`, `glm-5` is not `glm-5.3`). `-v1` stays.
+ */
+export function matchBedrockOfferSlug(
+  slugs: Iterable<string>,
+  rawId: string,
+): string | null {
+  const id = rawId.toLowerCase()
+  let best: string | null = null
+  for (const slug of slugs) {
+    if (slug.length < 12) continue
+    let from = 0
+    while (from < id.length) {
+      const at = id.indexOf(slug, from)
+      if (at < 0) break
+      const before = at === 0 ? '' : id.charAt(at - 1)
+      const after = id.slice(at + slug.length)
+      const boundaryBefore = before === '' || /[^a-z0-9]/.test(before)
+      // `250` inside `2502`, or `glm-5` inside `glm-5.3`. `-v1` stays.
+      const longerVersion = /^(?:[.-])?\d/.test(after)
+      if (
+        boundaryBefore &&
+        !longerVersion &&
+        (best === null || slug.length > best.length)
+      ) {
+        best = slug
+      }
+      from = at + 1
+    }
+  }
+  return best
+}
+
 export function lookupBedrockPrice(
   book: BedrockPriceBook,
   rawId: string,
@@ -418,6 +519,12 @@ export function lookupBedrockPrice(
   if (offered) {
     return { rates: offered, url: BEDROCK_PRICE_LIST_URL, hash: book.offerHash }
   }
+  const slug = matchBedrockOfferSlug(book.offerBySlug.keys(), rawId)
+  if (slug) {
+    const rates = book.offerBySlug.get(slug)
+    if (rates)
+      return { rates, url: BEDROCK_PRICE_LIST_URL, hash: book.offerHash }
+  }
   const page = book.pageByName.get(name)
   if (!page) return null
   return { rates: page, url: BEDROCK_PRICING_PAGE_URL, hash: book.pageHash }
@@ -434,6 +541,7 @@ export async function fetchBedrockPriceBook(): Promise<BedrockPriceBook> {
   return {
     offerById: offer.byId,
     offerByName: offer.byName,
+    offerBySlug: offer.bySlug,
     pageByName: page,
     offerHash: await sha256Text(offerText),
     pageHash: await sha256Text(`${html}\n${meterText}`),

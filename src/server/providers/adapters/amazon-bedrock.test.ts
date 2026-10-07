@@ -80,6 +80,8 @@ const GPT6 = `# GPT-6 Sol
 | --- | --- |
 | ${YES} Text | ${YES} Text |
 
+Set \`prompt_cache_options.ttl\` to \`30m\`, the only supported TTL and the default.
+
 ## Pricing
 
 All prices are in USD per 1 million tokens for the Standard tier.
@@ -339,6 +341,11 @@ describe('amazon-bedrock', () => {
     expect(
       price(card, {}, { input_tokens: 3e5, output_tokens: 1e6 }),
     ).toBeCloseTo(0.3 * 4.4 + 16.5)
+    // The column says "cache write". The card's only TTL is 30m, so the
+    // 5-minute lever stays empty. Cache read stays.
+    expect(card.inputs.cache_write_tokens).toBeUndefined()
+    expect(card.inputs.cache_write_1h_tokens).toBeUndefined()
+    expect(card.inputs.cache_read_tokens).toBeDefined()
     // The global profile bills less, so it must not resolve to this card.
     expect(sol?.aliases).toEqual([])
     expect(sol?.releasedAt).toBe(Date.UTC(2026, 8, 22) / 1000)
@@ -419,6 +426,137 @@ describe('amazon-bedrock', () => {
     expect(govPrice?.uniform).toBe(true)
     expect(govPrice?.base.input_tokens).toBeCloseTo(1.25 / 1e6)
     expect(govPrice?.base.cache_read_tokens).toBeCloseTo(0.2 / 1e6)
+  })
+
+  it('prices GPT-6 Astra standard in-region and drops 30-minute writes and Ultrafast', () => {
+    // Published rows from model-card-openai-gpt-6-astra.md.
+    const card = bedrockCardPrice(`
+## Pricing
+
+All prices are in USD per 1 million tokens. The following tables list Standard and Ultrafast prices.
+
+### Standard — Commercial Regions, short context (272K input tokens or fewer)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region | $11.00 | $13.75 | $1.10 | $55.00 |
+| Geo CRIS | $11.00 | $13.75 | $1.10 | $55.00 |
+| Global CRIS | $10.00 | $12.50 | $1.00 | $50.00 |
+
+### Standard — Commercial Regions, long context (more than 272K input tokens)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region | $22.00 | $27.50 | $2.20 | $82.50 |
+| Geo CRIS | $22.00 | $27.50 | $2.20 | $82.50 |
+| Global CRIS | $20.00 | $25.00 | $2.00 | $75.00 |
+
+### Ultrafast — Commercial Regions, short context (272K input tokens or fewer)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region (us-east-1) | $66.00 | $82.50 | $6.60 | $330.00 |
+| Global CRIS | $60.00 | $75.00 | $6.00 | $300.00 |
+
+### Ultrafast — Commercial Regions, long context (more than 272K input tokens)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region (us-east-1) | $132.00 | $165.00 | $13.20 | $495.00 |
+| Global CRIS | $120.00 | $150.00 | $12.00 | $450.00 |
+`)
+    expect(card?.base).toEqual({
+      input_tokens: 11 / 1e6,
+      output_tokens: 55 / 1e6,
+      cache_read_tokens: 1.1 / 1e6,
+    })
+    expect(card?.tiers).toEqual([
+      {
+        minPromptTokens: 272_000,
+        rates: {
+          input_tokens: 22 / 1e6,
+          output_tokens: 82.5 / 1e6,
+          cache_read_tokens: 2.2 / 1e6,
+        },
+      },
+    ])
+  })
+
+  it('leaves a 30-minute cache-write column empty', () => {
+    // Published rows from model-card-openai-gpt-56-sol.md. The write is
+    // $5.50 on the $4.40 tier and $11.00 on the long tier.
+    const card = bedrockCardPrice(`
+## Pricing
+
+All prices are in USD per 1 million tokens for the Standard tier.
+
+### Commercial Regions — short context (272K input tokens or fewer)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region | $4.40 | $5.50 | $0.44 | $22.00 |
+| Global CRIS | $4.00 | $5.00 | $0.40 | $20.00 |
+
+### Commercial Regions — long context (more than 272K input tokens)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region | $8.80 | $11.00 | $0.88 | $33.00 |
+| Global CRIS | $8.00 | $10.00 | $0.80 | $30.00 |
+
+### AWS GovCloud (US-East and US-West)
+
+#### Long context (more than 272K input tokens)
+
+| **Inference option** | **Input** | **Input — 30m cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- |
+| In-Region | $5.40 | $6.75 | $0.54 | $24.30 |
+`)
+    expect(card?.base).toEqual({
+      input_tokens: 4.4 / 1e6,
+      output_tokens: 22 / 1e6,
+      cache_read_tokens: 0.44 / 1e6,
+    })
+    expect(card?.tiers).toEqual([
+      {
+        minPromptTokens: 272_000,
+        rates: {
+          input_tokens: 8.8 / 1e6,
+          output_tokens: 33 / 1e6,
+          cache_read_tokens: 0.88 / 1e6,
+        },
+      },
+    ])
+  })
+
+  it('maps a 5-minute write, a 1-hour write, and a bare write with no TTL', () => {
+    const named = bedrockCardPrice(`
+## Pricing
+
+All prices are in USD per 1 million tokens.
+
+| **Inference option** | **Input** | **Input — 5m cache write** | **Input — 1h cache write** | **Input — cache read** | **Output** |
+| --- | --- | --- | --- | --- | --- |
+| In-Region | $1.00 | $1.25 | $2.00 | $0.10 | $5.00 |
+`)
+    expect(named?.base).toEqual({
+      input_tokens: 1 / 1e6,
+      cache_write_tokens: 1.25 / 1e6,
+      cache_write_1h_tokens: 2 / 1e6,
+      cache_read_tokens: 0.1 / 1e6,
+      output_tokens: 5 / 1e6,
+    })
+
+    const bare = bedrockCardPrice(`
+## Pricing
+
+All prices are in USD per 1 million tokens.
+
+| **Inference option** | **Input** | **Input — cache write** | **Output** |
+| --- | --- | --- | --- |
+| In-Region | $2.00 | $2.50 | $6.00 |
+`)
+    expect(bare?.base.cache_write_tokens).toBeCloseTo(2.5 / 1e6)
   })
 
   it('reads named reasoning levels from the effort section', () => {

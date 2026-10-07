@@ -13,7 +13,12 @@ import type { TokenRateTier } from '@modelschemas/rate-card'
 import type { Activity } from '#/db/schema.ts'
 
 import { endpointIdFromPath } from '../ingest/bundle.ts'
-import { fetchBedrockPriceBook, lookupBedrockPrice } from './bedrock-pricing.ts'
+import {
+  cacheWriteLever,
+  cacheWriteNamesDuration,
+  fetchBedrockPriceBook,
+  lookupBedrockPrice,
+} from './bedrock-pricing.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import {
   assertParsed,
@@ -240,17 +245,44 @@ interface Quote {
   rates: Record<string, number>
 }
 
-function lever(header: string): string | null {
+/**
+ * A bare "cache write" column takes the one TTL the card names. GPT-6
+ * headers omit the duration; the prompt-caching section says `ttl` `30m`
+ * is the only one. No TTL mentioned keeps the 5-minute lever. Two
+ * different TTLs have no single lever.
+ */
+function proseWriteLever(markdown: string): string | null {
+  const found = new Set<'5m' | '1h' | 'other'>()
+  const ttls = /ttl\b[^.\n]{0,80}?(\d+)\s*(m|h|min(?:ute)?s?|hours?)\b/gi
+  for (const match of markdown.matchAll(ttls)) {
+    const n = match[1]
+    const unit = match[2]?.toLowerCase()
+    if (!n || !unit) continue
+    if (n === '5' && unit.startsWith('m')) found.add('5m')
+    else if (n === '1' && unit.startsWith('h')) found.add('1h')
+    else found.add('other')
+  }
+  if (found.size === 0) return 'cache_write_tokens'
+  if (found.size > 1) return null
+  if (found.has('5m')) return 'cache_write_tokens'
+  if (found.has('1h')) return 'cache_write_1h_tokens'
+  return null
+}
+
+function lever(header: string, markdown: string): string | null {
   const name = header.replace(/\*/g, '').toLowerCase()
   if (name.includes('cache read')) return 'cache_read_tokens'
-  if (name.includes('cache write')) return 'cache_write_tokens'
+  if (name.includes('cache write')) {
+    if (cacheWriteNamesDuration(name)) return cacheWriteLever(name)
+    return proseWriteLever(markdown)
+  }
   if (name === 'input') return 'input_tokens'
   if (name === 'output') return 'output_tokens'
   return null
 }
 
 /** Rows of a `| **Inference option** | **Input** | … |` table. */
-function quotes(block: string): Array<Quote> {
+function quotes(block: string, markdown: string): Array<Quote> {
   const rows = tableRows(block)
   const head = rows.find((row) => row[0] === '**Inference option**')
   if (!head) return []
@@ -259,7 +291,7 @@ function quotes(block: string): Array<Quote> {
     if (row === head) continue
     const rates: Record<string, number> = {}
     row.forEach((cell, index) => {
-      const key = lever(head[index] ?? '')
+      const key = lever(head[index] ?? '', markdown)
       const dollars = cell.match(/^\$(\d+(?:\.\d+)?)$/)?.[1]
       if (key && dollars) rates[key] = Number(dollars) / 1e6
     })
@@ -268,6 +300,15 @@ function quotes(block: string): Array<Quote> {
     }
   }
   return out
+}
+
+/** Ultrafast, priority, flex, batch, and GovCloud are not the standard rate. */
+function skippedPriceHeading(heading: string): boolean {
+  return /ultrafast|priority|flex|batch|govcloud/i.test(heading)
+}
+
+function standardShort(heading: string): boolean {
+  return /commercial regions/i.test(heading) && /short context/i.test(heading)
 }
 
 const inRegion = (all: Array<Quote>) =>
@@ -296,25 +337,36 @@ export function bedrockCardPrice(markdown: string): BedrockCardPrice | null {
   // GovCloud (US) republishes the same table at a different rate. The
   // commercial block is the standard price; a GovCloud-only card stays.
   const beforeGov = full.split('**AWS GovCloud')[0] ?? full
-  const section = quotes(beforeGov).length > 0 ? beforeGov : full
+  const section = quotes(beforeGov, markdown).length > 0 ? beforeGov : full
   const blocks = section.split(/\n### /)
-  const priced = blocks.findIndex((block) => quotes(block).length > 0)
-  const first = blocks[priced]
-  if (first === undefined) return null
-  if (priced > 0 && !first.startsWith('Commercial Regions — short context')) {
-    return null
+  let baseBlock: string | undefined
+  for (const [index, block] of blocks.entries()) {
+    if (quotes(block, markdown).length === 0) continue
+    const heading = block.split('\n')[0] ?? ''
+    if (skippedPriceHeading(heading)) continue
+    // A headingless table (Grok) is already the commercial rate. A ###
+    // block has to be the standard short-context rate; Ultrafast uses
+    // the same "Commercial Regions, short context" words.
+    if (index > 0 && !standardShort(heading)) return null
+    baseBlock = block
+    break
   }
-  const baseQuotes = quotes(first)
+  if (baseBlock === undefined) return null
+  const baseQuotes = quotes(baseBlock, markdown)
   const base = inRegion(baseQuotes)
   if (!base) return null
   let uniform = baseQuotes.every((quote) => sameRates(quote, base))
   const tiers: Array<TokenRateTier> = []
   for (const block of blocks) {
-    const over = block.match(
-      /^Commercial Regions — long context \(more than ([\d.,]+[KM]?) input tokens\)/,
+    const heading = block.split('\n')[0] ?? ''
+    // GovCloud's long-context table is a #### inside the ### GovCloud
+    // block. Match the ### line only, or that table becomes the tier.
+    if (skippedPriceHeading(heading)) continue
+    const over = heading.match(
+      /long context \(more than ([\d.,]+\s*[KM]?) input tokens\)/i,
     )
-    if (!over) continue
-    const longQuotes = quotes(block)
+    if (!over?.[1]) continue
+    const longQuotes = quotes(block, markdown)
     const long = inRegion(longQuotes)
     const minPromptTokens = tokenCount(over[1])
     // A long-context table we cannot read would underprice long prompts.

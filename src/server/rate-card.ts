@@ -13,7 +13,7 @@ import {
 } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
-import { contentHash } from '#/server/kv.ts'
+import { contentHash, stableStringify } from '#/server/kv.ts'
 import { emptySources } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
 
@@ -147,6 +147,12 @@ function reusable(
   return expiresAt === undefined || Date.parse(expiresAt) > now * 1000
 }
 
+/** Card contents with `extractedAt` removed, so a poll clock is not a rate change. */
+function rateBody(card: RateCard): string {
+  const { extractedAt: _extractedAt, ...source } = card.source
+  return stableStringify({ ...card, source })
+}
+
 export async function storeListedPricing(
   pricing: unknown,
   options: StoreRateCardOptions,
@@ -159,13 +165,14 @@ export async function storeListedPricing(
       return { card: null, refused: 'invented_param' }
     }
     if (!examplesOk(parsed)) return { card: null, refused: 'examples' }
-    // Same source text ⇒ same card. Keep the stored one so a fresh
-    // `extractedAt` alone is not a price change on every poll. A parser
-    // fix therefore lands with the next upstream edit, not before.
+    // Same source text and the same rates: keep the stored card so a fresh
+    // `extractedAt` alone is not a price change on every poll. A parser that
+    // reads different levers from that text replaces the stored card.
     const prior = parseStoredRateCard(options.existing)
-    return {
-      card: reusable(prior, sourceHashes(parsed), options.now) ? prior : parsed,
-    }
+    const sameRates =
+      reusable(prior, sourceHashes(parsed), options.now) &&
+      rateBody(prior) === rateBody(parsed)
+    return { card: sameRates ? prior : parsed }
   }
 
   const existing = parseStoredRateCard(options.existing)

@@ -4,6 +4,7 @@ import {
   bedrockNameKey,
   lookupBedrockPrice,
   matchBedrockModelId,
+  matchBedrockOfferSlug,
   parseBedrockOffer,
   parseBedrockPricingPage,
   BEDROCK_PRICE_LIST_URL,
@@ -334,6 +335,7 @@ describe('bedrock pricing page', () => {
       {
         offerById: offer.byId,
         offerByName: offer.byName,
+        offerBySlug: offer.bySlug,
         pageByName: page,
         offerHash: 'offer',
         pageHash: 'page',
@@ -350,6 +352,7 @@ describe('bedrock pricing page', () => {
     const book = {
       offerById: offer.byId,
       offerByName: offer.byName,
+      offerBySlug: offer.bySlug,
       pageByName: page,
       offerHash: 'offer',
       pageHash: 'page',
@@ -380,5 +383,198 @@ describe('bedrock pricing page', () => {
       'Claude Haiku 4.5',
     )
     expect(haiku?.rates.input_tokens).toBeCloseTo(0.8 / 1e6)
+  })
+})
+
+describe('bedrock offer slug', () => {
+  // us-east-1 On-demand Inference offer for Pixtral Large 25.02.
+  // Descriptions: $0.002 per 1K input, $0.006 per 1K output.
+  const offer = parseBedrockOffer({
+    products: {
+      pixtralIn: product(
+        'USE1-PixtralLarge2502-input-tokens',
+        'Input tokens',
+        '',
+        'On-demand Inference',
+        'Pixtral Large 25.02',
+      ),
+      pixtralOut: product(
+        'USE1-PixtralLarge2502-output-tokens',
+        'Output tokens',
+        '',
+        'On-demand Inference',
+        'Pixtral Large 25.02',
+      ),
+      pixtralBatch: product(
+        'USE1-PixtralLarge2502-input-tokens-batch',
+        'input tokens batch',
+        '',
+        'On-demand Inference',
+        'Pixtral Large 25.02',
+      ),
+      glmIn: product(
+        'USE1-zai.glm-5-input-tokens',
+        'Input tokens',
+        'standard',
+        '',
+        'GLM 5',
+      ),
+      glmOut: product(
+        'USE1-zai.glm-5-output-tokens',
+        'Output tokens',
+        'standard',
+        '',
+        'GLM 5',
+      ),
+      r1In: product(
+        'USE1-DeepSeekR1-input-tokens',
+        'Input tokens',
+        '',
+        'On-demand Inference',
+        'R1',
+      ),
+      r1Out: product(
+        'USE1-DeepSeekR1-output-tokens',
+        'Output tokens',
+        '',
+        'On-demand Inference',
+        'R1',
+      ),
+    },
+    terms: {
+      OnDemand: {
+        pixtralIn: { t: { priceDimensions: { d: dimension('0.0020000000') } } },
+        pixtralOut: {
+          t: { priceDimensions: { d: dimension('0.0060000000') } },
+        },
+        pixtralBatch: {
+          t: { priceDimensions: { d: dimension('0.0001000000') } },
+        },
+        glmIn: { t: { priceDimensions: { d: dimension('0.0010000000') } } },
+        glmOut: { t: { priceDimensions: { d: dimension('0.0032000000') } } },
+        r1In: { t: { priceDimensions: { d: dimension('0.0013500000') } } },
+        r1Out: { t: { priceDimensions: { d: dimension('0.0054000000') } } },
+      },
+    },
+  })
+
+  it('prices Pixtral Large from the on-demand offer, not the card display name', () => {
+    expect(offer.bySlug.get('pixtral-large-2502')).toEqual({
+      input_tokens: 0.002 / 1e3,
+      output_tokens: 0.006 / 1e3,
+    })
+    expect(offer.bySlug.has('glm-5')).toBe(false)
+    expect(offer.bySlug.has('r1')).toBe(false)
+    const book = {
+      offerById: offer.byId,
+      offerByName: offer.byName,
+      offerBySlug: offer.bySlug,
+      pageByName: new Map<string, Record<string, number>>(),
+      offerHash: 'offer',
+      pageHash: 'page',
+    }
+    const hit = lookupBedrockPrice(
+      book,
+      'mistral.pixtral-large-2502-v1:0',
+      'Pixtral Large',
+    )
+    expect(hit?.url).toBe(BEDROCK_PRICE_LIST_URL)
+    expect(hit?.rates).toEqual({
+      input_tokens: 0.002 / 1e3,
+      output_tokens: 0.006 / 1e3,
+    })
+    expect(lookupBedrockPrice(book, 'zai.glm-5.3', 'GLM 5.3')).toBeNull()
+    expect(
+      lookupBedrockPrice(book, 'deepseek.r1-v1:0', 'DeepSeek-R1'),
+    ).toBeNull()
+    expect(
+      matchBedrockOfferSlug(
+        ['pixtral-large-25', 'pixtral-large-2502'],
+        'mistral.pixtral-large-2502-v1:0',
+      ),
+    ).toBe('pixtral-large-2502')
+    expect(matchBedrockOfferSlug(['glm-5'], 'zai.glm-5.3')).toBeNull()
+  })
+})
+
+describe('bedrock pricing page inference options', () => {
+  // Z AI accordion on aws.amazon.com/bedrock/pricing/. US CRIS is the
+  // standard rate. The note after the table is what makes bare Input/Output
+  // columns on the Kimi table mean per 1M tokens.
+  const html = `
+<h2 id="Z_AI">Z AI</h2>
+<div class="lb-txt-none lb-txt">GLM 4.7 Flash</div>
+<div class="lb-txt-none lb-txt">GLM 5.3</div>
+<table>
+<tbody>
+<tr>
+<td><b>Inference option</b></td>
+<td><b>Price per 1M input tokens</b></td>
+<td><b>Price per 1M output tokens</b></td>
+<td><b>Cache read</b></td>
+<td><b>Cache write - 30m</b></td>
+</tr>
+<tr>
+<td><b>Global CRIS</b></td>
+<td>$ 1.68</td>
+<td>$ 5.28</td>
+<td>$ 0.312</td>
+<td>$ 2.10</td>
+</tr>
+<tr>
+<td><b>US CRIS</b></td>
+<td>$ 1.848</td>
+<td>$ 5.808</td>
+<td>$ 0.3432</td>
+<td>$ 2.31</td>
+</tr>
+</tbody>
+</table>
+<p><i>All prices are per 1 million tokens. Pricing shown is for the Standard tier.</i></p>
+<div class="lb-txt-none lb-txt">Kimi 2</div>
+<div class="lb-txt-none lb-txt">Kimi 3</div>
+<table>
+<tbody>
+<tr>
+<td><b>Inference option</b></td>
+<td><b>Input</b></td>
+<td><b>Output</b></td>
+<td><b>Cache read</b></td>
+<td><b>Cache write (30 min)</b></td>
+</tr>
+<tr>
+<td>Global CRIS</td>
+<td>$3.00</td>
+<td>$15.00</td>
+<td>$0.30</td>
+<td>$3.75</td>
+</tr>
+<tr>
+<td>US CRIS</td>
+<td>$3.30</td>
+<td>$16.50</td>
+<td>$0.33</td>
+<td>$4.125</td>
+</tr>
+</tbody>
+</table>
+<p><i>All prices are per 1 million tokens. Pricing shown is for the Standard tier.</i></p>
+`
+  const page = parseBedrockPricingPage(html, {
+    regions: { 'US East (N. Virginia)': {} },
+  })
+
+  it('keeps Standard US CRIS and drops the 30-minute write and Global', () => {
+    expect(page.get(bedrockNameKey('GLM 5.3'))).toEqual({
+      input_tokens: 1.848 / 1e6,
+      output_tokens: 5.808 / 1e6,
+      cache_read_tokens: 0.3432 / 1e6,
+    })
+    expect(page.has(bedrockNameKey('GLM 4.7 Flash'))).toBe(false)
+    expect(page.get(bedrockNameKey('Kimi 3'))).toEqual({
+      input_tokens: 3.3 / 1e6,
+      output_tokens: 16.5 / 1e6,
+      cache_read_tokens: 0.33 / 1e6,
+    })
   })
 })

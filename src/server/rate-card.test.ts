@@ -205,6 +205,31 @@ describe('toStoredRateCard', () => {
     ).toEqual({ card: stored })
   })
 
+  it('replaces the stored card when the same source text parses to different rates', async () => {
+    const stored: RateCard = {
+      ...GPT_4O,
+      inputs: {
+        ...GPT_4O.inputs,
+        cache_write_tokens: {
+          param: 'cache_write_tokens',
+          bound: 'usage',
+          kind: 'number',
+        },
+      },
+    }
+    const reparsed: RateCard = {
+      ...GPT_4O,
+      source: { ...GPT_4O.source, extractedAt: '2026-06-01T00:00:00.000Z' },
+    }
+    expect(
+      await storeListedPricing(reparsed, {
+        existing: stored,
+        sourceUrl: SOURCE_URL,
+        now: NOW,
+      }),
+    ).toEqual({ card: reparsed })
+  })
+
   it('re-reads a card whose source named a price change that has passed', async () => {
     const stored: RateCard = {
       ...GPT_4O,
