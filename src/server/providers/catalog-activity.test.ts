@@ -492,8 +492,11 @@ describe('issue #109 listModels', () => {
           input: ['text'],
           output: ['text'],
         })
+        expect(chat?.capabilities).toEqual([])
+        expect(chat?.exactCapabilities).toBe(true)
         expect(inputUsd(chat?.pricing)).toBeCloseTo(2, 9)
         expect(bare?.activity).toBe('chat')
+        expect(bare?.capabilities).toBeUndefined()
         expect(bare?.pricing ?? null).toBeNull()
       },
     )
