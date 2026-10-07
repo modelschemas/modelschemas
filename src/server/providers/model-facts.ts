@@ -145,8 +145,10 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // sale row skipped and leave the new fields null for six hours.
 // v21: Azure rows gain effort lists, request maps, and the gpt-4 /
 // computer-use-preview meter match. A v16 entry would leave those null
-// for six hours. v19 and v20 are still open fill-gaps PRs.
-const DOCS_CACHE_VERSION = 'v21'
+// for six hours.
+// v22: DashScope compat cache includes `scope`. A v21 entry has no scope,
+// so a chat id the page does not name would still get the compat map.
+const DOCS_CACHE_VERSION = 'v22'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
