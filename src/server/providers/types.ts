@@ -326,7 +326,8 @@ export interface ModelInfo {
    * Chat request wire map (issue #95). The poller fills this from
    * `chatRequestMap`; listings do not invent it. Null when unverified.
    * A listing sets it only from the model's own published request schema
-   * (Workers AI); the poller then keeps that map.
+   * (Workers AI, Mistral's ChatCompletionRequest); the poller then keeps
+   * that map.
    */
   requestMap?: ChatRequestMap | null
   /**

@@ -79,6 +79,10 @@ describe('mistral listModels', () => {
             factSources: _sources,
             reasoning: _reasoning,
             modalities: _modalities,
+            serverTools: _tools,
+            maxOutput: _maxOutput,
+            requestMap: _requestMap,
+            absent: _absent,
             ...rest
           }) => rest,
         ),
@@ -104,6 +108,12 @@ describe('mistral listModels modalities', () => {
           {
             id: 'mistral-small-latest',
             capabilities: { completion_chat: true },
+            aliases: ['mistral-vibe-cli-fast'],
+          },
+          {
+            id: 'mistral-vibe-cli-fast',
+            capabilities: { completion_chat: true },
+            aliases: ['mistral-small-latest'],
           },
           { id: 'mistral-unpriced', capabilities: { completion_chat: true } },
         ],
@@ -128,6 +138,25 @@ describe('mistral listModels modalities', () => {
         ),
       'https://docs.mistral.ai/studio/conversations/reasoning.md':
         '- `mistral-small-latest`: Supports adjustable reasoning via the `reasoning_effort` parameter.',
+      'https://docs.mistral.ai/models':
+        '<a href="/models/not-a-listed-id">x</a>',
+      'https://docs.mistral.ai/openapi.yaml': `components:
+  schemas:
+    ChatCompletionRequest:
+      additionalProperties: false
+      properties:
+        max_tokens: { type: integer }
+        reasoning_effort: { type: string }
+        messages:
+          items:
+            discriminator:
+              propertyName: role
+              mapping:
+                system: '#/components/schemas/SystemMessage'
+                user: '#/components/schemas/UserMessage'
+                assistant: '#/components/schemas/AssistantMessage'
+                tool: '#/components/schemas/ToolMessage'
+`,
     }
     const original = globalThis.fetch
     globalThis.fetch = ((url: string) => {
@@ -140,7 +169,7 @@ describe('mistral listModels modalities', () => {
     }) as typeof fetch
     try {
       const { models } = await provider.listModels({ MISTRAL_API_KEY: 'k' })
-      const [small, unpriced] = models
+      const [small, vibe, unpriced] = models
       expect(small?.modalities).toEqual({
         input: ['text', 'image'],
         output: ['text'],
@@ -151,9 +180,26 @@ describe('mistral listModels modalities', () => {
         path: 'modalities',
       })
       expect(small?.pricing).toBeTruthy()
-      // No page names this id: unknown, not a guess.
+      expect(small?.requestMap).toMatchObject({
+        maxTokensField: 'max_tokens',
+        developerRole: false,
+        reasoningEffort: true,
+        thinking: { on: { reasoning_effort: 'high' }, off: null, levels: null },
+      })
+      expect(small?.factSources?.requestMap).toMatchObject({
+        derivation: 'docs-derived',
+        sourceUrl: 'https://docs.mistral.ai/openapi.yaml',
+      })
+      // The page names only small-latest. The listing says vibe is that model.
+      expect(vibe?.modalities).toEqual(small?.modalities)
+      expect(vibe?.pricing).toEqual(small?.pricing)
+      expect(vibe?.factSources?.modalities?.sourceUrl).toBe(
+        'https://docs.mistral.ai/models/mistral-small-4-0-26-03',
+      )
+      // No page names this id: unknown, not a guess, and not a cleared price.
       expect(unpriced?.modalities).toBeUndefined()
       expect(unpriced?.factSources?.modalities).toBeUndefined()
+      expect(unpriced?.absent).toBeUndefined()
     } finally {
       globalThis.fetch = original
     }

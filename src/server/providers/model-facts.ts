@@ -139,7 +139,11 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // window). A v12 entry would keep 204800 on them for six hours.
 // v14: Gemini and Mistral model pages gain `modalities`. A v13 entry has
 // none, and the schema walk that used to fill the field no longer does.
-const DOCS_CACHE_VERSION = 'v14'
+// v15: open fill-gaps PRs #242 and #244. Do not reuse.
+// v16: Mistral model pages gain maxOutput and page pricing, and the pricing
+// doc stores the table without those pages. A v14 entry would keep Large 4's
+// sale row skipped and leave the new fields null for six hours.
+const DOCS_CACHE_VERSION = 'v16'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

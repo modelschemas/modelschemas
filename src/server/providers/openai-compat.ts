@@ -131,6 +131,8 @@ export interface OpenAiCompatModelRow {
   supported_sampling_parameters?: Array<string>
   /** mistral: `{ function_calling, reasoning, vision, … }`. */
   capabilities?: Record<string, boolean | undefined>
+  /** mistral: other ids that resolve to this same row. */
+  aliases?: Array<string>
   /** fireworks: `HF_BASE_MODEL`, `EMBEDDING_MODEL`, `ROUTER`, `CUSTOM_MODEL`. */
   kind?: string
   supports_chat?: boolean
