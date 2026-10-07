@@ -267,7 +267,7 @@ function ModelsCatalog() {
                       className="num max-sm:hidden"
                       title="Chat facts filled of those scored for this model. Facts the provider does not publish are left out."
                     >
-                      completeness
+                      chat completeness
                     </th>
                     <th className="num">first seen</th>
                     <th className="num">last seen</th>
