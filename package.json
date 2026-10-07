@@ -32,7 +32,8 @@
     "check:client": "bun run generate:client && git diff --exit-code openapi.json packages/client",
     "types": "wrangler types --include-runtime=false",
     "npm:pack": "bun scripts/npm-pack.ts",
-    "gap:report": "bun scripts/gap-report.ts"
+    "gap:report": "bun scripts/gap-report.ts",
+    "compare:models-dev": "bun scripts/compare-models-dev.ts"
   },
   "dependencies": {
     "@better-auth/agent-auth": "^0.5.1",
