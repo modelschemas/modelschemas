@@ -58,3 +58,27 @@ The report only measures. When filling what it finds:
   invent a value.
 - The provider is done when `--check --providers <id>` exits 0 against a
   base that serves the new data.
+
+## Compare with models.dev (compare-only)
+
+`bun run compare:models-dev` answers "do we have as much as models.dev for
+the chat models we support?". It reads models.dev only to compare: models.dev
+is never a source (#197), so nothing it shows may be copied into the DB, an
+adapter, a fixture or the ledger. Fill a gap it finds from the provider's own
+source, or ledger it.
+
+```bash
+bun run compare:models-dev                     # per-provider table, most behind first
+bun run compare:models-dev --provider grok     # models where we are behind or disagree
+bun run compare:models-dev --json              # everything, per model
+bun run compare:models-dev --ours a.json --theirs b.json   # saved inputs, no requests
+bun run compare:models-dev --check --min 0.9   # exit 1 below 90% parity
+```
+
+- A fact cell is `behind/they have`: matched pairs where only models.dev has
+  a value. `*` marks a fact on our source-silent ledger.
+- `noMatch` is our chat rows with no models.dev model; `theyOnly` is their
+  chat-like models we do not list. Ids match exactly, by our stored alias, or
+  by case and dots-vs-hyphens. Siblings and dated variants never match.
+- models.dev is not ground truth. "Behind" means a value exists there, not
+  that it is correct; check a disagreement against the provider's own page.
