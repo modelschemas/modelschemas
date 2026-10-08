@@ -157,7 +157,10 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // maxOutput and would leave it null for six hours.
 // v25: Bedrock cards gain request maps, feature flags, and price-list
 // rates. A v24 entry would leave those null for six hours.
-const DOCS_CACHE_VERSION = 'v25'
+// v26: Together reasoning pages and the serverless chat catalog cache
+// plain records. A v25 entry stored Maps, which JSON reads back as {},
+// and the next poll throws before any together row is written.
+const DOCS_CACHE_VERSION = 'v26'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
