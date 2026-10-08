@@ -236,12 +236,18 @@ type Usage struct {
 async function withGoSdk<T>(
   mode: 'ok' | 'unreachable',
   run: () => Promise<T>,
-): Promise<{ result: T; urls: Array<string> }> {
+): Promise<{
+  result: T
+  urls: Array<string>
+  authorizations: Array<string | null>
+}> {
   const original = globalThis.fetch
   const urls: Array<string> = []
-  globalThis.fetch = ((url: string) => {
+  const authorizations: Array<string | null> = []
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
     const href = String(url)
     urls.push(href)
+    authorizations.push(new Headers(init?.headers).get('Authorization'))
     if (mode === 'unreachable') return Promise.reject(new Error('network down'))
     const file = Object.keys(GO_FIXTURES).find((f) => href.endsWith(f))
     return Promise.resolve(
@@ -251,7 +257,7 @@ async function withGoSdk<T>(
     )
   }) as typeof fetch
   try {
-    return { result: await run(), urls }
+    return { result: await run(), urls, authorizations }
   } finally {
     globalThis.fetch = original
   }
@@ -259,9 +265,11 @@ async function withGoSdk<T>(
 
 describe('byteplus spec generated from the Go SDK', () => {
   it('classifies and bundles the generation endpoints without warnings', async () => {
-    const { result: fetched, urls } = await withGoSdk('ok', () =>
-      byteplusProvider.fetchSpec({}),
-    )
+    const {
+      result: fetched,
+      urls,
+      authorizations,
+    } = await withGoSdk('ok', () => byteplusProvider.fetchSpec({}))
     // All four model files come from the SDK's default branch.
     expect(urls).toHaveLength(4)
     for (const url of urls) {
@@ -276,6 +284,7 @@ describe('byteplus spec generated from the Go SDK', () => {
       'https://github.com/byteplus-sdk/byteplus-go-sdk-v2/tree/main/service/arkruntime/model',
     )
     expect(fetched.sources[1]?.url).toMatch(/^https:\/\/docs\.byteplus\.com\//)
+    expect(authorizations).toEqual([null, null, null, null])
     for (const source of fetched.sources) {
       expect(source.hash).toMatch(/^[0-9a-f]{64}$/)
     }
@@ -399,6 +408,17 @@ describe('byteplus spec generated from the Go SDK', () => {
       byteplusProvider.fetchSpec({}),
     )
     expect(a.sources.map((s) => s.hash)).toEqual(b.sources.map((s) => s.hash))
+  })
+
+  it('does not send GITHUB_TOKEN to raw.githubusercontent.com', async () => {
+    const { urls, authorizations } = await withGoSdk('ok', () =>
+      byteplusProvider.fetchSpec({ GITHUB_TOKEN: 'ghp_test' }),
+    )
+    expect(urls).toHaveLength(4)
+    for (const url of urls) {
+      expect(url.startsWith('https://raw.githubusercontent.com/')).toBe(true)
+    }
+    expect(authorizations).toEqual([null, null, null, null])
   })
 })
 

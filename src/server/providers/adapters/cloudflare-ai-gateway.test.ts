@@ -682,6 +682,30 @@ describe('cloudflare-ai-gateway', () => {
     expect(provider.modelsEndpoint).toBe(CATALOG_URL)
   })
 
+  it('sends GITHUB_TOKEN only to api.github.com', async () => {
+    const seen: Array<{ url: string; authorization: string | null }> = []
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      seen.push({
+        url: String(url),
+        authorization: new Headers(init?.headers).get('Authorization'),
+      })
+      const body = String(url) === CATALOG_DIR_URL ? [file(FABLE_URL)] : FABLE
+      return Promise.resolve(new Response(JSON.stringify(body)))
+    }) as typeof fetch
+
+    await provider.listModels({ GITHUB_TOKEN: 'ghp_test' })
+    expect(
+      seen.find((call) => call.url === CATALOG_DIR_URL)?.authorization,
+    ).toBe('Bearer ghp_test')
+    const raw = seen.filter((call) => call.url === FABLE_URL)
+    expect(raw.length).toBeGreaterThan(0)
+    expect(raw.every((call) => call.authorization === null)).toBe(true)
+
+    seen.length = 0
+    await provider.listModels({})
+    expect(seen.every((call) => call.authorization === null)).toBe(true)
+  })
+
   it('throws when the directory is empty or two files publish one id', async () => {
     globalThis.fetch = () => Promise.resolve(new Response('[]'))
     await expect(provider.listModels({})).rejects.toThrow(

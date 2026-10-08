@@ -120,6 +120,13 @@ export interface ProviderSecrets {
    * absent means capture is a no-op. US cloud, project 643425.
    */
   POSTHOG_PROJECT_KEY?: string
+  /**
+   * Optional token for `api.github.com`. Workers share egress IPs, so the
+   * anonymous 60-requests-per-hour quota returns 403. Sent as
+   * `Authorization: Bearer` on that host only. Absent or blank: those
+   * requests stay anonymous. `raw.githubusercontent.com` never uses it.
+   */
+  GITHUB_TOKEN?: string
 }
 
 /**
