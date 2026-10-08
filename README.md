@@ -212,8 +212,15 @@ upstream spec, no service needed).
    skipped with a recorded warning (OpenRouter needs none; Anthropic's spec
    sync is also keyless). `ARK_API_KEY` is the exception: it is optional and
    only upgrades BytePlus's model catalog from the embedded one to Ark's live
-   listing — BytePlus still serves schemas and a catalog without it. Set the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the
-   deployed origin (agent JWT audiences are origin-bound).
+   listing — BytePlus still serves schemas and a catalog without it.
+   `GITHUB_TOKEN` is optional too. When set, `api.github.com` requests send
+   `Authorization: Bearer` (the Cloudflare AI Gateway catalog listing). A
+   classic personal access token with no scopes is enough to leave the
+   anonymous 60-requests-per-hour quota that shared Worker egress exhausts.
+   `raw.githubusercontent.com` fetches, including the BytePlus Go SDK, stay
+   unauthenticated, and both polls still run when the token is absent. Set
+   the `BETTER_AUTH_URL` var in `wrangler.jsonc` to the deployed origin
+   (agent JWT audiences are origin-bound).
 
    Rather than setting them one at a time, reconcile against Doppler:
 

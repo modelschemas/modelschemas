@@ -57,6 +57,7 @@ import {
   bytePlusArkSpec,
   bytePlusVoiceSpec,
 } from './byteplus-spec.ts'
+import { githubRequestInit } from './github.ts'
 import { byteplusGenerationEndpointId } from './model-meta.ts'
 import { byteplusIdSuffixDate } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
@@ -97,17 +98,21 @@ function classify(path: string): Activity | null {
  * unreachable or the SDK is refactored beyond what the parser handles, so a
  * bad upstream day degrades the spec's freshness rather than the service.
  */
-async function fetchArkSpec(): Promise<{
+async function fetchArkSpec(env: ProviderSecrets): Promise<{
   spec: OpenApiDocument
   source: SpecSource
   warnings: Array<string>
 }> {
   try {
     const files = await Promise.all(
-      ARK_GO_FILES.map(async (name) => ({
-        name,
-        text: await fetchText(arkGoFileUrl(name)),
-      })),
+      ARK_GO_FILES.map(async (name) => {
+        const url = arkGoFileUrl(name)
+        return {
+          name,
+          // Raw host: githubRequestInit leaves these unauthenticated.
+          text: await fetchText(url, githubRequestInit(url, env)),
+        }
+      }),
     )
     const { spec, warnings } = buildArkSpecFromGo(files)
     return {
@@ -132,8 +137,8 @@ async function fetchArkSpec(): Promise<{
   }
 }
 
-async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const ark = await fetchArkSpec()
+async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
+  const ark = await fetchArkSpec(env)
   // Seed Speech appears in no BytePlus SDK in any language, so the voice
   // document stays hand-written; provenance hashes the document itself (the
   // FAL embedded-spec precedent).

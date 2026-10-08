@@ -18,6 +18,7 @@ import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 
+import { githubRequestInit } from '../github.ts'
 import { cachedDocs, mapConcurrent } from '../model-facts.ts'
 import type {
   ChatRequestMap,
@@ -773,17 +774,23 @@ function schemaHashInput(model: unknown): unknown {
 }
 
 async function listModels(
-  _env: ProviderSecrets,
+  env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const urls = await cachedDocs(kv, CATALOG_DIR_URL, async () =>
     catalogFileUrls(
-      await fetchText(CATALOG_DIR_URL, { headers: GITHUB_HEADERS }),
+      await fetchText(
+        CATALOG_DIR_URL,
+        githubRequestInit(CATALOG_DIR_URL, env, { headers: GITHUB_HEADERS }),
+      ),
     ),
   )
   const loaded = await mapConcurrent(urls, 8, async (url) => {
     const doc = await cachedDocs(kv, url, async () => {
-      const text = await fetchText(url, { headers: GITHUB_HEADERS })
+      const text = await fetchText(
+        url,
+        githubRequestInit(url, env, { headers: GITHUB_HEADERS }),
+      )
       return {
         text,
         hash: await sha256Text(text),
