@@ -150,85 +150,7 @@ describe('together listModels', () => {
   })
 
   it('parses Together’s bare-array catalog', async () => {
-    const original = globalThis.fetch
-    globalThis.fetch = ((url: string, init?: RequestInit) => {
-      const target = String(url)
-      const headers = new Headers(init?.headers)
-      if (
-        target.startsWith('https://api.together.xyz/') ||
-        target.startsWith('https://api.together.ai/')
-      ) {
-        expect(headers.get('Authorization')).toBe('Bearer test-key')
-      }
-      if (target.includes('/v2/supported-models')) {
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              data: [
-                {
-                  name: 'Qwen/Qwen3.5-9B',
-                  inputModalities: ['MODALITY_TEXT'],
-                  outputModalities: ['MODALITY_TEXT'],
-                  features: ['FEATURE_TOOL_CALLING', 'FEATURE_REASONING'],
-                },
-                {
-                  name: 'org/reason-flag',
-                  inputModalities: ['MODALITY_TEXT'],
-                  outputModalities: ['MODALITY_TEXT'],
-                  features: ['FEATURE_REASONING'],
-                },
-              ],
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          ),
-        )
-      }
-      if (target.includes('/serverless/models.md')) {
-        return textResponse(LIST_DOCS)
-      }
-      if (target.includes('/inference/chat/reasoning.md')) {
-        return textResponse(LIST_REASONING)
-      }
-      if (target.includes('/kimi-k3-quickstart.md'))
-        return textResponse(LIST_KIMI)
-      if (target.includes('/glm-5.3-quickstart.md'))
-        return textResponse(LIST_GLM)
-      if (target.endsWith('/gpt-oss.md')) return textResponse(LIST_GPT)
-      expect(target).toBe('https://api.together.xyz/v1/models')
-      return Promise.resolve(
-        new Response(
-          JSON.stringify([
-            {
-              id: 'Qwen/Qwen3.5-9B',
-              display_name: 'Qwen 3.5 9B',
-              created: 1692896905,
-              type: 'chat',
-              context_length: 32768,
-              config: { max_output_length: 8192 },
-              pricing: { input: 0.17, output: 0.25, cached_input: 0 },
-            },
-            {
-              id: 'moonshotai/Kimi-K3',
-              type: 'chat',
-              context_length: 1048576,
-              pricing: { input: 2.7, output: 13.5, cached_input: 0.27 },
-            },
-            { id: 'openai/gpt-oss-120b', type: 'chat', context_length: 131072 },
-            { id: 'zai-org/GLM-5.3', type: 'chat' },
-            {
-              id: 'zai-org/GLM-5.3-Flash',
-              type: 'chat',
-              context_length: 1048575,
-            },
-            { id: 'org/vision-only', type: 'chat', context_length: 0 },
-            { id: 'org/reason-flag', type: 'chat', context_length: 4096 },
-            { id: 'BAAI/bge-large-en-v1.5', type: 'embedding' },
-            { id: 'org/reranker', type: 'rerank' },
-          ]),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        ),
-      )
-    }) as typeof fetch
+    const restore = installTogetherFetch()
     try {
       const result = await provider.listModels({ TOGETHER_API_KEY: 'test-key' })
       expect(result.skipped).toBeUndefined()
@@ -315,10 +237,148 @@ describe('together listModels', () => {
       expect(byId['BAAI/bge-large-en-v1.5']?.activity).toBe('embeddings')
       expect(byId['org/reranker']?.activity).toBeNull()
     } finally {
-      globalThis.fetch = original
+      restore()
+    }
+  })
+
+  it('reads a JSON docs-cache hit back into reasoning and chat facts', async () => {
+    const docsFetches = { count: 0 }
+    const restore = installTogetherFetch(docsFetches)
+    const kv = jsonKv()
+    try {
+      await provider.listModels({ TOGETHER_API_KEY: 'test-key' }, kv)
+      const warmed = docsFetches.count
+      expect(warmed).toBeGreaterThan(0)
+      const result = await provider.listModels(
+        { TOGETHER_API_KEY: 'test-key' },
+        kv,
+      )
+      expect(docsFetches.count).toBe(warmed)
+      expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
+      const byId = Object.fromEntries(
+        result.models.map((model) => [model.rawId, model]),
+      )
+      expect(byId['Qwen/Qwen3.5-9B']?.reasoning).toEqual({
+        mode: 'toggle',
+        mandatory: false,
+      })
+      expect(byId['moonshotai/Kimi-K3']?.reasoning).toEqual({
+        mode: 'effort',
+        mandatory: false,
+        efforts: ['low', 'medium', 'high', 'max'],
+      })
+      expect(byId['openai/gpt-oss-120b']?.reasoning).toEqual({
+        mode: 'effort',
+        mandatory: true,
+        efforts: ['low', 'medium', 'high'],
+      })
+      expect(byId['zai-org/GLM-5.3']?.contextWindow).toBe(1048575)
+      expect(byId['org/vision-only']?.modalities).toEqual({
+        input: ['text', 'image'],
+        output: ['text'],
+      })
+    } finally {
+      restore()
     }
   })
 })
+
+/** KV that stores the same JSON `cachedDocs` writes. A Map comes back as `{}`. */
+function jsonKv(): KVNamespace {
+  const store = new Map<string, string>()
+  return {
+    get: (key: string) => Promise.resolve(store.get(key) ?? null),
+    put: (key: string, value: string) => {
+      store.set(key, value)
+      return Promise.resolve()
+    },
+  } as KVNamespace
+}
+
+function installTogetherFetch(docsFetches?: { count: number }): () => void {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    const target = String(url)
+    const headers = new Headers(init?.headers)
+    if (
+      target.startsWith('https://api.together.xyz/') ||
+      target.startsWith('https://api.together.ai/')
+    ) {
+      expect(headers.get('Authorization')).toBe('Bearer test-key')
+    }
+    if (target.includes('/v2/supported-models')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                name: 'Qwen/Qwen3.5-9B',
+                inputModalities: ['MODALITY_TEXT'],
+                outputModalities: ['MODALITY_TEXT'],
+                features: ['FEATURE_TOOL_CALLING', 'FEATURE_REASONING'],
+              },
+              {
+                name: 'org/reason-flag',
+                inputModalities: ['MODALITY_TEXT'],
+                outputModalities: ['MODALITY_TEXT'],
+                features: ['FEATURE_REASONING'],
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      )
+    }
+    if (target.includes('.md') && docsFetches) docsFetches.count += 1
+    if (target.includes('/serverless/models.md')) {
+      return textResponse(LIST_DOCS)
+    }
+    if (target.includes('/inference/chat/reasoning.md')) {
+      return textResponse(LIST_REASONING)
+    }
+    if (target.includes('/kimi-k3-quickstart.md'))
+      return textResponse(LIST_KIMI)
+    if (target.includes('/glm-5.3-quickstart.md')) return textResponse(LIST_GLM)
+    if (target.endsWith('/gpt-oss.md')) return textResponse(LIST_GPT)
+    expect(target).toBe('https://api.together.xyz/v1/models')
+    return Promise.resolve(
+      new Response(
+        JSON.stringify([
+          {
+            id: 'Qwen/Qwen3.5-9B',
+            display_name: 'Qwen 3.5 9B',
+            created: 1692896905,
+            type: 'chat',
+            context_length: 32768,
+            config: { max_output_length: 8192 },
+            pricing: { input: 0.17, output: 0.25, cached_input: 0 },
+          },
+          {
+            id: 'moonshotai/Kimi-K3',
+            type: 'chat',
+            context_length: 1048576,
+            pricing: { input: 2.7, output: 13.5, cached_input: 0.27 },
+          },
+          { id: 'openai/gpt-oss-120b', type: 'chat', context_length: 131072 },
+          { id: 'zai-org/GLM-5.3', type: 'chat' },
+          {
+            id: 'zai-org/GLM-5.3-Flash',
+            type: 'chat',
+            context_length: 1048575,
+          },
+          { id: 'org/vision-only', type: 'chat', context_length: 0 },
+          { id: 'org/reason-flag', type: 'chat', context_length: 4096 },
+          { id: 'BAAI/bge-large-en-v1.5', type: 'embedding' },
+          { id: 'org/reranker', type: 'rerank' },
+        ]),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    )
+  }) as typeof fetch
+  return () => {
+    globalThis.fetch = original
+  }
+}
 
 function textResponse(body: string): Promise<Response> {
   return Promise.resolve(
