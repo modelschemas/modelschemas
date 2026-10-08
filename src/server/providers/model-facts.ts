@@ -273,8 +273,11 @@ export function unavailable(
 
 /**
  * Throw when a docs parse comes back empty — never silently null a catalog.
- * A non-empty parse records `parse_rows` so a later drop is visible before
- * it hits zero. The zero-row throw is `ingest_failed` at the job boundary.
+ * A non-empty parse records one `parse_rows` event (`source`, `rows`).
+ * Cache hits do not emit, so the daily event count swings with the six-hour
+ * TTL and with deploys. The drop alert counts distinct `source` values on a
+ * finished UTC day and fires when that set shrinks. The zero-row throw is
+ * `ingest_failed` at the job boundary.
  */
 export function assertParsed<T>(rows: Map<string, T>, source: string): void {
   if (rows.size === 0) throw new Error(`${source}: parsed 0 model rows`)
