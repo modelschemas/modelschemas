@@ -224,6 +224,12 @@ describe('together listModels', () => {
             { id: 'org/reason-flag', type: 'chat', context_length: 4096 },
             { id: 'BAAI/bge-large-en-v1.5', type: 'embedding' },
             { id: 'org/reranker', type: 'rerank' },
+            { id: 'hexgrad/Kokoro-82M', type: 'audio', pricing: { input: 4 } },
+            {
+              id: 'rime-labs/rime-arcana-v2',
+              type: 'audio',
+              pricing: { input: 0.27, output: 0 },
+            },
           ]),
           { status: 200, headers: { 'content-type': 'application/json' } },
         ),
@@ -284,6 +290,13 @@ describe('together listModels', () => {
           { input_tokens: 1e6, output_tokens: 0 },
         ),
       ).toBeCloseTo(2.7, 9)
+      // Audio is priced from the catalog, never the listing's token object.
+      expect(byId['hexgrad/Kokoro-82M']?.pricing).toBeTruthy()
+      expect(byId['hexgrad/Kokoro-82M']?.absent).toBeUndefined()
+      const rime = byId['rime-labs/rime-arcana-v2']
+      expect(rime?.pricing).toBeUndefined()
+      expect(rime?.absent).toEqual({ pricing: 'cleared' })
+      expect(qwen?.absent).toBeUndefined()
       const gpt = byId['openai/gpt-oss-120b']
       expect(gpt?.reasoning).toEqual({
         mode: 'effort',
@@ -342,6 +355,12 @@ const LIST_DOCS = `
 | Organization | Model name | API model string | Context length | Input pricing (per 1M tokens) | Output pricing (per 1M tokens) |
 | :- | :- | :- | :- | :- | :- |
 | Org | Vision only | org/vision-only | 8192 | \\$1.00 | \\$1.00 |
+
+## Audio models
+
+| Organization | Modality | Model name | Model string for API | Pricing |
+| :- | :- | :- | :- | :- |
+| Kokoro | Text-to-Speech | Kokoro | hexgrad/Kokoro-82M | \\$4.00 per 1M chars |
 `
 
 const LIST_REASONING = `

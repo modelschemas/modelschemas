@@ -264,7 +264,11 @@ async function listModels(
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
     if (media && activity && MEDIA_ACTIVITIES.has(activity)) {
-      Object.assign(model, media(item.id as string, activity))
+      const priced = media(item.id as string, activity)
+      Object.assign(model, priced)
+      // The catalog was read and rates no price for this row, so a card
+      // stored from the listing's token object is stale (issue #258).
+      if (!priced.pricing) model.absent = { pricing: 'cleared' }
     } else {
       const card = await togetherRateCard(item.pricing)
       if (card) {
