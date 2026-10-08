@@ -300,7 +300,7 @@ async function listModels(
   ])
   const reasoning = new Map<string, ReturnType<typeof reasoningHit>>()
   if (reasoningPage) {
-    for (const [id, mode] of reasoningPage.byId) {
+    for (const [id, mode] of Object.entries(reasoningPage.byId)) {
       reasoning.set(
         id,
         reasoningHit(mode, TOGETHER_REASONING_URL, reasoningPage.hash),
@@ -310,7 +310,7 @@ async function listModels(
   TOGETHER_REASONING_QUICKSTARTS.forEach((url, index) => {
     const page = quickstarts[index]
     if (!page) return
-    for (const [id, mode] of page.byId) {
+    for (const [id, mode] of Object.entries(page.byId)) {
       reasoning.set(id, reasoningHit(mode, url, page.hash))
     }
   })

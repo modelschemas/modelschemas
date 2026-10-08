@@ -85,4 +85,12 @@ describe('parseDashscopeCompat', () => {
       /parsed 0 request parameters|no request-parameter section/,
     )
   })
+
+  it('names an HTML page as HTML, with its title', async () => {
+    await expect(
+      parseDashscopeCompat(
+        '<!DOCTYPE html><html><head><title>Just a moment</title></head></html>',
+      ),
+    ).rejects.toThrow(/response is HTML, not markdown \(title: Just a moment\)/)
+  })
 })

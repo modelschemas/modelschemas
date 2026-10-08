@@ -131,12 +131,27 @@ export function parseDashscopeModelLimits(
   return models
 }
 
+/**
+ * Throws when a Model Studio `.md` URL answered with an HTML page. The
+ * error carries the page title and the first 200 characters, so the next
+ * failure shows what Alibaba served (challenge, region notice).
+ */
+export function assertDashscopeMarkdown(body: string, label: string): void {
+  const text = body.trimStart()
+  if (!text.startsWith('<')) return
+  const title = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()
+  const head = text.slice(0, 200).replace(/\s+/g, ' ')
+  throw new Error(
+    `${label}: response is HTML, not markdown` +
+      (title ? ` (title: ${title})` : '') +
+      `: ${head}`,
+  )
+}
+
 export async function loadDashscopeModelLimits(
   markdown: string,
 ): Promise<DashscopeLimitsDoc> {
-  if (markdown.trimStart().startsWith('<')) {
-    throw new Error('dashscope model page: response is HTML, not markdown')
-  }
+  assertDashscopeMarkdown(markdown, 'dashscope model page')
   return {
     sourceHash: await sha256Text(markdown),
     models: parseDashscopeModelLimits(markdown),

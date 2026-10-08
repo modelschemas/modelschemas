@@ -48,9 +48,9 @@ export interface TogetherChatRow {
 }
 
 export interface TogetherDocsBundle {
-  chat: Map<string, TogetherChatRow>
+  chat: Record<string, TogetherChatRow>
   /** Vision-table ids the supported-models API did not already describe. */
-  vision: Map<string, { input: Array<string>; output: Array<string> }>
+  vision: Record<string, { input: Array<string>; output: Array<string> }>
   hash: string
   extractedAt: string
 }
@@ -254,9 +254,10 @@ export async function loadTogetherServerlessChat(
     const { markdown, hash } = await readDoc(TOGETHER_MODELS_DOCS_URL)
     const chat = parseTogetherChatCatalog(markdown)
     assertParsed(chat, 'together serverless chat catalog')
+    // Records, not Maps: cachedDocs stores JSON, and a Map serialises to {}.
     return {
-      chat,
-      vision: parseTogetherVisionModalities(markdown),
+      chat: Object.fromEntries(chat),
+      vision: Object.fromEntries(parseTogetherVisionModalities(markdown)),
       hash,
       extractedAt: new Date().toISOString(),
     }
@@ -266,12 +267,13 @@ export async function loadTogetherServerlessChat(
 export async function loadTogetherReasoningPage(
   kv: KVNamespace | undefined,
   cached: typeof cachedDocs,
-): Promise<{ byId: Map<string, ModelReasoning>; hash: string }> {
+): Promise<{ byId: Record<string, ModelReasoning>; hash: string }> {
   return cached(kv, TOGETHER_REASONING_URL, async () => {
     const { markdown, hash } = await readDoc(TOGETHER_REASONING_URL)
-    const byId = parseTogetherReasoning(markdown)
-    assertParsed(byId, 'together reasoning guide')
-    return { byId, hash }
+    const parsed = parseTogetherReasoning(markdown)
+    assertParsed(parsed, 'together reasoning guide')
+    // Records, not Maps: cachedDocs stores JSON, and a Map serialises to {}.
+    return { byId: Object.fromEntries(parsed), hash }
   })
 }
 
@@ -279,12 +281,12 @@ export async function loadTogetherQuickstart(
   kv: KVNamespace | undefined,
   cached: typeof cachedDocs,
   url: string,
-): Promise<{ byId: Map<string, ModelReasoning>; hash: string }> {
+): Promise<{ byId: Record<string, ModelReasoning>; hash: string }> {
   return cached(kv, url, async () => {
     const { markdown, hash } = await readDoc(url)
-    const byId = parseTogetherQuickstartReasoning(markdown)
-    assertParsed(byId, url)
-    return { byId, hash }
+    const parsed = parseTogetherQuickstartReasoning(markdown)
+    assertParsed(parsed, url)
+    return { byId: Object.fromEntries(parsed), hash }
   })
 }
 
@@ -329,7 +331,7 @@ export function applyTogetherDocs(
   }
   const sources: ModelFactSources = next.factSources ?? {}
   const absent = { ...(model.absent ?? {}) }
-  const chatRow = chat?.chat.get(model.rawId)
+  const chatRow = chat?.chat[model.rawId]
   if (model.contextWindow == null) {
     if (chatRow?.contextWindow != null && chat) {
       next.contextWindow = chatRow.contextWindow
@@ -367,9 +369,8 @@ export function applyTogetherDocs(
     }
   }
   if (next.modalities == null) {
-    const vision = chat?.vision.get(model.rawId)
-    if (vision && chat) {
-      next.modalities = vision
+    if (chat && model.rawId in chat.vision) {
+      next.modalities = chat.vision[model.rawId]
       sources.modalities = docsSource(
         TOGETHER_MODELS_DOCS_URL,
         chat.hash,
