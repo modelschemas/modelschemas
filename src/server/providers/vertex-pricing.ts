@@ -58,8 +58,10 @@ function cells(row: string): Array<string> {
 function columnsOf(header: Array<string>): Columns | null {
   const joined = header.join(' ').toLowerCase()
   if (/priority|flex|batch|codemender|alphaevolve/.test(joined)) return null
-  if (!(/1m tokens|token price/.test(joined) && /200k/.test(joined)))
-    return null
+  if (!/1m tokens|token price/.test(joined)) return null
+  // The image models moved to a table with one price per row and no 200K
+  // split (issue #258).
+  const tiered = /200k/.test(joined)
   const model = header.findIndex((cell) => /^model$/i.test(cell))
   const type = header.findIndex((cell) => /^type$/i.test(cell))
   const region = header.findIndex((cell) => /^region$/i.test(cell))
@@ -69,7 +71,7 @@ function columnsOf(header: Array<string>): Columns | null {
   let longCache = -1
   header.forEach((cell, index) => {
     const text = cell.toLowerCase()
-    if (!/200k/.test(text)) return
+    if (!(tiered ? /200k/ : /1m tokens/).test(text)) return
     const cached = /cach/.test(text)
     const greater = />/.test(text)
     if (cached && greater) longCache = index
@@ -77,7 +79,11 @@ function columnsOf(header: Array<string>): Columns | null {
     else if (greater) longIn = index
     else shortIn = index
   })
-  if (model < 0 || type < 0 || shortIn < 0 || longIn < 0) return null
+  if (model < 0 || type < 0 || shortIn < 0) return null
+  // A flat table counts only with a cached-input column. That is what
+  // tells the standard table from the page's other single-price tables
+  // (open models, embeddings, an unlabelled discount tab).
+  if (tiered ? longIn < 0 : shortCache < 0) return null
   return { model, type, region, shortIn, longIn, shortCache, longCache }
 }
 

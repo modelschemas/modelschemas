@@ -110,4 +110,46 @@ describe('parseVertexPricing', () => {
     expect(parsed.has(normModelName('Gemini 2.5 Pro Computer Use'))).toBe(false)
     expect(priceLevers('Image output per picture')).toBeNull()
   })
+
+  it('prices the image models from the table with no 200K split', () => {
+    const flat = parseVertexPricing(
+      [
+        table(
+          'Model | Type | Region | Price (/1M tokens) | Price (/1M tokens) cached input tokens',
+          [
+            'Gemini 3.1 Flash Image (Nano Banana 2) | Input (text, image, video) | Global | $0.50 | $0.05',
+            '| | Non-global | $0.55 | $0.055',
+            '| Text output (response and reasoning) | Global | $3.00 | N/A',
+            '| | Non-global | $3.30 | N/A',
+            '| Image Output | Global | $60.00 | N/A',
+            '| | Non-global | $66.00 | N/A',
+          ],
+        ),
+        table(
+          'Model | Type | Region | Price (/1M tokens) with Priority | Price (/1M tokens) cached input tokens with Priority',
+          [
+            'Gemini 3.1 Flash Image (Nano Banana 2) | Input (text, image, video) | Global | $0.90 | $0.09',
+          ],
+        ),
+        // No cached column: an open-model table, not the standard one.
+        table('Model | Type | Price (/1M tokens)', [
+          'Gemini Omni Flash | Input (text, image, video, audio) | $1.50',
+          '| Text output (response and reasoning) | $9.00',
+        ]),
+      ].join(''),
+      NOW,
+    )
+    expect(
+      flat.get(normModelName('Gemini 3.1 Flash Image (Nano Banana 2)')),
+    ).toEqual({
+      base: {
+        input_tokens: 0.5 / 1e6,
+        cache_read_tokens: 0.05 / 1e6,
+        output_tokens: 3 / 1e6,
+        image_output_tokens: 60 / 1e6,
+      },
+      tiers: [],
+    })
+    expect(flat.size).toBe(1)
+  })
 })
