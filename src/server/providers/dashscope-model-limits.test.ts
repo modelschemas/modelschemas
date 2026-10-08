@@ -89,8 +89,12 @@ describe('dashscope model limits', () => {
 
   it('rejects an HTML shell', async () => {
     await expect(
-      loadDashscopeModelLimits('<!DOCTYPE html><html></html>'),
-    ).rejects.toThrow(/not markdown/)
+      loadDashscopeModelLimits(
+        '<!DOCTYPE html><html><head>\n<title>Access denied</title></head></html>',
+      ),
+    ).rejects.toThrow(
+      /not markdown \(title: Access denied\): <!DOCTYPE html><html><head> <title>/,
+    )
   })
 
   it('points a dated snapshot at the stable model page', () => {

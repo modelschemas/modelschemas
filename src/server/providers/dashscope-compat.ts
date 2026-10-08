@@ -4,6 +4,7 @@
  * A parameter whose description limits it to some models is not stamped
  * on every chat row.
  */
+import { assertDashscopeMarkdown } from './dashscope-model-limits.ts'
 import type { ChatRequestMap } from './request-map.ts'
 import { sha256Text } from './types.ts'
 
@@ -180,6 +181,7 @@ function developerRole(messages: string | undefined): boolean | null {
 export async function parseDashscopeCompat(
   markdown: string,
 ): Promise<DashscopeCompatFacts> {
+  assertDashscopeMarkdown(markdown, DASHSCOPE_COMPAT_URL)
   const params = parameters(requestSection(markdown))
   const names = new Set(params.map((param) => param.name))
   const messages = params.find((param) => param.name === 'messages')
