@@ -174,25 +174,14 @@ describe('chatRequestMap', () => {
     }
   })
 
-  it('sends OpenRouter and Together thinking-on bodies', () => {
-    const openrouter = chatRequestMap('openrouter', 'openai/gpt-5.1', 'chat')
-    expect(openrouter?.thinking?.on).toEqual({ reasoning: { effort: 'high' } })
-    expect(openrouter?.thinking?.levels ?? null).toBeNull()
-    expect(openrouter?.sessionAffinity).toBe(true)
+  it('leaves host-specific OpenRouter and Together maps to native listing evidence', () => {
+    expect(chatRequestMap('openrouter', 'openai/gpt-5.1', 'chat')).toBeNull()
     expect(
-      chatRequestMap('openrouter', 'anthropic/claude-opus-4', 'chat')
-        ?.cacheControl,
-    ).toBe('anthropic')
-
-    const together = chatRequestMap(
-      'together',
-      'deepseek-ai/DeepSeek-V3',
-      'chat',
-    )
-    expect(together?.thinking?.on).toEqual({ reasoning: { enabled: true } })
-    expect(together?.maxTokensField).toBe('max_tokens')
-    expect(together?.developerRole).toBe(false)
-    expect(together?.reasoningEffort).toBe(false)
+      chatRequestMap('openrouter', 'anthropic/claude-opus-4', 'chat'),
+    ).toBeNull()
+    expect(
+      chatRequestMap('together', 'deepseek-ai/DeepSeek-V3', 'chat'),
+    ).toBeNull()
   })
 
   it('names max_tokens and rejects reasoning_effort where the docs do', () => {

@@ -10,15 +10,26 @@ import { pollProviderModels } from './poll-models.ts'
 afterEach(() => vi.unstubAllGlobals())
 
 it('ingests native Ant Ling rows and prices using real Worker KV and D1', async () => {
-  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-    const url = String(input)
-    const body = (fixtures as Record<string, string>)[url]
-    if (body === undefined) throw new Error(`unexpected native source ${url}`)
-    return new Response(body)
+  const BROWSER = {
+    quickAction: async (action: string, options: { url?: string }) => {
+      if (action !== 'content' || !options.url)
+        throw new Error('unexpected browser action')
+      const url = options.url
+      const body = (fixtures as Record<string, string>)[url]
+      if (body === undefined) throw new Error(`unexpected native source ${url}`)
+      return Response.json({
+        success: true,
+        result: body,
+        meta: { status: 200, finalUrl: url, title: 'native fixture' },
+      })
+    },
+  } as unknown as Pick<BrowserRun, 'quickAction'>
+  vi.stubGlobal('fetch', async () => {
+    throw new Error('native browser reader must not use direct fetch')
   })
   const db = getDb(env)
   const outcome = await pollProviderModels(
-    { db, kv: env.SCHEMA_CACHE, secrets: {} },
+    { db, kv: env.SCHEMA_CACHE, secrets: { BROWSER } },
     provider,
   )
   expect(outcome.modelsSeen).toBe(8)

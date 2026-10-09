@@ -19,7 +19,11 @@ import {
   tryDocs,
   unavailable,
 } from '../providers/model-facts.ts'
-import type { ModelInfo, ProviderConfig } from '../providers/types.ts'
+import type {
+  ModelInfo,
+  ModelFactSources,
+  ProviderConfig,
+} from '../providers/types.ts'
 import {
   readDocsFailing,
   readIngestRecords,
@@ -33,6 +37,12 @@ import {
 } from './poll-models.ts'
 import { MODELS_DEV_API_URL } from './retire-models-dev.ts'
 import type { SyncDeps } from './sync.ts'
+
+import {
+  openrouterProvider,
+  openrouterCapabilities,
+} from '../providers/openrouter.ts'
+import nativeRouterModels from '../providers/fixtures/openrouter-native-catalog-flags.json'
 
 function stubProvider(id: string, list: Array<ModelInfo>): ProviderConfig {
   return {
@@ -74,6 +84,66 @@ const haiku: ModelInfo = {
 }
 
 describe('pollProviderModels', () => {
+  it('clears a stored heuristic map when the native listing explicitly reports unknown', async () => {
+    const id = 'openai'
+    const deps = await freshDeps(id)
+    const rawId = 'native-map-unverified'
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ rawId, activity: 'chat' }]),
+    )
+    const before = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, rawId)))
+    expect(before[0]?.requestMap).toMatchObject({
+      thinking: { on: { reasoning_effort: 'high' } },
+    })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ rawId, activity: 'chat', requestMap: null }]),
+    )
+    const after = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, rawId)))
+    expect(after[0]?.requestMap).toBeNull()
+  })
+  it('never refills unknown OpenRouter or Together caller controls with static host recipes', async () => {
+    for (const id of ['openrouter', 'together']) {
+      const deps = await freshDeps(id)
+      const rawId = 'native-unknown-controls'
+      await pollProviderModels(
+        deps,
+        stubProvider(id, [
+          {
+            rawId,
+            activity: 'chat',
+            capabilities: ['reasoning'],
+            reasoning: null,
+            requestMap: null,
+          },
+        ]),
+      )
+      await pollProviderModels(
+        deps,
+        stubProvider(id, [
+          {
+            rawId,
+            activity: 'chat',
+            capabilities: ['reasoning'],
+            reasoning: null,
+          },
+        ]),
+      )
+      const rows = await deps.db
+        .select()
+        .from(models)
+        .where(eq(models.id, modelDbId(id, rawId)))
+      expect(rows[0]?.requestMap).toBeNull()
+    }
+  })
+
   it('covers add / no-change / update / remove cycles', async () => {
     const id = 'poll-main'
     const deps = await freshDeps(id)
@@ -1306,6 +1376,75 @@ describe('models.dev residue on skip (issue #197)', () => {
 })
 
 describe('perModelSchemaFlags', () => {
+  it('clears generic OpenRouter reasoning flags while preserving exact native support and unknowns', async () => {
+    const id = 'poll-openrouter-native-scope'
+    const deps = await freshDeps(id)
+    const endpointId = 'chat/completions'
+    await deps.db.insert(endpoints).values({
+      id: `${id}/${endpointId}`,
+      providerId: id,
+      activity: 'chat',
+      method: 'POST',
+      path: '/chat/completions',
+    })
+    await deps.db.insert(schemaVersions).values({
+      id: `${id}/${endpointId}:input`,
+      endpointId: `${id}/${endpointId}`,
+      kind: 'input',
+      contentHash: 'e'.repeat(64),
+      schema: JSON.stringify({
+        type: 'object',
+        properties: {
+          reasoning: { type: 'object' },
+          temperature: { type: 'number' },
+        },
+      }),
+      derivation: 'upstream-spec',
+      sourceUrl: 'https://openrouter.ai/openapi.json',
+      createdAt: 1_781_150_000,
+    })
+    const listed = [nativeRouterModels.reasoner, nativeRouterModels.plain].map(
+      (row) => ({
+        rawId: row.id,
+        activity: 'chat' as const,
+        schemaEndpointId: endpointId,
+        capabilities: openrouterCapabilities(row),
+        requestMap: null,
+      }),
+    )
+    const provider = {
+      ...stubProvider(id, listed),
+      perModelSchemaFlags: openrouterProvider.perModelSchemaFlags,
+    }
+    // Reproduce the previously stored shared-schema enrichment, then refresh native scope.
+    await pollProviderModels(deps, { ...provider, perModelSchemaFlags: [] })
+    const oldPlain = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId(id, nativeRouterModels.plain.id)))
+    expect(oldPlain[0]?.capabilities).toMatchObject({ reasoning: true })
+    await pollProviderModels(deps, provider)
+    const refreshed = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.providerId, id))
+    const reasoner = refreshed.find(
+      (row) => row.rawId === nativeRouterModels.reasoner.id,
+    )
+    const plain = refreshed.find(
+      (row) => row.rawId === nativeRouterModels.plain.id,
+    )
+    expect(reasoner?.capabilities).toMatchObject({ reasoning: true })
+    expect(plain?.capabilities).not.toHaveProperty('reasoning')
+    expect(plain?.requestMap).toBeNull()
+    expect(
+      Object.hasOwn(
+        (plain?.factSources as ModelFactSources | null)?.capabilities ?? {},
+        'reasoning',
+      ),
+    ).toBe(false)
+  })
+
   it('keeps the named schema flags off unless the listing states them', async () => {
     const id = 'poll-per-model-flags'
     const deps = await freshDeps(id)

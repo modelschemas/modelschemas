@@ -5,7 +5,7 @@ import type { DbEnv } from '#/db/index.ts'
 import { isAdminRequest } from '#/server/admin.ts'
 import { getAuth } from '#/server/auth.ts'
 import type { KvEnv } from '#/server/kv.ts'
-import type { ProviderSecrets } from '#/server/providers/types.ts'
+import type { ProviderEnvironment } from '#/server/providers/types.ts'
 import { withDiscoveryLinks } from '#/server/discovery-links.ts'
 import {
   markdownForPath,
@@ -32,7 +32,7 @@ import type { SyncDeps } from '#/server/ingest/sync.ts'
 // entrypoints and requires them to be functions/ExportedHandlers.
 const MODELS_POLL_CRON = '*/15 * * * *'
 
-export interface WorkerEnv extends DbEnv, KvEnv, ProviderSecrets {
+export interface WorkerEnv extends DbEnv, KvEnv, ProviderEnvironment {
   ADMIN_KEY?: string
 }
 

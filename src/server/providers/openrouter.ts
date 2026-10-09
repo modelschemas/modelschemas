@@ -14,6 +14,8 @@ import {
 import { cachedDocs } from './model-facts.ts'
 import {
   openRouterGatewayEfforts,
+  openRouterGatewayToggle,
+  openRouterGatewayEffortWire,
   OPENROUTER_REASONING_URL,
 } from './openrouter-reasoning.ts'
 import { openRouterReasoning } from './reasoning-config.ts'
@@ -313,21 +315,55 @@ async function listModels(
   const body = (await fetchJson(OPENROUTER_MODELS_URL)) as OpenRouterModelList
   if (!Array.isArray(body.data) || !body.data.length)
     throw new Error('openrouter: missing or empty native model catalog')
-  const gateway = body.data.some(
+  const needsToggle = body.data.some((m) => m.reasoning?.mandatory === false)
+  const needsEffortWire = body.data.some(
     (m) =>
-      m.reasoning?.supported_efforts === null &&
-      typeof m.reasoning.mandatory === 'boolean',
+      typeof m.reasoning?.mandatory === 'boolean' &&
+      Array.isArray(m.reasoning.supported_efforts) &&
+      m.reasoning.supported_efforts.includes('high'),
   )
-    ? await cachedDocs(kv, OPENROUTER_REASONING_URL, async () => {
-        const text = await fetchText(OPENROUTER_REASONING_URL, {
-          signal: AbortSignal.timeout(30_000),
-        })
-        return {
-          efforts: openRouterGatewayEfforts(text),
-          hash: await sha256Text(text),
-        }
-      })
-    : null
+  const gateway =
+    needsToggle ||
+    needsEffortWire ||
+    body.data.some(
+      (m) =>
+        m.reasoning?.supported_efforts === null &&
+        typeof m.reasoning.mandatory === 'boolean',
+    )
+      ? await cachedDocs(
+          kv,
+          `${OPENROUTER_REASONING_URL}#${needsToggle ? 'gateway-efforts-and-toggle-wire-v1' : 'gateway-efforts-wire-v1'}`,
+          async () => {
+            const text = await fetchText(OPENROUTER_REASONING_URL, {
+              signal: AbortSignal.timeout(30_000),
+            })
+            return {
+              efforts: openRouterGatewayEfforts(text),
+              effortWire: openRouterGatewayEffortWire(text),
+              toggle: needsToggle ? openRouterGatewayToggle(text) : undefined,
+              hash: await sha256Text(text),
+            }
+          },
+        )
+      : null
+  const ownThinking = (m: NonNullable<OpenRouterModelList['data']>[number]) => {
+    const reason = openRouterReasoning(
+      m,
+      gateway?.efforts,
+      gateway?.toggle !== undefined,
+    )
+    if (reason?.mode === 'toggle') return gateway?.toggle ?? null
+    const high = reason?.efforts?.find((e) => e === 'high')
+    if (reason?.mode === 'effort' && high && gateway?.effortWire)
+      return {
+        on: {
+          [gateway.effortWire.outer]: { [gateway.effortWire.field]: high },
+        },
+        off: reason.mandatory === false ? (gateway.toggle?.off ?? null) : null,
+        levels: null,
+      }
+    return null
+  }
   return {
     models: body.data.map((m) => ({
       rawId: m.id,
@@ -344,17 +380,59 @@ async function listModels(
           }
         : undefined,
       capabilities: openrouterCapabilities(m),
-      reasoning: openRouterReasoning(m, gateway?.efforts),
+      requestMap: null,
+      reasoning: openRouterReasoning(
+        m,
+        gateway?.efforts,
+        gateway?.toggle !== undefined,
+      ),
+      ...(ownThinking(m)
+        ? {
+            requestMap: {
+              thinking: ownThinking(m),
+              maxTokensField: null,
+              developerRole: null,
+              replayReasoningContent: null,
+              store: null,
+              strictTools: null,
+              sessionAffinity: null,
+              cacheControl: null,
+              toolStream: null,
+              reasoningEffort: null,
+            },
+          }
+        : {}),
       ...(gateway &&
-      m.reasoning?.supported_efforts === null &&
-      typeof m.reasoning.mandatory === 'boolean'
+      (m.reasoning?.supported_efforts === null || ownThinking(m) !== null) &&
+      typeof m.reasoning?.mandatory === 'boolean'
         ? {
             factSources: {
+              ...(ownThinking(m)
+                ? {
+                    requestMapFields: {
+                      thinking: {
+                        derivation: 'docs-derived' as const,
+                        sourceUrl: OPENROUTER_REASONING_URL,
+                        sourceHash: gateway.hash,
+                        path: 'native accepted effort values or nonmandatory toggle; normative universal normalized reasoning effort/enabled fields',
+                      },
+                    },
+                  }
+                : {}),
               reasoning: {
                 derivation: 'docs-derived' as const,
                 sourceUrl: OPENROUTER_REASONING_URL,
                 sourceHash: gateway.hash,
-                path: 'supported_efforts:null; normative gateway effort bullets; listing mandatory',
+                path:
+                  m.reasoning.supported_efforts === null
+                    ? 'supported_efforts:null; normative gateway effort bullets; listing mandatory'
+                    : openRouterReasoning(
+                          m,
+                          gateway.efforts,
+                          gateway.toggle !== undefined,
+                        )?.mode === 'toggle'
+                      ? 'native mandatory:false; Messages API normalized reasoning.enabled accepted on every reasoning model; explicit disables prose'
+                      : 'native per-model accepted efforts and mandatory metadata; universal normalized reasoning.effort field',
               },
             },
           }
@@ -374,6 +452,8 @@ export const openrouterProvider: ProviderConfig = {
   displayName: 'OpenRouter',
   defaultDerivation: 'upstream-spec',
   specGrain: 'provider',
+  // The shared gateway schema describes an available parameter, not support by every model.
+  perModelSchemaFlags: ['reasoning'],
   connect: bearerConnect('https://openrouter.ai/api/v1'),
   fetchSpec,
   listModels,

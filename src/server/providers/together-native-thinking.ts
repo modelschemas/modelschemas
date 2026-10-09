@@ -162,18 +162,22 @@ export function applyTogetherNativeThinking(
     sourceHash: doc.hash,
     path,
   })
-  const map: ChatRequestMap = model.requestMap ?? {
-    thinking: null,
-    maxTokensField: null,
-    developerRole: null,
-    replayReasoningContent: null,
-    store: null,
-    strictTools: null,
-    sessionAffinity: null,
-    cacheControl: null,
-    toolStream: null,
-    reasoningEffort: null,
-  }
+  const map: ChatRequestMap | null =
+    model.requestMap ??
+    (replay
+      ? {
+          thinking: null,
+          maxTokensField: null,
+          developerRole: null,
+          replayReasoningContent: null,
+          store: null,
+          strictTools: null,
+          sessionAffinity: null,
+          cacheControl: null,
+          toolStream: null,
+          reasoningEffort: null,
+        }
+      : null)
   return {
     ...model,
     ...(reason
@@ -181,7 +185,7 @@ export function applyTogetherNativeThinking(
           capabilities,
         }
       : {}),
-    requestMap: { ...map, ...(replay ? { replayReasoningContent: true } : {}) },
+    requestMap: map && replay ? { ...map, replayReasoningContent: true } : map,
     factSources: {
       ...model.factSources,
       ...(reason

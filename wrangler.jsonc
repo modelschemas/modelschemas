@@ -40,6 +40,10 @@
     // not a floor — unused headroom costs nothing.
     "cpu_ms": 300000,
   },
+  "browser": {
+    "binding": "BROWSER",
+    "remote": true,
+  },
   "send_email": [
     {
       "name": "EMAIL",

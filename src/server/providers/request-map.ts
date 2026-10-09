@@ -58,8 +58,6 @@ const VLLM_QWEN_ON = {
 }
 const KIMI_ON = { thinking: { type: 'enabled' } }
 const KIMI_OFF = { thinking: { type: 'disabled' } }
-const OPENROUTER_ON = { reasoning: { effort: 'high' } }
-const TOGETHER_ON = { reasoning: { enabled: true } }
 const MINIMAX_ON = { thinking: { type: 'adaptive' } }
 const MINIMAX_OFF = { thinking: { type: 'disabled' } }
 
@@ -335,31 +333,10 @@ export function chatRequestMap(
         ),
         developerRole: false,
       })
-    case 'openrouter':
-      return blank({
-        thinking: withLevels(
-          { on: OPENROUTER_ON, off: null, levels: null },
-          providerId,
-          rawId,
-        ),
-        sessionAffinity: true,
-        cacheControl: rawId.startsWith('anthropic/') ? 'anthropic' : null,
-      })
     // Hugging Face's chat-completion schema names `max_tokens` only. The
     // rest depends on the routed provider, so it stays null.
     case 'huggingface':
       return blank({ maxTokensField: 'max_tokens' })
-    case 'together':
-      return blank({
-        thinking: withLevels(
-          { on: TOGETHER_ON, off: null, levels: null },
-          providerId,
-          rawId,
-        ),
-        maxTokensField: 'max_tokens',
-        developerRole: false,
-        reasoningEffort: false,
-      })
     // From Moonshot's chat spec, not probed. The international and China
     // documents agree: `max_tokens` is deprecated for
     // `max_completion_tokens`, the role enum has no `developer`, and only

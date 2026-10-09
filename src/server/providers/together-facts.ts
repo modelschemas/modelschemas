@@ -5,7 +5,9 @@
  * publish a number. A zero listing rate stays unpublished.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
+import { isCapabilityMap } from '#/lib/capabilities.ts'
 
+import type { ThinkingRequest } from './request-map.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import type { cachedDocs } from './model-facts.ts'
 import {
@@ -59,6 +61,7 @@ export interface TogetherReasoningHit {
   reasoning: ModelReasoning
   sourceUrl: string
   sourceHash: string
+  thinking?: ThinkingRequest | null
 }
 
 function section(markdown: string, heading: string): string {
@@ -188,6 +191,100 @@ export function parseTogetherReasoning(
   return out
 }
 
+/** An explicit own-host family contract binds only native catalog family names. */
+export function parseTogetherGptOssFamily(
+  markdown: string,
+): ModelReasoning | null {
+  const prose = stripFences(markdown)
+  if (
+    !/^GPT-OSS models support a `reasoning_effort` parameter that controls how much computation the model spends on reasoning\./m.test(
+      prose,
+    )
+  )
+    return null
+  const definition = prose.match(
+    /^\* \*\*Adjustable effort:\*\* Supports the `reasoning_effort` parameter to control reasoning depth \(([^)]*)\)\./m,
+  )
+  const efforts = definition ? quotedLevels(definition[1] ?? '') : []
+  if (!efforts.length)
+    throw new Error('together: native GPT-OSS effort values missing')
+  return { mode: 'effort', mandatory: null, efforts }
+}
+
+export function togetherGptOssFamilyMatches(
+  displayName: string | null,
+): boolean {
+  return (
+    typeof displayName === 'string' &&
+    /^(?:OpenAI )?GPT-OSS \d+B$/i.test(displayName)
+  )
+}
+
+/** Additional dedicated controls require a named native operational disable contract. */
+export function parseTogetherNamedHybrid(
+  markdown: string,
+): { nativeBasename: string; reasoning: ModelReasoning } | null {
+  const prose = stripFences(markdown)
+  const supported = prose.match(
+    /^Additional reasoning models,[^\n]* and (DeepSeek V[\d.]+) \(hybrid\), are available for \[dedicated model inference\]/m,
+  )?.[1]
+  if (!supported) return null
+  const operational = prose.match(
+    /^\s*For (DeepSeek V[\d.]+), function calling only works in non-reasoning mode \(`reasoning=\{"enabled": False\}`\)\./m,
+  )?.[1]
+  if (
+    operational !== supported ||
+    !/^\* \*\*Hybrid:\*\* Supports both reasoning and non-reasoning modes via `reasoning=\{"enabled": True\/False\}`\./m.test(
+      prose,
+    )
+  )
+    throw new Error('together: named hybrid enable/disable contract missing')
+  return {
+    nativeBasename: supported.replace(' ', '-'),
+    reasoning: { mode: 'toggle', mandatory: false },
+  }
+}
+export function togetherNamedHybridMatches(
+  rawId: string,
+  nativeBasename: string,
+): boolean {
+  return rawId === 'deepseek-ai/' + nativeBasename
+}
+
+export function parseTogetherFamilyThinking(markdown: string): {
+  effort: ThinkingRequest | null
+  hybrid: ThinkingRequest | null
+} {
+  const prose = stripFences(markdown)
+  const gpt = parseTogetherGptOssFamily(markdown)
+  const effortField = prose.match(
+    /^GPT-OSS models support a `([a-z_]+)` parameter/m,
+  )?.[1]
+  const high = gpt?.efforts?.find((value) => value === 'high')
+  const hybrid = parseTogetherNamedHybrid(markdown)
+  const hybridWire = prose.match(
+    /^\* \*\*Hybrid:\*\* Supports both reasoning and non-reasoning modes via `([a-z_]+)=\{"([a-z_]+)": (True)\/(False)\}`\./m,
+  )
+  return {
+    effort:
+      gpt && effortField && high
+        ? { on: { [effortField]: high }, off: null, levels: null }
+        : null,
+    hybrid:
+      hybrid && hybridWire?.[1] && hybridWire[2]
+        ? {
+            on: {
+              [hybridWire[1]]: { [hybridWire[2]]: hybridWire[3] === 'True' },
+            },
+            off: {
+              [hybridWire[1]]: { [hybridWire[2]]: hybridWire[4] === 'True' },
+            },
+            levels: null,
+          }
+        : null,
+  }
+}
+
 /**
  * One quickstart page. A single `The model ID is` wins. Otherwise only
  * model ids in that page's effort section are used, so a sibling variant
@@ -267,13 +364,25 @@ export async function loadTogetherServerlessChat(
 export async function loadTogetherReasoningPage(
   kv: KVNamespace | undefined,
   cached: typeof cachedDocs,
-): Promise<{ byId: Record<string, ModelReasoning>; hash: string }> {
-  return cached(kv, TOGETHER_REASONING_URL, async () => {
+): Promise<{
+  byId: Record<string, ModelReasoning>
+  gptOssFamily: ModelReasoning | null
+  namedHybrid: ReturnType<typeof parseTogetherNamedHybrid>
+  familyThinking: ReturnType<typeof parseTogetherFamilyThinking>
+  hash: string
+}> {
+  return cached(kv, `${TOGETHER_REASONING_URL}#named-families-v1`, async () => {
     const { markdown, hash } = await readDoc(TOGETHER_REASONING_URL)
     const parsed = parseTogetherReasoning(markdown)
     assertParsed(parsed, 'together reasoning guide')
     // Records, not Maps: cachedDocs stores JSON, and a Map serialises to {}.
-    return { byId: Object.fromEntries(parsed), hash }
+    return {
+      byId: Object.fromEntries(parsed),
+      gptOssFamily: parseTogetherGptOssFamily(markdown),
+      namedHybrid: parseTogetherNamedHybrid(markdown),
+      familyThinking: parseTogetherFamilyThinking(markdown),
+      hash,
+    }
   })
 }
 
@@ -382,14 +491,49 @@ export function applyTogetherDocs(
   }
   const hit = reasoning?.get(model.rawId)
   if (hit) {
+    if (
+      next.unsupportedCapabilities?.includes('reasoning') ||
+      (isCapabilityMap(next.capabilities) &&
+        next.capabilities.reasoning === false)
+    )
+      throw new Error(
+        'together: native controls contradict existing explicit reasoning rejection',
+      )
     next.reasoning = hit.reasoning
     sources.reasoning = docsSource(hit.sourceUrl, hit.sourceHash, 'reasoning')
+    if ('thinking' in hit) {
+      next.requestMap = {
+        ...(next.requestMap ?? {
+          thinking: null,
+          maxTokensField: null,
+          developerRole: null,
+          replayReasoningContent: null,
+          store: null,
+          strictTools: null,
+          sessionAffinity: null,
+          cacheControl: null,
+          toolStream: null,
+          reasoningEffort: null,
+        }),
+        thinking: hit.thinking ?? null,
+      }
+      sources.requestMapFields = {
+        ...sources.requestMapFields,
+        thinking: docsSource(
+          hit.sourceUrl,
+          hit.sourceHash,
+          'native named-family caller control declaration',
+        ),
+      }
+    }
     const flags = Array.isArray(next.capabilities)
       ? next.capabilities.filter(
           (flag): flag is string => typeof flag === 'string',
         )
       : null
-    next.capabilities = unionFlag(flags, 'reasoning')
+    next.capabilities = isCapabilityMap(next.capabilities)
+      ? { ...next.capabilities, reasoning: true }
+      : unionFlag(flags, 'reasoning')
     sources.capabilities = {
       ...(sources.capabilities ?? {}),
       reasoning: docsSource(hit.sourceUrl, hit.sourceHash, 'reasoning'),
@@ -418,8 +562,14 @@ export function reasoningHit(
   reasoning: ModelReasoning,
   sourceUrl: string,
   sourceHash: string,
+  thinking?: ThinkingRequest | null,
 ): TogetherReasoningHit {
-  return { reasoning, sourceUrl, sourceHash }
+  return {
+    reasoning,
+    sourceUrl,
+    sourceHash,
+    ...(thinking !== undefined ? { thinking } : {}),
+  }
 }
 
 const TOGETHER_SUPPORTED_URL = 'https://api.together.ai/v2/supported-models'

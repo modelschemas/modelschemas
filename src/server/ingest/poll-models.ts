@@ -135,10 +135,9 @@ function reasoningSourcePath(sources: unknown): string | null {
  * provider-wide table.
  */
 function requestMapFor(providerId: string, info: ModelInfo) {
-  return (
-    info.requestMap ??
-    chatRequestMap(providerId, info.rawId, info.activity ?? null)
-  )
+  return info.requestMap !== undefined
+    ? info.requestMap
+    : chatRequestMap(providerId, info.rawId, info.activity ?? null)
 }
 
 /** The fields whose changes constitute a `model.updated` event. */
