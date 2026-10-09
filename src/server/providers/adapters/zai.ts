@@ -127,6 +127,8 @@ interface SpecFacts {
   efforts: Array<string>
   /** The variant's `thinking.type` schema, unread; undefined when it has none. */
   thinkingType: unknown
+  /** Exact model-bound request variant publishes a normative preserved-history rule. */
+  replayReasoningContent?: FactSource
   /** Chat only: flag → where the variant's own request states it. */
   capabilities: Record<string, FactSource> | null
 }
@@ -613,6 +615,44 @@ export function zaiSpecFacts(
             modalities: chat ? { input: chat.input, output: ['text'] } : null,
             efforts,
             thinkingType: at(spec, props.thinking, 'properties', 'type'),
+            ...(() => {
+              const description = at(
+                spec,
+                props.thinking,
+                'properties',
+                'clear_thinking',
+                'description',
+              )
+              if (activity !== 'chat' || typeof description !== 'string')
+                return {}
+              const supported = zaiSupportedBy(description, id, wording)
+              if (supported === false) return {}
+              if (
+                supported === null &&
+                /only (?:supports?|supported|available|applies)|supported only|GLM-[\d.]+\+/i.test(
+                  description,
+                )
+              ) {
+                throw new Error(
+                  `${wording.label}: unreadable clear_thinking model restriction`,
+                )
+              }
+              if (
+                !/`false`[^\n]*Retains `reasoning_content`/.test(description) ||
+                !/must forward the full, unmodified, and correctly ordered historical `reasoning_content` in `messages`/.test(
+                  description,
+                )
+              )
+                return {}
+              return {
+                replayReasoningContent: {
+                  derivation: 'upstream-spec' as const,
+                  sourceUrl: source.url,
+                  sourceHash: source.hash,
+                  path: `${schemaEndpointId}/requestBody/model=${id}/thinking/clear_thinking`,
+                },
+              }
+            })(),
             capabilities: chat
               ? variantCapabilities(
                   spec,
@@ -732,7 +772,7 @@ export function parseZaiModels(
         ? { modalities: from(spec, 'upstream-spec', 'messages') }
         : {}),
     }
-    return {
+    const model: ModelInfo = {
       rawId,
       pricing: card,
       ...(fact
@@ -750,6 +790,11 @@ export function parseZaiModels(
       ...(reasoning ? { reasoning } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     }
+    return fact?.replayReasoningContent &&
+      model.activity === 'chat' &&
+      (reasoning !== null || capabilities?.reasoning != null)
+      ? applyReplay(model, fact.replayReasoningContent)
+      : model
   })
 }
 

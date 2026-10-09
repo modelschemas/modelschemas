@@ -8,6 +8,8 @@
  * Prices, reasoning, and the chat request map are read on each poll from
  * the pricing page, the serverless models API, and that same YAML.
  */
+import { fireworksHostedReasoning } from '../native-host-reasoning.ts'
+import { mapConcurrent, docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import type { Activity } from '#/db/schema.ts'
 import {
   applyFireworksDocs,
@@ -21,7 +23,6 @@ import {
   FIREWORKS_PRICING_URL,
   loadFireworksPricingDoc,
 } from '../fireworks-pricing.ts'
-import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import {
   compatGenerationEndpointId,
   fireworksModalities,
@@ -115,15 +116,24 @@ async function listModels(
   const context = serverless?.context ?? {}
   return {
     ...listed,
-    models: listed.models.map((model) =>
-      overlayModelFacts(
-        model,
-        applyFireworksDocs(model, {
-          prices,
-          context,
-          contextHash: serverless?.hash ?? null,
-          chat,
-        }),
+    models: await mapConcurrent(listed.models, 4, async (model) =>
+      fireworksHostedReasoning(
+        overlayModelFacts(
+          model,
+          applyFireworksDocs(model, {
+            prices,
+            context,
+            contextHash: serverless?.hash ?? null,
+            chat,
+          }),
+        ),
+        key ??
+          (() => {
+            throw new Error(
+              'fireworks: missing API key for native model metadata',
+            )
+          })(),
+        kv,
       ),
     ),
     docsFailures: docsReport(docs),

@@ -1,3 +1,4 @@
+import hostDocs from '../fixtures/host-native-reasoning.json'
 import { describe, expect, it } from 'vitest'
 
 import { price } from '@modelschemas/rate-card'
@@ -135,6 +136,13 @@ describe('fireworks listModels docs', () => {
           }),
         )
       }
+      for (const [id, body] of Object.entries(hostDocs.fireworks)) {
+        if (
+          href ===
+          'https://api.fireworks.ai/v1/accounts/fireworks/models/' + id
+        )
+          return Promise.resolve(Response.json(body))
+      }
       if (href.includes('/v1/serverless/models')) {
         return Promise.resolve(Response.json(serverlessBody))
       }
@@ -187,7 +195,11 @@ describe('fireworks listModels docs', () => {
       expect(qwen?.reasoning?.mode).toBe('effort')
       expect(qwen?.capabilities).toEqual(['tools', 'reasoning'])
       expect(ember?.reasoning ?? null).toBeNull()
-      expect(ember?.capabilities).toEqual(['tools'])
+      expect(ember?.capabilities).toEqual(['tools', 'reasoning'])
+      expect(inkling?.capabilities).toContain('reasoning')
+      expect(ember?.factSources?.capabilities?.reasoning?.sourceUrl).toBe(
+        'https://api.fireworks.ai/v1/accounts/fireworks/models/ember-1',
+      )
       expect(ember?.requestMap?.reasoningEffort).toBeNull()
       expect(rerank?.activity).toBeNull()
       expect(rerank?.requestMap ?? null).toBeNull()

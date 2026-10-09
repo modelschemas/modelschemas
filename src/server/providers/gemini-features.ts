@@ -286,18 +286,20 @@ const EFFORT_WORDS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
  * be turned off.
  */
 export function parsePageThinking(markdown: string): ModelReasoning | null {
+  const prose = markdown.replace(/```[\s\S]*?```/g, '')
   const sets: Array<Array<string>> = []
   let mandatory: boolean | null = null
-  const cell = markdown.match(
+  const cell = prose.match(
     /\*\*\[Thinking\]\([^)]*\)\*\*\s*Supported\s*\(([^)]+)\)/,
   )?.[1]
   if (cell) {
-    const declared = cell.split(',').map((value) => value.trim())
+    if (cell.trim() === 'interleaved reasoning') return null
+    const declared = cell.split(/,|\band\b/).map((value) => value.trim())
     if (!declared.every((value) => EFFORT_WORDS.includes(value)))
       throw new Error('gemini model page: unreadable native thinking levels')
     sets.push(declared)
   }
-  for (const para of markdown.split(/\n\s*\n/)) {
+  for (const para of prose.split(/\n\s*\n/)) {
     if (!/thinking[_\s-]?levels?/i.test(para)) continue
     const unsupported = new Set<string>()
     for (const match of para.matchAll(

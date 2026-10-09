@@ -26,7 +26,6 @@ export const NVIDIA_ACTIVITY_MARKER = 'x-modelschemas-activity'
 
 const DOC_TIMEOUT_MS = 60_000
 const MAX_OUTPUT_CAP = 10_000_000
-const OFF_EFFORT = /^(none|off|disabled)$/i
 
 export interface NvidiaIndexRow {
   rawId: string
@@ -280,10 +279,30 @@ function statesOnAndOff(node: unknown): boolean {
   )
 }
 
+/** An enum label alone does not establish the model's disabling semantics. */
+function nativeEffortDisablesReasoning(
+  node: unknown,
+  efforts: string[],
+): boolean {
+  if (!isRecord(node) || typeof node.description !== 'string') return false
+  const prose = node.description.replace(/```[\s\S]*?```/g, '')
+  if (/\b(?:not|no|never|cannot|without|doesn't)\b/i.test(prose)) return false
+  return efforts.some(
+    (level) =>
+      /^(none|off|disabled)$/i.test(level) &&
+      new RegExp(
+        '(?:^|\\W)' +
+          level +
+          '[`"\']?\\s+(?:explicitly\\s+)?(?:disables?|turns?\\s+off)\\s+(?:reasoning|thinking)\\b',
+        'i',
+      ).test(prose),
+  )
+}
+
 /**
  * Reasoning control on this model's own request schema. An effort enum
- * wins over a budget, and a budget wins over an on/off switch. `none` /
- * `off` in the enum is the off value. A boolean states both positions, so
+ * wins over a budget, and a budget wins over an on/off switch. An enum
+ * requires native disabling semantics before mandatory becomes false. A boolean states both positions, so
  * the toggle is not mandatory.
  */
 export function nvidiaReasoning(
@@ -294,7 +313,7 @@ export function nvidiaReasoning(
   if (efforts && efforts.length > 0) {
     return {
       mode: 'effort',
-      mandatory: efforts.some((effort) => OFF_EFFORT.test(effort))
+      mandatory: nativeEffortDisablesReasoning(props.reasoning_effort, efforts)
         ? false
         : null,
       efforts,
@@ -325,7 +344,15 @@ function activityForPath(path: string): Activity | null {
 export function nvidiaStatedModelIds(doc: OpenApiDocument): Array<string> {
   const ids = new Set<string>()
   const title = doc.info?.title
-  if (typeof title === 'string' && title.includes('/')) ids.add(title.trim())
+  const named =
+    typeof title === 'string'
+      ? title
+          .trim()
+          .match(
+            /^(?:NVIDIA NIM API for )?([a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)$/i,
+          )?.[1]
+      : undefined
+  if (named) ids.add(named)
   const model = requestProperties(doc).model
   if (isRecord(model)) {
     const add = (value: unknown) => {

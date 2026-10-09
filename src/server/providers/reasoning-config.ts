@@ -119,18 +119,22 @@ export function overlayModelFacts(
 
 /**
  * OpenRouter `GET /api/v1/models` reasoning object. `supported_efforts`
- * names the effort mode. `null` means effort is accepted but no allowlist
- * is published (names are not invented). `supports_max_tokens` is a budget
+ * names the effort mode. `null` accepts gateway effort names supplied from
+ * normative host docs; mandatory rows reject the documented disable value.
+ * Without gateway docs, null keeps its effort names unknown. `supports_max_tokens` is a budget
  * only when the listing does not speak about efforts. No reasoning object,
  * or a mandatory flag that is not a boolean, stays null.
  */
-export function openRouterReasoning(row: {
-  reasoning?: {
-    supported_efforts?: Array<string | null> | null
-    mandatory?: unknown
-    supports_max_tokens?: unknown
-  } | null
-}): ModelReasoning | null {
+export function openRouterReasoning(
+  row: {
+    reasoning?: {
+      supported_efforts?: Array<string | null> | null
+      mandatory?: unknown
+      supports_max_tokens?: unknown
+    } | null
+  },
+  gatewayEfforts?: ReadonlyArray<string>,
+): ModelReasoning | null {
   const reasoning = row.reasoning
   if (!reasoning || typeof reasoning !== 'object') return null
   if (typeof reasoning.mandatory !== 'boolean') return null
@@ -144,7 +148,17 @@ export function openRouterReasoning(row: {
     return { mode: 'effort', mandatory, efforts }
   }
   if (reasoning.supported_efforts === null) {
-    return { mode: 'effort', mandatory }
+    return {
+      mode: 'effort',
+      mandatory,
+      ...(gatewayEfforts
+        ? {
+            efforts: gatewayEfforts.filter(
+              (value) => !mandatory || value !== 'none',
+            ),
+          }
+        : {}),
+    }
   }
   if (reasoning.supports_max_tokens === true) {
     return { mode: 'budget', mandatory }

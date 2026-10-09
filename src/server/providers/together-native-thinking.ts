@@ -5,6 +5,8 @@ import { fetchText, sha256Text } from './types.ts'
 import type { ChatRequestMap } from './request-map.ts'
 import type { ModelInfo } from './types.ts'
 
+export const TOGETHER_KIMI_REPLAY_URL =
+  'https://docs.together.ai/docs/kimi-k3-quickstart.md'
 export const TOGETHER_DEEPSEEK_URL =
   'https://docs.together.ai/docs/deepseek-v4-quickstart.md'
 export const TOGETHER_GLM_URL =
@@ -66,6 +68,18 @@ export function parseTogetherNativeThinking(
     )
   )
     replay.add(named)
+  const history = markdown.match(
+    /^## Preserve the thinking history\s*\n([\s\S]*?)(?=^## |(?![\s\S]))/m,
+  )?.[1]
+  if (
+    named &&
+    history &&
+    /Return the complete assistant message on every turn, `reasoning_content` included/.test(
+      history,
+    ) &&
+    modelsInSamples(history).includes(named)
+  )
+    replay.add(named)
   return { ids: [...ids], replay: [...replay] }
 }
 export async function togetherNativeThinking(
@@ -76,9 +90,12 @@ export async function togetherNativeThinking(
       TOGETHER_DEEPSEEK_URL,
       TOGETHER_GLM_URL,
       TOGETHER_NATIVE_REASONING_URL,
+      TOGETHER_KIMI_REPLAY_URL,
     ].map((url) =>
       cachedDocs(kv, `${url}#native-thinking`, async () => {
-        const markdown = await fetchText(url)
+        const markdown = await fetchText(url, {
+          signal: AbortSignal.timeout(20_000),
+        })
         const facts = parseTogetherNativeThinking(markdown)
         if (!facts.ids.length && !facts.replay.length)
           throw new Error(

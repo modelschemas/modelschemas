@@ -11,6 +11,11 @@ import {
   openrouterGenerationEndpointId,
   openrouterModelActivity,
 } from './model-meta.ts'
+import { cachedDocs } from './model-facts.ts'
+import {
+  openRouterGatewayEfforts,
+  OPENROUTER_REASONING_URL,
+} from './openrouter-reasoning.ts'
 import { openRouterReasoning } from './reasoning-config.ts'
 import { namespacedUpstreamIdentity } from './upstream-model.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
@@ -301,10 +306,28 @@ export function openrouterCapabilities(model: {
     : (parameters as Array<string> | undefined)
 }
 
-async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  _env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const body = (await fetchJson(OPENROUTER_MODELS_URL)) as OpenRouterModelList
   if (!Array.isArray(body.data) || !body.data.length)
     throw new Error('openrouter: missing or empty native model catalog')
+  const gateway = body.data.some(
+    (m) =>
+      m.reasoning?.supported_efforts === null &&
+      typeof m.reasoning.mandatory === 'boolean',
+  )
+    ? await cachedDocs(kv, OPENROUTER_REASONING_URL, async () => {
+        const text = await fetchText(OPENROUTER_REASONING_URL, {
+          signal: AbortSignal.timeout(30_000),
+        })
+        return {
+          efforts: openRouterGatewayEfforts(text),
+          hash: await sha256Text(text),
+        }
+      })
+    : null
   return {
     models: body.data.map((m) => ({
       rawId: m.id,
@@ -321,7 +344,21 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
           }
         : undefined,
       capabilities: openrouterCapabilities(m),
-      reasoning: openRouterReasoning(m),
+      reasoning: openRouterReasoning(m, gateway?.efforts),
+      ...(gateway &&
+      m.reasoning?.supported_efforts === null &&
+      typeof m.reasoning.mandatory === 'boolean'
+        ? {
+            factSources: {
+              reasoning: {
+                derivation: 'docs-derived' as const,
+                sourceUrl: OPENROUTER_REASONING_URL,
+                sourceHash: gateway.hash,
+                path: 'supported_efforts:null; normative gateway effort bullets; listing mandatory',
+              },
+            },
+          }
+        : {}),
     })),
   }
 }

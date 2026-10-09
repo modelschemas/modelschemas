@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { sha256Text } from '../types.ts'
 import { NVIDIA_REFERENCE_INDEXES } from '../nvidia-openapi.ts'
+import { NVIDIA_SITEMAP_URL } from '../nvidia-sitemap.ts'
 import { NVIDIA_MODELS_URL, parseNvidiaCard, provider } from './nvidia.ts'
 
 /** Excerpt of https://integrate.api.nvidia.com/v1/models (2026-10-06). */
@@ -115,9 +116,11 @@ function stubFetch(pages: Record<string, string>): Array<string> {
     urls.push(url)
     const body =
       pages[url] ??
-      (/\/nim\/reference\/[a-z0-9-]+-apis\.md$/.test(url)
-        ? EMPTY_INDEX
-        : undefined)
+      (url === NVIDIA_SITEMAP_URL
+        ? '<urlset><url><loc>https://docs.api.nvidia.com/nim/reference/google-gemma-4-31b-it-infer</loc></url></urlset>'
+        : /\/nim\/reference\/[a-z0-9-]+-apis\.md$/.test(url)
+          ? EMPTY_INDEX
+          : undefined)
     return Promise.resolve(
       body === undefined
         ? new Response('Not found', { status: 404 })
@@ -416,7 +419,7 @@ describe('nvidia', () => {
     const listed = await provider.listModels({})
     expect(listed.models).toHaveLength(LISTING.data.length)
     expect(listed.docsFailures).toMatchObject({
-      failed: LISTING.data.length + NVIDIA_REFERENCE_INDEXES.length,
+      failed: LISTING.data.length + NVIDIA_REFERENCE_INDEXES.length + 1,
       skipped: 0,
     })
     expect(listed.docsFailures?.first[0]?.error).toContain('503')
@@ -534,7 +537,7 @@ updatedAt: test
       maxOutput: 8192,
       reasoning: {
         mode: 'effort',
-        mandatory: false,
+        mandatory: null,
         efforts: ['none', 'high'],
       },
       schemaEndpointId: 'z-ai/glm-5.3-flash',
