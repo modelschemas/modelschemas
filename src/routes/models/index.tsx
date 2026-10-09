@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Provenance } from '#/components/provenance.tsx'
+import { recordedSources } from '#/lib/provenance.ts'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
@@ -144,6 +145,7 @@ function ModelsCatalog() {
   const navigate = useNavigate({ from: Route.fullPath })
   const [view, setView] = useState<ResourceView>('readable')
   const [q, setQ] = useState(search.q ?? '')
+  const [expandedModelId, setExpandedModelId] = useState<string | null>(null)
 
   const qs = queryString(search)
   const apiPath = `/v1/models${qs}`
@@ -286,54 +288,87 @@ function ModelsCatalog() {
                       </td>
                     </tr>
                   ) : (
-                    data.models.map((m) => (
-                      <tr key={m.id}>
-                        <td className="font-mono text-[12.5px]">
-                          <a
-                            className="font-medium text-ink hover:text-tok-blue"
-                            href={modelHref(m)}
-                          >
-                            {m.rawId}
-                          </a>
-                        </td>
-                        <td>{m.displayName ?? '—'}</td>
-                        <td className="font-mono text-xs text-ink-soft max-sm:hidden">
-                          {m.activity ?? '—'}
-                        </td>
-                        <td
-                          className={
-                            m.pricing === null
-                              ? 'text-ink-faint'
-                              : 'text-tok-green'
-                          }
-                          aria-label={
-                            m.pricing === null ? 'not priced' : 'priced'
-                          }
-                        >
-                          {m.pricing === null ? '✗' : '✓'}
-                        </td>
-                        <td
-                          className="num text-ink-soft max-sm:hidden"
-                          title={completenessTitle(data.completeness[m.id])}
-                        >
-                          {completenessCell(data.completeness[m.id])}
-                        </td>
-                        <td className="num text-ink-faint">
-                          {shortDate(m.firstSeenAt)}
-                        </td>
-                        <td className="num text-ink-faint">
-                          {timeAgo(m.lastSeenAt)}
-                        </td>
-                        <td className="font-mono text-xs">
-                          <a className="press-link" href={modelHref(m)}>
-                            detail →
-                          </a>
-                          <div className="mt-1">
-                            <Provenance facts={m.factSources} compact />
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    data.models.map((m) => {
+                      const expanded = expandedModelId === m.id
+                      const sourceId = `model-sources-${encodeURIComponent(m.id)}`
+                      const sourceCount = new Set(
+                        recordedSources(m.factSources).flatMap((source) =>
+                          source.sourceUrl ? [source.sourceUrl] : [],
+                        ),
+                      ).size
+                      return (
+                        <Fragment key={m.id}>
+                          <tr>
+                            <td className="font-mono text-[12.5px]">
+                              <a
+                                className="font-medium text-ink hover:text-tok-blue"
+                                href={modelHref(m)}
+                              >
+                                {m.rawId}
+                              </a>
+                            </td>
+                            <td>{m.displayName ?? '—'}</td>
+                            <td className="font-mono text-xs text-ink-soft max-sm:hidden">
+                              {m.activity ?? '—'}
+                            </td>
+                            <td
+                              className={
+                                m.pricing === null
+                                  ? 'text-ink-faint'
+                                  : 'text-tok-green'
+                              }
+                              aria-label={
+                                m.pricing === null ? 'not priced' : 'priced'
+                              }
+                            >
+                              {m.pricing === null ? '✗' : '✓'}
+                            </td>
+                            <td
+                              className="num text-ink-soft max-sm:hidden"
+                              title={completenessTitle(data.completeness[m.id])}
+                            >
+                              {completenessCell(data.completeness[m.id])}
+                            </td>
+                            <td className="num text-ink-faint">
+                              {shortDate(m.firstSeenAt)}
+                            </td>
+                            <td className="num text-ink-faint">
+                              {timeAgo(m.lastSeenAt)}
+                            </td>
+                            <td className="font-mono text-xs">
+                              <a className="press-link" href={modelHref(m)}>
+                                detail →
+                              </a>
+                              <button
+                                type="button"
+                                className="press-link mt-1 block cursor-pointer"
+                                aria-expanded={expanded}
+                                aria-controls={sourceId}
+                                aria-label={`Sources for ${m.rawId}`}
+                                onClick={() =>
+                                  setExpandedModelId(expanded ? null : m.id)
+                                }
+                              >
+                                {expanded ? '▾' : '▸'} sources
+                                {sourceCount ? ` (${sourceCount})` : ''}
+                              </button>
+                            </td>
+                          </tr>
+                          {expanded && (
+                            <tr id={sourceId}>
+                              <td colSpan={8}>
+                                <div className="py-2">
+                                  <p className="mb-3 font-mono text-xs text-ink-soft">
+                                    Sources for {m.rawId}
+                                  </p>
+                                  <Provenance facts={m.factSources} />
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
