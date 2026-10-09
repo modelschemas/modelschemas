@@ -334,7 +334,13 @@ async function listModels(
       const methods = m.supportedGenerationMethods ?? []
       const activity = geminiModelActivity(rawId, methods)
       const priced = pricing(rawId)
-      const feat = features(rawId, m.thinking === true)
+      const feat = features(rawId, m.thinking)
+      const capabilities = [
+        ...new Set([
+          ...(geminiCapabilities(m) ?? []),
+          ...(feat.capabilities ?? []),
+        ]),
+      ]
       const usesConfig =
         methods.includes('generateContent') ||
         methods.includes('bidiGenerateContent')
@@ -353,7 +359,10 @@ async function listModels(
         contextWindow: m.inputTokenLimit ?? null,
         maxOutput: m.outputTokenLimit ?? null,
         modalities: feat.modalities,
-        capabilities: geminiCapabilities(m),
+        capabilities: capabilities.length ? capabilities : null,
+        ...(m.thinking === false
+          ? { unsupportedCapabilities: ['reasoning'] }
+          : {}),
         // Gemini's API has no release timestamp: curated dates first, then
         // the MM-YYYY month embedded in preview ids.
         releasedAt:

@@ -63,6 +63,11 @@ export function parsePageTools(markdown: string): Array<string> {
   return out
 }
 
+/** Native capability cells are model evidence even when listing omits thinking. */
+export function parsePageThinkingSupported(markdown: string): boolean {
+  return /\*\*\[Thinking\]\([^)]*\)\*\*\s*Supported\b/.test(markdown)
+}
+
 /** Words a `Supported data types` cell uses → medium, in stored order. */
 const MEDIA: Record<string, string> = {
   text: 'text',
@@ -283,6 +288,15 @@ const EFFORT_WORDS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 export function parsePageThinking(markdown: string): ModelReasoning | null {
   const sets: Array<Array<string>> = []
   let mandatory: boolean | null = null
+  const cell = markdown.match(
+    /\*\*\[Thinking\]\([^)]*\)\*\*\s*Supported\s*\(([^)]+)\)/,
+  )?.[1]
+  if (cell) {
+    const declared = cell.split(',').map((value) => value.trim())
+    if (!declared.every((value) => EFFORT_WORDS.includes(value)))
+      throw new Error('gemini model page: unreadable native thinking levels')
+    sets.push(declared)
+  }
   for (const para of markdown.split(/\n\s*\n/)) {
     if (!/thinking[_\s-]?levels?/i.test(para)) continue
     const unsupported = new Set<string>()
@@ -379,6 +393,7 @@ export interface GeminiPageSection {
   versions: Array<string>
   modalities: { input: Array<string>; output: Array<string> } | null
   tools: Array<string>
+  thinking?: true
 }
 
 function labeledIds(chunk: string, label: string): Array<string> {
@@ -406,6 +421,7 @@ function sectionFrom(chunk: string): GeminiPageSection {
     versions,
     modalities: parsePageModalities(chunk),
     tools: parsePageTools(chunk),
+    ...(parsePageThinkingSupported(chunk) ? { thinking: true as const } : {}),
   }
 }
 
@@ -447,6 +463,7 @@ export function familyOf(
 }
 
 type GeminiFeatures = Pick<ModelInfo, 'absent'> & {
+  capabilities?: Array<string>
   reasoning: ModelReasoning | null
   budget: GeminiBudgetBody | null
   serverTools: Array<string> | null
@@ -465,6 +482,7 @@ interface BoundSection {
   modalities: GeminiPageSection['modalities']
   tools: Array<string>
   reasoning: ModelReasoning | null
+  thinking: boolean
   sourceUrl: string
   hash: string
 }
@@ -490,7 +508,7 @@ export async function geminiModelFeatures(
   rawIds: Array<string>,
   kv?: KVNamespace,
 ): Promise<{
-  features: (rawId: string, thinking: boolean) => GeminiFeatures
+  features: (rawId: string, thinking: boolean | undefined) => GeminiFeatures
   docsFailures: DocsFailures
 }> {
   const [index, thinking] = await Promise.all([
@@ -573,11 +591,22 @@ export async function geminiModelFeatures(
     const slug = familyOf(rawId, slugs)
     return slug ? bySlug.get(slug) : undefined
   }
-  const features = (rawId: string, modelThinks: boolean): GeminiFeatures => {
+  const features = (
+    rawId: string,
+    modelThinks: boolean | undefined,
+  ): GeminiFeatures => {
     const factSources: ModelFactSources = {}
     const budgetId = familyOf(rawId, Object.keys(thinking.budgets))
-    const budget = budgetId ? (thinking.budgets[budgetId] ?? null) : null
-    const family = modelThinks
+    const budget =
+      modelThinks !== false && budgetId
+        ? (thinking.budgets[budgetId] ?? null)
+        : null
+    const bound = lookup(rawId)
+    const documentedThinking =
+      modelThinks !== false &&
+      (bound?.thinking === true || bound?.reasoning != null)
+    const thinks = modelThinks === true || documentedThinking
+    const family = thinks
       ? familyOf(rawId, Object.keys(thinking.reasoning))
       : null
     let reasoning = family ? (thinking.reasoning[family] ?? null) : null
@@ -594,7 +623,7 @@ export async function geminiModelFeatures(
       .some((doc) => !loadedUrls.has(pageUrl(doc.url)))
     if (failed) {
       const absentFacts: Array<ModelFact> = ['serverTools', 'modalities']
-      if (modelThinks && !reasoning) absentFacts.push('reasoning')
+      if (modelThinks !== false && !reasoning) absentFacts.push('reasoning')
       return {
         reasoning,
         budget,
@@ -604,8 +633,7 @@ export async function geminiModelFeatures(
         ...unavailable(...absentFacts),
       }
     }
-    const bound = lookup(rawId)
-    if (!reasoning && modelThinks && !family && bound?.reasoning) {
+    if (!reasoning && thinks && !family && bound?.reasoning) {
       reasoning = bound.reasoning
       factSources.reasoning = {
         derivation: 'docs-derived',
@@ -613,7 +641,7 @@ export async function geminiModelFeatures(
         sourceHash: bound.hash,
         path: 'thinking level',
       }
-    } else if (modelThinks && !reasoning) {
+    } else if (thinks && !reasoning) {
       factSources.reasoning = {
         derivation: 'docs-derived',
         sourceUrl: GEMINI_THINKING_URL,
@@ -649,7 +677,19 @@ export async function geminiModelFeatures(
       budget,
       serverTools: bound.tools.length > 0 ? bound.tools : null,
       modalities: bound.modalities,
-      factSources,
+      ...(documentedThinking ? { capabilities: ['reasoning'] } : {}),
+      factSources: {
+        ...factSources,
+        ...(documentedThinking
+          ? {
+              capabilities: {
+                reasoning: source(
+                  bound.thinking ? 'Capabilities.Thinking' : 'thinking level',
+                ),
+              },
+            }
+          : {}),
+      },
     }
   }
   return { features, docsFailures: docsReport(run) }
@@ -704,6 +744,7 @@ function pagePlacements(
       modalities: named[0].modalities,
       tools: named[0].tools,
       reasoning: page.reasoning,
+      thinking: page.sections.some((section) => section.thinking === true),
       sourceUrl: page.url,
       hash: page.hash,
     }
@@ -722,6 +763,7 @@ function pagePlacements(
       modalities: page.sections[0].modalities,
       tools: page.sections[0].tools,
       reasoning: page.reasoning,
+      thinking: page.sections.some((section) => section.thinking === true),
       sourceUrl: page.url,
       hash: page.hash,
     }
@@ -734,6 +776,7 @@ function pagePlacements(
       modalities: section.modalities,
       tools: section.tools,
       reasoning: null,
+      thinking: section.thinking === true,
       sourceUrl: page.url,
       hash: page.hash,
     }

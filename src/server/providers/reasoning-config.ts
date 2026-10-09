@@ -162,8 +162,9 @@ export function parseMistralReasoning(
   markdown: string,
 ): Map<string, ModelReasoning> {
   const out = new Map<string, ModelReasoning>()
-  const preludeEnd = markdown.search(/handling thinking chunks/i)
-  const prelude = preludeEnd < 0 ? markdown : markdown.slice(0, preludeEnd)
+  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const preludeEnd = prose.search(/handling thinking chunks/i)
+  const prelude = preludeEnd < 0 ? prose : prose.slice(0, preludeEnd)
   const bullet =
     /`([a-z0-9][a-z0-9.-]*)`:\s*Supports adjustable reasoning via the `reasoning_effort`/g
   // `reasoning_effort = "none"` omits the thinking chunk for Mistral models.
@@ -176,7 +177,24 @@ export function parseMistralReasoning(
   for (const match of prelude.matchAll(bullet)) {
     const id = match[1]
     if (!id) continue
-    out.set(id, { mode: 'effort', mandatory: !noneOmits })
+    out.set(id, { mode: 'effort', mandatory: noneOmits ? false : null })
+  }
+  // The scoped model list is followed by normative parameter values. These
+  // are not code examples; an explicit model-specific list overrides them.
+  const valueSection = prelude.split(
+    'The `reasoning_effort` parameter controls',
+  )[1]
+  const levels = [
+    ...(valueSection?.matchAll(/^- `reasoning_effort\s*=\s*"([a-z]+)"`:/gm) ??
+      []),
+  ].flatMap((match) => (match[1] ? [match[1]] : []))
+  if (levels.length) {
+    for (const id of out.keys())
+      out.set(id, {
+        mode: 'effort',
+        mandatory: noneOmits && levels.includes('none') ? false : null,
+        efforts: levels,
+      })
   }
   const ownList =
     /`([a-z0-9][a-z0-9.-]*)`:[^\n]{0,240}?Supported values are ([^\n.]+)/g
@@ -187,9 +205,25 @@ export function parseMistralReasoning(
       (found) => (found[1] ? [found[1]] : []),
     )
     if (efforts.length === 0) continue
+    const ownNote = prelude
+      .split(/\n\s*\n/)
+      .find(
+        (para) =>
+          para.split('\n').some((line) => line.startsWith('`' + id + '` ')) &&
+          /always|cannot/i.test(para),
+      )
+    const alwaysThinking =
+      !!ownNote &&
+      /(?:reasoning|thinking)\s+(?:is\s+)?(?:always on|cannot be disabled|cannot be turned off)|is always returned[^.\n]*\(thinking\s*\+\s*text\)/i.test(
+        ownNote,
+      )
     out.set(id, {
       mode: 'effort',
-      mandatory: !efforts.includes('none'),
+      mandatory: alwaysThinking
+        ? true
+        : noneOmits && efforts.includes('none')
+          ? false
+          : null,
       efforts,
     })
   }

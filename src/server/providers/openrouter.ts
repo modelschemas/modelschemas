@@ -270,10 +270,43 @@ export function openrouterServerTools(_model: {
   return null
 }
 
+/** Validate native metadata before deriving capability independently of mode. */
+export function openrouterCapabilities(model: {
+  supported_parameters?: unknown
+  reasoning?: unknown
+}): Array<string> | undefined {
+  const parameters = model.supported_parameters
+  if (
+    parameters !== undefined &&
+    (!Array.isArray(parameters) ||
+      !parameters.every(
+        (value) => typeof value === 'string' && value.length > 0,
+      ))
+  )
+    throw new Error('openrouter: unreadable supported_parameters')
+  const reasoning = model.reasoning
+  if (
+    reasoning !== undefined &&
+    reasoning !== null &&
+    (typeof reasoning !== 'object' || Array.isArray(reasoning))
+  )
+    throw new Error('openrouter: unreadable native reasoning metadata')
+  return reasoning && typeof reasoning === 'object'
+    ? [
+        ...new Set([
+          ...((parameters as Array<string> | undefined) ?? []),
+          'reasoning',
+        ]),
+      ]
+    : (parameters as Array<string> | undefined)
+}
+
 async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
   const body = (await fetchJson(OPENROUTER_MODELS_URL)) as OpenRouterModelList
+  if (!Array.isArray(body.data) || !body.data.length)
+    throw new Error('openrouter: missing or empty native model catalog')
   return {
-    models: (body.data ?? []).map((m) => ({
+    models: body.data.map((m) => ({
       rawId: m.id,
       displayName: m.name ?? null,
       activity: openrouterModelActivity(m.architecture?.output_modalities),
@@ -287,7 +320,7 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
             output: m.architecture.output_modalities,
           }
         : undefined,
-      capabilities: m.supported_parameters,
+      capabilities: openrouterCapabilities(m),
       reasoning: openRouterReasoning(m),
     })),
   }

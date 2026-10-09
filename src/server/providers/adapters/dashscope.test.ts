@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import nativeDocs from '../fixtures/native-reasoning-docs.json'
+import { DASHSCOPE_THINKING_URL } from '../dashscope-thinking.ts'
 
 import {
   DASHSCOPE_COMPAT_SCOPE,
@@ -332,6 +334,8 @@ describe('dashscope listModels docs', () => {
   it('stamps the compat request map on chat rows', async () => {
     const { result, calls } = await withStubbedFetch(
       (url) => {
+        if (url === DASHSCOPE_THINKING_URL)
+          return new Response(nativeDocs[DASHSCOPE_THINKING_URL])
         if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
         return new Response(
           JSON.stringify({
@@ -361,12 +365,19 @@ describe('dashscope listModels docs', () => {
     )
     expect(calls.map((call) => call.url)).toEqual([
       'https://dashscope-intl.aliyuncs.com/api/v1/models?page_no=1&page_size=100&language=en-US',
+      DASHSCOPE_THINKING_URL,
       DASHSCOPE_COMPAT_URL,
     ])
     const model = result.models[0]
     expect(model?.requestMap?.maxTokensField).toBe('max_tokens')
     expect(model?.requestMap?.developerRole).toBe(false)
-    expect(model?.capabilities).toEqual(['tools', 'temperature', 'max_tokens'])
+    expect(model?.exactCapabilities).toBe(false)
+    expect(model?.capabilities).toEqual([
+      'tools',
+      'temperature',
+      'max_tokens',
+      'reasoning',
+    ])
     expect(model?.factSources?.capabilities?.temperature?.sourceUrl).toBe(
       DASHSCOPE_COMPAT_URL,
     )
@@ -377,6 +388,8 @@ describe('dashscope listModels docs', () => {
     const page = dashscopeModelPageUrl('qwen3-omni-flash-2025-09-15')
     const { result, calls } = await withStubbedFetch(
       (url) => {
+        if (url === DASHSCOPE_THINKING_URL)
+          return new Response(nativeDocs[DASHSCOPE_THINKING_URL])
         if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
         if (url === page) return new Response(OMNI_PAGE)
         return new Response(
@@ -418,6 +431,8 @@ describe('dashscope listModels docs', () => {
   it('leaves a non-compat chat id off the OpenAI request map', async () => {
     const { result } = await withStubbedFetch(
       (url) => {
+        if (url === DASHSCOPE_THINKING_URL)
+          return new Response(nativeDocs[DASHSCOPE_THINKING_URL])
         if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
         return new Response(
           JSON.stringify({

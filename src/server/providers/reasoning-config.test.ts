@@ -270,7 +270,7 @@ describe('parseMistralReasoning', () => {
     expect(parsed.get('mistral-medium-3-5')?.mode).toBe('effort')
     expect(parsed.get('zai-glm-5-3')).toEqual({
       mode: 'effort',
-      mandatory: true,
+      mandatory: null,
       efforts: ['low', 'high', 'max'],
     })
     expect(parseMistralReasoning(NATIVE).get('magistral-medium-latest')).toBe(
