@@ -360,6 +360,13 @@ describe('issue #109 listModels', () => {
   it('prices a fireworks chat row and leaves a reranker and a missing price null', async () => {
     await withFetch(
       (url) => {
+        // This pricing-only synthetic case states no reasoning evidence.
+        // Distinguish model metadata from the inference listing response.
+        for (const id of ['deepseek-v4p1-flash', 'unpriced']) {
+          const name = 'accounts/fireworks/models/' + id
+          if (url === 'https://api.fireworks.ai/v1/' + name)
+            return json({ name, description: '' })
+        }
         if (url.includes('api.fireworks.ai')) {
           return json({
             data: [
