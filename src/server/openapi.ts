@@ -958,7 +958,10 @@ export const openApiDocument = {
             type: ['array', 'null'],
             items: { type: 'string' },
           },
-          factSources: {},
+          factSources: {
+            description:
+              'Per-field provenance. Detail always includes this; lists include it with provenance=1. A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.',
+          },
           releasedAt: {
             description:
               "The provider's own stated release or creation date, epoch seconds. null when the provider reports none. Unlike firstSeenAt it is never our observation.",

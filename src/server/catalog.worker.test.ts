@@ -455,7 +455,10 @@ describe('stored sameAs relationships', () => {
 
   it('serves the stored link, with its evidence as provenance only when resolved', async () => {
     const linked = await getModelDetail(db, 'cat-reseller', 'dealer-id')
-    expect(linked?.sameAs).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
+    expect(linked?.sameAs).toEqual({
+      provider: 'cat-maker',
+      rawId: 'native-1',
+    })
     expect(linked?.factSources).toEqual({
       contextWindow: { derivation: 'listing' },
       sameAs: {
@@ -483,12 +486,85 @@ describe('stored sameAs relationships', () => {
       provenance: true,
     })
     const linked = listed.models.find((row) => row.id === 'sameas-linked')
-    expect(linked?.sameAs).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
+    expect(linked?.sameAs).toEqual({
+      provider: 'cat-maker',
+      rawId: 'native-1',
+    })
     expect(linked?.factSources?.sameAs?.derivation).toBe('docs-derived')
     const provider = await listProviderModels(db, 'cat-reseller')
     expect(
       provider?.models.find((row) => row.id === 'sameas-linked')?.sameAs,
     ).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
     expect(provider?.models[0]).not.toHaveProperty('factSources')
+  })
+})
+
+describe('source-silent catalog provenance', () => {
+  it('serves verified ledger evidence on detail and opted-in lists only', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'grok',
+        displayName: 'Grok',
+        specSourceUrl: 'https://docs.x.ai/openapi.json',
+      })
+      .onConflictDoNothing()
+    await db.insert(models).values({
+      id: 'silent-grok-test',
+      providerId: 'grok',
+      rawId: 'silent-grok-test',
+      activity: 'chat',
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    })
+    const detail = await getModelDetail(db, 'grok', 'silent-grok-test')
+    const expected = {
+      derivation: 'source-silent',
+      sourceUrl: 'https://docs.x.ai/openapi.json',
+      checkedAt: '2026-10-09',
+    }
+    expect(detail?.maxOutput).toBeNull()
+    expect(detail?.factSources?.maxOutput).toEqual(expected)
+    expect(detail?.factSources).not.toHaveProperty('contextWindow')
+    const listed = await listModelsCatalog(db, {
+      provider: 'grok',
+      provenance: true,
+    })
+    expect(
+      listed.models.find((model) => model.id === 'silent-grok-test')
+        ?.factSources?.maxOutput,
+    ).toEqual(expected)
+    const compact = await listModelsCatalog(db, { provider: 'grok' })
+    expect(
+      compact.models.find((model) => model.id === 'silent-grok-test'),
+    ).not.toHaveProperty('factSources')
+  })
+
+  it('retains sourced output caps despite a provider ledger entry', async () => {
+    await db
+      .insert(providers)
+      .values({
+        id: 'grok',
+        displayName: 'Grok',
+        specSourceUrl: 'https://docs.x.ai/openapi.json',
+      })
+      .onConflictDoNothing()
+    const source = {
+      derivation: 'listing',
+      sourceUrl: 'https://api.x.ai/v1/language-models',
+    }
+    await db.insert(models).values({
+      id: 'sourced-grok-test',
+      providerId: 'grok',
+      rawId: 'sourced-grok-test',
+      activity: 'chat',
+      maxOutput: 2048,
+      factSources: { maxOutput: source },
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    })
+    const detail = await getModelDetail(db, 'grok', 'sourced-grok-test')
+    expect(detail?.maxOutput).toBe(2048)
+    expect(detail?.factSources?.maxOutput).toEqual(source)
   })
 })
