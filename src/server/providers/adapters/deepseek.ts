@@ -1,8 +1,8 @@
-/**
- * DeepSeek — OpenAI-compatible chat API. No published OpenAPI document;
- * schemas are generated from the canonical OpenAI spec. Official host is
- * https://api.deepseek.com (POST /chat/completions, no /v1 prefix).
- */
+import {
+  DEEPSEEK_CHAT_DOCS,
+  fetchNativeDeepseekSpec,
+} from '../deepseek-native-spec.ts'
+/** DeepSeek — native operation JSON from its own published API docs. */
 import {
   applyReplay,
   deepseekEffortFacts,
@@ -12,16 +12,10 @@ import {
 } from '../provider-replay.ts'
 import { deepseekModelPricing } from '../deepseek-pricing.ts'
 import {
-  classifyOpenAiCompat,
-  fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
   openAiCompatModelFacts,
-  OPENAI_OPENAPI_URL,
 } from '../openai-compat.ts'
-import {
-  compatGenerationEndpointId,
-  deepseekModelActivity,
-} from '../model-meta.ts'
+import { deepseekModelActivity } from '../model-meta.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -29,27 +23,17 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-const DEEPSEEK_SERVER_URL = 'https://api.deepseek.com'
 const DEEPSEEK_MODELS_URL = 'https://api.deepseek.com/models'
 
-async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const { spec, url, hash } = await fetchOpenAiCompatibleSpec({
-    title: 'DeepSeek',
-    serverUrl: DEEPSEEK_SERVER_URL,
-    include: ['/chat/completions'],
-  })
-  return {
-    specs: [spec],
-    sources: [{ url, hash }],
-    outputStrategy: 'post-200',
-  }
+function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  return fetchNativeDeepseekSpec()
 }
 
 export const provider: ProviderConfig = {
   id: 'deepseek',
   displayName: 'DeepSeek',
   authEnvVar: 'DEEPSEEK_API_KEY',
-  specSourceUrl: OPENAI_OPENAPI_URL,
+  specSourceUrl: DEEPSEEK_CHAT_DOCS,
   modelsEndpoint: DEEPSEEK_MODELS_URL,
   defaultDerivation: 'generated',
   fetchSpec,
@@ -99,6 +83,11 @@ export const provider: ProviderConfig = {
       }),
     }
   },
-  classify: (path) => classifyOpenAiCompat(path),
-  generationEndpointId: ({ activity }) => compatGenerationEndpointId(activity),
+  classify: (_path, operation) =>
+    _path === '/chat/completions' &&
+    operation['x-modelschemas-deepseek-native'] === true
+      ? 'chat'
+      : null,
+  generationEndpointId: ({ activity }) =>
+    activity === 'chat' ? 'chat/completions' : null,
 }

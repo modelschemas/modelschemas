@@ -6,8 +6,13 @@ import { provider } from './deepseek.ts'
 
 describe('deepseek classify', () => {
   it('maps chat completions and drops platform paths', () => {
-    expect(provider.classify('/chat/completions', {})).toBe('chat')
-    expect(provider.classify('/v1/chat/completions', {})).toBe('chat')
+    expect(
+      provider.classify('/chat/completions', {
+        'x-modelschemas-deepseek-native': true,
+      }),
+    ).toBe('chat')
+    expect(provider.classify('/chat/completions', {})).toBeNull()
+    expect(provider.classify('/v1/chat/completions', {})).toBeNull()
     expect(provider.classify('/models', {})).toBeNull()
     expect(provider.classify('/files', {})).toBeNull()
     expect(provider.classify('/fine_tuning/jobs', {})).toBeNull()
