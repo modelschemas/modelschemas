@@ -307,6 +307,16 @@ describe('bedrock pricing page', () => {
     )
   })
 
+  it('extracts the explicit global table separately from geo prices', () => {
+    const global = parseBedrockPricingPage(PAGE, METER, 'global')
+    expect(global.get(bedrockNameKey('Claude Example'))).toEqual({
+      input_tokens: 0.5 / 1e6,
+      output_tokens: 1 / 1e6,
+    })
+    expect(global.has('command')).toBe(false)
+    expect(global.has('command r+')).toBe(false)
+  })
+
   it('reads a literal dollar row and skips the per-image column', () => {
     expect(page.get(bedrockNameKey('Command'))).toEqual({
       input_tokens: 1 / 1e6,
@@ -577,4 +587,37 @@ describe('bedrock pricing page inference options', () => {
       cache_read_tokens: 0.33 / 1e6,
     })
   })
+})
+
+// Unresolvable dynamic current meters are parser errors, not unknown pricing.
+it('rejects an unresolved published Global meter', () => {
+  const html = `<h2>Global cross-Region inference</h2><table>
+<tr><th>Model</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Synthetic model</td><td>{priceOf!bedrockfoundationmodels/bedrockfoundationmodels!missing}</td><td>$2</td></tr></table>`
+  expect(() =>
+    parseBedrockPricingPage(
+      html,
+      { regions: { 'US East (N. Virginia)': {} } },
+      'global',
+    ),
+  ).toThrow('amazon-bedrock global pricing: unreadable quote')
+})
+
+it('resolves Global prices from provider-published encoded public meter paths', () => {
+  const html = `<h2>Global cross-Region inference</h2><table>
+<tr><th>Model</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Synthetic model</td><td>{priceOf!bedrockfoundationmodels/cHVibGljL3N5bnRoZXRpYw!input}</td><td>{priceOf!bedrockfoundationmodels/cHVibGljL3N5bnRoZXRpYw!output!opt}</td></tr></table>`
+  const meter = {
+    regions: {
+      'US East (N. Virginia)': {
+        input: { price: '7' },
+        output: { price: '19' },
+      },
+    },
+  }
+  expect(
+    parseBedrockPricingPage(html, meter, 'global').get(
+      bedrockNameKey('Synthetic model'),
+    ),
+  ).toEqual({ input_tokens: 7 / 1e6, output_tokens: 19 / 1e6 })
 })

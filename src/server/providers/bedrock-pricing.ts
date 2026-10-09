@@ -2,8 +2,9 @@
  * Standard-tier Bedrock token prices from AWS's own price list and the
  * public pricing page. The us-east-1 offer is the in-region / standard
  * rate. The pricing page fills marketplace models the offer does not
- * name (Anthropic, AI21, Cohere); only Geo and in-region tables, never
- * Global, batch, flex, or priority. A card that already states dollars
+ * name (Anthropic, AI21, Cohere). Global quotes are parsed separately
+ * and never inherited from Geo or in-region rows. Batch, flex, and priority
+ * are excluded. A card that already states dollars
  * wins. A page or offer that parses nothing throws.
  */
 import { assertParsed } from './model-facts.ts'
@@ -26,7 +27,7 @@ const USE1 = 'US East (N. Virginia)'
 const NONSTANDARD =
   /batch|priority|flex|global|cross-region|latency|govcloud|provisioned|custom|training|reserved/i
 const SKIP_HEADING =
-  /global|priority|flex|\bbatch\b|reserved|latency|provisioned|custom|fine-tun|training|embedding|speech|creative|guardrail|evaluation|example/i
+  /priority|flex|\bbatch\b|reserved|latency|provisioned|custom|fine-tun|training|embedding|speech|creative|guardrail|evaluation|example/i
 
 const INPUT = 'input_tokens'
 const OUTPUT = 'output_tokens'
@@ -58,6 +59,8 @@ export interface BedrockPriceBook {
   /** Offer display name, dotted decimals collapsed (`25.02` → `2502`). */
   offerBySlug: Map<string, Record<string, number>>
   pageByName: Map<string, Record<string, number>>
+  /** Only prices explicitly published for global cross-region inference. */
+  globalPageByName?: Map<string, Record<string, number>>
   offerHash: string
   pageHash: string
 }
@@ -350,9 +353,7 @@ function perMillion(
   if (literal?.[1]) return Number(literal[1].replace(/,/g, ''))
   const code = cell
     .replace(/\s+/g, '')
-    .match(
-      /\{priceOf!bedrockfoundationmodels\/bedrockfoundationmodels!([A-Za-z0-9_-]+)/,
-    )?.[1]
+    .match(/\{priceOf!bedrockfoundationmodels\/[^!]+!([A-Za-z0-9_-]+)/)?.[1]
   const price = code ? region[code]?.price : undefined
   if (price === undefined) return null
   const amount = Number(price)
@@ -360,13 +361,15 @@ function perMillion(
 }
 
 /**
- * Geo / in-region and plain on-demand tables only. Global, priority,
- * flex, batch, and long-context rows are ignored. Rate codes resolve
- * against US East (N. Virginia); a missing code leaves the cell empty.
+ * Standard on-demand tables selected by inference scope. Priority, flex,
+ * batch and long-context rows are ignored. Rate codes resolve against
+ * US East (N. Virginia). A published Global quote with unresolved meters
+ * throws; it must not be replaced with a regional quote.
  */
 export function parseBedrockPricingPage(
   html: string,
   meter: MeterFile,
+  scope: 'regional' | 'global' = 'regional',
 ): Map<string, Record<string, number>> {
   const region = meter.regions?.[USE1]
   if (!region) {
@@ -401,6 +404,8 @@ export function parseBedrockPricingPage(
     }
     const headings = stack.map((item) => item.text).join(' ')
     if (SKIP_HEADING.test(headings)) continue
+    const globalHeading = /global/i.test(headings)
+    if (scope === 'regional' && globalHeading) continue
     const table = match[0]
     const after = flat.slice(
       match.index + table.length,
@@ -421,6 +426,14 @@ export function parseBedrockPricingPage(
       row.forEach((cell, index) => {
         const lever = levers[index]
         const amount = perMillion(cell, region)
+        if (
+          scope === 'global' &&
+          lever &&
+          /\$|\{priceOf!/.test(cell) &&
+          amount === null
+        ) {
+          throw new Error('amazon-bedrock global pricing: unreadable quote')
+        }
         if (lever && amount !== null && amount >= 0) rates[lever] = amount / 1e6
       })
       return rates
@@ -429,14 +442,22 @@ export function parseBedrockPricingPage(
     if (head.some((cell) => /inference option/i.test(cell))) {
       const chosen = rows.slice(1).find((row) => {
         const tier = row[0] ?? ''
-        return /us cris|in-region|regional/i.test(tier) && !/global/i.test(tier)
+        return scope === 'global'
+          ? /global/i.test(tier)
+          : /us cris|in-region|regional/i.test(tier) && !/global/i.test(tier)
       })
       const rates = chosen ? ratesOf(chosen) : null
       const key = bedrockNameKey(pendingLabel)
+      if (scope === 'global' && chosen && (!rates || !complete(rates))) {
+        throw new Error(
+          `amazon-bedrock global pricing: unreadable quote ${key}`,
+        )
+      }
       if (!rates || !key || !complete(rates)) continue
       assign(out, dropped, key, rates)
       continue
     }
+    if (scope === 'global' && !globalHeading) continue
     const nameCol = head.findIndex((cell) => /model/i.test(cell))
     const modelCol = nameCol >= 0 ? nameCol : 0
     for (const row of rows.slice(1)) {
@@ -444,11 +465,16 @@ export function parseBedrockPricingPage(
       if (!name || /long context/i.test(name)) continue
       const rates = ratesOf(row)
       const key = bedrockNameKey(name)
+      if (scope === 'global' && !complete(rates)) {
+        throw new Error(
+          `amazon-bedrock global pricing: unreadable quote ${key}`,
+        )
+      }
       if (!key || !complete(rates)) continue
       assign(out, dropped, key, rates)
     }
   }
-  assertParsed(out, 'amazon-bedrock pricing page')
+  if (scope === 'regional') assertParsed(out, 'amazon-bedrock pricing page')
   return out
 }
 
@@ -517,7 +543,11 @@ export function lookupBedrockPrice(
   if (!name) return null
   const offered = book.offerByName.get(name)
   if (offered) {
-    return { rates: offered, url: BEDROCK_PRICE_LIST_URL, hash: book.offerHash }
+    return {
+      rates: offered,
+      url: BEDROCK_PRICE_LIST_URL,
+      hash: book.offerHash,
+    }
   }
   const slug = matchBedrockOfferSlug(book.offerBySlug.keys(), rawId)
   if (slug) {
@@ -537,12 +567,15 @@ export async function fetchBedrockPriceBook(): Promise<BedrockPriceBook> {
     fetchText(BEDROCK_METERED_URL, AWS_INIT),
   ])
   const offer = parseBedrockOffer(JSON.parse(offerText) as OfferFile)
-  const page = parseBedrockPricingPage(html, JSON.parse(meterText) as MeterFile)
+  const meter = JSON.parse(meterText) as MeterFile
+  const page = parseBedrockPricingPage(html, meter)
+  const globalPage = parseBedrockPricingPage(html, meter, 'global')
   return {
     offerById: offer.byId,
     offerByName: offer.byName,
     offerBySlug: offer.bySlug,
     pageByName: page,
+    globalPageByName: globalPage,
     offerHash: await sha256Text(offerText),
     pageHash: await sha256Text(`${html}\n${meterText}`),
   }

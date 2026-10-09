@@ -279,6 +279,12 @@ describe('amazon-bedrock', () => {
       'anthropic.claude-sonnet-4-5-20250929-v1:0',
       'openai.gpt-6-sol',
       'openai.gpt-5.4',
+      'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+      'us.openai.gpt-6-sol',
+      'global.openai.gpt-6-sol',
+      'global.openai.gpt-5.4',
     ])
     const cardUrl = `${DOCS}model-card-anthropic-claude-sonnet-4-5.md`
     const source = {
@@ -311,11 +317,7 @@ describe('amazon-bedrock', () => {
         reasoningEffort: false,
       },
       schemaEndpointId: 'model/{modelId}/converse',
-      aliases: [
-        'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-        'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
-        'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
-      ],
+      aliases: [],
       deprecated: true,
       releasedAt: Date.UTC(2025, 8, 30) / 1000,
       factSources: {
@@ -351,8 +353,77 @@ describe('amazon-bedrock', () => {
     expect(sol?.releasedAt).toBe(Date.UTC(2026, 8, 22) / 1000)
     // Only a cross-Region profile is priced: no card for the base id.
     expect(models[2]?.pricing).toBeNull()
-    expect(models[2]?.aliases).toEqual(['global.openai.gpt-5.4'])
+    expect(models[2]?.aliases).toEqual([])
     expect(models[2]?.schemaEndpointId).toBe('model/{modelId}/converse')
+  })
+
+  it('keeps native profiles distinct and prices global from its own card table', async () => {
+    serve(PAGES)
+    const { models } = await provider.listModels({})
+    const global = models.find(
+      (model) => model.rawId === 'global.openai.gpt-6-sol',
+    )
+    const card = global?.pricing as RateCard
+    expect(global?.aliases).toEqual([])
+    expect(
+      price(card, {}, { input_tokens: 100_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(10.2)
+    expect(
+      price(card, {}, { input_tokens: 300_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(16.2)
+    expect(global?.factSources?.pricing?.sourceUrl).toBe(
+      `${DOCS}model-card-openai-gpt-6-sol.md`,
+    )
+    const eu = models.find(
+      (model) => model.rawId === 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    )
+    expect(eu).toMatchObject({
+      pricing: null,
+      aliases: [],
+      absent: { pricing: 'cleared' },
+    })
+    expect(eu?.factSources?.pricing).toBeUndefined()
+    const unpricedGlobal = models.find(
+      (model) =>
+        model.rawId === 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    )
+    expect(unpricedGlobal).toMatchObject({
+      pricing: null,
+      absent: { pricing: 'cleared' },
+    })
+    expect(unpricedGlobal?.factSources?.pricing).toBeUndefined()
+    expect(
+      models.find((model) => model.rawId === 'global.openai.gpt-5.4')?.pricing,
+    ).not.toBeNull()
+  })
+
+  it('prices a documented global profile from the global page, never the geo row', async () => {
+    serve({
+      ...PAGES,
+      [BEDROCK_PRICING_PAGE_URL]: `<h2>Global Cross-region Inference</h2>
+<table><tr><th>Models</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Claude Sonnet 4.5</td><td>$7</td><td>$21</td></tr></table>
+<h2>Geo and In-region Cross-region Inference</h2>
+<table><tr><th>Models</th><th>Price per 1M input tokens</th><th>Price per 1M output tokens</th></tr>
+<tr><td>Claude Sonnet 4.5</td><td>$9</td><td>$27</td></tr></table>`,
+    })
+    const { models } = await provider.listModels({})
+    const base = models.find(
+      (model) => model.rawId === 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+    )
+    const global = models.find(
+      (model) =>
+        model.rawId === 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    )
+    expect((base?.pricing as RateCard).tables.rate?.base).toMatchObject({
+      input_tokens: 9 / 1e6,
+    })
+    expect((global?.pricing as RateCard).tables.rate?.base).toMatchObject({
+      input_tokens: 7 / 1e6,
+    })
+    expect(global?.factSources?.pricing?.sourceUrl).toBe(
+      BEDROCK_PRICING_PAGE_URL,
+    )
   })
 
   it('fails the poll when most cards stop stating a model id', async () => {
@@ -625,5 +696,23 @@ Set reasoning effort to \`none\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, or \
       Document: {},
       StopReason: { type: 'string', enum: ['end_turn', 'max_tokens'] },
     })
+  })
+})
+
+// A published current quote is not source silence when its markup is unreadable.
+describe('Bedrock malformed current quotes', () => {
+  it('rejects an unreadable Global long-context tier without a flat substitute', () => {
+    const malformed = GPT6.replace(
+      '| Global CRIS | $4.00 | $5.00 | $0.40 | $15.00 |',
+      '| Global CRIS | unreadable | unreadable | unreadable | unreadable |',
+    )
+    expect(() => bedrockCardPrice(malformed, 'global')).toThrow(
+      'amazon-bedrock model card pricing: unreadable long-context tier',
+    )
+  })
+  it('rejects a malformed Global card quote rather than inheriting in-Region', () => {
+    expect(() =>
+      bedrockCardPrice(GPT54.replace('$2.00', '$unreadable'), 'global'),
+    ).toThrow('amazon-bedrock model card pricing: unreadable quote')
   })
 })

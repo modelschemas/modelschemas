@@ -81,26 +81,34 @@ describe('mistral pricing page', () => {
     expect(rates.has('mistral-embed')).toBe(false)
   })
 
-  it('keeps the struck-through standard price and skips an unreadable sale cell', () => {
+  it('uses the current sale amount, including an unreadable historical quote', () => {
     const sale = `<h2>Flagship</h2><p>Prices /M Tokens</p><table>
-<tr><td><a href="/models/mistral-large-4-0">Large 4</a></td>
-<td><del><span>Original price: </span>$1.36</del><ins><span>Sale price: </span>$0.68</ins></td>
-<td><del><span>Original price: </span>$0.14</del><ins>$0.07</ins></td>
-<td><del><span>Original price: </span>$4.18</del><ins>$2.09</ins></td></tr>
-<tr><td><a href="/models/broken-sale">Broken</a></td>
-<td><del>no amount</del><ins>$0.68</ins></td><td>$0.1</td><td>$0.2</td></tr>
-</table>`
-    const rates = parseMistralPricing(sale)
-    expect(rates.get('mistral-large-4-0')).toEqual({
+<tr><td><a href="/models/synthetic-sale">Sale</a></td>
+<td><del><span>Original price: </span>$9</del><ins><span>Sale price: </span>$3</ins></td>
+<td><del>unknown historical amount</del><ins>$0.2</ins></td>
+<td><del>$12</del><ins>$4</ins></td></tr></table>`
+    expect(parseMistralPricing(sale).get('synthetic-sale')).toEqual({
       kind: 'tokens',
       rates: {
-        input_tokens: 1.36 / 1e6,
-        cache_read_tokens: 0.14 / 1e6,
-        output_tokens: 4.18 / 1e6,
+        input_tokens: 3 / 1e6,
+        cache_read_tokens: 0.2 / 1e6,
+        output_tokens: 4 / 1e6,
       },
     })
-    expect(rates.has('broken-sale')).toBe(false)
   })
+
+  it.each([
+    '<del>$9</del>',
+    '<del>$9</del><ins>unknown</ins>',
+    '<del>$9</del><ins>$3</ins><ins>$2</ins>',
+  ])(
+    'fails unreadable current sale markup instead of using the old rate: %s',
+    (cell) => {
+      const html = `<h2>Flagship</h2><p>Prices /M Tokens</p><table>
+<tr><td><a href="/models/synthetic-sale">Sale</a></td><td>${cell}</td><td>$1</td><td>$4</td></tr></table>`
+      expect(() => parseMistralPricing(html)).toThrow(/current sale price/)
+    },
+  )
 
   it('compiles a unit card from the parsed meters', () => {
     const row = parseMistralPricing(PAGE).get('ocr-4-1')
@@ -393,7 +401,7 @@ describe('mistral model page price and max output', () => {
   const page = (extra: Record<string, unknown>) =>
     mistralModelPage(['voxtral-small-2507'], [[tip('Text input')]], extra)
 
-  it('reads a mixed token and audio widget, preferring originalPrice', () => {
+  it('reads mixed units and uses the current widget price', () => {
     expect(parseMistralPagePrice(page({ a1: widget }))).toEqual({
       kind: 'tokens',
       rates: {
@@ -463,11 +471,26 @@ describe('mistral model page price and max output', () => {
     ).toEqual({
       kind: 'tokens',
       rates: {
-        input_tokens: 1.36 / 1e6,
-        cache_read_tokens: 0.14 / 1e6,
-        output_tokens: 4.18 / 1e6,
+        input_tokens: 0.68 / 1e6,
+        cache_read_tokens: 0.07 / 1e6,
+        output_tokens: 2.09 / 1e6,
       },
     })
+  })
+
+  it('rejects a missing current widget price rather than using originalPrice', () => {
+    expect(() =>
+      parseMistralPagePrice(
+        page({
+          a1: {
+            type: 'custom',
+            free: false,
+            input: [{ originalPrice: 9, denominator: '/M Tokens' }],
+            output: [{ price: 4, denominator: '/M Tokens' }],
+          },
+        }),
+      ),
+    ).toThrow(/unreadable amount/)
   })
 
   it('stores no card for a free widget and throws when widgets disagree', () => {
