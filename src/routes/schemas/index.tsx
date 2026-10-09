@@ -253,6 +253,13 @@ function SchemaIndex() {
                             >
                               output
                             </a>
+                            <span className="text-ink-faint"> · </span>
+                            <a
+                              className="press-link"
+                              href={`${schemaHref(row)}#sources`}
+                            >
+                              sources
+                            </a>
                           </div>
                         </td>
                         <td className="font-mono text-xs text-ink-soft max-sm:hidden">

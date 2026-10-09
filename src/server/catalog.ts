@@ -41,7 +41,7 @@ export interface ModelFilters {
   q?: string
   /** Deprecated models are excluded unless set. */
   includeDeprecated?: boolean
-  /** Include per-field `factSources` on list rows. */
+  /** Include per-field `factSources` by default; false explicitly omits them. */
   provenance?: boolean
   /** Include the full rate card on list rows (default: compact projection). */
   pricing?: boolean
@@ -184,7 +184,7 @@ function toApiModel(
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
-    ...(opts.includeFactSources
+    ...(opts.includeFactSources !== false
       ? {
           factSources: withSourceSilentEvidence(
             row,
@@ -255,7 +255,7 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
     count: rows.length,
     models: rows.map(({ row, upstream }) =>
       toApiModel(row, {
-        includeFactSources: filters.provenance === true,
+        includeFactSources: filters.provenance !== false,
         pricing: filters.pricing === true ? 'full' : 'compact',
         upstream,
       }),
@@ -273,7 +273,11 @@ export async function listModelsCatalog(db: Db, filters: ModelFilters = {}) {
 }
 
 /** GET /v1/providers/{provider}/models. Returns null for unknown providers. */
-export async function listProviderModels(db: Db, providerId: string) {
+export async function listProviderModels(
+  db: Db,
+  providerId: string,
+  provenance = true,
+) {
   const provider = await db.query.providers.findFirst({
     where: eq(providers.id, providerId),
   })
@@ -288,7 +292,11 @@ export async function listProviderModels(db: Db, providerId: string) {
     provider: provider.id,
     count: rows.length,
     models: rows.map(({ row, upstream }) =>
-      toApiModel(row, { pricing: 'compact', upstream }),
+      toApiModel(row, {
+        pricing: 'compact',
+        upstream,
+        includeFactSources: provenance,
+      }),
     ),
     _links: modelLinks(provider.id),
   }

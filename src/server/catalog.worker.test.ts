@@ -43,6 +43,13 @@ beforeAll(async () => {
       activity: 'chat',
       displayName: 'Chatty One',
       contextWindow: 100_000,
+      factSources: {
+        contextWindow: {
+          derivation: 'listing',
+          sourceUrl: 'https://example.com/catalog.json',
+          sourceHash: 'a'.repeat(64),
+        },
+      },
       capabilities: { tools: true, vision: true, seed: false },
       reasoning: { mode: 'toggle', mandatory: false },
       firstSeenAt: NOW,
@@ -221,14 +228,30 @@ describe('provider-scoped queries', () => {
     expect(validator.validate({ mode: 'toggle' }).valid).toBe(false)
   })
 
-  it('omits factSources on the list unless provenance is requested', async () => {
+  it('surfaces recorded sources by default without inventing missing provenance', async () => {
     const listed = await listModelsCatalog(db, { provider: 'cat-alpha' })
-    expect(listed.models[0]).not.toHaveProperty('factSources')
-    const withProv = await listModelsCatalog(db, {
+    const recorded = {
+      derivation: 'listing',
+      sourceUrl: 'https://example.com/catalog.json',
+      sourceHash: 'a'.repeat(64),
+    }
+    expect(
+      listed.models.find((row) => row.rawId === 'chatty-1')?.factSources
+        ?.contextWindow,
+    ).toEqual(recorded)
+    expect(
+      listed.models.find((row) => row.rawId === 'painter-xl')?.factSources,
+    ).toBeNull()
+    const providerList = await listProviderModels(db, 'cat-alpha')
+    expect(
+      providerList?.models.find((row) => row.rawId === 'chatty-1')?.factSources
+        ?.contextWindow,
+    ).toEqual(recorded)
+    const compact = await listModelsCatalog(db, {
       provider: 'cat-alpha',
-      provenance: true,
+      provenance: false,
     })
-    expect(withProv.models[0]?.factSources).toBeNull()
+    expect(compact.models.every((row) => !('factSources' in row))).toBe(true)
   })
 
   it('binds grain=provider models to a generation route and FAL to its raw id', async () => {
@@ -497,12 +520,16 @@ describe('stored sameAs relationships', () => {
     expect(
       provider?.models.find((row) => row.id === 'sameas-linked')?.sameAs,
     ).toEqual({ provider: 'cat-maker', rawId: 'native-1' })
-    expect(provider?.models[0]).not.toHaveProperty('factSources')
+    expect(provider?.models[0]?.factSources?.sameAs?.sourceUrl).toBe(
+      'https://example.com/reseller/model',
+    )
+    const compact = await listProviderModels(db, 'cat-reseller', false)
+    expect(compact?.models[0]).not.toHaveProperty('factSources')
   })
 })
 
 describe('source-silent catalog provenance', () => {
-  it('serves verified ledger evidence on detail and opted-in lists only', async () => {
+  it('serves verified ledger evidence on detail and default lists', async () => {
     await db
       .insert(providers)
       .values({
@@ -536,7 +563,10 @@ describe('source-silent catalog provenance', () => {
       listed.models.find((model) => model.id === 'silent-grok-test')
         ?.factSources?.maxOutput,
     ).toEqual(expected)
-    const compact = await listModelsCatalog(db, { provider: 'grok' })
+    const compact = await listModelsCatalog(db, {
+      provider: 'grok',
+      provenance: false,
+    })
     expect(
       compact.models.find((model) => model.id === 'silent-grok-test'),
     ).not.toHaveProperty('factSources')
@@ -571,7 +601,7 @@ describe('source-silent catalog provenance', () => {
   })
 })
 
-it('serves exact-model replay leaf silence on detail and provenance lists only', async () => {
+it('serves exact-model replay leaf silence on detail and default lists', async () => {
   const scope = 'scoped-catalog/maker/model:variant'
   const evidence = parseSourceSilentEvidence(
     `- ${scope}: replayReasoningContent — absent, https://example.com/exact-model, checked 2026-10-09`,
@@ -625,7 +655,10 @@ it('serves exact-model replay leaf silence on detail and provenance lists only',
       listed.models.find((row) => row.rawId === 'maker/model:variant-snapshot')
         ?.factSources?.requestMapFields,
     ).toBeUndefined()
-    const compact = await listModelsCatalog(db, { provider: 'scoped-catalog' })
+    const compact = await listModelsCatalog(db, {
+      provider: 'scoped-catalog',
+      provenance: false,
+    })
     expect(compact.models.every((row) => !('factSources' in row))).toBe(true)
   } finally {
     sourceSilentEvidenceLedger.delete(scope)

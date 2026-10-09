@@ -319,7 +319,7 @@ export type Model = {
    */
   aliases?: Array<string> | null
   /**
-   * Per-field provenance. Detail always includes this; lists include it with provenance=1. A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
    */
   factSources?: unknown
   /**
@@ -451,11 +451,20 @@ export type ListProviderModelsData = {
      */
     provider: string
   }
-  query?: never
+  query?: {
+    /**
+     * Include recorded per-field sources by default; 0 omits them.
+     */
+    provenance?: '0' | '1'
+  }
   url: '/v1/providers/{provider}/models'
 }
 
 export type ListProviderModelsErrors = {
+  /**
+   * Error
+   */
+  400: Error
   /**
    * Error
    */
@@ -498,9 +507,9 @@ export type ListModelsData = {
      */
     q?: string
     /**
-     * Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.
+     * Per-field factSources are included by default. Set to 0 to omit them on list rows; 1 explicitly includes them. Model detail always includes factSources and OpenRouter discrepancies.
      */
-    provenance?: '1'
+    provenance?: '0' | '1'
     /**
      * Set to 1 to include the full rate card on each list row. Default is a compact summary: per-million base rates for token cards, otherwise the unit the card bills by.
      */

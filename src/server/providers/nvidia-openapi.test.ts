@@ -1,3 +1,4 @@
+import selectorSources from './fixtures/nvidia-native-selector-identity.json'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -248,11 +249,65 @@ ${JSON.stringify({
     const facts = parseNvidiaInfer(markdown)
     expect(nvidiaMaxOutput(facts!.document)).toBe(4096)
     expect(nvidiaModelSpec('openai/gpt-oss-20b', facts!)?.paths).toHaveProperty(
-      '/openai/gpt-oss-20b',
+      '/chat/completions',
     )
   })
 
   it('returns null when the page has no OpenAPI document', () => {
     expect(parseNvidiaInfer('# Model\n\n```json\n"not a spec"\n```')).toBeNull()
   })
+})
+
+it('rejects conflicting native const/default/enum model selectors despite matching API title', () => {
+  for (const selector of [
+    { const: 'nvidia/wrong', default: 'nvidia/right' },
+    { enum: ['nvidia/right', 'nvidia/wrong'], default: 'nvidia/right' },
+    { allOf: [{ const: 'nvidia/wrong' }, { default: 'nvidia/right' }] },
+  ]) {
+    const facts = parseNvidiaInfer(
+      inferDoc({ model: selector }, '/chat/completions', 'nvidia/right'),
+    )
+    expect(facts && nvidiaInferNamesModel('nvidia/right', facts.document)).toBe(
+      false,
+    )
+  }
+})
+
+it('uses actual native ReadMe request identities while retaining the API display titles', () => {
+  const guard = parseNvidiaInfer(
+    selectorSources[
+      'https://docs.api.nvidia.com/nim/reference/nvidia-llama-3_1-nemotron-safety-guard-8b-v3-infer.md'
+    ].body,
+  )
+  const parse = parseNvidiaInfer(
+    selectorSources[
+      'https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-parse-2_0-infer.md'
+    ].body,
+  )
+  const safety = parseNvidiaInfer(
+    selectorSources[
+      'https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-5-content-safety-infer.md'
+    ].body,
+  )
+  expect(guard?.document.info?.title).toContain('llama-3_1')
+  expect(
+    guard &&
+      nvidiaInferNamesModel(
+        'nvidia/llama-3.1-nemotron-safety-guard-8b-v3',
+        guard.document,
+      ),
+  ).toBe(true)
+  expect(parse?.document.info?.title).toBe(
+    'NVIDIA NIM API for nvidia/nemotron-parse',
+  )
+  expect(
+    parse && nvidiaInferNamesModel('nvidia/nemotron-parse-2.0', parse.document),
+  ).toBe(true)
+  expect(
+    safety &&
+      nvidiaInferNamesModel(
+        'nvidia/nemotron-3.5-content-safety',
+        safety.document,
+      ),
+  ).toBe(false)
 })

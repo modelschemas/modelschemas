@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Provenance } from '#/components/provenance.tsx'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
@@ -327,6 +328,9 @@ function ModelsCatalog() {
                           <a className="press-link" href={modelHref(m)}>
                             detail →
                           </a>
+                          <div className="mt-1">
+                            <Provenance facts={m.factSources} compact />
+                          </div>
                         </td>
                       </tr>
                     ))
