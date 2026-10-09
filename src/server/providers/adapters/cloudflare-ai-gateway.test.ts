@@ -1,9 +1,9 @@
+import { GATEWAY_REST_DOCS } from '../cloudflare-gateway-schema.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   CATALOG_DIR_URL,
   CATALOG_URL,
-  SPEC_SKIP,
   catalogFileUrls,
   parseCatalogModel,
   provider,
@@ -134,7 +134,7 @@ describe('cloudflare-ai-gateway', () => {
       },
     })
     expect(parseCatalogModel(FABLE, SOURCE).reasoning).toBeUndefined()
-    expect(parseCatalogModel(FABLE, SOURCE).capabilities).toEqual(['reasoning'])
+    expect(parseCatalogModel(FABLE, SOURCE).capabilities).toBeUndefined()
   })
 
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
@@ -654,6 +654,8 @@ describe('cloudflare-ai-gateway', () => {
     const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
       urls.push(String(url))
+      if (String(url) === GATEWAY_REST_DOCS)
+        return Promise.resolve(new Response(RUN_DOC))
       const body = bodies[String(url)]
       if (body === undefined) {
         return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
@@ -676,7 +678,20 @@ describe('cloudflare-ai-gateway', () => {
     expect(listed.models[2]?.reasoning).toBeUndefined()
     expect(listed.models[2]?.requestMap).toBeUndefined()
     expect(listed.models[3]?.reasoning).toBeUndefined()
-    expect(spec.skipped).toBe(SPEC_SKIP)
+    expect(spec.skipped).toBeUndefined()
+    expect(spec.bundledEndpoints?.map((endpoint) => endpoint.publicId)).toEqual(
+      ['anthropic/claude-fable-5', 'openai/gpt-4o', 'openai/gpt-4o-mini'],
+    )
+    expect(
+      spec.bundledEndpoints?.every(
+        (endpoint) =>
+          endpoint.path === '/accounts/{account_id}/ai/run' &&
+          endpoint.output === undefined,
+      ),
+    ).toBe(true)
+    expect(spec.warnings).toContain(
+      'bytedance/seedance-2.5: native activity or input schema unpublished; no schema endpoint',
+    )
     expect(spec.specs).toEqual([])
     expect(urls[0]).toBe(CATALOG_DIR_URL)
     expect(provider.modelsEndpoint).toBe(CATALOG_URL)
@@ -726,13 +741,7 @@ describe('cloudflare-ai-gateway', () => {
   })
 })
 
-it('retains explicitly tagged reasoning without inventing a request control', () => {
-  const model = parseCatalogModel(
-    { ...FABLE, metadata: { 'Adaptive Thinking': 'Yes' } },
-    SOURCE,
-    { schemaShared: true },
-  )
-  expect(model.capabilities).toContain('reasoning')
-  expect(model.reasoning).toBeUndefined()
-  expect(model.factSources?.capabilities?.reasoning?.path).toBe('tags')
-})
+const RUN_DOC = `| Endpoint | Format | Use case |
+| \`POST /ai/run\` | Envelope with \`model\`, \`input\` | All models |
+Model-specific parameters go inside \`input\`.
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run"`

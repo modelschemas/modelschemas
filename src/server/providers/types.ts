@@ -459,6 +459,8 @@ export interface SpecSource {
  * GET /v1/openapi/{provider}.
  */
 export interface BundledEndpoint {
+  /** Logical schema identity; path remains the actual provider HTTP path. */
+  publicId?: string
   path: string
   activity: Activity
   description: string | null
