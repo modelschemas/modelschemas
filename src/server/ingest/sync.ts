@@ -5,7 +5,7 @@
  * upstream reverts to previously seen content), mark superseded, upsert
  * `endpoints`, write `changes` rows, warm KV with new blobs. Idempotent.
  */
-import { and, eq, isNull, notInArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import {
@@ -333,6 +333,34 @@ export async function syncProvider(
   await dropModelsDevSchemaVersions(db, provider.id)
 
   const fetched = await provider.fetchSpec(secrets)
+  if (fetched.withdrawnSchemaSources?.length) {
+    const withdrawn = await db
+      .select({ id: schemaVersions.id })
+      .from(schemaVersions)
+      .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+      .where(
+        and(
+          eq(endpoints.providerId, provider.id),
+          isNull(schemaVersions.supersededAt),
+          inArray(schemaVersions.sourceUrl, fetched.withdrawnSchemaSources),
+        ),
+      )
+    for (let i = 0; i < withdrawn.length; i += 90) {
+      await db
+        .update(schemaVersions)
+        .set({ supersededAt: now })
+        .where(
+          inArray(
+            schemaVersions.id,
+            withdrawn.slice(i, i + 90).map((row) => row.id),
+          ),
+        )
+    }
+    if (withdrawn.length)
+      outcome.warnings.push(
+        `Withdrew ${withdrawn.length} schema versions from rejected former sources`,
+      )
+  }
   if (fetched.warnings) outcome.warnings.push(...fetched.warnings)
   if (fetched.skipped) {
     outcome.skipped = fetched.skipped

@@ -62,6 +62,58 @@ const STUB_SOURCE = {
   hash: 'stub-source-hash',
 }
 
+it('withdraws only explicitly rejected current sources after a successful native fetch', async () => {
+  const id = 'sync-withdraw-borrowed'
+  const deps = await freshDeps(id)
+  const provider = stubProvider(id, fixtureSpec(false))
+  await syncProvider(deps, provider)
+  await expect(
+    syncProvider(deps, {
+      ...provider,
+      fetchSpec: async () => {
+        throw new Error('native docs failed')
+      },
+    }),
+  ).rejects.toThrow('native docs failed')
+  expect(
+    await getEndpointSchema(deps.db, id, 'chat', 'v1/messages', 'input'),
+  ).not.toBeNull()
+  const otherId = 'sync-withdraw-other-provider'
+  const otherDeps = await freshDeps(otherId)
+  await syncProvider(otherDeps, stubProvider(otherId, fixtureSpec(false)))
+  const result = await syncProvider(deps, {
+    ...provider,
+    fetchSpec: async () => ({
+      specs: [],
+      sources: [],
+      outputStrategy: 'post-200',
+      withdrawnSchemaSources: [STUB_SOURCE.url],
+      skipped: 'own docs publish no schema',
+    }),
+  })
+  expect(result.warnings).toContain(
+    'Withdrew 2 schema versions from rejected former sources',
+  )
+  expect(
+    await getEndpointSchema(deps.db, id, 'chat', 'v1/messages', 'input'),
+  ).toBeNull()
+  expect(
+    await getEndpointSchema(deps.db, id, 'chat', 'v1/messages', 'output'),
+  ).toBeNull()
+  expect(
+    await getEndpointSchema(deps.db, otherId, 'chat', 'v1/messages', 'input'),
+  ).not.toBeNull()
+  const history = await deps.db
+    .select()
+    .from(schemaVersions)
+    .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+    .where(eq(endpoints.providerId, id))
+  expect(history).toHaveLength(2)
+  expect(
+    history.every((row) => row.schema_versions.supersededAt !== null),
+  ).toBe(true)
+})
+
 function stubProvider(id: string, spec: OpenApiDocument): ProviderConfig {
   return {
     id,
