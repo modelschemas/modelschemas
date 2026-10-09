@@ -214,6 +214,40 @@ describe('refusals', () => {
   const doubleX: Expr = { '*': [{ var: 'x' }, 2] }
   const yuan = { ...cardFor(doubleX), price: { currency: ['CNY', doubleX] } }
 
+  it('accepts source-published literal free prices in USD and CNY', () => {
+    const free = cardFor(0, { inputs: {}, tables: {} })
+    expect(priceDetailed(rateCardSchema.parse(free))).toEqual({
+      amount: 0,
+      currency: 'USD',
+      usd: 0,
+      estimated: [],
+    })
+    const cny = rateCardSchema.parse({
+      ...free,
+      price: { currency: ['CNY', 0] },
+    })
+    expect(priceDetailed(cny)).toEqual({
+      amount: 0,
+      currency: 'CNY',
+      estimated: [],
+    })
+    expect(price(cny)).toBe(0)
+  })
+
+  it('rejects negative native currency and computed zero paid prices', () => {
+    const negative = rateCardSchema.parse({
+      ...cardFor(1),
+      price: { currency: ['CNY', -1] },
+    })
+    expect(() => price(negative)).toThrow(
+      expect.objectContaining({ code: 'bad-result' }),
+    )
+    const paid = rateCardSchema.parse(yuan)
+    expect(() => price(paid, { x: 0 })).toThrow(
+      expect.objectContaining({ code: 'bad-result' }),
+    )
+  })
+
   it('prices a card in its own currency and never calls it USD', () => {
     const parsed = rateCardSchema.parse(yuan)
     expect(cardCurrency(parsed)).toBe('CNY')

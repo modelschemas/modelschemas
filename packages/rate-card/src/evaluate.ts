@@ -431,7 +431,14 @@ function evaluate(
   }
   const { currency, expr } = cardPrice(card)
   const amount = evalExpr(expr, vars, card.tables)
-  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+  // A source-published free card has a literal zero price. A paid formula that
+  // evaluates to zero still signals an invalid or missing billable quantity.
+  if (
+    typeof amount !== 'number' ||
+    !Number.isFinite(amount) ||
+    amount < 0 ||
+    (amount === 0 && expr !== 0)
+  ) {
     throw new RateCardError(
       'bad-result',
       `price evaluated to ${JSON.stringify(amount)}`,
