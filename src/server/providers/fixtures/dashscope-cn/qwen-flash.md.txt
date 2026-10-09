@@ -1,0 +1,293 @@
+# qwen-flash
+
+> Qwen3系列Flash模型，实现思考模式和非思考模式的有效融合，可在对话中切换模式。复杂推理类任务性能优秀，指令遵循、文本理解等能力显著提高。支持1M上下文长度，按照上下文长度进行阶梯计费。该模型版本功能等同于快照模型 qwen-flash-2025-07-28。
+
+## 推理服务供应商 <span id="h-490b2834e6" />
+
+`qwen-flash`模型的推理服务供应商为阿里云百炼。
+
+## 模型能力 <span id="h-672edebe26" />
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="新加坡">
+    部署范围：国际
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="德国（法兰克福）">
+    部署范围：全球
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="美国（弗吉尼亚）">
+    部署范围：全球
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+
+    部署范围：美国
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+</Tabs>
+
+## 上下文限制 <span id="h-e78a1dd045" />
+
+<table><thead><tr><th>参数</th><th>值</th><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>最大输入长度</p></td><td><p>997952</p></td><td><p>最大输出长度</p></td><td><p>32768</p></td></tr><tr><td><p>上下文长度</p></td><td><p>1000000</p></td><td /><td /></tr></tbody></table>
+
+## 模型价格 <span id="h-ef876907c3" />
+
+本文仅展示模型调用原价，不包含限时优惠等活动信息，请前往[百炼控制台](https://bailian.console.aliyun.com/cn-beijing/model/market)查看活动优惠。
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <Accordion title="输入<=128k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.03</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch File）</p></td><td><p>0.075</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch File）</p></td><td><p>0.75</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.188</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.015</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch Chat)</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch Chat)</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="128k<输入<=256k">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch File）</p></td><td><p>0.3</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch File）</p></td><td><p>3</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.75</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.06</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch Chat)</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch Chat)</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.24</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch File）</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch File）</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch Chat)</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch Chat)</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+
+  <Tab title="新加坡">
+    部署范围：国际
+
+    <Accordion title="Input<=256k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.367</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>2.936</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.073</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch File）</p></td><td><p>0.183</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch File）</p></td><td><p>1.468</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.462</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.037</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<Input<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.835</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>14.678</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.367</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（Batch File）</p></td><td><p>0.917</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出（Batch File）</p></td><td><p>7.339</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>2.297</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.183</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+
+  <Tab title="德国（法兰克福）">
+    部署范围：全球
+
+    <Accordion title="输入<=128k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.03</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.188</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.015</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="128k<输入<=256k">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.75</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.06</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.24</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.12</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+
+  <Tab title="美国（弗吉尼亚）">
+    部署范围：全球
+
+    <Accordion title="输入<=128k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.03</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.188</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.015</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="128k<输入<=256k">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>0.75</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.06</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.24</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存创建</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>显式缓存命中</p></td><td><p>0.12</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    部署范围：美国
+
+    <Accordion title="输入<=256k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.367</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>2.936</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.073</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.835</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>14.678</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输入（缓存命中）</p></td><td><p>0.367</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+</Tabs>
+
+## 限流 <span id="h-60cd90831c" />
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>30000</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>10,000,000</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="新加坡">
+    部署范围：国际
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>600</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>5,000,000</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="德国（法兰克福）">
+    部署范围：全球
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>30000</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>10,000,000</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="美国（弗吉尼亚）">
+    部署范围：全球
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>600</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>5,000,000</p></td></tr></tbody></table>
+
+    部署范围：美国
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>30000</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>10,000,000</p></td></tr></tbody></table>
+  </Tab>
+</Tabs>
+
+## 快照版本 <span id="h-4f47faa094" />
+
+### qwen-flash-2025-07-28 <span id="h-acabba3b6d" />
+
+Qwen3系列Flash模型，实现思考模式和非思考模式的有效融合，可在对话中切换模式。复杂推理类任务性能优秀，指令遵循、文本理解等能力显著提高。支持1M上下文长度，按照上下文长度进行阶梯计费。本版本为2025年7月28日快照。
+
+#### 推理服务供应商 <span id="h-446b8f2403" />
+
+`qwen-flash-2025-07-28`模型的推理服务供应商为阿里云百炼。
+
+#### 模型能力 <span id="h-4adcaece6c" />
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>不支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="新加坡">
+    部署范围：国际
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>不支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="德国（法兰克福）">
+    部署范围：全球
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>不支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="美国（弗吉尼亚）">
+    部署范围：全球
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>不支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+
+    部署范围：美国
+
+    <table><thead><tr><th>能力项</th><th>支持情况</th><th>能力项</th><th>支持情况</th></tr></thead><tbody><tr><td><p>输入模态</p></td><td><p><strong>Text</strong></p></td><td><p>输出模态</p></td><td><p><strong>Text</strong></p></td></tr><tr><td><p>模型体验</p></td><td><p>支持</p></td><td><p>Function Calling</p></td><td><p>不支持</p></td></tr><tr><td><p>结构化输出</p></td><td><p>支持</p></td><td><p>联网搜索</p></td><td><p>不支持</p></td></tr><tr><td><p>前缀续写</p></td><td><p>支持</p></td><td><p>上下文缓存</p></td><td><p>不支持</p></td></tr><tr><td><p>批量推理</p></td><td><p>不支持</p></td><td><p>模型调优</p></td><td><p>不支持</p></td></tr></tbody></table>
+  </Tab>
+</Tabs>
+
+#### 上下文限制 <span id="h-8399bd2065" />
+
+<table><thead><tr><th>参数</th><th>值</th><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>最大输入长度</p></td><td><p>997952</p></td><td><p>最大输出长度</p></td><td><p>32768</p></td></tr><tr><td><p>上下文长度</p></td><td><p>1000000</p></td><td /><td /></tr></tbody></table>
+
+#### 模型价格 <span id="h-7cdb599bb1" />
+
+本文仅展示模型调用原价，不包含限时优惠等活动信息，请前往[百炼控制台](https://bailian.console.aliyun.com/cn-beijing/model/market)查看活动优惠。
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <Accordion title="输入<=128k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="128k<输入<=256k">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+
+  <Tab title="新加坡">
+    部署范围：国际
+
+    <Accordion title="Input<=256k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.367</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>2.936</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<Input<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.835</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>14.678</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+
+  <Tab title="德国（法兰克福）">
+    部署范围：全球
+
+    <Accordion title="输入<=128k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="128k<输入<=256k">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+
+  <Tab title="美国（弗吉尼亚）">
+    部署范围：全球
+
+    <Accordion title="输入<=128k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.15</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>1.5</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="128k<输入<=256k">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.6</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>6</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.2</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>12</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    部署范围：美国
+
+    <Accordion title="输入<=256k" defaultOpen>
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>0.367</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>2.936</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+
+    <Accordion title="256k<输入<=1m">
+      <table><thead><tr><th>计费项</th><th>价格（元）</th><th>单位</th></tr></thead><tbody><tr><td><p>输入</p></td><td><p>1.835</p></td><td><p>每百万tokens</p></td></tr><tr><td><p>输出</p></td><td><p>14.678</p></td><td><p>每百万tokens</p></td></tr></tbody></table>
+    </Accordion>
+  </Tab>
+</Tabs>
+
+#### 限流 <span id="h-d078beb35c" />
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>60</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>1,000,000</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="新加坡">
+    部署范围：国际
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>600</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>5,000,000</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="德国（法兰克福）">
+    部署范围：全球
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>60</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>1,000,000</p></td></tr></tbody></table>
+  </Tab>
+
+  <Tab title="美国（弗吉尼亚）">
+    部署范围：全球
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>600</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>5,000,000</p></td></tr></tbody></table>
+
+    部署范围：美国
+
+    <table><thead><tr><th>参数</th><th>值</th></tr></thead><tbody><tr><td><p>RPM（每分钟请求数）</p></td><td><p>30000</p></td></tr><tr><td><p>TPM（每分钟tokens）</p></td><td><p>10,000,000</p></td></tr></tbody></table>
+  </Tab>
+</Tabs>
