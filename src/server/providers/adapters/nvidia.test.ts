@@ -428,6 +428,7 @@ describe('nvidia', () => {
         modalities: 'unavailable',
         capabilities: 'unavailable',
         reasoning: 'unavailable',
+        requestMap: 'unavailable',
         schemaEndpointId: 'unavailable',
       })
     }
@@ -645,4 +646,18 @@ updatedAt: test
       'parsed 0 generation specs',
     )
   })
+})
+
+it('reads hosted replay instructions rather than copying maker behavior', () => {
+  const card =
+    '# Native card\n\n## Prototype\nPOST /v1/chat/completions\n\nClients must pass back the complete assistant message, including reasoning_content and tool_calls.'
+  expect(parseNvidiaCard(card).requestMap?.replayReasoningContent).toBe(true)
+  expect(
+    parseNvidiaCard(
+      card.replace(
+        'must pass back the complete assistant message, including',
+        'returns',
+      ),
+    ).requestMap,
+  ).toBeUndefined()
 })

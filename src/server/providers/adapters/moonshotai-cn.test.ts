@@ -1,3 +1,5 @@
+import { KIMI_CN_THINKING_URL } from '../provider-replay.ts'
+import { KIMI_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { modelBranchSchemas, walkRequestSchema } from '../fact-sources.ts'
@@ -71,6 +73,8 @@ function stubFetch(spec: string): Array<string> {
   const urls: Array<string> = []
   globalThis.fetch = ((url: string) => {
     urls.push(String(url))
+    if (String(url) === KIMI_CN_THINKING_URL)
+      return Promise.resolve(new Response(KIMI_REPLAY_FIXTURE))
     if (String(url) === MOONSHOT_CN_PRICING_URL) {
       return Promise.resolve(new Response(PRICING))
     }
@@ -263,7 +267,11 @@ describe('moonshotai-cn', () => {
     const urls = stubFetch(JSON.stringify(SPEC))
     const { models } = await provider.listModels({})
 
-    expect(urls).toEqual([MOONSHOT_CN_PRICING_URL, MOONSHOT_CN_OPENAPI_URL])
+    expect(urls).toEqual([
+      MOONSHOT_CN_PRICING_URL,
+      MOONSHOT_CN_OPENAPI_URL,
+      KIMI_CN_THINKING_URL,
+    ])
     expect(models.map((model) => model.rawId)).toEqual([
       'kimi-k3',
       'kimi-k2.7-code',
@@ -494,4 +502,15 @@ describe('modelBranchSchemas', () => {
       b: ['reasoning', 'temperature', 'tools', 'top_p'],
     })
   })
+})
+
+it('binds replay only to named native Kimi models', async () => {
+  stubFetch(JSON.stringify(SPEC))
+  const models = (await provider.listModels({})).models
+  const kimi = models.find((model) => model.rawId === 'kimi-k2.6')
+  expect(kimi?.requestMap?.replayReasoningContent).toBe(true)
+  expect(kimi?.factSources?.requestMap?.sourceUrl).toBe(KIMI_CN_THINKING_URL)
+  expect(
+    models.find((model) => model.rawId === 'kimi-unmapped')?.requestMap,
+  ).toBeUndefined()
 })

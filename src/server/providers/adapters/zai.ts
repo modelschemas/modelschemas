@@ -17,6 +17,12 @@
  * which models they are "supported by". So capability flags are listed
  * here per model (`exactCapabilities`), not walked from the merged body.
  */
+import {
+  applyReplay,
+  loadReplayDoc,
+  parseGlmReplay,
+  ZAI_THINKING_MODE_URL,
+} from '../provider-replay.ts'
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
@@ -765,6 +771,8 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
     fetchZaiDoc(ZAI_OVERVIEW_URL),
     fetchZaiDoc(ZAI_THINKING_URL),
   ])
+  const replay = await loadReplayDoc(ZAI_THINKING_MODE_URL)
+  const replayIds = new Set(parseGlmReplay(replay.text))
   return {
     models: parseZaiModels(
       spec,
@@ -772,6 +780,10 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
       overview,
       thinking,
       new Date().toISOString(),
+    ).map((model) =>
+      replayIds.has(model.rawId) && model.activity === 'chat'
+        ? applyReplay(model, replay.source)
+        : model,
     ),
   }
 }

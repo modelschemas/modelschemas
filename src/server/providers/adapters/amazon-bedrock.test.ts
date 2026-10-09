@@ -262,6 +262,19 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
+it('keeps native reasoning capability ticks while leaving the control unknown', () => {
+  const source = {
+    url: 'https://docs.aws.amazon.com/bedrock/latest/userguide/native-test.md',
+    hash: 'hash',
+    extractedAt: '2026-10-09T00:00:00Z',
+  }
+  const card = SONNET.replace('+ **Reasoning:** Supported', '').concat(
+    `\n${YES} [Reasoning](reasoning.html)\n`,
+  )
+  expect(parseBedrockCard(card, source)?.capabilities).toContain('reasoning')
+  expect(parseBedrockCard(card, source)?.reasoning).toBeNull()
+})
+
 describe('amazon-bedrock', () => {
   it('lists models from the model cards and nothing else', async () => {
     serve(PAGES)

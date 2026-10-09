@@ -3,11 +3,19 @@
  * schemas are generated from the canonical OpenAI spec. Official host is
  * https://api.deepseek.com (POST /chat/completions, no /v1 prefix).
  */
+import {
+  applyReplay,
+  deepseekEffortFacts,
+  DEEPSEEK_THINKING_URL,
+  loadReplayDoc,
+  parseDeepseekReplay,
+} from '../provider-replay.ts'
 import { deepseekModelPricing } from '../deepseek-pricing.ts'
 import {
   classifyOpenAiCompat,
   fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
+  openAiCompatModelFacts,
   OPENAI_OPENAPI_URL,
 } from '../openai-compat.ts'
 import {
@@ -52,19 +60,43 @@ export const provider: ProviderConfig = {
       env,
       envVar: 'DEEPSEEK_API_KEY',
       activity: deepseekModelActivity,
-      extend: async (row) =>
-        row.effort?.supported_levels?.length
-          ? { capabilities: ['reasoning'] }
-          : {},
+      extend: async (row) => {
+        const hit = deepseekEffortFacts(row.effort)
+        if (!hit) return {}
+        const capabilities = openAiCompatModelFacts(row).capabilities
+        return {
+          reasoning: hit.reasoning,
+          capabilities: [
+            ...new Set([
+              ...(Array.isArray(capabilities)
+                ? capabilities.filter(
+                    (flag): flag is string => typeof flag === 'string',
+                  )
+                : []),
+              'reasoning',
+            ]),
+          ],
+          factSources: {
+            reasoning: hit.source,
+            capabilities: { reasoning: hit.source },
+          },
+        }
+      },
     })
     if (listed.models.length === 0) return listed
     const pricing = await deepseekModelPricing(kv)
+    const replay = listed.models.some((model) => model.reasoning != null)
+      ? await loadReplayDoc(DEEPSEEK_THINKING_URL, kv)
+      : null
+    if (replay) parseDeepseekReplay(replay.text)
     return {
       ...listed,
-      models: listed.models.map((model) => ({
-        ...model,
-        ...pricing(model.rawId),
-      })),
+      models: listed.models.map((model) => {
+        const priced = { ...model, ...pricing(model.rawId) }
+        return replay && model.reasoning != null
+          ? applyReplay(priced, replay.source)
+          : priced
+      }),
     }
   },
   classify: (path) => classifyOpenAiCompat(path),
