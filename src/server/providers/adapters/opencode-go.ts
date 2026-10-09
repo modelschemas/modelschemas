@@ -1,20 +1,7 @@
-/**
- * OpenCode Go — ids from the provider's public models list, activity from
- * its docs page.
- *
- * The list publishes ids only (`created` is the request time). The docs
- * page's Endpoints table names each model's route, which classifies the
- * row. The route is not stored: no OpenAPI document exists for
- * `schemaEndpointId` to bind to.
- *
- * Prices stay null. Go is billed per month ($10 Go, $40 Go Plus); the
- * page's "Usage limits" table quotes per-1M-token rates only to say how
- * usage counts toward each plan's monthly dollar limit, so nobody is
- * billed them. Context window, output cap, modalities, capabilities, and
- * reasoning are published nowhere (docs/source-silent/opencode-go.md).
- */
+/** OpenCode Go: live ids, native catalog facts and documented routes; subscription prices stay null. */
 import type { Activity } from '#/db/schema.ts'
 
+import { openCodeCatalog } from '../opencode-catalog.ts'
 import { cachedDocs } from '../model-facts.ts'
 import { fetchJson, fetchText } from '../types.ts'
 import type {
@@ -40,6 +27,7 @@ const FETCH_TIMEOUT_MS = 30_000
 export interface GoDocsModel {
   displayName: string
   activity: Activity | null
+  schemaEndpointId: string | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -50,13 +38,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseGoDocs(markdown: string): Record<string, GoDocsModel> {
   const byId: Record<string, GoDocsModel> = {}
   let chat = 0
-  for (const { id, displayName, activity } of parseDocsEndpoints(
+  for (const {
+    id,
+    displayName,
+    activity,
+    schemaEndpointId,
+  } of parseDocsEndpoints(
     markdown,
     'opencode-go',
     'https://opencode.ai/zen/go/',
   )) {
     if (activity === 'chat') chat += 1
-    byId[id] = { displayName, activity }
+    byId[id] = { displayName, activity, schemaEndpointId }
   }
   if (chat === 0) throw new Error('opencode-go: docs classified 0 model rows')
   return byId
@@ -95,9 +88,11 @@ async function listModels(
       await fetchText(OPENCODE_GO_DOCS_MARKDOWN, { signal: signal() }),
     ),
   )
+  const catalog = await openCodeCatalog('opencode-go', kv)
   const models = parseOpencodeGoModels(payload).map((model): ModelInfo => {
     const row = byId[model.rawId]
-    return row ? { ...model, ...row } : model
+    const enriched = { ...model, ...catalog[model.rawId] }
+    return row ? { ...enriched, ...row } : enriched
   })
   return { models }
 }
@@ -117,6 +112,7 @@ export const provider: ProviderConfig = {
   specSourceUrl: OPENCODE_GO_DOCS_URL,
   modelsEndpoint: OPENCODE_GO_MODELS_URL,
   defaultDerivation: 'docs-derived',
+  bindSyncedRoutesOnly: true,
   fetchSpec,
   listModels,
   classify: () => null,
