@@ -134,7 +134,7 @@ describe('cloudflare-ai-gateway', () => {
       },
     })
     expect(parseCatalogModel(FABLE, SOURCE).reasoning).toBeUndefined()
-    expect(parseCatalogModel(FABLE, SOURCE).capabilities).toBeUndefined()
+    expect(parseCatalogModel(FABLE, SOURCE).capabilities).toEqual(['reasoning'])
   })
 
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
