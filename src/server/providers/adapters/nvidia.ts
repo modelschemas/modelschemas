@@ -12,6 +12,7 @@
  * control. NVIDIA publishes no per-token price for the hosted trial API.
  */
 import { explicitCardReplay, replayRequestMap } from '../provider-replay.ts'
+import { discoverNvidiaSitemap } from '../nvidia-sitemap.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import { tagDocsFacts } from '../fact-sources.ts'
@@ -41,6 +42,7 @@ import {
   classifyNvidiaOperation,
   fetchNvidiaText,
   nvidiaInferNamesModel,
+  nvidiaStatedModelIds,
   nvidiaModelSpec,
   NVIDIA_REFERENCE_INDEXES,
   parseNvidiaInfer,
@@ -606,6 +608,13 @@ async function listModels(
   const cardDocs = docsRun()
   const specDocs = docsRun()
   const index = await loadIndex(kv, specDocs)
+  const indexed = new Set(index.rows.map((row) => row.rawId))
+  const discovered = await discoverNvidiaSitemap(
+    listed.map((model) => model.rawId).filter((id) => !indexed.has(id)),
+    kv,
+    specDocs,
+  )
+  index.rows.push(...discovered.rows)
   const byInfer = new Map(index.rows.map((row) => [row.rawId, row.inferUrl]))
   // A card takes about ten seconds to render. The six-hour cache per card
   // (misses included) keeps that off most polls.
@@ -638,20 +647,31 @@ async function listModels(
     async (model) => {
       const inferUrl = byInfer.get(model.rawId)
       if (!inferUrl) {
-        return index.failed ? markUnavailable(model, schemaGaps(model)) : model
+        return index.failed || discovered.unavailable.includes(model.rawId)
+          ? markUnavailable(model, schemaGaps(model))
+          : model
       }
       const page = `${inferUrl}.md`
-      const loaded = await tryDocs(specDocs, page, (cached) =>
-        cached(kv, page, () => fetchNvidiaText(page)),
-      )
-      if (loaded === null) return markUnavailable(model, schemaGaps(model))
-      const infer = parseNvidiaInfer(loaded)
-      // The content-safety page embeds the nano model's OpenAPI. A document
-      // that names a different id is not this row's schema.
-      if (!infer || !nvidiaInferNamesModel(model.rawId, infer.document)) {
-        return model
-      }
-      return applyInfer(model, infer, inferUrl, await sha256Text(loaded))
+      const checked = await tryDocs(specDocs, page, async (cached) => {
+        const loaded = await cached(kv, page, () => fetchNvidiaText(page))
+        const infer = parseNvidiaInfer(loaded)
+        if (!infer)
+          throw new Error(
+            'nvidia: reference infer page has no OpenAPI document: ' + page,
+          )
+        if (!nvidiaInferNamesModel(model.rawId, infer.document))
+          throw new Error(
+            'nvidia: reference infer page identity conflict: ' +
+              page +
+              '; expected ' +
+              model.rawId +
+              '; stated ' +
+              nvidiaStatedModelIds(infer.document).join(', '),
+          )
+        return { infer, hash: await sha256Text(loaded) }
+      })
+      if (checked === null) return markUnavailable(model, schemaGaps(model))
+      return applyInfer(model, checked.infer, inferUrl, checked.hash)
     },
   )
   const parsed = new Map(
@@ -693,6 +713,12 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
       }
     }
   }
+  const discovery = await discoverNvidiaSitemap(
+    [...listed].filter((id) => !wanted.has(id)),
+  )
+  for (const row of discovery.rows) wanted.set(row.rawId, row.inferUrl)
+  for (const failure of discovery.failures.first)
+    warnings.push(`nvidia: ${failure.source}: ${failure.error}`)
   const fetched = await mapConcurrent(
     [...wanted],
     INFER_CONCURRENCY,
@@ -701,10 +727,20 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
       try {
         const markdown = await fetchNvidiaText(page)
         const infer = parseNvidiaInfer(markdown)
-        const spec =
-          infer && nvidiaInferNamesModel(rawId, infer.document)
-            ? nvidiaModelSpec(rawId, infer)
-            : null
+        if (!infer)
+          throw new Error(
+            'nvidia: reference infer page has no OpenAPI document: ' + page,
+          )
+        if (!nvidiaInferNamesModel(rawId, infer.document))
+          throw new Error(
+            'nvidia: reference infer page identity conflict: ' +
+              page +
+              '; expected ' +
+              rawId +
+              '; stated ' +
+              nvidiaStatedModelIds(infer.document).join(', '),
+          )
+        const spec = nvidiaModelSpec(rawId, infer)
         if (!spec) return null
         return {
           spec,

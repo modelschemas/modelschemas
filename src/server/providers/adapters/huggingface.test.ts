@@ -1,3 +1,4 @@
+import hostDocs from '../fixtures/host-native-reasoning.json'
 import { readFileSync } from 'node:fs'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -683,6 +684,8 @@ describe('huggingface spec', () => {
       urls.push(String(url))
       const body: Record<string, string> = {
         [HUGGINGFACE_MODELS_URL]: JSON.stringify(FIXTURE),
+        ['https://huggingface.co/docs/inference-providers/tasks/chat-completion']:
+          hostDocs.hf,
         [`${HUGGINGFACE_SPEC_RAW_URL}/input.json`]: INPUT,
         [`${HUGGINGFACE_SPEC_RAW_URL}/output.json`]: OUTPUT,
       }
@@ -698,6 +701,6 @@ describe('huggingface spec', () => {
     expect(listed.models).toHaveLength(FIXTURE.data.length)
     expect(spec.specs).toHaveLength(1)
     expect(spec.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
-    expect(urls).toHaveLength(3)
+    expect(urls).toHaveLength(4)
   })
 })

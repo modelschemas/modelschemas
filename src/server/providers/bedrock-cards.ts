@@ -133,14 +133,20 @@ const EFFORT_LEVELS = [
  */
 function reasoningEffortProse(markdown: string): ModelReasoning | null {
   const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const honored: ModelReasoning | null =
+    /^\+\s+\*\*Reasoning mode\*\*\s+[—-]\s+Reasoning effort is honored on both the Chat Completions and Responses APIs\b/m.test(
+      prose,
+    )
+      ? { mode: 'effort', mandatory: null }
+      : null
   const block = prose.match(
     /\*\*Reasoning effort\*\*([\s\S]*?)(?:\n\*\*|\n## |\n### |$)/,
   )?.[1]
-  if (!block) return null
+  if (!block) return honored
   const declared = block.match(
     /(?:Set reasoning effort to|(?:You can )?configure effort through[^:]*:)\s*([^\n]+)/i,
   )?.[1]
-  if (!declared) return null
+  if (!declared) return honored
   const efforts: Array<string> = []
   for (const match of declared.matchAll(
     /`(?:\{[^`]*?"effort"\s*:\s*"([a-z]+)"[^`]*|"([a-z]+)"|([a-z]+))`/g,
@@ -150,7 +156,7 @@ function reasoningEffortProse(markdown: string): ModelReasoning | null {
       efforts.push(level)
     }
   }
-  if (efforts.length < 2) return null
+  if (efforts.length < 2) return honored
   const cannot = /cannot be disabled|cannot be turned off/.test(block)
   const can = /\bcan be (?:disabled|turned off)\b|\(disables reasoning\)/.test(
     block,

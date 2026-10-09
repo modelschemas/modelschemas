@@ -27,11 +27,16 @@
  * It is `generated`, so its fields are not walked onto rows: a shared
  * router schema does not show that every routed model accepts every field.
  */
+import {
+  HF_CHAT_GUIDE,
+  nativeReasoningCapability,
+  parseHfHostedReasoning,
+} from '../native-host-reasoning.ts'
+import { cachedDocs, docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import { hyperbolicListingCard } from '../catalog-prices.ts'
 import { bearerConnect } from '../connect.ts'
-import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import type { DocsRun } from '../model-facts.ts'
 import { fetchJson, fetchText, sha256Text } from '../types.ts'
 import type {
@@ -328,11 +333,34 @@ export async function parseHuggingFaceModels(
   return { models, docsFailures: docsReport(run) }
 }
 
-async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
+async function listModels(
+  _env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
   const payload = await fetchJson(HUGGINGFACE_MODELS_URL, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
-  return parseHuggingFaceModels(payload)
+  const catalog = await parseHuggingFaceModels(payload)
+  const doc = await cachedDocs(kv, HF_CHAT_GUIDE, async () => {
+    const html = await fetchText(HF_CHAT_GUIDE, {
+      signal: AbortSignal.timeout(30_000),
+    })
+    return { ids: parseHfHostedReasoning(html), hash: await sha256Text(html) }
+  })
+  const ids = new Set(doc.ids)
+  return {
+    ...catalog,
+    models: catalog.models.map((model) =>
+      ids.has(model.rawId)
+        ? nativeReasoningCapability(model, {
+            derivation: 'docs-derived',
+            sourceUrl: HF_CHAT_GUIDE,
+            sourceHash: doc.hash,
+            path: 'Recommended models; explicit reasoning description',
+          })
+        : model,
+    ),
+  }
 }
 
 /**

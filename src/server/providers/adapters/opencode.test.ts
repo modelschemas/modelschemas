@@ -1,3 +1,5 @@
+import { price } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
 import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -177,12 +179,28 @@ describe('opencode', () => {
     expect(byId['jev-1.13']).toMatchObject({
       activity: null,
     })
-    // An all-free row is not a price.
+    // The native table explicitly quotes Free for input, output and cache.
     expect(byId['big-pickle']).toMatchObject({
       activity: 'chat',
-      pricing: null,
+      pricing: {
+        price: 0,
+        tables: {
+          rate: {
+            base: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0 },
+          },
+        },
+      },
     })
-    expect(byId['big-pickle']?.factSources?.pricing).toBeUndefined()
+    expect(byId['big-pickle']?.factSources?.pricing?.sourceUrl).toBe(
+      OPENCODE_DOCS_URL,
+    )
+    expect(
+      price(
+        byId['big-pickle']!.pricing as RateCard,
+        {},
+        { input_tokens: 10_000, output_tokens: 2_000, cache_read_tokens: 300 },
+      ),
+    ).toBe(0)
     expect(byId['big-pickle']?.factSources?.schemaEndpointId?.sourceUrl).toBe(
       OPENCODE_DOCS_URL,
     )
@@ -329,4 +347,24 @@ describe('opencode', () => {
       activity: null,
     })
   })
+})
+
+it('tracks a native Free-to-paid price change and leaves unquoted output unknown', async () => {
+  const freeRow = /\| Big Pickle\s+\| Free\s+\| Free\s+\| Free\s+\| -\s+\|/
+  serve(DOCS.replace(freeRow, '| Big Pickle | $0.10 | $0.20 | $0.01 | - |'))
+  const paid = (await provider.listModels({})).models.find(
+    (model) => model.rawId === 'big-pickle',
+  )!
+  expect(
+    price(
+      paid.pricing as RateCard,
+      {},
+      { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+    ),
+  ).toBeCloseTo(0.3)
+  serve(DOCS.replace(freeRow, '| Big Pickle | Free | - | Free | - |'))
+  const partial = (await provider.listModels({})).models.find(
+    (model) => model.rawId === 'big-pickle',
+  )!
+  expect(partial.pricing).toBeNull()
 })

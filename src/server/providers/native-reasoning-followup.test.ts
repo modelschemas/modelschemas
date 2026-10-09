@@ -53,11 +53,11 @@ it('keeps mandatory unknown when native AWS cards only state defaults or effort 
       ?.mandatory,
   ).toBe(false)
 })
-it('reads AWS reasoning capability ticks without manufacturing controls', () => {
+it('reads AWS capability ticks and its explicitly honored effort mode', () => {
   for (const id of ['model-card-google-gemma-4-31b.md'] as const) {
     const parsed = parseBedrockCard(awsDocs[id], source(id))
     expect(parsed?.capabilities).toContain('reasoning')
-    expect(parsed?.reasoning).toBeNull()
+    expect(parsed?.reasoning).toEqual({ mode: 'effort', mandatory: null })
   }
 })
 it('ignores illustrative AWS effort values without a native normative declaration', () => {

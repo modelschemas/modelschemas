@@ -1,7 +1,7 @@
 import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
 /** OpenCode Zen: live ids, first-party catalog facts, and documented routes/prices. */
 import { compileTokenCard } from '@modelschemas/rate-card'
-import type { TokenRateTier } from '@modelschemas/rate-card'
+import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
 
@@ -238,6 +238,37 @@ export function parseOpencodeModels(payload: unknown): Array<ModelInfo> {
   return models
 }
 
+/** Literal native Free quotes are a sourced zero, not an unknown rate sheet. */
+function zenPrice(rates: Rates, source: RateCard['source']): RateCard | null {
+  if (
+    rates.tiers.length === 0 &&
+    rates.base.input_tokens === 0 &&
+    rates.base.output_tokens === 0 &&
+    Object.values(rates.base).every((rate) => rate === 0)
+  ) {
+    return {
+      inputs: Object.fromEntries(
+        Object.keys(rates.base).map((lever) => [
+          lever,
+          {
+            param: lever,
+            bound: 'usage',
+            kind: 'number',
+            ...(!['input_tokens', 'output_tokens'].includes(lever)
+              ? { default: 0 }
+              : {}),
+          },
+        ]),
+      ),
+      tables: { rate: { base: rates.base } },
+      price: 0,
+      examples: [],
+      source,
+    }
+  }
+  return compileTokenCard(rates.base, rates.tiers, source)
+}
+
 async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
@@ -271,9 +302,7 @@ async function listModels(
         : {}),
     }
     if (!row) return enriched
-    const pricing = row.rates
-      ? compileTokenCard(row.rates.base, row.rates.tiers, source)
-      : null
+    const pricing = row.rates ? zenPrice(row.rates, source) : null
     return {
       ...enriched,
       schemaEndpointId: row.schemaEndpointId,

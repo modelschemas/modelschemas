@@ -188,7 +188,7 @@ describe('parseNvidiaInfer', () => {
       ),
     ).toEqual({
       mode: 'effort',
-      mandatory: false,
+      mandatory: null,
       efforts: ['none', 'high', 'max'],
     })
   })
