@@ -1,0 +1,139 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.bigmodel.cn/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# 如何切换模型
+
+<Tip>
+  当前，GLM Coding Plan 已面向全量用户（Max & Pro & Lite）支持最新的 GLM-5.3 和 GLM-5.3-Flash 模型，可以在您常用的 Coding Agent 中切换使用。
+</Tip>
+
+## 开始前
+
+本文是面向现有 GLM Coding Plan 用户的模型切换指南，并非新手入门教程。开始前，请确保您已完成以下准备：
+
+1. 已订阅有效的 GLM Coding Plan，并拥有可用的智谱 API Key。
+2. 已为您的工具配置正确的调用地址：
+   * Claude Code / Goose（**Anthropic 兼容**）：[https://open.bigmodel.cn/api/anthropic](https://open.bigmodel.cn/api/anthropic)
+   * Codex ：[https://open.bigmodel.cn/api/v1](https://open.bigmodel.cn/api/v1)
+   * 其他 **OpenAI 兼容**工具：[https://open.bigmodel.cn/api/coding/paas/v4](https://open.bigmodel.cn/api/coding/paas/v4)
+3. 已确认您的工具可以成功调用现有 GLM 模型（例如 glm-5.3 或 glm-5.3-flash）。如果基础调用失败，请先完成问题排查。
+
+## 在 Claude Code 中切换
+
+### Step 1 更改默认配置
+
+<Tabs>
+  <Tab title="macOS">
+    * 方法一：控制台使用 `vim ~/.claude/settings.json` 打开并编辑文件，编辑后 ESC 输入 `:wq` 保存。
+    * 方法二：访达 → 前往文件夹 → 输入 `~/.claude/settings.json` 找到此配置文件编辑。
+  </Tab>
+
+  <Tab title="Windows">
+    Claude Code 配置文件位于：
+
+    `%USERPROFILE%\.claude\settings.json`
+
+    在 PowerShell 中创建或打开该文件：
+
+    ```
+    New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude"
+    notepad "$env:USERPROFILE\.claude\settings.json"
+    ```
+
+    您也可以将 `%USERPROFILE%\.claude` 粘贴到文件资源管理器的地址栏中，直接打开该文件夹。
+
+    <Note>
+      如果您使用 Git Bash 或 WSL，`~/.claude` 可能会解析到不同的主目录。请确保您编辑的是当前启动的 Claude Code 安装所读取的同一个配置文件。
+    </Note>
+  </Tab>
+
+  <Tab title="Linux/WSL">
+    Claude Code 配置文件位于：
+
+    `~/.claude/settings.json`
+
+    创建或打开该文件：
+
+    ```
+    mkdir -p ~/.claude
+    ${EDITOR:-nano} ~/.claude/settings.json
+    ```
+
+    <Note>
+      如果您同时使用 WSL 和 Windows 原生环境下的 Claude Code，配置文件的位置可能不同。请确保您修改的是实际启动的 Claude Code 安装所使用的配置文件。
+    </Note>
+  </Tab>
+</Tabs>
+
+使用 GLM-5.3-FLASH，需要在配置文件 `settings.json` 中，添加或替换如下环境变量参数：
+
+```json theme={null}
+  {
+    "env": {
+      "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3-flash[1m]",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3-flash[1m]",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3-flash[1m]"
+    }
+  }
+```
+
+#### 使用 1M 上下文
+
+注意开启 GLM 1M 上下文需要模型后缀加上 `[1m]` ，即 `glm-5.3-flash[1m]`, 同时配置压缩窗口大小参数 `"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"`
+
+若模型参数加上 \[1m] 后缀后 Claude Code 识别模型不存在，则需要升级 Claude Code 到最新版本后重试。
+
+#### 如何切换 effort（思考强度）
+
+在 Claude Code 会话中，输入 `/effort` 命令即可切换思考强度，默认 max 档。
+
+| 工具传入值 | 实际档位 | 处理 |
+| - | - | - |
+| thinking.type 未传、true、enabled、adaptive | max | 使用默认档 |
+| thinking.type 为 false、disabled、none、off | low | 继续请求；仍会轻量思考 |
+| reasoning\_effort 为 minimal、light、low | low | 自动转换 |
+| reasoning\_effort 为 medium、high | high | 自动转换 |
+| reasoning\_effort 为 xhigh、max、ultra | max | 自动转换 |
+| reasoning\_effort 为其他未知字符串 | max | 回退默认档并记录提示 |
+
+**处理优先级**：显式 Effort > thinking 开关 > 默认 max。
+
+<Note>
+  Claude Code 使用 `thinking.type`、`output_config.effort`；Codex 使用 `reasoning.effort`。关闭思考配置会转换为 low，不会切换到其他模型。
+</Note>
+
+### Step 2 确认模型是否切换
+
+启动一个新的命令行窗口，运行 `claude` 启动 Claude Code，在 Claude Code 中输入 `/status` 确认模型状态：
+
+1. **Settings source** 显示您的 `~/.claude/settings.json`.
+
+2. **Model** 显示 `glm-5.3-flash` 或 `glm-5.3-flash[1m]`.
+
+![Description](https://cdn.bigmodel.cn/markdown/1785421544203image.png?attname=image.png)
+
+## 在其他工具中切换
+
+<Warning>
+  目前只能用于可以自定义模型的 Coding Agent，若使用的 Agent 工具不能设置自定义模型，需要等待官方后续支持
+</Warning>
+
+### 以 Cline 为例
+
+请按照以下配置填入相关信息：
+
+* **API Provider**：选择 `OpenAI Compatible`
+* **Base URL**：输入 `https://open.bigmodel.cn/api/coding/paas/v4`
+* **API Key**：填入您的智谱 API Key
+* **模型**：选择"使用自定义"，并输入模型名称（如：`glm-5.3` 或 `glm-5.3-flash` ）
+* **其他配置**：
+  * GLM-5.3 为文本模型需要取消勾选 **Support Images**，GLM-5.3-FLASH 为多模态模型支持勾选 **Support Images**
+  * 调整 **Context Window Size** 为 `1000000`
+  * 根据您的任务需求调整 `temperature` 等其它参数
+
+![Description](https://cdn.bigmodel.cn/markdown/1785421636056image.png?attname=image.png)
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.

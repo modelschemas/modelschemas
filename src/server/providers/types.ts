@@ -473,6 +473,8 @@ export interface BundledEndpoint {
 
 export interface SpecFetchResult {
   specs: Array<OpenApiDocument>
+  /** Explicitly rejected former sources, withdrawn only after a successful native fetch. */
+  withdrawnSchemaSources?: Array<string>
   /** Per-document provenance, index-aligned with `specs`. */
   sources: Array<SpecSource>
   /**
