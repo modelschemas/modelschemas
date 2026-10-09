@@ -69,7 +69,7 @@ export function formatTable(report: GapReport): string {
     ...FACT_KEYS.map((key) =>
       p.silent.includes(key)
         ? 'silent'
-        : `${p.facts[key].have}/${p.facts[key].need}`,
+        : `${p.facts[key].have}/${p.facts[key].need}${p.modelSilent?.[key] ? ` (${p.modelSilent[key]} model-silent)` : ''}`,
     ),
   ])
   const width = (i: number) =>

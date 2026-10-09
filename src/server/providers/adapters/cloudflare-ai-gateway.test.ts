@@ -334,6 +334,39 @@ describe('cloudflare-ai-gateway', () => {
   })
 
   it('reads adaptive thinking and output_config effort from a model-specific schema', () => {
+    const optional = {
+      ...FABLE,
+      schema: {
+        input: {
+          properties: {
+            thinking: { properties: { type: { const: 'adaptive' } } },
+            output_config: {
+              properties: { effort: { enum: ['low', 'high'] } },
+            },
+          },
+        },
+      },
+    }
+    expect(parseCatalogModel(optional, SOURCE).reasoning?.mandatory).toBeNull()
+    expect(() =>
+      parseCatalogModel(
+        {
+          ...optional,
+          metadata: { 'Adaptive Thinking': 'Always on' },
+          schema: {
+            input: {
+              properties: {
+                thinking: { properties: { type: { const: 'adaptive' } } },
+                output_config: {
+                  properties: { effort: { enum: ['none', 'high'] } },
+                },
+              },
+            },
+          },
+        },
+        SOURCE,
+      ),
+    ).toThrow('contradicts')
     const parsed = parseCatalogModel(
       {
         ...FABLE,

@@ -8,6 +8,7 @@
  * those are left out of that provider's score and listed under `silent`.
  */
 import { isCapabilityMap, supportedFlags } from './capabilities.ts'
+import { modelLedgerScope, parseLedgerEntry } from './source-silence-ledger.ts'
 
 export const FACT_KEYS = [
   'contextWindow',
@@ -20,6 +21,7 @@ export const FACT_KEYS = [
   'efforts',
   'requestMap',
   'endpoint',
+  'replayReasoningContent',
 ] as const
 
 export type FactKey = (typeof FACT_KEYS)[number]
@@ -27,6 +29,8 @@ export type FactKey = (typeof FACT_KEYS)[number]
 /** The fields of a `/v1/models` row the report reads. */
 export type ModelRow = {
   provider: string
+  /** Exact native model id, never the slugged catalog id. */
+  rawId?: string
   activity?: string | null
   contextWindow?: number | null
   maxOutput?: number | null
@@ -53,6 +57,8 @@ export type ProviderReport = {
   fromModelsDev: number
   facts: Record<FactKey, { have: number; need: number }>
   silent: Array<FactKey>
+  /** Applicable missing rows excluded by exact model-scoped evidence. */
+  modelSilent?: Partial<Record<FactKey, number>>
   score: number
 }
 
@@ -61,7 +67,7 @@ export type GapReport = {
   providers: Array<ProviderReport>
 }
 
-/** provider id → facts that provider does not publish. */
+/** Provider id or provider/exact-raw-id → facts its sources do not publish. */
 export type Ledger = Map<string, Set<FactKey>>
 
 function isFactKey(value: string): value is FactKey {
@@ -72,17 +78,17 @@ function isFactKey(value: string): value is FactKey {
 export function parseLedger(markdown: string): Ledger {
   const ledger: Ledger = new Map()
   for (const line of markdown.split('\n')) {
-    const match = /^- `?([\w.-]+)`?: `?(\w+)`?/.exec(line)
-    if (!match) continue
-    const [, provider, fact] = match
-    if (!provider || !fact || !isFactKey(fact)) {
+    const entry = parseLedgerEntry(line)
+    if (!entry) continue
+    const { scope, fact } = entry
+    if (!isFactKey(fact)) {
       throw new Error(
         `source-silent ledger: unknown fact "${fact}" in: ${line}`,
       )
     }
-    const facts = ledger.get(provider) ?? new Set<FactKey>()
+    const facts = ledger.get(scope) ?? new Set<FactKey>()
     facts.add(fact)
-    ledger.set(provider, facts)
+    ledger.set(scope, facts)
   }
   return ledger
 }
@@ -153,10 +159,23 @@ const FACTS: Record<
   },
   requestMap: { have: (row) => row.requestMap != null },
   endpoint: { have: (row) => row.schemaEndpointId != null },
+  replayReasoningContent: {
+    need: (row) =>
+      row.reasoning != null ||
+      supportedFlags(row.capabilities).includes('reasoning'),
+    have: (row) =>
+      typeof row.requestMap === 'object' &&
+      row.requestMap !== null &&
+      !Array.isArray(row.requestMap) &&
+      typeof (row.requestMap as Record<string, unknown>)
+        .replayReasoningContent === 'boolean',
+  },
 }
 
 /** Facts filled and facts needed across a provider, ledgered ones left out. */
-export function scoredFacts(report: Pick<ProviderReport, 'facts' | 'silent'>): {
+export function scoredFacts(
+  report: Pick<ProviderReport, 'facts' | 'silent' | 'modelSilent'>,
+): {
   have: number
   need: number
 } {
@@ -165,7 +184,7 @@ export function scoredFacts(report: Pick<ProviderReport, 'facts' | 'silent'>): {
   for (const key of FACT_KEYS) {
     if (report.silent.includes(key)) continue
     have += report.facts[key].have
-    need += report.facts[key].need
+    need += report.facts[key].need - (report.modelSilent?.[key] ?? 0)
   }
   return { have, need }
 }
@@ -185,14 +204,24 @@ export function buildReport(
   const providers = [...byProvider].map(([provider, group]): ProviderReport => {
     const chat = group.filter((row) => row.activity === 'chat')
     const silent = FACT_KEYS.filter((key) => ledger.get(provider)?.has(key))
+    const modelSilent: Partial<Record<FactKey, number>> = {}
     const facts = Object.fromEntries(
       FACT_KEYS.map((key) => {
         const { need, have } = FACTS[key]
         const needed = need ? chat.filter(need) : chat
+        const scoped = silent.includes(key)
+          ? 0
+          : needed.filter(
+              (row) =>
+                !have(row) &&
+                row.rawId !== undefined &&
+                ledger.get(modelLedgerScope(provider, row.rawId))?.has(key),
+            ).length
+        if (scoped > 0) modelSilent[key] = scoped
         return [key, { have: needed.filter(have).length, need: needed.length }]
       }),
     ) as ProviderReport['facts']
-    const { have, need } = scoredFacts({ facts, silent })
+    const { have, need } = scoredFacts({ facts, silent, modelSilent })
 
     return {
       provider,
@@ -202,6 +231,7 @@ export function buildReport(
       fromModelsDev: group.filter(isModelsDev).length,
       facts,
       silent,
+      modelSilent,
       // No chat rows is a gap, not a pass. Chat rows with every needed fact
       // on the ledger have nothing left to fill.
       score: need === 0 ? (chat.length > 0 ? 1 : 0) : have / need,

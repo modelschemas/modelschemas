@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { sourceSilentLedger } from '../src/server/source-silent.ts'
-import { buildReport, failing, parseLedger, readLedger } from './gap-report.ts'
+import {
+  buildReport,
+  failing,
+  parseLedger,
+  readLedger,
+  formatTable,
+} from './gap-report.ts'
 import type { ModelRow } from './gap-report.ts'
 
 const complete: ModelRow = {
@@ -24,7 +30,7 @@ const complete: ModelRow = {
   },
   capabilities: { reasoning: true, tools: true },
   reasoning: { mode: 'effort', efforts: ['low', 'high'] },
-  requestMap: { maxTokensField: 'max_tokens' },
+  requestMap: { maxTokensField: 'max_tokens', replayReasoningContent: false },
   schemaEndpointId: 'full/chat/completions',
 }
 
@@ -72,7 +78,7 @@ describe('gap report scoring', () => {
     expect(borrowed.fromModelsDev).toBe(1)
     expect(borrowed.facts.priced).toEqual({ have: 0, need: 1 })
     expect(borrowed.facts.cacheRead).toEqual({ have: 0, need: 1 })
-    expect(borrowed.score).toBe(0.8)
+    expect(borrowed.score).toBeCloseTo(9 / 11)
   })
 
   it('reads both rate key spellings', () => {
@@ -197,5 +203,125 @@ describe('source-silent ledger', () => {
     const onDisk = readLedger()
     expect(onDisk?.size).toBeGreaterThan(0)
     expect(sourceSilentLedger).toEqual(onDisk)
+  })
+})
+
+describe('model-scoped source silence', () => {
+  it('matches exact native ids with embedded slashes and keeps published facts counted', () => {
+    const scoped = parseLedger(
+      '- host/maker/model: maxOutput — own docs silent\n- host/maker/filled: maxOutput — no longer silent',
+    )
+    const result = provider(
+      'host',
+      buildReport(
+        [
+          {
+            ...complete,
+            provider: 'host',
+            rawId: 'maker/model',
+            maxOutput: null,
+          },
+          {
+            ...complete,
+            provider: 'host',
+            rawId: 'maker/model-snapshot',
+            maxOutput: null,
+          },
+          { ...complete, provider: 'host', rawId: 'maker/filled' },
+        ],
+        scoped,
+      ),
+    )
+    expect(result.silent).toEqual([])
+    expect(result.facts.maxOutput).toEqual({ have: 1, need: 3 })
+    expect(result.modelSilent).toEqual({ maxOutput: 1 })
+    expect(result.score).toBeCloseTo(31 / 32)
+    expect(formatTable({ generatedAt: '', providers: [result] })).toContain(
+      '1/3 (1 model-silent)',
+    )
+  })
+  it('counts both explicit replay booleans, not null or missing fields', () => {
+    const replay = provider(
+      'host',
+      buildReport(
+        [
+          {
+            ...complete,
+            provider: 'host',
+            rawId: 'a',
+            requestMap: { replayReasoningContent: true },
+          },
+          {
+            ...complete,
+            provider: 'host',
+            rawId: 'b',
+            requestMap: { replayReasoningContent: false },
+          },
+          {
+            ...complete,
+            provider: 'host',
+            rawId: 'c',
+            requestMap: { replayReasoningContent: null },
+          },
+          { ...complete, provider: 'host', rawId: 'd', requestMap: null },
+          {
+            ...complete,
+            provider: 'host',
+            rawId: 'e',
+            reasoning: null,
+            capabilities: { reasoning: false },
+          },
+        ],
+        parseLedger('- host/c: replayReasoningContent — checked own source'),
+      ),
+    )
+    expect(replay.facts.replayReasoningContent).toEqual({ have: 2, need: 4 })
+    expect(replay.modelSilent).toEqual({ replayReasoningContent: 1 })
+  })
+  it('does not turn a model-scoped entry into a provider exemption or guess missing raw ids', () => {
+    const scoped = parseLedger('- host/maker/model: maxOutput — absent')
+    const result = provider(
+      'host',
+      buildReport([{ ...complete, provider: 'host', maxOutput: null }], scoped),
+    )
+    expect(result.modelSilent).toEqual({})
+    expect(result.score).toBeLessThan(1)
+  })
+  it('preserves provider-wide grammar and avoids double exclusions', () => {
+    const scoped = parseLedger(
+      '- host: maxOutput — absent\n- `host/@cf/a/model:variant`: maxOutput — absent',
+    )
+    expect(scoped.get('host/@cf/a/model:variant')).toEqual(
+      new Set(['maxOutput']),
+    )
+    const result = provider(
+      'host',
+      buildReport(
+        [
+          {
+            ...complete,
+            provider: 'host',
+            rawId: '@cf/a/model:variant',
+            maxOutput: null,
+          },
+        ],
+        scoped,
+      ),
+    )
+    expect(result.silent).toEqual(['maxOutput'])
+    expect(result.modelSilent).toEqual({})
+    expect(result.score).toBe(1)
+    expect(() => parseLedger('- host/: maxOutput — missing model')).toThrow(
+      'invalid scope',
+    )
+    expect(() => parseLedger('- host/model: ')).toThrow('malformed entry')
+    expect(() => parseLedger('- host/model: `maxOutput')).toThrow(
+      'malformed entry',
+    )
+    expect(() =>
+      parseLedger(
+        '- host/id: requestMap.replayReasoningContent — unsupported spelling',
+      ),
+    ).toThrow('unknown fact')
   })
 })

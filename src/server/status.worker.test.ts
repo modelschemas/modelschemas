@@ -301,7 +301,10 @@ describe('getServiceStatus', () => {
         pricing: card,
         capabilities: { reasoning: true, tools: true },
         reasoning: { mode: 'effort', efforts: ['low', 'high'] },
-        requestMap: { maxTokensField: 'max_tokens' },
+        requestMap: {
+          maxTokensField: 'max_tokens',
+          replayReasoningContent: false,
+        },
         schemaEndpointId: 'v1/chat/completions',
       }),
       // Claims reasoning and stores none; a card that does not parse is
@@ -358,12 +361,12 @@ describe('getServiceStatus', () => {
       needed: 0,
       silent: [...FACT_KEYS],
     })
-    // full: 9 of 9. thin: contextWindow, capabilities of 8. borrowed: 0 of 7.
+    // full: 10 of 10. thin: contextWindow, capabilities of 9. borrowed: 0 of 7.
     expect(mixed).toEqual({
-      score: 11 / 24,
+      score: 12 / 26,
       chat: 3,
-      filled: 11,
-      needed: 24,
+      filled: 12,
+      needed: 26,
       silent: ['cacheRead'],
     })
 
@@ -511,4 +514,48 @@ describe('getServiceStatus', () => {
       chat: 1,
     })
   })
+})
+
+it('scores only the exact raw model covered by a scoped silence entry', async () => {
+  const db = getDb(env)
+  await db.insert(providers).values({
+    id: 'scoped-status',
+    displayName: 'Scoped status',
+    specSourceUrl: 'https://example.com/docs',
+  })
+  await db.insert(models).values([
+    {
+      id: 'scoped-status-exact',
+      providerId: 'scoped-status',
+      rawId: 'maker/model:variant',
+      activity: 'chat',
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    },
+    {
+      id: 'scoped-status-sibling',
+      providerId: 'scoped-status',
+      rawId: 'maker/model:variant-snapshot',
+      activity: 'chat',
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    },
+  ])
+  const ledger: Ledger = new Map([
+    ['scoped-status/maker/model:variant', new Set(['maxOutput'])],
+  ])
+  await recordCompleteness(db, NOW, ledger)
+  const result = (await getServiceStatus(db, NOW)).providers.find(
+    (entry) => entry.id === 'scoped-status',
+  )?.completeness
+  expect(result?.filled).toBe(0)
+  expect(result?.needed).toBe(15)
+  const served = await listModelsCatalog(db, {
+    provider: 'scoped-status',
+    pricing: true,
+  })
+  const report = buildReport(served.models as Array<ModelRow>, ledger)
+    .providers[0]!
+  expect(report.modelSilent).toEqual({ maxOutput: 1 })
+  expect(result?.score).toBe(report.score)
 })

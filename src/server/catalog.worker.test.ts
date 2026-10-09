@@ -15,6 +15,8 @@ import {
   listProvidersCatalog,
 } from './catalog.ts'
 import { openApiDocument } from './openapi.ts'
+import { sourceSilentEvidenceLedger } from './source-silent.ts'
+import { parseSourceSilentEvidence } from './source-silent-facts.ts'
 
 const NOW = 1_781_150_000
 let db: Db
@@ -567,4 +569,65 @@ describe('source-silent catalog provenance', () => {
     expect(detail?.maxOutput).toBe(2048)
     expect(detail?.factSources?.maxOutput).toEqual(source)
   })
+})
+
+it('serves exact-model replay leaf silence on detail and provenance lists only', async () => {
+  const scope = 'scoped-catalog/maker/model:variant'
+  const evidence = parseSourceSilentEvidence(
+    `- ${scope}: replayReasoningContent — absent, https://example.com/exact-model, checked 2026-10-09`,
+  ).get(scope)!
+  sourceSilentEvidenceLedger.set(scope, evidence)
+  try {
+    await db.insert(providers).values({
+      id: 'scoped-catalog',
+      displayName: 'Scoped catalog',
+      specSourceUrl: 'https://example.com/docs',
+    })
+    await db.insert(models).values([
+      {
+        id: 'scoped-catalog-exact',
+        providerId: 'scoped-catalog',
+        rawId: 'maker/model:variant',
+        activity: 'chat',
+        requestMap: { replayReasoningContent: null },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+      {
+        id: 'scoped-catalog-sibling',
+        providerId: 'scoped-catalog',
+        rawId: 'maker/model:variant-snapshot',
+        activity: 'chat',
+        requestMap: { replayReasoningContent: null },
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      },
+    ])
+    const detail = await getModelDetail(
+      db,
+      'scoped-catalog',
+      'maker/model:variant',
+    )
+    expect(detail?.requestMap).toEqual({ replayReasoningContent: null })
+    expect(
+      detail?.factSources?.requestMapFields?.replayReasoningContent,
+    ).toEqual(evidence.get('replayReasoningContent'))
+    expect(detail?.factSources).not.toHaveProperty('requestMap')
+    const listed = await listModelsCatalog(db, {
+      provider: 'scoped-catalog',
+      provenance: true,
+    })
+    expect(
+      listed.models.find((row) => row.rawId === 'maker/model:variant')
+        ?.factSources?.requestMapFields?.replayReasoningContent,
+    ).toEqual(evidence.get('replayReasoningContent'))
+    expect(
+      listed.models.find((row) => row.rawId === 'maker/model:variant-snapshot')
+        ?.factSources?.requestMapFields,
+    ).toBeUndefined()
+    const compact = await listModelsCatalog(db, { provider: 'scoped-catalog' })
+    expect(compact.models.every((row) => !('factSources' in row))).toBe(true)
+  } finally {
+    sourceSilentEvidenceLedger.delete(scope)
+  }
 })

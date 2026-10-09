@@ -1,6 +1,11 @@
 /** Read-time evidence for provider facts absent from the published sources. */
 import { parseLedger } from '#/lib/completeness.ts'
 import type { FactKey } from '#/lib/completeness.ts'
+import {
+  modelLedgerScope,
+  parseLedgerEntry,
+} from '#/lib/source-silence-ledger.ts'
+import type { ChatRequestMap } from './providers/request-map.ts'
 import type { FactSource, ModelFactSources } from './providers/types.ts'
 
 export interface SourceSilentEvidence {
@@ -24,6 +29,7 @@ export type ApiModelFactSources = Omit<
   | 'capabilities'
   | 'serverTools'
   | 'schemaEndpointId'
+  | 'requestMapFields'
 > & {
   contextWindow?: ApiFactSource
   maxOutput?: ApiFactSource
@@ -31,6 +37,7 @@ export type ApiModelFactSources = Omit<
   pricing?: ApiFactSource
   reasoning?: ApiFactSource
   requestMap?: ApiFactSource
+  requestMapFields?: Partial<Record<keyof ChatRequestMap, ApiFactSource>>
   capabilities?: Record<string, FactSource> | SourceSilentEvidence
   serverTools?: Record<string, FactSource> | SourceSilentEvidence
   schemaEndpointId?: ApiFactSource
@@ -50,10 +57,11 @@ export function parseSourceSilentEvidence(
   const ledger = parseLedger(markdown)
   const evidence: SourceSilentEvidenceLedger = new Map()
   for (const line of markdown.split('\n')) {
-    const match = /^- `?([\w.-]+)`?: `?(\w+)`?/.exec(line)
-    const provider = match?.[1]
-    const key = match?.[2] as FactKey | undefined
-    if (!provider || !key || !ledger.get(provider)?.has(key)) continue
+    const entry = parseLedgerEntry(line)
+    if (!entry) continue
+    const { scope } = entry
+    const key = entry.fact as FactKey
+    if (!ledger.get(scope)?.has(key)) continue
     const url = /https?:\/\/[^\s,`)]+/.exec(line)?.[0]
     const date = /\bchecked\s+([^\s,`);.]+)/.exec(line)?.[1]
     if (date) {
@@ -72,17 +80,18 @@ export function parseSourceSilentEvidence(
       ...(date ? { checkedAt: date } : {}),
     }
     const entries =
-      evidence.get(provider) ?? new Map<FactKey, SourceSilentEvidence>()
+      evidence.get(scope) ?? new Map<FactKey, SourceSilentEvidence>()
     if (entries.has(key))
-      throw new Error(`source-silent ledger: duplicate ${provider}: ${key}`)
+      throw new Error(`source-silent ledger: duplicate ${scope}: ${key}`)
     entries.set(key, source)
-    evidence.set(provider, entries)
+    evidence.set(scope, entries)
   }
   return evidence
 }
 
 interface SilentModelFacts {
   providerId: string
+  rawId?: string
   activity: string | null
   contextWindow: unknown
   maxOutput: unknown
@@ -119,9 +128,14 @@ export function withSourceSilentEvidence(
   ledger: SourceSilentEvidenceLedger,
 ): ApiModelFactSources | null {
   // The source-silent ledger describes the chat facts scored by completeness.
-  const entries =
-    row.activity === 'chat' ? ledger.get(row.providerId) : undefined
-  if (!entries) return stored
+  if (row.activity !== 'chat') return stored
+  const entries = new Map([
+    ...(ledger.get(row.providerId) ?? []),
+    ...(row.rawId !== undefined
+      ? (ledger.get(modelLedgerScope(row.providerId, row.rawId)) ?? [])
+      : []),
+  ])
+  if (!entries.size) return stored
   const sources: ApiModelFactSources = { ...stored }
   for (const [key, evidence] of entries) {
     switch (key) {
@@ -132,6 +146,16 @@ export function withSourceSilentEvidence(
       case 'reasoning':
       case 'requestMap':
         if (row[key] == null) sources[key] = evidence
+        break
+      case 'replayReasoningContent':
+        if (
+          !record(row.requestMap) ||
+          row.requestMap.replayReasoningContent == null
+        )
+          sources.requestMapFields = {
+            ...sources.requestMapFields,
+            replayReasoningContent: evidence,
+          }
         break
       case 'priced':
         if (row.pricing == null) sources.pricing = evidence
