@@ -65,8 +65,7 @@ export function parseOpencodeGoModels(payload: unknown): Array<ModelInfo> {
     }
     models.push({
       rawId: row.id,
-      releasedAt:
-        typeof row.created === 'number' && row.created > 0 ? row.created : null,
+      releasedAt: null,
       pricing: null,
     })
   }
@@ -90,7 +89,14 @@ async function listModels(
   const catalog = await openCodeCatalog('opencode-go', kv)
   const models = parseOpencodeGoModels(payload).map((model): ModelInfo => {
     const row = byId[model.rawId]
-    const enriched = { ...model, ...catalog[model.rawId] }
+    const facts = catalog[model.rawId]
+    const enriched: ModelInfo = {
+      ...model,
+      ...facts,
+      ...(facts?.releasedAt == null
+        ? { absent: { releasedAt: 'cleared' } }
+        : {}),
+    }
     return row
       ? {
           ...enriched,

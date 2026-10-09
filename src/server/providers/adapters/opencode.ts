@@ -228,8 +228,7 @@ export function parseOpencodeModels(payload: unknown): Array<ModelInfo> {
     }
     models.push({
       rawId: row.id,
-      releasedAt:
-        typeof row.created === 'number' && row.created > 0 ? row.created : null,
+      releasedAt: null,
       pricing: null,
     })
   }
@@ -264,7 +263,13 @@ async function listModels(
   const models = parseOpencodeModels(payload).map((model): ModelInfo => {
     const row = docs.byId[model.rawId]
     const facts = catalog[model.rawId]
-    const enriched = facts ? { ...model, ...facts } : model
+    const enriched: ModelInfo = {
+      ...model,
+      ...facts,
+      ...(facts?.releasedAt == null
+        ? { absent: { releasedAt: 'cleared' } }
+        : {}),
+    }
     if (!row) return enriched
     const pricing = row.rates
       ? compileTokenCard(row.rates.base, row.rates.tiers, source)
