@@ -88,21 +88,28 @@ export function bedrockReasoning(
     ?.split(',')
     .map((effort) => effort.trim())
     .filter(Boolean)
-  const canDisable = /can be disabled|turned off/.test(note)
+  const cannotDisable =
+    /cannot be disabled|cannot be turned off|thinking is always on/.test(note)
+  const canDisable = /\bcan be (?:disabled|turned off)\b/.test(note)
+  const mandatory = cannotDisable
+    ? true
+    : canDisable || efforts?.includes('none')
+      ? false
+      : null
   const named = efforts && efforts.length > 0 ? efforts : undefined
   // Adaptive cards name the levels after "configurable —". Keep the mode
   // and store those levels; a note with no list still has no efforts.
   if (/adaptive/.test(note)) {
     return {
       mode: 'adaptive',
-      mandatory: /cannot be disabled/.test(note),
+      mandatory,
       ...(named ? { efforts: named } : {}),
     }
   }
   if (named) {
     return {
       mode: 'effort',
-      mandatory: !canDisable && !named.includes('none'),
+      mandatory,
       efforts: named,
     }
   }
@@ -125,12 +132,17 @@ const EFFORT_LEVELS = [
  * stay as the bullet parsed them.
  */
 function reasoningEffortProse(markdown: string): ModelReasoning | null {
-  const block = markdown.match(
+  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const block = prose.match(
     /\*\*Reasoning effort\*\*([\s\S]*?)(?:\n\*\*|\n## |\n### |$)/,
   )?.[1]
   if (!block) return null
+  const declared = block.match(
+    /(?:Set reasoning effort to|(?:You can )?configure effort through[^:]*:)\s*([^\n]+)/i,
+  )?.[1]
+  if (!declared) return null
   const efforts: Array<string> = []
-  for (const match of block.matchAll(
+  for (const match of declared.matchAll(
     /`(?:\{[^`]*?"effort"\s*:\s*"([a-z]+)"[^`]*|"([a-z]+)"|([a-z]+))`/g,
   )) {
     const level = match[1] ?? match[2] ?? match[3]
@@ -139,8 +151,10 @@ function reasoningEffortProse(markdown: string): ModelReasoning | null {
     }
   }
   if (efforts.length < 2) return null
-  const cannot = /cannot be disabled/.test(block)
-  const can = /can be disabled|turned off|disables reasoning/.test(block)
+  const cannot = /cannot be disabled|cannot be turned off/.test(block)
+  const can = /\bcan be (?:disabled|turned off)\b|\(disables reasoning\)/.test(
+    block,
+  )
   return {
     mode: 'effort',
     mandatory: cannot ? true : efforts.includes('none') || can ? false : null,

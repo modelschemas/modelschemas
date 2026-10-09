@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import glmNative from './fixtures/zai-native-thinking-replay.json'
 import {
   applyReplay,
   deepseekEffortFacts,
@@ -16,6 +17,20 @@ import {
 } from './fixtures/provider-replay.ts'
 
 describe('provider-owned reasoning and replay evidence', () => {
+  it('includes the exact GLM-4.5 model named by the native interleaved tool-turn rule', () => {
+    const ids = parseGlmReplay(glmNative.markdown)
+    expect(ids).toContain('glm-4.5')
+    expect(ids).not.toContain('glm-4.5-air')
+    expect(ids).not.toContain('glm-5.3-flashx')
+    const variant = parseGlmReplay(
+      glmNative.markdown.replace(
+        'supported since GLM-4.5',
+        'supported since GLM-4.5-Air',
+      ),
+    )
+    expect(variant).toContain('glm-4.5-air')
+    expect(variant).not.toContain('glm-4.5')
+  })
   it('does not infer mandatory thinking from native effort values', () => {
     expect(
       deepseekEffortFacts({ supported_levels: ['high', 'max'] })?.reasoning,

@@ -471,7 +471,18 @@ export function parseReasoningEffort(markdown: string): ModelReasoning | null {
     ? [only.toLowerCase()]
     : (list?.[1]?.toLowerCase().match(/[a-z]+/g) ?? [])
   const efforts = EFFORTS.filter((level) => words.includes(level))
-  if (!efforts.length) return null
+  if (!efforts.length) {
+    const explicitControl = prose.split('\n').some((line) => {
+      const declaration = line.match(
+        /^(.*?)\bsupports configurable reasoning effort\b/i,
+      )
+      return (
+        declaration !== null &&
+        !/\b(?:not|never|cannot|no)\b|doesn't/i.test(declaration[1] ?? '')
+      )
+    })
+    return explicitControl ? { mode: 'effort', mandatory: null } : null
+  }
   return {
     mode: 'effort',
     mandatory: efforts.includes('none')
@@ -540,29 +551,27 @@ export async function openaiModelFacts(
     }
   })
   const pages = await mapConcurrent(needed, 8, async (slug) => {
-    try {
-      const page = await cachedDocs(kv, OPENAI_MODEL_PAGE(slug), async () => {
-        const markdown = await fetchText(OPENAI_MODEL_PAGE(slug))
-        const parsed = parseModelPage(markdown)
-        if (!parsed) {
-          throw new Error(`openai model page ${slug}: no Model ID`)
-        }
-        // The card's provenance hashes the page as served, so an unchanged
-        // page keeps the stored card (and its `extractedAt`) on re-parse.
-        return {
-          ...parsed,
-          hash: await sha256Text(markdown),
-          extractedAt: new Date().toISOString(),
-        }
-      })
-      return { slug, page }
-    } catch {
-      return null
-    }
+    const page = await cachedDocs(kv, OPENAI_MODEL_PAGE(slug), async () => {
+      const markdown = await fetchText(OPENAI_MODEL_PAGE(slug))
+      const parsed = parseModelPage(markdown)
+      if (!parsed) {
+        throw new Error(`openai model page ${slug}: no Model ID`)
+      }
+      // The card's provenance hashes the page as served, so an unchanged
+      // page keeps the stored card (and its `extractedAt`) on re-parse.
+      return {
+        ...parsed,
+        hash: await sha256Text(markdown),
+        extractedAt: new Date().toISOString(),
+      }
+    })
+    return { slug, page }
   })
+  // A model's own page takes precedence over another alias page that names
+  // it as a default snapshot. Listing order must not erase native controls.
+  const primaryIds = new Set(pages.map((loaded) => loaded.page.ids[0]))
   const byId = new Map<string, ModelFacts>()
   for (const loaded of pages) {
-    if (!loaded) continue
     const url = OPENAI_MODEL_PAGE(loaded.slug)
     const withPricing: ModelFacts = {
       ...loaded.page.facts,
@@ -593,6 +602,7 @@ export async function openaiModelFacts(
     }
     const priced = new Set(loaded.page.pricedIds)
     for (const id of loaded.page.ids) {
+      if (id !== loaded.page.ids[0] && primaryIds.has(id)) continue
       if (priced.has(id)) {
         byId.set(id, facts)
         continue

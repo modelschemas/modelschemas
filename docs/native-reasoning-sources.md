@@ -30,6 +30,10 @@ does not stamp reasoning_content replay on its rows.
   support makes reasoning optional.
 
 Parse only normative prose; fenced examples do not establish effort allowlists.
+Individual model-page fetch and parse failures now error instead of returning
+unknown facts. A model's own page takes precedence over another alias page's
+snapshot reference. Realtime pages explicitly declaring configurable reasoning
+effort retain effort mode with unknown levels and mandatory status.
 A level list without none does not prove mandatory thinking; only explicit native
 cannot-disable/always-on prose establishes true. Reasoning-token capability
 without a control declaration does not justify an
