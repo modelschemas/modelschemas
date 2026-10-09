@@ -1,3 +1,5 @@
+import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
+
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -91,6 +93,15 @@ function stubFetch(docs: string | Response) {
     if (String(url) === OPENCODE_GO_MODELS_URL) {
       return Promise.resolve(new Response(JSON.stringify(LISTING)))
     }
+    if (String(url) === OPENCODE_CATALOG_URL) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            'opencode-go': { models: { synthetic: { id: 'synthetic' } } },
+          }),
+        ),
+      )
+    }
     if (String(url) === OPENCODE_GO_DOCS_MARKDOWN) {
       return Promise.resolve(
         typeof docs === 'string' ? new Response(docs) : docs,
@@ -114,6 +125,12 @@ describe('opencode-go', () => {
       pricing: null,
       displayName,
       activity: 'chat',
+      schemaEndpointId:
+        rawId === 'minimax-m3'
+          ? '/v1/messages'
+          : rawId === 'gpt-6-luna'
+            ? '/v1/responses'
+            : '/v1/chat/completions',
     })
     expect(listed.models).toEqual([
       row('minimax-m3', 'MiniMax M3'),
@@ -123,13 +140,13 @@ describe('opencode-go', () => {
       // Listed, absent from the Endpoints table: stays unclassified.
       { rawId: 'glm-5', releasedAt: 1791316362, pricing: null },
     ])
-    // No OpenAPI document exists, so no row may bind a schema route.
-    for (const model of listed.models) {
-      expect(model).not.toHaveProperty('schemaEndpointId')
-      expect(model).not.toHaveProperty('factSources')
-    }
+    expect(provider.bindSyncedRoutesOnly).toBe(true)
     expect(spec.skipped).toContain('skipped')
-    expect(urls).toEqual([OPENCODE_GO_MODELS_URL, OPENCODE_GO_DOCS_MARKDOWN])
+    expect(urls).toEqual([
+      OPENCODE_GO_MODELS_URL,
+      OPENCODE_GO_DOCS_MARKDOWN,
+      OPENCODE_CATALOG_URL,
+    ])
   })
 
   it('leaves a row on an unknown route unclassified', () => {
@@ -141,6 +158,7 @@ describe('opencode-go', () => {
     expect(byId['minimax-m3']).toEqual({
       displayName: 'MiniMax M3',
       activity: null,
+      schemaEndpointId: null,
     })
     expect(byId['kimi-k3']?.activity).toBe('chat')
   })

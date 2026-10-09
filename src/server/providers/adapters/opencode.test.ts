@@ -1,3 +1,5 @@
+import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
+
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -95,6 +97,15 @@ function serve(docs: string) {
     if (String(url) === OPENCODE_MODELS_URL) {
       return Promise.resolve(new Response(JSON.stringify(LISTING)))
     }
+    if (String(url) === OPENCODE_CATALOG_URL) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            opencode: { models: { synthetic: { id: 'synthetic' } } },
+          }),
+        ),
+      )
+    }
     if (String(url) === OPENCODE_DOCS_MARKDOWN) {
       return Promise.resolve(new Response(docs))
     }
@@ -171,10 +182,69 @@ describe('opencode', () => {
       pricing: null,
     })
 
-    // No spec is synced, so no row binds a schema route.
-    expect(models.every((m) => m.schemaEndpointId === undefined)).toBe(true)
+    expect(byId['claude-opus-5-5']?.schemaEndpointId).toBe('/v1/messages')
+    expect(byId['gpt-5.5']?.schemaEndpointId).toBe('/v1/responses')
+    expect(byId['gemini-3.1-pro']?.schemaEndpointId).toBe(
+      '/v1/models/gemini-3.1-pro',
+    )
+    expect(provider.bindSyncedRoutesOnly).toBe(true)
 
     expect((await provider.fetchSpec({})).skipped).toContain('skipped')
+  })
+
+  it('merges matching native facts and preserves per-model protocol routes', async () => {
+    serve(DOCS)
+    const fetchDocs = globalThis.fetch
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (String(url) === OPENCODE_CATALOG_URL)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              opencode: {
+                models: {
+                  'claude-opus-5-5': {
+                    id: 'claude-opus-5-5',
+                    limit: { context: 1234, output: 234 },
+                    tool_call: true,
+                    interleaved: { field: 'reasoning_content' },
+                    reasoning_options: [{ type: 'budget_tokens', min: 1 }],
+                  },
+                },
+              },
+            }),
+          ),
+        )
+      return fetchDocs(url, init)
+    }) as typeof fetch
+    const model = (await provider.listModels({})).models.find(
+      (m) => m.rawId === 'claude-opus-5-5',
+    )
+    expect(model).toMatchObject({
+      contextWindow: 1234,
+      maxOutput: 234,
+      schemaEndpointId: '/v1/messages',
+      reasoning: { mode: 'budget', mandatory: null },
+      requestMap: { replayReasoningContent: true },
+    })
+    expect(model?.factSources?.contextWindow?.sourceUrl).toBe(
+      OPENCODE_CATALOG_URL,
+    )
+    expect(model?.factSources?.pricing?.sourceUrl).toBe(OPENCODE_DOCS_URL)
+  })
+
+  it('fails the sync when the native catalog is unavailable or malformed', async () => {
+    for (const response of [
+      new Response('unavailable', { status: 503 }),
+      new Response('{}'),
+    ]) {
+      serve(DOCS)
+      const fetchDocs = globalThis.fetch
+      globalThis.fetch = ((url: string, init?: RequestInit) =>
+        String(url) === OPENCODE_CATALOG_URL
+          ? Promise.resolve(response)
+          : fetchDocs(url, init)) as typeof fetch
+      await expect(provider.listModels({})).rejects.toThrow()
+    }
   })
 
   it('throws on a page it cannot read', () => {
@@ -197,39 +267,43 @@ describe('opencode', () => {
     ).toThrow(/unreadable Endpoints row/)
   })
 
-  it('stores no price for a row it cannot read', () => {
-    // A reworded cell.
-    const reworded = parseZenDocs(DOCS.replace('$20.00 ', '$20/hour'))
-    expect(reworded['claude-opus-5-5']?.rates).toBeNull()
-    expect(reworded['qwen3.8-max']?.rates).not.toBeNull()
+  it('reads the published current discounted price without calculating it', () => {
+    const docs = DOCS.replace(
+      '| Qwen3.8 Max                       | $2.00  | $6.00   | $0.25       | $2.50        |',
+      '| Qwen3.8 Max (50% off) | ~~$4.00~~ $2.00 | ~~$12.00~~ $6.00 | $0.25 | $2.50 |',
+    )
+    expect(docs).not.toBe(DOCS)
+    expect(parseZenDocs(docs)['qwen3.8-max']?.rates?.base.input_tokens).toBe(
+      2 / 1e6,
+    )
+  })
 
-    // A tier row whose base row is gone, and a threshold that does not pair.
-    const unpaired = parseZenDocs(
-      DOCS.replace(/\| GPT 5\.5 \(≤ 272K tokens\).*\n/, '').replace(
-        'Gemini 3.1 Pro (> 200K tokens)',
-        'Gemini 3.1 Pro (> 400K tokens)',
+  it('throws on unreadable prices rather than hide failures', () => {
+    expect(() => parseZenDocs(DOCS.replace('$20.00 ', '$20/hour'))).toThrow(
+      /unreadable Pricing/,
+    )
+    expect(() =>
+      parseZenDocs(DOCS.replace(/\| GPT 5\.5 \(≤ 272K tokens\).*\n/, '')),
+    ).toThrow(/unreadable Pricing/)
+    expect(() =>
+      parseZenDocs(
+        DOCS.replace(
+          'Gemini 3.1 Pro (> 200K tokens)',
+          'Gemini 3.1 Pro (> 400K tokens)',
+        ),
       ),
-    )
-    expect(unpaired['gpt-5.5']?.rates).toBeNull()
-    expect(unpaired['gemini-3.1-pro']?.rates).toBeNull()
-
-    // A tier row that drops a rate its base row quotes would inherit the
-    // base price, so the model is unpriced.
-    const dashed = parseZenDocs(
-      DOCS.replace(
-        '| $10.00 | $45.00  | $1.00       |',
-        '| $10.00 | $45.00  | -           |',
+    ).toThrow(/unreadable Pricing/)
+    expect(() =>
+      parseZenDocs(
+        DOCS.replace(
+          '| $10.00 | $45.00  | $1.00       |',
+          '| $10.00 | $45.00  | -           |',
+        ),
       ),
-    )
-    expect(dashed['gpt-5.5']?.rates).toBeNull()
-    expect(dashed['gemini-3.1-pro']?.rates).not.toBeNull()
+    ).toThrow(/unreadable Pricing/)
+  })
 
-    // A qualifier this parser does not know leaves the model unpriced.
-    const peak = parseZenDocs(
-      DOCS.replace('| Qwen3.8 Max   ', '| Qwen3.8 Max (Peak)'),
-    )
-    expect(peak['qwen3.8-max']?.rates).toBeNull()
-
+  it('leaves undocumented routes unclassified', () => {
     // An unknown route stays unclassified.
     const route = parseZenDocs(
       DOCS.replace(

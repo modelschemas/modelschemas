@@ -1,10 +1,7 @@
-- opencode-go: contextWindow — the models list returns only `id`, `object`, `created`, and `owned_by`, and the Go docs page states no context window, https://opencode.ai/zen/go/v1/models, checked 2026-10-07
-- opencode-go: maxOutput — neither the models list nor the Go docs page states an output cap, https://opencode.ai/docs/go, checked 2026-10-07
-- opencode-go: modalities — neither the models list nor the Go docs page lists input or output types; the docs' only mention is a billing note that DeepSeek V4 Flash Vision Exp images count as input tokens, https://opencode.ai/docs/go, checked 2026-10-07
 - opencode-go: priced — Go is billed per month ($10 Go, $40 Go Plus), not per token; the docs' "Usage limits" table quotes per-1M-token rates only to say how usage counts toward each plan's monthly dollar limit, with separate Peak and Off-Peak rates for the DeepSeek models, so no billed per-token price exists, https://opencode.ai/docs/go, checked 2026-10-07
 - opencode-go: cacheRead — no billed per-token price exists, so no billed cached-input rate either; the "Cached Read" column of the "Usage limits" table is a rate against the monthly limit, https://opencode.ai/docs/go, checked 2026-10-07
-- opencode-go: capabilities — neither the models list nor the Go docs page states tool, vision, or structured-output support, https://opencode.ai/docs/go, checked 2026-10-07
-- opencode-go: requestMap — the Go docs page names each model's route and AI SDK package and documents no request-body fields, https://opencode.ai/docs/go, checked 2026-10-07
-- opencode-go: endpoint — OpenCode publishes no OpenAPI document (`/zen/go/v1/openapi.json` is 404), so no schema exists to bind; the docs name each model's route only, https://opencode.ai/zen/go/v1/openapi.json, checked 2026-10-07
+- opencode-go: endpoint — the Go docs publish per-model routes and SDK packages, but no provider request/response schema to bind; routes remain unbound until a genuine schema is synced, https://opencode.ai/docs/go, checked 2026-10-09
 
-No row has a `sameAs` link to a maker's row for these facts: OpenCode names no maker. `owned_by` is `opencode` on every row, and the Endpoints table's AI SDK package names the wire protocol (`@ai-sdk/anthropic` serves only MiniMax and Qwen rows, and `@ai-sdk/openai` also serves the Grok and Muse Spark rows), checked 2026-10-07.
+models.dev is OpenCode's own catalog and is used only for OpenCode Zen and Go. Subscription usage-accounting rates are not billed token prices.
+
+The catalog omits some live model ids and does not publish replay fields for every model. Those missing facts remain null and count as completeness gaps; they are not provider-wide source-silent exceptions.

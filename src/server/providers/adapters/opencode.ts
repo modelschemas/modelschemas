@@ -1,14 +1,4 @@
-/**
- * OpenCode Zen — ids from the provider's public models list, facts from
- * its docs page.
- *
- * The list publishes ids only (`created` is the request time). The docs
- * page's Endpoints table names each model's route, which classifies the
- * row, and its Pricing table quotes USD per 1M tokens. The route is not
- * stored: no OpenAPI document exists for `schemaEndpointId` to bind to.
- * Context window, output cap, modalities, capabilities, and reasoning are
- * published nowhere (docs/source-silent/opencode.md).
- */
+/** OpenCode Zen: live ids, first-party catalog facts, and documented routes/prices. */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
 
@@ -19,6 +9,7 @@ import {
   markdownSection,
   markdownTableRows,
 } from '../model-facts.ts'
+import { openCodeCatalog } from '../opencode-catalog.ts'
 import { fetchJson, fetchText, sha256Text } from '../types.ts'
 import type {
   ListModelsResult,
@@ -69,7 +60,8 @@ interface Rates {
 export interface ZenDocsModel {
   displayName: string
   activity: Activity | null
-  /** Null when the Pricing table has no usable row for this model. */
+  schemaEndpointId: string | null
+  /** Null when the Pricing table does not quote this model. */
   rates: Rates | null
 }
 
@@ -85,14 +77,14 @@ function sameCells(row: Array<string> | undefined, header: Array<string>) {
 function rateCell(cell: string): number | null | undefined {
   if (cell === '-') return null
   if (cell === 'Free') return 0
-  const match = cell.match(/^\$(\d+(?:\.\d+)?)$/)
+  const match = cell.match(/^(?:~~\$\d+(?:\.\d+)?~~ )?\$(\d+(?:\.\d+)?)$/)
   return match?.[1] ? Number(match[1]) / 1e6 : undefined
 }
 
 /**
  * Pricing table → rates by model name. `Name (≤ 200K tokens)` is the base
  * row and `Name (> 200K tokens)` its tier. A name with a cell or a
- * qualifier pairing this does not recognise maps to null.
+ * qualifier pairing this does not recognise throws.
  */
 function parsePricing(markdown: string): Map<string, Rates | null> {
   const section = markdownSection(markdown, 'Pricing').split('\n### ')[0] ?? ''
@@ -106,7 +98,8 @@ function parsePricing(markdown: string): Map<string, Rates | null> {
   type Slot = { rates: Record<string, number>; at: number | null }
   const slots = new Map<string, { base?: Slot; tier?: Slot; bad?: true }>()
   for (const row of rows.slice(1)) {
-    const match = row[0]?.match(/^(.+?)(?: \((≤|>) (\d+)K tokens\))?$/)
+    const nameCell = row[0]?.replace(/ \(\d+(?:\.\d+)?% off\)$/, '')
+    const match = nameCell?.match(/^(.+?)(?: \((≤|>) (\d+)K tokens\))?$/)
     const name = match?.[1]
     if (!match || !name) continue
     const entry = slots.get(name) ?? {}
@@ -133,8 +126,7 @@ function parsePricing(markdown: string): Map<string, Rates | null> {
     const unquoted =
       base && tier && Object.keys(base.rates).some((k) => !(k in tier.rates))
     if (bad || !base || unquoted || (tier?.at ?? null) !== base.at) {
-      out.set(name, null)
-      continue
+      throw new Error(`opencode: unreadable Pricing row or tier for ${name}`)
     }
     out.set(name, {
       base: base.rates,
@@ -153,6 +145,7 @@ export interface DocsEndpointRow {
   id: string
   displayName: string
   activity: Activity | null
+  schemaEndpointId: string | null
 }
 
 /**
@@ -175,7 +168,7 @@ export function parseDocsEndpoints(
   }
   const seen = new Set<string>()
   return rows.slice(1).map((row) => {
-    const [name, id, endpointCell] = row
+    const [name, id, endpointCell, packageCell] = row
     const url = endpointCell?.match(/^`([^`\s]+)`$/)?.[1]
     const endpoint = url?.startsWith(`${routeBase}v1/`)
       ? url.slice(routeBase.length)
@@ -188,6 +181,15 @@ export function parseDocsEndpoints(
     return {
       id,
       displayName: name,
+      schemaEndpointId:
+        (endpoint === 'v1/messages' && packageCell === '`@ai-sdk/anthropic`') ||
+        (endpoint === 'v1/responses' && packageCell === '`@ai-sdk/openai`') ||
+        (endpoint === `v1/models/${id}` &&
+          packageCell === '`@ai-sdk/google`') ||
+        (endpoint === 'v1/chat/completions' &&
+          packageCell === '`@ai-sdk/openai-compatible`')
+          ? `/${endpoint}`
+          : null,
       // Gemini models are served at `v1/models/<id>`.
       activity:
         CHAT_ROUTES.has(endpoint) || endpoint === `v1/models/${id}`
@@ -207,10 +209,10 @@ export function parseZenDocs(markdown: string): Record<string, ZenDocsModel> {
   const prices = parsePricing(markdown)
   const byId: Record<string, ZenDocsModel> = {}
   let priced = 0
-  for (const { id, displayName, activity } of rows) {
+  for (const { id, displayName, activity, schemaEndpointId } of rows) {
     const rates = prices.get(displayName) ?? null
     if (rates) priced += 1
-    byId[id] = { displayName, activity, rates }
+    byId[id] = { displayName, activity, schemaEndpointId, rates }
   }
   if (priced === 0) throw new Error('opencode: docs priced 0 model rows')
   return byId
@@ -254,6 +256,7 @@ async function listModels(
       extractedAt: new Date().toISOString(),
     }
   })
+  const catalog = await openCodeCatalog('opencode', kv)
   const source = {
     url: OPENCODE_DOCS_URL,
     hash: docs.hash,
@@ -261,18 +264,22 @@ async function listModels(
   }
   const models = parseOpencodeModels(payload).map((model): ModelInfo => {
     const row = docs.byId[model.rawId]
-    if (!row) return model
+    const facts = catalog[model.rawId]
+    const enriched = facts ? { ...model, ...facts } : model
+    if (!row) return enriched
     const pricing = row.rates
       ? compileTokenCard(row.rates.base, row.rates.tiers, source)
       : null
     return {
-      ...model,
+      ...enriched,
+      schemaEndpointId: row.schemaEndpointId,
       displayName: row.displayName,
       activity: row.activity,
       pricing,
       ...(pricing
         ? {
             factSources: {
+              ...facts?.factSources,
               pricing: {
                 derivation: 'docs-derived',
                 sourceUrl: OPENCODE_DOCS_URL,
@@ -307,6 +314,7 @@ export const provider: ProviderConfig = {
   specSourceUrl: OPENCODE_DOCS_URL,
   modelsEndpoint: OPENCODE_MODELS_URL,
   defaultDerivation: 'docs-derived',
+  bindSyncedRoutesOnly: true,
   fetchSpec,
   listModels,
   classify: () => null,
