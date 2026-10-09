@@ -16,6 +16,8 @@ import { endpointIdFromPath } from '../ingest/bundle.ts'
 import {
   cacheWriteLever,
   cacheWriteNamesDuration,
+  bedrockNameKey,
+  BEDROCK_PRICING_PAGE_URL,
   fetchBedrockPriceBook,
   lookupBedrockPrice,
 } from './bedrock-pricing.ts'
@@ -293,8 +295,17 @@ function quotes(block: string, markdown: string): Array<Quote> {
     row.forEach((cell, index) => {
       const key = lever(head[index] ?? '', markdown)
       const dollars = cell.match(/^\$(\d+(?:\.\d+)?)$/)?.[1]
+      if (key && cell.includes('$') && dollars === undefined) {
+        throw new Error('amazon-bedrock model card pricing: unreadable quote')
+      }
       if (key && dollars) rates[key] = Number(dollars) / 1e6
     })
+    if (
+      row.some((cell) => cell.includes('$')) &&
+      (!('input_tokens' in rates) || !('output_tokens' in rates))
+    ) {
+      throw new Error('amazon-bedrock model card pricing: unreadable quote')
+    }
     if ('input_tokens' in rates && 'output_tokens' in rates) {
       out.push({ label: row[0] ?? '', rates })
     }
@@ -331,7 +342,10 @@ export interface BedrockCardPrice {
  * million tokens, or prices only cross-Region profiles — those bill a
  * different rate than the id this row is keyed on.
  */
-export function bedrockCardPrice(markdown: string): BedrockCardPrice | null {
+export function bedrockCardPrice(
+  markdown: string,
+  scope: 'regional' | 'global' = 'regional',
+): BedrockCardPrice | null {
   const full = markdownSection(markdown, 'Pricing')
   if (!/per 1 million tokens/.test(full)) return null
   // GovCloud (US) republishes the same table at a different rate. The
@@ -353,7 +367,11 @@ export function bedrockCardPrice(markdown: string): BedrockCardPrice | null {
   }
   if (baseBlock === undefined) return null
   const baseQuotes = quotes(baseBlock, markdown)
-  const base = inRegion(baseQuotes)
+  const pick = (items: Array<Quote>) =>
+    scope === 'global'
+      ? items.find((quote) => /global/i.test(quote.label))
+      : inRegion(items)
+  const base = pick(baseQuotes)
   if (!base) return null
   let uniform = baseQuotes.every((quote) => sameRates(quote, base))
   const tiers: Array<TokenRateTier> = []
@@ -367,14 +385,66 @@ export function bedrockCardPrice(markdown: string): BedrockCardPrice | null {
     )
     if (!over?.[1]) continue
     const longQuotes = quotes(block, markdown)
-    const long = inRegion(longQuotes)
+    const long = pick(longQuotes)
     const minPromptTokens = tokenCount(over[1])
     // A long-context table we cannot read would underprice long prompts.
-    if (!long || minPromptTokens === null) return null
+    if (!long || minPromptTokens === null) {
+      throw new Error(
+        'amazon-bedrock model card pricing: unreadable long-context tier',
+      )
+    }
     uniform &&= longQuotes.every((quote) => sameRates(quote, long))
     tiers.push({ minPromptTokens, rates: long.rates })
   }
   return { base: base.rates, tiers, uniform }
+}
+
+/** Profiles explicitly named by the provider's own programmatic-access table. */
+export function parseBedrockProfileRows(
+  markdown: string,
+  source: { url: string; hash: string; extractedAt: string },
+): Array<ModelInfo> {
+  const base = parseBedrockCard(markdown, source)
+  if (!base) return []
+  const ids = new Set(
+    tableRows(markdown)
+      .filter(
+        (row) =>
+          row.length === 5 && /^bedrock-(runtime|mantle)$/.test(row[0] ?? ''),
+      )
+      .flatMap((row) => [
+        ...(row[3]?.match(MODEL_ID) ?? []),
+        ...(row[4]?.match(MODEL_ID) ?? []),
+      ]),
+  )
+  return [...ids]
+    .filter((id) => id !== base.rawId)
+    .map((rawId) => {
+      const quote = rawId.startsWith('global.')
+        ? bedrockCardPrice(markdown, 'global')
+        : null
+      const pricing = quote
+        ? compileTokenCard(quote.base, quote.tiers, source)
+        : null
+      // Geo ids do not identify the billed AWS region. A US-region quote
+      // cannot be assigned to an EU profile. Preserve other explicitly sourced
+      // model facts, but never inherit the base model's price or aliases.
+      const sources = { ...base.factSources }
+      delete sources.pricing
+      return {
+        ...base,
+        rawId,
+        aliases: [],
+        pricing,
+        absent: pricing ? {} : { pricing: 'cleared' },
+        factSources: {
+          ...sources,
+          ...(pricing
+            ? tagDocsFacts({ pricing }, source.url, source.hash)
+            : {}),
+        },
+      }
+    })
 }
 
 /** One card → a catalog row, or null when it states no model id. */
@@ -390,15 +460,9 @@ export function parseBedrockCard(
   const baseIds = access.flatMap((row) => row[1]?.match(MODEL_ID) ?? [])
   const rawId = baseIds[0]
   if (!rawId) return null
-  const profileIds = access.flatMap((row) => [
-    ...(row[3]?.match(MODEL_ID) ?? []),
-    ...(row[4]?.match(MODEL_ID) ?? []),
-  ])
   const price = bedrockCardPrice(markdown)
-  // A profile id that bills a different rate must not resolve to this card.
-  const aliases = [
-    ...new Set([...baseIds, ...(price && !price.uniform ? [] : profileIds)]),
-  ].filter((id) => id !== rawId)
+  // Profile ids are distinct rows, even when today's rates happen to agree.
+  const aliases = [...new Set(baseIds)].filter((id) => id !== rawId)
 
   const tables = cardTables(rows)
   const activity = activityOf(tables.output)
@@ -447,14 +511,23 @@ export async function bedrockCardModels(
     const parsed = await mapConcurrent(slugs, 6, async (slug) => {
       const url = `${DOCS}${slug}.md`
       const markdown = await fetchText(url, DOCS_INIT)
-      return parseBedrockCard(markdown, {
+      const source = {
         url,
         hash: await sha256Text(markdown),
         extractedAt: new Date().toISOString(),
-      })
+      }
+      return {
+        model: parseBedrockCard(markdown, source),
+        profiles: parseBedrockProfileRows(markdown, source),
+      }
     })
     const byId = new Map<string, ModelInfo>()
-    for (const model of parsed) {
+    const profileById = new Map<string, ModelInfo>()
+    for (const { model, profiles } of parsed) {
+      for (const profile of profiles) {
+        if (!profileById.has(profile.rawId))
+          profileById.set(profile.rawId, profile)
+      }
       if (model && !byId.has(model.rawId)) byId.set(model.rawId, model)
     }
     assertParsed(byId, 'amazon-bedrock model cards')
@@ -465,7 +538,7 @@ export async function bedrockCardModels(
         `amazon-bedrock model cards: ${String(byId.size)} of ${String(slugs.length)} cards state a model id`,
       )
     }
-    const models = [...byId.values()].map((model) => ({
+    const models: Array<ModelInfo> = [...byId.values()].map((model) => ({
       ...model,
       aliases: (model.aliases ?? []).filter((id) => !byId.has(id)),
     }))
@@ -489,6 +562,34 @@ export async function bedrockCardModels(
         ...model.factSources,
         ...tagDocsFacts({ pricing }, hit.url, hit.hash),
       }
+    }
+    for (const profile of profileById.values()) {
+      if (byId.has(profile.rawId)) continue
+      if (profile.pricing == null && profile.rawId.startsWith('global.')) {
+        const rates = book.globalPageByName?.get(
+          bedrockNameKey(profile.displayName ?? ''),
+        )
+        if (rates) {
+          const pricing = compileTokenCard(rates, [], {
+            url: BEDROCK_PRICING_PAGE_URL,
+            hash: book.pageHash,
+            extractedAt: new Date().toISOString(),
+          })
+          if (pricing) {
+            profile.pricing = pricing
+            profile.absent = {}
+            profile.factSources = {
+              ...profile.factSources,
+              ...tagDocsFacts(
+                { pricing },
+                BEDROCK_PRICING_PAGE_URL,
+                book.pageHash,
+              ),
+            }
+          }
+        }
+      }
+      models.push(profile)
     }
     return { models }
   })

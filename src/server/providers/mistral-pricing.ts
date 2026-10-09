@@ -117,17 +117,18 @@ function cellText(html: string): string {
     .trim()
 }
 
-/**
- * Cell text for the standard tier. `null` when a struck-through price is
- * present and the original amount is unreadable: the sale must not be used.
- */
-function standardCell(raw: string): string | null {
-  const del = raw.match(/<del\b[^>]*>([\s\S]*?)<\/del>/i)
-  if (!del) return cellText(raw)
-  const amounts = [
-    ...cellText(del[1] ?? '').matchAll(/\$[\d,]+(?:\.\d+)?/g),
-  ].map((match) => match[0])
-  return amounts.length === 1 ? (amounts[0] ?? null) : null
+/** Current billed amount. A crossed-out quote cannot substitute for a sale. */
+function currentCell(raw: string): string {
+  const sale = [...raw.matchAll(/<ins\b[^>]*>([\s\S]*?)<\/ins>/gi)]
+  if (!/<(?:del|ins)\b/i.test(raw)) return cellText(raw)
+  if (sale.length !== 1) {
+    throw new Error('mistral pricing: missing or repeated current sale price')
+  }
+  const text = cellText(sale[0]?.[1] ?? '').replace(/^Sale price:\s*/i, '')
+  if (!/^\$[\d,]+(?:\.\d+)?(?:\s*\/.+)?$/.test(text)) {
+    throw new Error('mistral pricing: unreadable current sale price')
+  }
+  return text
 }
 
 /** `$0.5` per million tokens. `undefined` is an absent lever (`—`). */
@@ -176,10 +177,9 @@ export function parseMistralPricing(
       const slug = row[0].match(/href="\/models\/([^"]+)"/)?.[1]
       if (!slug || out.has(slug)) continue
       const cells = [...row[0].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(
-        ([, cell = '']) => standardCell(cell),
+        ([, cell = '']) => currentCell(cell),
       )
-      if (cells.some((cell) => cell === null)) continue
-      const text = cells.map((cell) => cell ?? '')
+      const text = cells
       if (text.some((cell) => /^free$/i.test(cell))) continue
       if (tokens) {
         const input = perMillion(text[1] ?? '')
@@ -576,7 +576,7 @@ function pricingWidgets(html: string): Array<JsonObject> {
 }
 
 function meterAmount(meter: WidgetMeter): number {
-  const amount = meter.originalPrice ?? meter.price
+  const amount = meter.price
   if (typeof amount !== 'number' || !Number.isFinite(amount)) {
     throw new Error('mistral model page pricing: unreadable amount')
   }
@@ -596,6 +596,8 @@ function priceFamily(
       return 'audio_minutes'
     case '/1000 pages':
     case '/1000 page':
+    case '/1000 annotated pages':
+    case '/1000 annotated page':
       return 'pages'
     case '/m chars':
     case '/m char':
@@ -718,7 +720,16 @@ function listedFromMeters(
       tokenRates[lever] = meter.amount / 1e6
       continue
     }
-    const param = unitParam(family, meter.side, meter.label)
+    // The native OCR widget publishes annotated pages as a distinct billed
+    // quantity, not an ordinary-page rate or a surcharge on all pages.
+    const annotated = /^\/1000 annotated pages?$/i.test(
+      meter.denominator.trim(),
+    )
+    const param = annotated
+      ? meter.side === 'input'
+        ? 'annotated_pages'
+        : 'output_annotated_pages'
+      : unitParam(family, meter.side, meter.label)
     if (units.some((unit) => unit.param === param)) {
       throw new Error(`mistral model page pricing: repeated ${param}`)
     }
@@ -760,9 +771,9 @@ function listedFromMeters(
 }
 
 /**
- * The model page's pricing widget. `originalPrice` is the standard tier
- * when a sale `price` sits beside it. `free` or an all-zero widget is no
- * card. Two widgets that disagree throw.
+ * The model page's pricing widget. `price` is the current billed amount;
+ * `originalPrice` is historical and never fills a missing price. `free` or
+ * an all-zero widget is no card. Unreadable or conflicting widgets throw.
  */
 export function parseMistralPagePrice(html: string): MistralListedPrice | null {
   const widgets = [
@@ -771,20 +782,10 @@ export function parseMistralPagePrice(html: string): MistralListedPrice | null {
     ).values(),
   ]
   if (widgets.length === 0) return null
-  const parsed = widgets.map((widget) => {
-    try {
-      return { price: listedFromMeters(widgetMeters(widget)), readable: true }
-    } catch {
-      // An unknown meter must not become a partial card, and must not
-      // fail the table-priced rows on the same poll.
-      return { price: null, readable: false }
-    }
+  const priced = widgets.flatMap((widget) => {
+    const value = listedFromMeters(widgetMeters(widget))
+    return value ? [value] : []
   })
-  if (parsed.some((row) => !row.readable)) {
-    if (parsed.every((row) => !row.readable || row.price === null)) return null
-    throw new Error('mistral model page pricing: widgets disagree')
-  }
-  const priced = parsed.flatMap((row) => (row.price ? [row.price] : []))
   if (priced.length === 0) return null
   const first = JSON.stringify(priced[0])
   if (priced.some((row) => JSON.stringify(row) !== first)) {
