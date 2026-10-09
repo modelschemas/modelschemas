@@ -111,3 +111,46 @@ describe('OpenCode native catalog', () => {
     ).toThrow(/unreadable/)
   })
 })
+
+it('uses explicit catalog dates and weights with field provenance', () => {
+  const model = parseOpenCodeCatalog(
+    payload({
+      release_date: '2026-09-22',
+      knowledge: '2026-04',
+      open_weights: false,
+    }),
+    'opencode',
+    'hash',
+  ).synthetic
+  expect(model).toMatchObject({
+    releasedAt: Date.UTC(2026, 8, 22) / 1000,
+    knowledgeCutoff: '2026-04',
+    openWeights: false,
+  })
+  expect(model?.providerMetadata?.release_date).toBe('2026-09-22')
+  expect(model?.factSources?.knowledgeCutoff?.path).toBe(
+    'opencode.models.synthetic.knowledge',
+  )
+  expect(model?.factSources?.openWeights?.path).toBe(
+    'opencode.models.synthetic.open_weights',
+  )
+  const unknown = parseOpenCodeCatalog(payload(), 'opencode', 'hash').synthetic
+  expect(unknown).toMatchObject({
+    releasedAt: null,
+    knowledgeCutoff: null,
+    openWeights: null,
+  })
+})
+it.each([
+  { release_date: '2026-02-30' },
+  { release_date: '2026-13-01' },
+  { release_date: 123 },
+  { knowledge: '2026-00' },
+  { knowledge: '2026-02-30' },
+  { knowledge: 'unknown' },
+  { open_weights: 'true' },
+])('rejects malformed sourced dates or weights %j', (fields) => {
+  expect(() =>
+    parseOpenCodeCatalog(payload(fields), 'opencode', 'hash'),
+  ).toThrow(/unreadable/)
+})

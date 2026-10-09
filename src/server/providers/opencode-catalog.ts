@@ -79,6 +79,9 @@ export function parseOpenCodeCatalog(
     const factSources: ModelFactSources = {}
     const model: ModelInfo = {
       rawId: id,
+      releasedAt: null,
+      knowledgeCutoff: null,
+      openWeights: null,
       contextWindow: null,
       maxOutput: null,
       modalities: null,
@@ -86,6 +89,43 @@ export function parseOpenCodeCatalog(
       reasoning: reasoning(row.reasoning_options),
       requestMap: null,
       providerMetadata: row,
+    }
+    if (row.release_date !== undefined) {
+      if (
+        typeof row.release_date !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(row.release_date)
+      )
+        throw new Error(`${provider}: unreadable release_date for ${id}`)
+      const timestamp = Date.parse(`${row.release_date}T00:00:00.000Z`)
+      if (
+        !Number.isFinite(timestamp) ||
+        new Date(timestamp).toISOString().slice(0, 10) !== row.release_date
+      )
+        throw new Error(`${provider}: unreadable release_date for ${id}`)
+      model.releasedAt = timestamp / 1000
+    }
+    if (row.knowledge !== undefined) {
+      if (
+        typeof row.knowledge !== 'string' ||
+        !/^\d{4}-(0[1-9]|1[0-2])(?:-\d{2})?$/.test(row.knowledge)
+      )
+        throw new Error(`${provider}: unreadable knowledge for ${id}`)
+      if (row.knowledge.length === 10) {
+        const timestamp = Date.parse(`${row.knowledge}T00:00:00.000Z`)
+        if (
+          !Number.isFinite(timestamp) ||
+          new Date(timestamp).toISOString().slice(0, 10) !== row.knowledge
+        )
+          throw new Error(`${provider}: unreadable knowledge for ${id}`)
+      }
+      model.knowledgeCutoff = row.knowledge
+      factSources.knowledgeCutoff = source('knowledge')
+    }
+    if (row.open_weights !== undefined) {
+      if (typeof row.open_weights !== 'boolean')
+        throw new Error(`${provider}: unreadable open_weights for ${id}`)
+      model.openWeights = row.open_weights
+      factSources.openWeights = source('open_weights')
     }
     if (row.limit !== undefined) {
       if (!record(row.limit))

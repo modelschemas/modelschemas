@@ -189,7 +189,8 @@ describe('opencode', () => {
     // Listed, but in neither docs table.
     expect(byId['claude-sonnet-5-5']).toEqual({
       rawId: 'claude-sonnet-5-5',
-      releasedAt: 1791285710,
+      releasedAt: null,
+      absent: { releasedAt: 'cleared' },
       pricing: null,
     })
 

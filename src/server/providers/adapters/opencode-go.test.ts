@@ -130,7 +130,8 @@ describe('opencode-go', () => {
 
     const row = (rawId: string, displayName: string) => ({
       rawId,
-      releasedAt: 1791316362,
+      releasedAt: null,
+      absent: { releasedAt: 'cleared' },
       pricing: null,
       displayName,
       activity: 'chat',
@@ -154,7 +155,12 @@ describe('opencode-go', () => {
       row('gpt-6-luna', 'GPT 6 Luna'),
       row('deepseek-v4-pro', 'DeepSeek V4 Pro'),
       // Listed, absent from the Endpoints table: stays unclassified.
-      { rawId: 'glm-5', releasedAt: 1791316362, pricing: null },
+      {
+        rawId: 'glm-5',
+        releasedAt: null,
+        pricing: null,
+        absent: { releasedAt: 'cleared' },
+      },
     ])
     expect(provider.bindSyncedRoutesOnly).toBe(true)
     expect(spec.skipped).toBeUndefined()
