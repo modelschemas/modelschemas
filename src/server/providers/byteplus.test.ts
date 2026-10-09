@@ -425,7 +425,7 @@ describe('byteplus spec generated from the Go SDK', () => {
 /** Keyless listModels with each fixture page swapped by URL (`null`: 503). */
 async function listWith(pages: Record<string, (() => string) | null>) {
   const original = globalThis.fetch
-  globalThis.fetch = ((url: string, init?: RequestInit) => {
+  globalThis.fetch = ((url: string) => {
     const href = String(url)
     if (href in pages) {
       const page = pages[href]
@@ -433,7 +433,9 @@ async function listWith(pages: Record<string, (() => string) | null>) {
         page ? new Response(page()) : new Response('down', { status: 503 }),
       )
     }
-    return original(url, init)
+    const doc = DOC_FIXTURES[href]
+    if (doc) return Promise.resolve(new Response(doc()))
+    throw new Error(`Unmocked native source in listWith: ${href}`)
   }) as typeof fetch
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {

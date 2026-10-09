@@ -1,1 +1,3 @@
-- cloudflare-ai-gateway: endpoint — no OpenAPI operation for a gateway model's request; api-schemas openapi.json has no /ai/v1/chat/completions, /ai/v1/messages, or /ai/v1/responses, and /ai/run/{model_name} is Workers AI only, https://raw.githubusercontent.com/cloudflare/api-schemas/main/openapi.json, checked 2026-10-07
+Cloudflare now publishes a universal POST `/accounts/{account_id}/ai/run` model/input envelope in its own REST guide. Native per-model catalog input schemas are bound to that actual route, retaining the model ID as the logical schema identity. The former provider-wide endpoint exception is withdrawn for issue #156. Individual unpublished inputs remain unbound; intrinsic catalog outputs do not establish HTTP response envelopes.
+
+Sources: https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/docs/ai-gateway/usage/rest-api.mdx and https://developers.cloudflare.com/ai/models/, checked 2026-10-09.

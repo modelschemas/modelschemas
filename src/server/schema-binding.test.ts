@@ -143,3 +143,53 @@ describe('pinModelField', () => {
     expect(pinModelField(schema, 'grok-4')).toBe(schema)
   })
 })
+
+describe('explicit native schema binding', () => {
+  it('retains provider-grained routes declared by native adapters', () => {
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'meta',
+        rawId: 'MuseSpark',
+        activity: 'chat',
+        schemaEndpointId: null,
+      }),
+    ).toBe('v1/chat/completions')
+  })
+  it('does not infer model-grain or generation endpoints for guarded providers', () => {
+    for (const providerId of [
+      'cloudflare-ai-gateway',
+      'cloudflare-workers-ai',
+      'opencode',
+      'opencode-go',
+      'kimi-code-plan-global',
+      'kimi-code-plan-cn',
+      'zhipuai-coding-plan',
+    ]) {
+      expect(
+        resolveSchemaEndpointId({
+          providerId,
+          rawId: 'unpublished/model',
+          activity: 'chat',
+          schemaEndpointId: null,
+        }),
+      ).toBeNull()
+    }
+  })
+  it('retains a poll-verified explicit binding and legacy unguarded model grain', () => {
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'cloudflare-ai-gateway',
+        rawId: 'native/model',
+        activity: 'chat',
+        schemaEndpointId: 'native/model',
+      }),
+    ).toBe('native/model')
+    expect(
+      resolveSchemaEndpointId({
+        providerId: 'fal',
+        rawId: 'fal-ai/native',
+        activity: 'image',
+      }),
+    ).toBe('fal-ai/native')
+  })
+})

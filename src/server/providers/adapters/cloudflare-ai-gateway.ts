@@ -1,3 +1,10 @@
+import { bearerConnect } from '../connect.ts'
+import {
+  catalogGatewayEndpoint,
+  GATEWAY_REST_DOCS,
+  hasGatewayInputSchema,
+  parseGatewayRunContract,
+} from '../cloudflare-gateway-schema.ts'
 /**
  * Cloudflare AI Gateway — third-party models from Cloudflare's catalog.
  *
@@ -10,8 +17,8 @@
  * A per-1M-token price is stored only when that model's file names input
  * and output as `tokens (per 1M)`, plus cached input or cache creation
  * when those keys are present. Any other pricing key nulls the card.
- * fetchSpec skips: the Cloudflare OpenAPI document has no operation whose
- * body is a gateway model's request.
+ * fetchSpec binds native catalog inputs to the documented universal REST envelope.
+ * Logical endpoint ids are model ids; their HTTP path remains the native /ai/run path.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -50,9 +57,6 @@ const GITHUB_HEADERS = {
   Accept: 'application/vnd.github+json',
   'User-Agent': 'modelschemas',
 }
-
-export const SPEC_SKIP =
-  'cloudflare-ai-gateway: no first-party OpenAPI document — skipped'
 
 const TASK_ACTIVITY: Record<string, Activity> = {
   'Text Generation': 'chat',
@@ -745,6 +749,8 @@ export function parseCatalogModel(
     rawId,
     displayName,
     activity,
+    schemaEndpointId:
+      activity != null && hasGatewayInputSchema(schema) ? rawId : null,
     contextWindow,
     maxOutput,
     ...(modalities
@@ -755,6 +761,9 @@ export function parseCatalogModel(
     ...(parsed ? { reasoning: parsed.reasoning } : {}),
     ...(requestMap ? { requestMap } : {}),
     factSources: {
+      ...(activity != null && hasGatewayInputSchema(schema)
+        ? { schemaEndpointId: cited('schema.input') }
+        : {}),
       ...(contextWindow != null
         ? { contextWindow: cited('context_length') }
         : {}),
@@ -780,10 +789,7 @@ function schemaHashInput(model: unknown): unknown {
   return model.schema.input ?? null
 }
 
-async function listModels(
-  env: ProviderSecrets,
-  kv?: KVNamespace,
-): Promise<ListModelsResult> {
+async function loadCatalog(env: ProviderSecrets, kv?: KVNamespace) {
   const urls = await cachedDocs(kv, CATALOG_DIR_URL, async () =>
     catalogFileUrls(
       await fetchText(
@@ -817,6 +823,14 @@ async function listModels(
       schemaHash: await sha256Text(JSON.stringify(schemaHashInput(model))),
     }
   })
+  return loaded
+}
+
+async function listModels(
+  env: ProviderSecrets,
+  kv?: KVNamespace,
+): Promise<ListModelsResult> {
+  const loaded = await loadCatalog(env, kv)
   const shared = new Map<string, number>()
   for (const row of loaded) {
     shared.set(row.schemaHash, (shared.get(row.schemaHash) ?? 0) + 1)
@@ -838,13 +852,46 @@ async function listModels(
   return { models }
 }
 
-function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  return Promise.resolve({
+async function fetchSpec(env: ProviderSecrets): Promise<SpecFetchResult> {
+  const text = await fetchText(GATEWAY_REST_DOCS, {
+    signal: AbortSignal.timeout(30_000),
+  })
+  const source = { url: GATEWAY_REST_DOCS, hash: await sha256Text(text) }
+  const contract = parseGatewayRunContract(text, source)
+  const loaded = await loadCatalog(env)
+  const bundledEndpoints = []
+  const warnings: Array<string> = []
+  const seen = new Set<string>()
+  for (const row of loaded) {
+    const info = parseCatalogModel(row.model, row.source, {
+      schemaShared: true,
+    })
+    if (seen.has(info.rawId))
+      throw new Error(`cloudflare-ai-gateway: duplicate model id ${info.rawId}`)
+    seen.add(info.rawId)
+    const endpoint = catalogGatewayEndpoint(
+      row.model,
+      info,
+      row.source,
+      contract,
+    )
+    if (endpoint) bundledEndpoints.push(endpoint)
+    else
+      warnings.push(
+        `${info.rawId}: native activity or input schema unpublished; no schema endpoint`,
+      )
+  }
+  if (bundledEndpoints.length === 0)
+    throw new Error(
+      'cloudflare-ai-gateway: catalog published no classifiable input schemas',
+    )
+  return {
     specs: [],
     sources: [],
     outputStrategy: 'post-200',
-    skipped: SPEC_SKIP,
-  })
+    bundledEndpoints,
+    warnings,
+  }
 }
 
 export const provider: ProviderConfig = {
@@ -853,6 +900,9 @@ export const provider: ProviderConfig = {
   specSourceUrl: CATALOG_URL,
   modelsEndpoint: CATALOG_URL,
   defaultDerivation: 'docs-derived',
+  bindSyncedRoutesOnly: true,
+  specGrain: 'model',
+  connect: bearerConnect('https://api.cloudflare.com/client/v4'),
   fetchSpec,
   listModels,
   classify: () => null,

@@ -220,7 +220,7 @@ function classifiedFromBundled(
     }
   }
   return {
-    dbId: `${providerId}/${endpointIdFromPath(pathKey)}`,
+    dbId: `${providerId}/${extra.publicId ?? endpointIdFromPath(pathKey)}`,
     path: pathKey,
     method: 'POST',
     activity: extra.activity,

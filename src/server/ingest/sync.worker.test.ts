@@ -1,3 +1,7 @@
+import { providerRegistry } from '../providers/index.ts'
+import { assembleProviderOpenApi } from '../provider-openapi.ts'
+import { pollProviderModels } from './poll-models.ts'
+import { provider as gatewayProvider } from '../providers/adapters/cloudflare-ai-gateway.ts'
 import { getActivitySchemaMap, getEndpointSchema } from '../schemas-api.ts'
 import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
@@ -399,4 +403,99 @@ it('stores a verified schema-less route without manufacturing schema versions', 
       .from(schemaVersions)
       .where(eq(schemaVersions.endpointId, `${id}/v1/messages`)),
   ).toEqual([])
+})
+
+it('keeps per-model logical schema identities on one real multi-activity HTTP path', async () => {
+  const id = 'sync-shared-native-run'
+  const deps = await freshDeps(id)
+  const path = '/accounts/{account_id}/ai/run'
+  const provider: ProviderConfig = {
+    ...stubProvider(id, {}),
+    fetchSpec: async () => ({
+      specs: [],
+      sources: [],
+      outputStrategy: 'post-200',
+      bundledEndpoints: [
+        {
+          publicId: 'author/chat',
+          path,
+          activity: 'chat',
+          description: null,
+          source: STUB_SOURCE,
+          derivation: 'generated',
+          input: {
+            type: 'object',
+            properties: { model: { const: 'author/chat' } },
+          },
+        },
+        {
+          publicId: 'author/image',
+          path,
+          activity: 'image',
+          description: null,
+          source: STUB_SOURCE,
+          derivation: 'generated',
+          input: {
+            type: 'object',
+            properties: { model: { const: 'author/image' } },
+          },
+        },
+      ],
+    }),
+  }
+  const outcome = await syncProvider(deps, provider)
+  expect(outcome).toMatchObject({ endpointsSeen: 2, versionsAdded: 2 })
+  const rows = await deps.db
+    .select()
+    .from(endpoints)
+    .where(eq(endpoints.providerId, id))
+  expect(rows.map((row) => row.path)).toEqual([path, path])
+  expect(rows.map((row) => row.id).sort()).toEqual([
+    `${id}/author/chat`,
+    `${id}/author/image`,
+  ])
+  expect(
+    await getEndpointSchema(deps.db, id, 'chat', 'author/chat', 'output'),
+  ).toBeNull()
+  const configured = {
+    ...provider,
+    specGrain: gatewayProvider.specGrain,
+    connect: gatewayProvider.connect,
+    listModels: async () => ({
+      models: [
+        { rawId: 'author/chat', activity: 'chat' as const },
+        { rawId: 'author/image', activity: 'image' as const },
+      ],
+    }),
+  }
+  providerRegistry.push(configured)
+  try {
+    await pollProviderModels(deps, configured)
+    const assembled = await assembleProviderOpenApi(deps.db, id, {
+      model: 'author/chat',
+    })
+    expect(assembled.ok).toBe(true)
+    if (!assembled.ok) throw new Error(assembled.message)
+    expect(
+      Object.keys(assembled.document.paths as Record<string, unknown>),
+    ).toEqual([path])
+    expect(assembled.document.servers).toEqual([
+      { url: 'https://api.cloudflare.com/client/v4' },
+    ])
+    expect(assembled.document.paths).toMatchObject({
+      [path]: {
+        post: {
+          requestBody: {
+            content: {
+              'application/json': {
+                schema: { properties: { model: { enum: ['author/chat'] } } },
+              },
+            },
+          },
+        },
+      },
+    })
+  } finally {
+    providerRegistry.splice(providerRegistry.indexOf(configured), 1)
+  }
 })
