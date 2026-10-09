@@ -166,7 +166,21 @@ export function claudeGlobalPrices(
     const panelAt = html.indexOf(`aria-labelledby="${tab}"`)
     if (panelAt < 0)
       throw new Error('vertex claude: missing Global price panel')
-    const table = html.slice(panelAt).match(/<table\b[\s\S]*?<\/table>/i)?.[0]
+    const panelStart = html.lastIndexOf('<div', panelAt)
+    let depth = 0
+    let panelEnd = -1
+    for (const tag of html.slice(panelStart).matchAll(/<\/?div\b[^>]*>/gi)) {
+      depth += tag[0].startsWith('</') ? -1 : 1
+      if (depth === 0) {
+        panelEnd = panelStart + tag.index + tag[0].length
+        break
+      }
+    }
+    if (panelStart < 0 || panelEnd < 0)
+      throw new Error('vertex claude: unreadable Global panel')
+    const table = html
+      .slice(panelStart, panelEnd)
+      .match(/<table\b[\s\S]*?<\/table>/i)?.[0]
     if (!table || !/Claude/.test(table)) continue
     const rows = [...table.matchAll(/<tr\b[\s\S]*?<\/tr>/gi)].map((row) =>
       [...row[0].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) =>
@@ -233,9 +247,14 @@ export function claudeGlobalPrices(
         group.base.output_tokens === undefined
       )
         throw new Error('vertex claude: incomplete rate card')
-      const long = Object.keys(group.long).length
-        ? { ...group.base, ...group.long }
-        : null
+      const long = Object.keys(group.long).length ? group.long : null
+      // A blank published tier cell does not authorize borrowing the short
+      // price. Omit this model's card so its unsourced quote becomes null.
+      if (
+        long &&
+        Object.keys(group.base).some((lever) => long[lever] === undefined)
+      )
+        continue
       const card = compileTokenCard(
         group.base,
         long && group.threshold !== null

@@ -85,4 +85,19 @@ describe('Google native Claude sources', () => {
       claudeGlobalPrices(prices.replace(/>Global</g, '>Regional<'), source),
     ).toThrow('no Global Claude price rows')
   })
+  it('does not read a regional table after an empty Global panel', () => {
+    const table = prices.match(/<table\b[\s\S]*?<\/table>/i)?.[0] ?? ''
+    const emptyGlobal = prices.replace(table, '')
+    expect(() =>
+      claudeGlobalPrices(
+        `${emptyGlobal}<div role="tabpanel" aria-labelledby="regional">${table}</div>`,
+        source,
+      ),
+    ).toThrow('no Global Claude price rows')
+  })
+  it('leaves an incomplete published long tier unpriced instead of copying short rates', () => {
+    // The native Global table leaves Opus 5.5's long input cell blank while
+    // publishing other long-context prices. It supplies no complete card.
+    expect(claudeGlobalPrices(prices, source).has('opus 5 5')).toBe(false)
+  })
 })
