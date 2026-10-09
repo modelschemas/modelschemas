@@ -1,3 +1,4 @@
+import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
 /** OpenCode Zen: live ids, first-party catalog facts, and documented routes/prices. */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { TokenRateTier } from '@modelschemas/rate-card'
@@ -25,8 +26,6 @@ export const OPENCODE_MODELS_URL = 'https://opencode.ai/zen/v1/models'
 export const OPENCODE_DOCS_URL = 'https://opencode.ai/docs/zen'
 
 export const OPENCODE_DOCS_MARKDOWN = `${OPENCODE_DOCS_URL}.md`
-
-const SPEC_SKIP = 'opencode: no first-party OpenAPI document — skipped'
 
 const FETCH_TIMEOUT_MS = 30_000
 
@@ -188,7 +187,7 @@ export function parseDocsEndpoints(
           packageCell === '`@ai-sdk/google`') ||
         (endpoint === 'v1/chat/completions' &&
           packageCell === '`@ai-sdk/openai-compatible`')
-          ? `/${endpoint}`
+          ? endpoint
           : null,
       // Gemini models are served at `v1/models/<id>`.
       activity:
@@ -276,31 +275,40 @@ async function listModels(
       displayName: row.displayName,
       activity: row.activity,
       pricing,
-      ...(pricing
-        ? {
-            factSources: {
-              ...facts?.factSources,
+      factSources: {
+        ...facts?.factSources,
+        ...(row.schemaEndpointId
+          ? {
+              schemaEndpointId: {
+                derivation: 'docs-derived',
+                sourceUrl: OPENCODE_DOCS_URL,
+                sourceHash: docs.hash,
+                path: 'Endpoints',
+              },
+            }
+          : {}),
+        ...(pricing
+          ? {
               pricing: {
                 derivation: 'docs-derived',
                 sourceUrl: OPENCODE_DOCS_URL,
                 sourceHash: docs.hash,
                 path: 'Pricing',
               },
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
     }
   })
   return { models }
 }
 
-function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  return Promise.resolve({
-    specs: [],
-    sources: [],
-    outputStrategy: 'post-200',
-    skipped: SPEC_SKIP,
+async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const text = await fetchText(OPENCODE_DOCS_MARKDOWN, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
+  const rows = parseDocsEndpoints(text, 'opencode', 'https://opencode.ai/zen/')
+  return openCodeRouteSpec(rows, { url: OPENCODE_DOCS_MARKDOWN, text }, false)
 }
 
 // No `upstreamModelIdentity`, here or for OpenCode Go: OpenCode names no
@@ -315,7 +323,8 @@ export const provider: ProviderConfig = {
   modelsEndpoint: OPENCODE_MODELS_URL,
   defaultDerivation: 'docs-derived',
   bindSyncedRoutesOnly: true,
+  bindStoredRoutesWithoutSchemas: true,
   fetchSpec,
   listModels,
-  classify: () => null,
+  classify: classifyOpenCodeRoute,
 }

@@ -75,6 +75,10 @@ describe('source-silent API evidence', () => {
       },
       capabilities: { tools: { derivation: 'listing' as const } },
       sameAs: { derivation: 'listing' as const, normalized: true as const },
+      schemaEndpointId: {
+        derivation: 'docs-derived' as const,
+        sourceUrl: 'https://example.com/routes',
+      },
     }
     expect(
       withSourceSilentEvidence(
@@ -86,6 +90,7 @@ describe('source-silent API evidence', () => {
     ).toEqual(stored)
     const missing = withSourceSilentEvidence(row, null, stored, ledger)
     expect(missing?.sameAs).toEqual(stored.sameAs)
+    expect(missing?.schemaEndpointId).toEqual(stored.schemaEndpointId)
     expect(stored.maxOutput.derivation).toBe('listing')
   })
   it('keeps evidence for missing subfacts separate from populated parent provenance', () => {

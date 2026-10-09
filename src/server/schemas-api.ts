@@ -129,13 +129,18 @@ export async function getActivitySchemaMap(
       kind: schemaVersions.kind,
       schema: schemaVersions.schema,
     })
-    .from(schemaVersions)
-    .innerJoin(endpoints, eq(schemaVersions.endpointId, endpoints.id))
+    .from(endpoints)
+    .leftJoin(
+      schemaVersions,
+      and(
+        eq(schemaVersions.endpointId, endpoints.id),
+        isNull(schemaVersions.supersededAt),
+      ),
+    )
     .where(
       and(
         eq(endpoints.providerId, providerId),
         eq(endpoints.activity, activity),
-        isNull(schemaVersions.supersededAt),
       ),
     )
     .orderBy(endpoints.id)
@@ -143,7 +148,11 @@ export async function getActivitySchemaMap(
   const map: Record<string, SchemaPair> = {}
   for (const row of rows) {
     const id = publicEndpointId(row.endpointId, providerId)
-    ;(map[id] ??= {})[row.kind] = JSON.parse(row.schema) as unknown
+    if (row.kind === null || row.schema === null) {
+      map[id] = { input: null, output: null }
+    } else {
+      ;(map[id] ??= {})[row.kind] = JSON.parse(row.schema) as unknown
+    }
   }
   return {
     provider: providerId,

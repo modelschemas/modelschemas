@@ -1,3 +1,4 @@
+import { getActivitySchemaMap, getEndpointSchema } from '../schemas-api.ts'
 import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
 import { and, eq } from 'drizzle-orm'
@@ -319,4 +320,31 @@ describe('syncProvider', () => {
     ])
     expect(await providerEndpoints(deps.db, id)).toHaveLength(1)
   })
+})
+
+it('stores a verified schema-less route without manufacturing schema versions', async () => {
+  const id = 'sync-native-route-only'
+  const deps = await freshDeps(id)
+  const provider = stubProvider(id, {
+    paths: {
+      '/v1/messages': {
+        post: { 'x-modelschemas-route-only': true, responses: {} },
+      },
+    },
+  })
+  const outcome = await syncProvider(deps, provider)
+  expect(outcome).toMatchObject({ endpointsSeen: 1, versionsAdded: 0 })
+  expect(
+    (await getActivitySchemaMap(deps.db, id, 'chat')).endpoints['v1/messages'],
+  ).toEqual({ input: null, output: null })
+  expect(await getEndpointSchema(deps.db, id, 'chat', 'v1/messages')).toBeNull()
+  expect(
+    await deps.db.select().from(endpoints).where(eq(endpoints.providerId, id)),
+  ).toMatchObject([{ path: '/v1/messages', method: 'POST', activity: 'chat' }])
+  expect(
+    await deps.db
+      .select()
+      .from(schemaVersions)
+      .where(eq(schemaVersions.endpointId, `${id}/v1/messages`)),
+  ).toEqual([])
 })

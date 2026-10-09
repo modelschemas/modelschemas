@@ -1,3 +1,4 @@
+import type { Activity } from '#/db/schema.ts'
 /**
  * Model poller (PLAN.md task 2.4) — the fast 15-minute tier: per provider,
  * list currently served models, diff against D1, write
@@ -315,6 +316,7 @@ function settleStatedFacts(
 type InputWalks = {
   walks: Map<string, SchemaWalk>
   properties: Map<string, Set<string>>
+  storedRoutes: Map<string, Activity>
 }
 
 /** Key for the walk of one model's branch of a `model`-discriminated body. */
@@ -329,6 +331,15 @@ async function loadInputWalks(
 ): Promise<InputWalks> {
   const walks = new Map<string, SchemaWalk>()
   const properties = new Map<string, Set<string>>()
+  const storedRoutes = new Map<string, Activity>()
+  if (provider.bindStoredRoutesWithoutSchemas === true) {
+    const routes = await db
+      .select({ id: endpoints.id, activity: endpoints.activity })
+      .from(endpoints)
+      .where(eq(endpoints.providerId, provider.id))
+    for (const route of routes)
+      storedRoutes.set(route.id.slice(provider.id.length + 1), route.activity)
+  }
   const skipFactWalk =
     resolveSpecGrain(provider) === 'model' ||
     provider.defaultDerivation === 'generated'
@@ -340,7 +351,7 @@ async function loadInputWalks(
     (info) => parseStoredRateCard(info.pricing) !== null,
   )
   if (skipFactWalk && !needsRequestCheck) {
-    return { walks, properties }
+    return { walks, properties, storedRoutes }
   }
   const bound = new Set<string>()
   for (const info of listed) {
@@ -353,7 +364,7 @@ async function loadInputWalks(
     })
     if (id) bound.add(id)
   }
-  if (bound.size === 0) return { walks, properties }
+  if (bound.size === 0) return { walks, properties, storedRoutes }
   const dbIds = [...bound].map((id) => `${provider.id}/${id}`)
   const chunks: Array<Array<string>> = []
   for (let i = 0; i < dbIds.length; i += 90) {
@@ -416,7 +427,7 @@ async function loadInputWalks(
       })
     }
   }
-  return { walks, properties }
+  return { walks, properties, storedRoutes }
 }
 
 function logRefusedCard(
@@ -697,7 +708,11 @@ export async function pollProviderModels(
   const listedModels = listed.models.map((info) =>
     resolveAbsent(info, existingById.get(modelDbId(provider.id, info.rawId))),
   )
-  const { walks, properties } = await loadInputWalks(db, provider, listedModels)
+  const { walks, properties, storedRoutes } = await loadInputWalks(
+    db,
+    provider,
+    listedModels,
+  )
   const refused = refusesPriceClears(listedModels, existingById, provider.id)
   // Kept across polls like the docs record; it cannot fail the poll.
   await recordPriceClearsRefused(db, provider.id, refused, now)
@@ -734,7 +749,11 @@ export async function pollProviderModels(
     const raw =
       provider.bindSyncedRoutesOnly === true &&
       listedModel.schemaEndpointId &&
-      !properties.has(listedModel.schemaEndpointId)
+      !properties.has(listedModel.schemaEndpointId) &&
+      !(
+        provider.bindStoredRoutesWithoutSchemas === true &&
+        storedRoutes.get(listedModel.schemaEndpointId) === listedModel.activity
+      )
         ? { ...listedModel, schemaEndpointId: null }
         : listedModel
     const id = modelDbId(provider.id, raw.rawId)

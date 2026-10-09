@@ -159,7 +159,12 @@ export function classifyAndBundle(
             )
           }
         }
-        if (!extracted.input && !extracted.output) continue
+        if (
+          !extracted.input &&
+          !extracted.output &&
+          operation['x-modelschemas-route-only'] !== true
+        )
+          continue
 
         const description =
           typeof operation.summary === 'string'
