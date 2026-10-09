@@ -22,6 +22,7 @@ import {
   lookupBedrockPrice,
 } from './bedrock-pricing.ts'
 import { tagDocsFacts } from './fact-sources.ts'
+import type { BedrockCardOwnedGroup } from './bedrock-thinking-guides.ts'
 import {
   assertParsed,
   cachedDocs,
@@ -30,7 +31,6 @@ import {
   markdownTableRows,
   tokenCount,
 } from './model-facts.ts'
-import type { ChatRequestMap } from './request-map.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo, ModelReasoning } from './types.ts'
 
@@ -91,11 +91,7 @@ export function bedrockReasoning(
   const cannotDisable =
     /cannot be disabled|cannot be turned off|thinking is always on/.test(note)
   const canDisable = /\bcan be (?:disabled|turned off)\b/.test(note)
-  const mandatory = cannotDisable
-    ? true
-    : canDisable || efforts?.includes('none')
-      ? false
-      : null
+  const mandatory = cannotDisable ? true : canDisable ? false : null
   const named = efforts && efforts.length > 0 ? efforts : undefined
   // Adaptive cards name the levels after "configurable —". Keep the mode
   // and store those levels; a note with no list still has no efforts.
@@ -163,30 +159,9 @@ function reasoningEffortProse(markdown: string): ModelReasoning | null {
   )
   return {
     mode: 'effort',
-    mandatory: cannot ? true : efforts.includes('none') || can ? false : null,
+    mandatory: cannot ? true : can ? false : null,
     efforts,
   }
-}
-
-/**
- * Converse body from the Bedrock Runtime service model
- * (https://raw.githubusercontent.com/boto/botocore/develop/botocore/data/bedrock-runtime/2023-09-30/service-2.json).
- * Roles are user, assistant, and system. There is no top-level
- * `reasoning_effort`; `outputConfig.effort` is a different shared field
- * and is not copied onto every model. `maxTokens` sits on
- * `inferenceConfig`, not `max_tokens`.
- */
-const CONVERSE_REQUEST_MAP: ChatRequestMap = {
-  thinking: null,
-  maxTokensField: null,
-  developerRole: false,
-  replayReasoningContent: null,
-  store: null,
-  strictTools: null,
-  sessionAffinity: null,
-  cacheControl: null,
-  toolStream: null,
-  reasoningEffort: false,
 }
 
 /** Ticked feature labels state capabilities; a reasoning tick names no control. */
@@ -430,6 +405,9 @@ export function parseBedrockProfileRows(
 ): Array<ModelInfo> {
   const base = parseBedrockCard(markdown, source)
   if (!base) return []
+  const runtimeIds = new Set(bedrockCardRuntimeIds(markdown))
+  const supportsConverse =
+    base.activity === 'chat' && cardTables(tableRows(markdown)).converse
   const ids = new Set(
     tableRows(markdown)
       .filter(
@@ -454,15 +432,35 @@ export function parseBedrockProfileRows(
       // cannot be assigned to an EU profile. Preserve other explicitly sourced
       // model facts, but never inherit the base model's price or aliases.
       const sources = { ...base.factSources }
+      const converse = supportsConverse && runtimeIds.has(rawId)
       delete sources.pricing
+      // A mantle-only base does not own the runtime route. Its explicitly
+      // declared runtime profiles still do; derive each row independently.
+      delete sources.schemaEndpointId
+      delete sources.requestMap
+      delete sources.requestMapFields
       return {
         ...base,
         rawId,
+        requestMap: null,
+        schemaEndpointId: converse
+          ? endpointIdFromPath(BEDROCK_CONVERSE_PATH)
+          : null,
         aliases: [],
         pricing,
         absent: pricing ? {} : { pricing: 'cleared' },
         factSources: {
           ...sources,
+          ...(converse
+            ? {
+                schemaEndpointId: {
+                  derivation: 'docs-derived' as const,
+                  sourceUrl: source.url,
+                  sourceHash: source.hash,
+                  path: 'Programmatic Access: bedrock-runtime profile ID; APIs supported: Converse',
+                },
+              }
+            : {}),
           ...(pricing
             ? tagDocsFacts({ pricing }, source.url, source.hash)
             : {}),
@@ -493,7 +491,10 @@ export function parseBedrockCard(
   const reasoningText = field(markdown, 'Reasoning')
   const reasoning =
     bedrockReasoning(reasoningText) ?? reasoningEffortProse(markdown)
-  const converse = activity === 'chat' && tables.converse
+  const converse =
+    activity === 'chat' &&
+    tables.converse &&
+    bedrockCardRuntimeIds(markdown).includes(rawId)
   const info: ModelInfo = {
     rawId,
     displayName: markdown.match(/^# (.+)$/m)?.[1]?.trim() ?? null,
@@ -510,7 +511,7 @@ export function parseBedrockCard(
       reasoningText?.startsWith('Supported') === true || reasoning != null,
     ),
     reasoning,
-    requestMap: converse ? CONVERSE_REQUEST_MAP : null,
+    requestMap: null,
     schemaEndpointId: converse
       ? endpointIdFromPath(BEDROCK_CONVERSE_PATH)
       : null,
@@ -518,104 +519,162 @@ export function parseBedrockCard(
     deprecated: field(markdown, 'Model lifecycle') === 'Legacy',
     releasedAt: launchDay(field(markdown, 'Model launch date')),
   }
-  info.factSources = tagDocsFacts(info, source.url, source.hash)
+  info.factSources = {
+    ...tagDocsFacts(info, source.url, source.hash),
+    ...(converse
+      ? {
+          schemaEndpointId: {
+            derivation: 'docs-derived' as const,
+            sourceUrl: source.url,
+            sourceHash: source.hash,
+            path: 'Programmatic Access: bedrock-runtime model ID; APIs supported: Converse',
+          },
+        }
+      : {}),
+  }
   return info
 }
 
-export async function bedrockCardModels(
+/** Exact IDs from the card's own runtime access row, not prefix aliases. */
+export function bedrockCardRuntimeIds(markdown: string): Array<string> {
+  const rows = tableRows(
+    markdownSection(
+      markdown.replace(/```[\s\S]*?```/g, ''),
+      'Programmatic Access',
+    ),
+  )
+  const runtime = rows.filter((row) => row[0] === 'bedrock-runtime')
+  if (!runtime.length) return []
+  const header = rows[0]?.map((cell) => cell.replace(/\*/g, '')) ?? []
+  const columns = header.flatMap((cell, index) =>
+    /\b(?:model|inference) id\b/i.test(cell) ? [index] : [],
+  )
+  if (!columns.length || runtime.some((row) => row.length !== header.length))
+    throw new Error('amazon-bedrock card: unreadable runtime access table')
+  return [
+    ...new Set(
+      runtime.flatMap((row) =>
+        columns.flatMap((index) => row[index]?.match(MODEL_ID) ?? []),
+      ),
+    ),
+  ]
+}
+
+export async function bedrockCardListing(
   kv?: KVNamespace,
-): Promise<Array<ModelInfo>> {
-  const doc = await cachedDocs(kv, BEDROCK_CARDS_URL, async () => {
-    const slugs = bedrockCardSlugs(
-      await fetchText(BEDROCK_CARDS_URL, DOCS_INIT),
-    )
-    // ponytail: one fetch per card (~135) on a six-hourly cache miss, out of
-    // the poll invocation's shared 1,000 subrequests. Move Bedrock to its own
-    // cron if the poll starts exhausting the budget.
-    const parsed = await mapConcurrent(slugs, 6, async (slug) => {
-      const url = `${DOCS}${slug}.md`
-      const markdown = await fetchText(url, DOCS_INIT)
-      const source = {
-        url,
-        hash: await sha256Text(markdown),
-        extractedAt: new Date().toISOString(),
-      }
-      return {
-        model: parseBedrockCard(markdown, source),
-        profiles: parseBedrockProfileRows(markdown, source),
-      }
-    })
-    const byId = new Map<string, ModelInfo>()
-    const profileById = new Map<string, ModelInfo>()
-    for (const { model, profiles } of parsed) {
-      for (const profile of profiles) {
-        if (!profileById.has(profile.rawId))
-          profileById.set(profile.rawId, profile)
-      }
-      if (model && !byId.has(model.rawId)) byId.set(model.rawId, model)
-    }
-    assertParsed(byId, 'amazon-bedrock model cards')
-    // The poll marks unlisted rows removed. A card layout change that drops
-    // most ids must fail the poll, not shrink the catalog.
-    if (byId.size < slugs.length * 0.8) {
-      throw new Error(
-        `amazon-bedrock model cards: ${String(byId.size)} of ${String(slugs.length)} cards state a model id`,
+): Promise<{ models: Array<ModelInfo>; groups: Array<BedrockCardOwnedGroup> }> {
+  // The previous catalog cache did not store source-owned profile bindings.
+  return cachedDocs(
+    kv,
+    `${BEDROCK_CARDS_URL}#card-owned-thinking-v2`,
+    async () => {
+      const slugs = bedrockCardSlugs(
+        await fetchText(BEDROCK_CARDS_URL, DOCS_INIT),
       )
-    }
-    const models: Array<ModelInfo> = [...byId.values()].map((model) => ({
-      ...model,
-      aliases: (model.aliases ?? []).filter((id) => !byId.has(id)),
-    }))
-    const book = await fetchBedrockPriceBook()
-    for (const model of models) {
-      if (model.pricing != null) continue
-      const hit = lookupBedrockPrice(
-        book,
-        model.rawId,
-        model.displayName ?? null,
-      )
-      if (!hit) continue
-      const pricing = compileTokenCard(hit.rates, [], {
-        url: hit.url,
-        hash: hit.hash,
-        extractedAt: new Date().toISOString(),
+      // ponytail: one fetch per card (~135) on a six-hourly cache miss, out of
+      // the poll invocation's shared 1,000 subrequests. Move Bedrock to its own
+      // cron if the poll starts exhausting the budget.
+      const parsed = await mapConcurrent(slugs, 6, async (slug) => {
+        const url = `${DOCS}${slug}.md`
+        const markdown = await fetchText(url, DOCS_INIT)
+        const source = {
+          url,
+          hash: await sha256Text(markdown),
+          extractedAt: new Date().toISOString(),
+        }
+        return {
+          model: parseBedrockCard(markdown, source),
+          profiles: parseBedrockProfileRows(markdown, source),
+          runtimeRowIds: bedrockCardRuntimeIds(markdown),
+        }
       })
-      if (!pricing) continue
-      model.pricing = pricing
-      model.factSources = {
-        ...model.factSources,
-        ...tagDocsFacts({ pricing }, hit.url, hit.hash),
+      const groups: Array<BedrockCardOwnedGroup> = parsed.flatMap(
+        ({ model, profiles, runtimeRowIds }) =>
+          model
+            ? [
+                {
+                  modelName: model.displayName ?? null,
+                  runtimeRowIds,
+                  baseIds: [model.rawId, ...(model.aliases ?? [])],
+                  rowIds: [
+                    model.rawId,
+                    ...profiles.map((profile) => profile.rawId),
+                  ],
+                },
+              ]
+            : [],
+      )
+      const byId = new Map<string, ModelInfo>()
+      const profileById = new Map<string, ModelInfo>()
+      for (const { model, profiles } of parsed) {
+        for (const profile of profiles) {
+          if (!profileById.has(profile.rawId))
+            profileById.set(profile.rawId, profile)
+        }
+        if (model && !byId.has(model.rawId)) byId.set(model.rawId, model)
       }
-    }
-    for (const profile of profileById.values()) {
-      if (byId.has(profile.rawId)) continue
-      if (profile.pricing == null && profile.rawId.startsWith('global.')) {
-        const rates = book.globalPageByName?.get(
-          bedrockNameKey(profile.displayName ?? ''),
+      assertParsed(byId, 'amazon-bedrock model cards')
+      // The poll marks unlisted rows removed. A card layout change that drops
+      // most ids must fail the poll, not shrink the catalog.
+      if (byId.size < slugs.length * 0.8) {
+        throw new Error(
+          `amazon-bedrock model cards: ${String(byId.size)} of ${String(slugs.length)} cards state a model id`,
         )
-        if (rates) {
-          const pricing = compileTokenCard(rates, [], {
-            url: BEDROCK_PRICING_PAGE_URL,
-            hash: book.pageHash,
-            extractedAt: new Date().toISOString(),
-          })
-          if (pricing) {
-            profile.pricing = pricing
-            profile.absent = {}
-            profile.factSources = {
-              ...profile.factSources,
-              ...tagDocsFacts(
-                { pricing },
-                BEDROCK_PRICING_PAGE_URL,
-                book.pageHash,
-              ),
+      }
+      const models: Array<ModelInfo> = [...byId.values()].map((model) => ({
+        ...model,
+        aliases: (model.aliases ?? []).filter((id) => !byId.has(id)),
+      }))
+      const book = await fetchBedrockPriceBook()
+      for (const model of models) {
+        if (model.pricing != null) continue
+        const hit = lookupBedrockPrice(
+          book,
+          model.rawId,
+          model.displayName ?? null,
+        )
+        if (!hit) continue
+        const pricing = compileTokenCard(hit.rates, [], {
+          url: hit.url,
+          hash: hit.hash,
+          extractedAt: new Date().toISOString(),
+        })
+        if (!pricing) continue
+        model.pricing = pricing
+        model.factSources = {
+          ...model.factSources,
+          ...tagDocsFacts({ pricing }, hit.url, hit.hash),
+        }
+      }
+      for (const profile of profileById.values()) {
+        if (byId.has(profile.rawId)) continue
+        if (profile.pricing == null && profile.rawId.startsWith('global.')) {
+          const rates = book.globalPageByName?.get(
+            bedrockNameKey(profile.displayName ?? ''),
+          )
+          if (rates) {
+            const pricing = compileTokenCard(rates, [], {
+              url: BEDROCK_PRICING_PAGE_URL,
+              hash: book.pageHash,
+              extractedAt: new Date().toISOString(),
+            })
+            if (pricing) {
+              profile.pricing = pricing
+              profile.absent = {}
+              profile.factSources = {
+                ...profile.factSources,
+                ...tagDocsFacts(
+                  { pricing },
+                  BEDROCK_PRICING_PAGE_URL,
+                  book.pageHash,
+                ),
+              }
             }
           }
         }
+        models.push(profile)
       }
-      models.push(profile)
-    }
-    return { models }
-  })
-  return doc.models
+      return { models, groups }
+    },
+  )
 }

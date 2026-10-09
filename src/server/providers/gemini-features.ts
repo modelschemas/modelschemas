@@ -1,3 +1,7 @@
+import {
+  GEMINI_LIVE_GUIDE_URL,
+  geminiNativeAudioThinking,
+} from './gemini-live-thinking.ts'
 /**
  * Gemini thinking configuration and Google-hosted tools (issue #77).
  *
@@ -513,7 +517,7 @@ export async function geminiModelFeatures(
   features: (rawId: string, thinking: boolean | undefined) => GeminiFeatures
   docsFailures: DocsFailures
 }> {
-  const [index, thinking] = await Promise.all([
+  const [index, thinking, nativeAudio] = await Promise.all([
     cachedDocs(kv, GEMINI_MODELS_INDEX_URL, async () => {
       const markdown = await fetchText(GEMINI_MODELS_INDEX_URL)
       const parsed = parseModelIndexDocs(markdown)
@@ -532,6 +536,7 @@ export async function geminiModelFeatures(
         hash: await sha256Text(markdown),
       }
     }),
+    geminiNativeAudioThinking(rawIds, kv),
   ])
   const slugs = index.flatMap((doc) => {
     const slug = modelSlug(doc.url)
@@ -618,6 +623,15 @@ export async function geminiModelFeatures(
         sourceUrl: GEMINI_THINKING_URL,
         sourceHash: thinking.hash,
         path: family,
+      }
+    }
+    if (nativeAudio?.rawId === rawId && modelThinks !== false) {
+      reasoning = nativeAudio.reasoning
+      factSources.reasoning = {
+        derivation: 'docs-derived',
+        sourceUrl: GEMINI_LIVE_GUIDE_URL,
+        sourceHash: nativeAudio.hash,
+        path: 'Thinking; exact native audio model; thinkingBudget disables at zero',
       }
     }
     const failed = index

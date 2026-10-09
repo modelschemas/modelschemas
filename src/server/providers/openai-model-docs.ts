@@ -1,3 +1,7 @@
+import {
+  OPENAI_REALTIME_EFFORT_URL,
+  openaiRealtimeEfforts,
+} from './openai-realtime-efforts.ts'
 /**
  * OpenAI model facts from OpenAI's own docs. `GET /v1/models` is `id` +
  * `created` only; developers.openai.com serves every model page as
@@ -612,6 +616,25 @@ export async function openaiModelFacts(
       const sources = { ...facts.factSources }
       delete sources.pricing
       byId.set(id, { ...facts, pricing: null, factSources: sources })
+    }
+  }
+  const realtime = await openaiRealtimeEfforts(rawIds, kv)
+  if (realtime) {
+    const own = byId.get(realtime.rawId)
+    if (own?.reasoning?.mode === 'effort' && !own.reasoning.efforts?.length) {
+      byId.set(realtime.rawId, {
+        ...own,
+        reasoning: { ...own.reasoning, efforts: realtime.efforts },
+        factSources: {
+          ...own.factSources,
+          reasoning: {
+            derivation: 'docs-derived',
+            sourceUrl: OPENAI_REALTIME_EFFORT_URL,
+            sourceHash: realtime.hash,
+            path: 'Set reasoning effort',
+          },
+        },
+      })
     }
   }
   if (needed.length > 0) assertParsed(byId, 'openai model pages')

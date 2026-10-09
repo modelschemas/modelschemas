@@ -1,3 +1,4 @@
+import nativeEfforts from '../fixtures/cloudflare-native-effort-excerpts.json'
 import { GATEWAY_REST_DOCS } from '../cloudflare-gateway-schema.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -287,12 +288,16 @@ describe('cloudflare-ai-gateway', () => {
       SOURCE,
       { schemaShared: true },
     )
-    expect(grok46.reasoning).toBeUndefined()
-    expect(grok46.requestMap).toBeUndefined()
-    expect(grok46.capabilities).toEqual(['tools'])
+    expect(grok46.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'medium', 'high'],
+    })
+    expect(grok46.requestMap?.thinking?.off).toBeNull()
+    expect(grok46.capabilities).toEqual(['tools', 'reasoning'])
   })
 
-  it('treats none in a model-specific effort list as thinking that can be turned off', () => {
+  it('does not infer disabled thinking from the none enum label', () => {
     const parsed = parseCatalogModel(
       {
         ...FABLE,
@@ -322,13 +327,13 @@ describe('cloudflare-ai-gateway', () => {
     )
     expect(parsed.reasoning).toEqual({
       mode: 'effort',
-      mandatory: false,
+      mandatory: null,
       efforts: ['none', 'low', 'medium', 'high'],
     })
     expect(parsed.requestMap).toMatchObject({
       thinking: {
         on: { reasoning_effort: 'high' },
-        off: { reasoning_effort: 'none' },
+        off: null,
       },
     })
   })
@@ -348,7 +353,17 @@ describe('cloudflare-ai-gateway', () => {
       },
     }
     expect(parseCatalogModel(optional, SOURCE).reasoning?.mandatory).toBeNull()
-    expect(() =>
+    const sharedAdaptive = parseCatalogModel(
+      { ...optional, metadata: { Reasoning: 'Yes' } },
+      SOURCE,
+      { schemaShared: true },
+    )
+    expect(sharedAdaptive.reasoning).toEqual({
+      mode: 'adaptive',
+      mandatory: null,
+      efforts: ['low', 'high'],
+    })
+    expect(
       parseCatalogModel(
         {
           ...optional,
@@ -365,8 +380,8 @@ describe('cloudflare-ai-gateway', () => {
           },
         },
         SOURCE,
-      ),
-    ).toThrow('contradicts')
+      ).reasoning?.mandatory,
+    ).toBe(true)
     const parsed = parseCatalogModel(
       {
         ...FABLE,
@@ -811,4 +826,31 @@ describe('Cloudflare native input identity', () => {
         .schemaEndpointId,
     ).toBeNull()
   })
+})
+
+it('binds exact native unqualified effort enums despite shared schema hashes', () => {
+  for (const model of nativeEfforts) {
+    const parsed = parseCatalogModel(model, SOURCE, { schemaShared: true })
+    expect(parsed.reasoning?.mode).toBe('effort')
+    expect(parsed.reasoning?.mandatory).toBeNull()
+    expect(parsed.factSources?.reasoning?.path).toBe(
+      'schema.input.properties.reasoning_effort',
+    )
+    expect(parsed.requestMap?.thinking?.off).toBeNull()
+    for (const metadata of [{}, { Reasoning: 'No' }]) {
+      expect(
+        parseCatalogModel({ ...model, metadata }, SOURCE, {
+          schemaShared: true,
+        }).reasoning,
+      ).toBeUndefined()
+    }
+    const schema = structuredClone(model.schema)
+    const field = schema.input.properties.reasoning_effort
+    Object.assign(field, { description: 'Accepted effort is model-dependent.' })
+    expect(
+      parseCatalogModel({ ...model, schema }, SOURCE, {
+        schemaShared: true,
+      }).reasoning,
+    ).toBeUndefined()
+  }
 })

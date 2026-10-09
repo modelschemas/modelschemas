@@ -1,3 +1,6 @@
+import nativeSdk from '../fixtures/bedrock-converse-native-sdk.json'
+import nativeThinkingGuides from '../fixtures/bedrock-native-thinking-guides.json'
+
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { price } from '@modelschemas/rate-card'
@@ -227,11 +230,12 @@ const PRICE_PAGE = `<h2>Geo and In-region Cross-region Inference</h2>
 <tbody><tr><td>Page Only</td><td>$2.00</td><td>$4.00</td></tr></tbody></table>`
 
 const PAGES: Record<string, string> = {
+  ...nativeThinkingGuides,
   [BEDROCK_CARDS_URL]: INDEX,
   [`${DOCS}model-card-anthropic-claude-sonnet-4-5.md`]: SONNET,
   [`${DOCS}model-card-openai-gpt-6-sol.md`]: GPT6,
   [`${DOCS}model-card-openai-gpt-54.md`]: GPT54,
-  [BEDROCK_SDK_MODEL_URL]: JSON.stringify(SDK_MODEL),
+  [BEDROCK_SDK_MODEL_URL]: JSON.stringify(nativeSdk),
   [BEDROCK_PRICE_LIST_URL]: JSON.stringify(PRICE_OFFER),
   [BEDROCK_PRICING_PAGE_URL]: PRICE_PAGE,
   [BEDROCK_METERED_URL]: JSON.stringify({
@@ -284,6 +288,8 @@ describe('amazon-bedrock', () => {
     expect(urls.filter((url) => !url.startsWith(DOCS)).sort()).toEqual(
       [
         BEDROCK_METERED_URL,
+        BEDROCK_SDK_MODEL_URL,
+        'https://docs.aws.amazon.com/nova/latest/nova2-userguide/using-converse-api.md',
         BEDROCK_PRICE_LIST_URL,
         BEDROCK_PRICING_PAGE_URL,
       ].sort(),
@@ -315,7 +321,7 @@ describe('amazon-bedrock', () => {
       // The card names no dollar amount, and the fixtures do not price it.
       pricing: null,
       capabilities: ['reasoning'],
-      reasoning: null,
+      reasoning: { mode: 'budget', mandatory: null },
       // Converse roles are user, assistant, system. No reasoning_effort.
       requestMap: {
         thinking: null,
@@ -334,6 +340,28 @@ describe('amazon-bedrock', () => {
       deprecated: true,
       releasedAt: Date.UTC(2025, 8, 30) / 1000,
       factSources: {
+        schemaEndpointId: {
+          derivation: 'docs-derived',
+          sourceUrl: cardUrl,
+          sourceHash: await sha256Text(SONNET),
+          path: 'Programmatic Access: bedrock-runtime model ID; APIs supported: Converse',
+        },
+        requestMap: {
+          derivation: 'generated',
+          sourceUrl: BEDROCK_SDK_MODEL_URL,
+          sourceHash: await sha256Text(JSON.stringify(nativeSdk)),
+          path: '#/operations/Converse/input',
+        },
+        reasoning: {
+          derivation: 'docs-derived',
+          sourceUrl: `${DOCS}claude-messages-extended-thinking.md`,
+          sourceHash: await sha256Text(
+            nativeThinkingGuides[
+              `${DOCS}claude-messages-extended-thinking.md` as keyof typeof nativeThinkingGuides
+            ],
+          ),
+          path: 'reasoning',
+        },
         contextWindow: { ...source, path: 'contextWindow' },
         maxOutput: { ...source, path: 'maxOutput' },
         modalities: { ...source, path: 'modalities' },
@@ -457,7 +485,7 @@ describe('amazon-bedrock', () => {
       bedrockReasoning('Supported (configurable: none, low, medium, high)'),
     ).toEqual({
       mode: 'effort',
-      mandatory: false,
+      mandatory: null,
       efforts: ['none', 'low', 'medium', 'high'],
     })
     expect(
@@ -659,14 +687,14 @@ Set reasoning effort to \`none\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, or \
     )
     expect(card?.reasoning).toEqual({
       mode: 'effort',
-      mandatory: false,
+      mandatory: null,
       efforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
     })
     expect(card?.capabilities).toEqual(['reasoning'])
   })
 
   it('generates the Converse schema from the SDK service model', async () => {
-    serve(PAGES)
+    serve({ ...PAGES, [BEDROCK_SDK_MODEL_URL]: JSON.stringify(SDK_MODEL) })
     const spec = await provider.fetchSpec({})
     const doc = spec.specs[0]
 
