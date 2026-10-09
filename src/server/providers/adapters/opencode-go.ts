@@ -1,3 +1,4 @@
+import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
 /** OpenCode Go: live ids, native catalog facts and documented routes; subscription prices stay null. */
 import type { Activity } from '#/db/schema.ts'
 
@@ -19,8 +20,6 @@ export const OPENCODE_GO_MODELS_URL = 'https://opencode.ai/zen/go/v1/models'
 export const OPENCODE_GO_DOCS_URL = 'https://opencode.ai/docs/go'
 
 export const OPENCODE_GO_DOCS_MARKDOWN = `${OPENCODE_GO_DOCS_URL}.md`
-
-const SPEC_SKIP = 'opencode-go: no first-party OpenAPI document — skipped'
 
 const FETCH_TIMEOUT_MS = 30_000
 
@@ -92,18 +91,38 @@ async function listModels(
   const models = parseOpencodeGoModels(payload).map((model): ModelInfo => {
     const row = byId[model.rawId]
     const enriched = { ...model, ...catalog[model.rawId] }
-    return row ? { ...enriched, ...row } : enriched
+    return row
+      ? {
+          ...enriched,
+          ...row,
+          factSources: {
+            ...enriched.factSources,
+            ...(row.schemaEndpointId
+              ? {
+                  schemaEndpointId: {
+                    derivation: 'docs-derived',
+                    sourceUrl: OPENCODE_GO_DOCS_URL,
+                    path: 'Endpoints',
+                  },
+                }
+              : {}),
+          },
+        }
+      : enriched
   })
   return { models }
 }
 
-function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  return Promise.resolve({
-    specs: [],
-    sources: [],
-    outputStrategy: 'post-200',
-    skipped: SPEC_SKIP,
+async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  const text = await fetchText(OPENCODE_GO_DOCS_MARKDOWN, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
+  const rows = parseDocsEndpoints(
+    text,
+    'opencode-go',
+    'https://opencode.ai/zen/go/',
+  )
+  return openCodeRouteSpec(rows, { url: OPENCODE_GO_DOCS_MARKDOWN, text }, true)
 }
 
 export const provider: ProviderConfig = {
@@ -113,7 +132,8 @@ export const provider: ProviderConfig = {
   modelsEndpoint: OPENCODE_GO_MODELS_URL,
   defaultDerivation: 'docs-derived',
   bindSyncedRoutesOnly: true,
+  bindStoredRoutesWithoutSchemas: true,
   fetchSpec,
   listModels,
-  classify: () => null,
+  classify: classifyOpenCodeRoute,
 }

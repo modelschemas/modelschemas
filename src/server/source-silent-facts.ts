@@ -23,6 +23,7 @@ export type ApiModelFactSources = Omit<
   | 'requestMap'
   | 'capabilities'
   | 'serverTools'
+  | 'schemaEndpointId'
 > & {
   contextWindow?: ApiFactSource
   maxOutput?: ApiFactSource
@@ -32,7 +33,7 @@ export type ApiModelFactSources = Omit<
   requestMap?: ApiFactSource
   capabilities?: Record<string, FactSource> | SourceSilentEvidence
   serverTools?: Record<string, FactSource> | SourceSilentEvidence
-  schemaEndpointId?: SourceSilentEvidence
+  schemaEndpointId?: ApiFactSource
   cacheRead?: SourceSilentEvidence
   efforts?: SourceSilentEvidence
 }

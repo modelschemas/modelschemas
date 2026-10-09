@@ -150,6 +150,7 @@ export interface FactSource {
 
 /** Per-field (and per-flag) provenance for a catalog row. */
 export interface ModelFactSources {
+  schemaEndpointId?: FactSource
   /** `normalized`: the id matched only after dots were read as hyphens. */
   sameAs?: FactSource & { normalized?: true }
   contextWindow?: FactSource
@@ -641,6 +642,8 @@ export interface ProviderConfig {
    * later (Replicate): a link to an unsynced route would 404.
    */
   bindSyncedRoutesOnly?: boolean
+  /** Bind a verified stored route even when its native source publishes no schemas. */
+  bindStoredRoutesWithoutSchemas?: boolean
   /**
    * Canonical generation route (public endpoint id) for a listed model.
    * Grain=provider catalogs use this so a client can go model id → input

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   OPENCODE_GO_DOCS_MARKDOWN,
+  OPENCODE_GO_DOCS_URL,
   OPENCODE_GO_MODELS_URL,
   parseGoDocs,
   provider,
@@ -107,6 +108,14 @@ function stubFetch(docs: string | Response) {
         typeof docs === 'string' ? new Response(docs) : docs,
       )
     }
+    if (
+      String(url).startsWith(
+        'https://raw.githubusercontent.com/anomalyco/opencode/dev/',
+      )
+    )
+      return Promise.resolve(
+        new Response('export function POST(input: APIEvent) {}'),
+      )
     return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
   }) as typeof fetch
   return urls
@@ -125,12 +134,19 @@ describe('opencode-go', () => {
       pricing: null,
       displayName,
       activity: 'chat',
+      factSources: {
+        schemaEndpointId: {
+          derivation: 'docs-derived',
+          sourceUrl: OPENCODE_GO_DOCS_URL,
+          path: 'Endpoints',
+        },
+      },
       schemaEndpointId:
         rawId === 'minimax-m3'
-          ? '/v1/messages'
+          ? 'v1/messages'
           : rawId === 'gpt-6-luna'
-            ? '/v1/responses'
-            : '/v1/chat/completions',
+            ? 'v1/responses'
+            : 'v1/chat/completions',
     })
     expect(listed.models).toEqual([
       row('minimax-m3', 'MiniMax M3'),
@@ -141,8 +157,11 @@ describe('opencode-go', () => {
       { rawId: 'glm-5', releasedAt: 1791316362, pricing: null },
     ])
     expect(provider.bindSyncedRoutesOnly).toBe(true)
-    expect(spec.skipped).toContain('skipped')
-    expect(urls).toEqual([
+    expect(spec.skipped).toBeUndefined()
+    expect(spec.specs[0]?.paths?.['/v1/messages']?.post).toMatchObject({
+      'x-modelschemas-route-only': true,
+    })
+    expect(urls.slice(0, 3)).toEqual([
       OPENCODE_GO_MODELS_URL,
       OPENCODE_GO_DOCS_MARKDOWN,
       OPENCODE_CATALOG_URL,

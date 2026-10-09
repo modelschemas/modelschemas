@@ -109,6 +109,14 @@ function serve(docs: string) {
     if (String(url) === OPENCODE_DOCS_MARKDOWN) {
       return Promise.resolve(new Response(docs))
     }
+    if (
+      String(url).startsWith(
+        'https://raw.githubusercontent.com/anomalyco/opencode/dev/',
+      )
+    )
+      return Promise.resolve(
+        new Response('export function POST(input: APIEvent) {}'),
+      )
     return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
   }) as typeof fetch
 }
@@ -174,7 +182,10 @@ describe('opencode', () => {
       activity: 'chat',
       pricing: null,
     })
-    expect(byId['big-pickle']?.factSources).toBeUndefined()
+    expect(byId['big-pickle']?.factSources?.pricing).toBeUndefined()
+    expect(byId['big-pickle']?.factSources?.schemaEndpointId?.sourceUrl).toBe(
+      OPENCODE_DOCS_URL,
+    )
     // Listed, but in neither docs table.
     expect(byId['claude-sonnet-5-5']).toEqual({
       rawId: 'claude-sonnet-5-5',
@@ -182,14 +193,16 @@ describe('opencode', () => {
       pricing: null,
     })
 
-    expect(byId['claude-opus-5-5']?.schemaEndpointId).toBe('/v1/messages')
-    expect(byId['gpt-5.5']?.schemaEndpointId).toBe('/v1/responses')
+    expect(byId['claude-opus-5-5']?.schemaEndpointId).toBe('v1/messages')
+    expect(byId['gpt-5.5']?.schemaEndpointId).toBe('v1/responses')
     expect(byId['gemini-3.1-pro']?.schemaEndpointId).toBe(
-      '/v1/models/gemini-3.1-pro',
+      'v1/models/gemini-3.1-pro',
     )
     expect(provider.bindSyncedRoutesOnly).toBe(true)
 
-    expect((await provider.fetchSpec({})).skipped).toContain('skipped')
+    expect(
+      (await provider.fetchSpec({})).specs[0]?.paths?.['/v1/messages']?.post,
+    ).toMatchObject({ 'x-modelschemas-route-only': true })
   })
 
   it('merges matching native facts and preserves per-model protocol routes', async () => {
@@ -222,7 +235,7 @@ describe('opencode', () => {
     expect(model).toMatchObject({
       contextWindow: 1234,
       maxOutput: 234,
-      schemaEndpointId: '/v1/messages',
+      schemaEndpointId: 'v1/messages',
       reasoning: { mode: 'budget', mandatory: null },
       requestMap: { replayReasoningContent: true },
     })

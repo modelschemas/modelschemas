@@ -2304,3 +2304,36 @@ describe('raw ids that slug to one row', () => {
     expect(rows[0]?.pricing).not.toBeNull()
   })
 })
+
+it('binds an opted-in native route with no schemas and derives no model facts', async () => {
+  const id = 'poll-native-route-only'
+  const deps = await freshDeps(id)
+  const provider: ProviderConfig = {
+    ...stubProvider(id, [
+      {
+        rawId: 'claude-example',
+        activity: 'chat',
+        schemaEndpointId: 'v1/messages',
+      },
+    ]),
+    bindSyncedRoutesOnly: true,
+    bindStoredRoutesWithoutSchemas: true,
+  }
+  await pollProviderModels(deps, provider)
+  expect(
+    (await storedRow(deps, id, 'claude-example')).schemaEndpointId,
+  ).toBeNull()
+  await deps.db.insert(endpoints).values({
+    id: `${id}/v1/messages`,
+    providerId: id,
+    activity: 'chat',
+    method: 'POST',
+    path: '/v1/messages',
+  })
+  await pollProviderModels(deps, provider)
+  const row = await storedRow(deps, id, 'claude-example')
+  expect(row.schemaEndpointId).toBe('v1/messages')
+  expect(row.reasoning).toBeNull()
+  expect(row.requestMap).toBeNull()
+  expect(row.capabilities).toBeNull()
+})
