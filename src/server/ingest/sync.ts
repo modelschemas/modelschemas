@@ -27,7 +27,7 @@ import type {
   EndpointProvenance,
   OpenApiOperation,
   ProviderConfig,
-  ProviderSecrets,
+  ProviderEnvironment,
   SpecFetchResult,
   SpecSource,
 } from '#/server/providers/types.ts'
@@ -51,7 +51,7 @@ import { dropModelsDevSchemaVersions } from './retire-models-dev.ts'
 export interface SyncDeps {
   db: Db
   kv: KVNamespace
-  secrets: ProviderSecrets
+  secrets: ProviderEnvironment
   /** Injectable clock (unix epoch seconds) for deterministic tests. */
   now?: () => number
 }

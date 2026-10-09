@@ -134,9 +134,25 @@ export function openRouterReasoning(
     } | null
   },
   gatewayEfforts?: ReadonlyArray<string>,
+  gatewayToggle?: boolean,
 ): ModelReasoning | null {
   const reasoning = row.reasoning
   if (!reasoning || typeof reasoning !== 'object') return null
+  for (const key of ['mandatory', 'supports_max_tokens'] as const) {
+    const value = reasoning[key]
+    if (value != null && typeof value !== 'boolean')
+      throw new Error(`openrouter: malformed native ${key}`)
+  }
+  const declared = reasoning.supported_efforts
+  if (
+    declared != null &&
+    (!Array.isArray(declared) ||
+      declared.some(
+        (value) =>
+          value != null && (typeof value !== 'string' || !value.length),
+      ))
+  )
+    throw new Error('openrouter: malformed native supported_efforts')
   if (typeof reasoning.mandatory !== 'boolean') return null
   const mandatory = reasoning.mandatory
   if (Array.isArray(reasoning.supported_efforts)) {
@@ -163,6 +179,8 @@ export function openRouterReasoning(
   if (reasoning.supports_max_tokens === true) {
     return { mode: 'budget', mandatory }
   }
+  if (gatewayToggle === true && mandatory === false)
+    return { mode: 'toggle', mandatory: false }
   return null
 }
 

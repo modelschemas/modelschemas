@@ -129,6 +129,12 @@ export interface ProviderSecrets {
   GITHUB_TOKEN?: string
 }
 
+/** Provider secrets plus native documentation runtime bindings. */
+export interface ProviderEnvironment extends ProviderSecrets {
+  /** Cloudflare Browser Rendering reads native public documents; no AI extraction. */
+  BROWSER?: Pick<BrowserRun, 'quickAction'>
+}
+
 /**
  * How one catalog fact was arrived at (issue #53). Strongest first:
  * listing → docs-extracted → bound schema (`Derivation` rungs).
@@ -624,10 +630,10 @@ export interface ProviderConfig {
    */
   connectByActivity?: Partial<Record<Activity, ProviderConnect>>
   /** Fetch + parse the provider's OpenAPI spec document(s). */
-  fetchSpec: (env: ProviderSecrets) => Promise<SpecFetchResult>
+  fetchSpec: (env: ProviderEnvironment) => Promise<SpecFetchResult>
   /** List currently served models from the provider's cheap models endpoint. */
   listModels: (
-    env: ProviderSecrets,
+    env: ProviderEnvironment,
     kv?: KVNamespace,
   ) => Promise<ListModelsResult>
   /**

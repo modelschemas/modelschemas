@@ -1,1 +1,19 @@
 - fireworks: maxOutput — Fireworks publishes no per-model completion cap. The token-limits FAQ says most models can generate up to the full context window and names only a 4096 cap for Llama 3.1 405B, which is not in the catalog; chat `max_tokens` is a request field, and the spec lowers it to fit the context window rather than stating a separate stored limit, https://docs.fireworks.ai/faq/models/inference/limitations-controls.md and https://docs.fireworks.ai/text-completion.openapi.yaml, checked 2026-10-08
+
+- `fireworks/accounts/fireworks/models/glm-5p3`: reasoning — Native inference/serverless catalog and host reasoning guide/OpenAPI publish no reasoning capability or model-scoped control declaration for this exact model/router. Maker GLM behavior and sibling model controls are not transferred., https://docs.fireworks.ai/guides/reasoning.md, checked 2026-10-09
+
+- `fireworks/accounts/fireworks/routers/glm-5p3-fast`: reasoning — Native inference/serverless catalog and host reasoning guide/OpenAPI publish no reasoning capability or model-scoped control declaration for this exact model/router. Maker GLM behavior and sibling model controls are not transferred., https://docs.fireworks.ai/guides/reasoning.md, checked 2026-10-09
+
+- `fireworks/accounts/fireworks/models/glm-5p3-flash`: reasoning — Native inference/serverless catalog and host reasoning guide/OpenAPI publish no reasoning capability or model-scoped control declaration for this exact model/router. Maker GLM behavior and sibling model controls are not transferred., https://docs.fireworks.ai/guides/reasoning.md, checked 2026-10-09
+
+- `fireworks/auto`: reasoning — Native inference/serverless catalog and host reasoning guide/OpenAPI publish no reasoning capability or model-scoped control declaration for this exact model/router. Maker GLM behavior and sibling model controls are not transferred., https://docs.fireworks.ai/guides/reasoning.md, checked 2026-10-09
+
+- `fireworks/firerouter/auto`: reasoning — Native inference/serverless catalog and host reasoning guide/OpenAPI publish no reasoning capability or model-scoped control declaration for this exact model/router. Maker GLM behavior and sibling model controls are not transferred., https://docs.fireworks.ai/guides/reasoning.md, checked 2026-10-09
+
+- `fireworks/accounts/fireworks/models/nemotron-3-ultra-nvfp4`: reasoning — Own native model metadata description declares reasoning capability, while host OpenAPI/guide publishes no model-scoped request control mode for this exact model; maker template behavior and sibling controls are not transferred., https://api.fireworks.ai/v1/accounts/fireworks/models/nemotron-3-ultra-nvfp4, checked 2026-10-09
+
+- `fireworks/accounts/fireworks/models/ember-1`: reasoning — Own native model metadata description declares reasoning capability, while host OpenAPI/guide publishes no model-scoped request control mode for this exact model; maker template behavior and sibling controls are not transferred., https://api.fireworks.ai/v1/accounts/fireworks/models/ember-1, checked 2026-10-09
+
+- `fireworks/accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b`: reasoning — Own native model metadata description declares reasoning capability, while host OpenAPI/guide publishes no model-scoped request control mode for this exact model; maker template behavior and sibling controls are not transferred., https://api.fireworks.ai/v1/accounts/fireworks/models/nemotron-lightning-3p5-30b-a3b, checked 2026-10-09
+
+- `fireworks/accounts/fireworks/models/inkling`: reasoning — Own native model metadata description declares reasoning capability, while host OpenAPI/guide publishes no model-scoped request control mode for this exact model; maker template behavior and sibling controls are not transferred., https://api.fireworks.ai/v1/accounts/fireworks/models/inkling, checked 2026-10-09

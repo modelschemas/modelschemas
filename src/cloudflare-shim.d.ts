@@ -19,3 +19,6 @@ declare module 'cloudflare:workers' {
   /** Extends the current request's lifetime past the response (workerd-native). */
   export function waitUntil(promise: Promise<unknown>): void
 }
+
+/** Cloudflare Browser Rendering binding; keep runtime globals scoped. */
+type BrowserRun = import('@cloudflare/workers-types').BrowserRun

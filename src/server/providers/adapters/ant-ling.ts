@@ -2,10 +2,14 @@
 import { cachedDocs } from '../model-facts.ts'
 import { tagDocsFacts } from '../fact-sources.ts'
 import { bearerConnect } from '../connect.ts'
-import { fetchText, sha256Text } from '../types.ts'
+import { sha256Text } from '../types.ts'
 import { SHARED_EFFORT_LEVELS } from '../request-map.ts'
 import type { ChatRequestMap, EffortLevelMap } from '../request-map.ts'
-import type { ModelInfo, ProviderConfig } from '../types.ts'
+import type {
+  ModelInfo,
+  ProviderConfig,
+  ProviderEnvironment,
+} from '../types.ts'
 import {
   ANT_OPENAI,
   ANT_OVERVIEW,
@@ -28,11 +32,84 @@ import {
   antSpec,
 } from '../ant-ling-docs.ts'
 
-async function load(url: string, kv?: KVNamespace) {
-  return cachedDocs(kv, `ant-ling:${url}`, async () => {
-    const html = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
-    return { html, hash: await sha256Text(html) }
+function validateNativeArticle(html: string): void {
+  if (
+    /window\.netd\s*=|id=["']netd-iframe["']|waf\.alipay\.com\/api\/v1\/sec-human-appeal/.test(
+      html,
+    )
+  )
+    throw new Error('native documentation blocked by Alipay WAF/captcha')
+  article(html)
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+async function browserHtml(
+  url: string,
+  env: ProviderEnvironment,
+): Promise<string> {
+  if (!env.BROWSER || typeof env.BROWSER.quickAction !== 'function')
+    throw new Error('Cloudflare Browser Rendering BROWSER binding is required')
+  const response = await env.BROWSER.quickAction('content', {
+    url,
+    gotoOptions: { timeout: 30_000, waitUntil: 'domcontentloaded' },
+    actionTimeout: 30_000,
   })
+  if (!response.ok)
+    throw new Error(
+      `Cloudflare Browser Rendering request failed: HTTP ${response.status}`,
+    )
+  const body: unknown = await response.json()
+  if (
+    !record(body) ||
+    body.success !== true ||
+    typeof body.result !== 'string' ||
+    !record(body.meta)
+  )
+    throw new Error('unreadable Cloudflare Browser Rendering content response')
+  const meta = body.meta
+  if (
+    typeof meta.status !== 'number' ||
+    !Number.isInteger(meta.status) ||
+    meta.status < 200 ||
+    meta.status >= 300
+  )
+    throw new Error(
+      `Cloudflare Browser Rendering native page failed: status ${String(meta.status)}`,
+    )
+  if (
+    typeof meta.finalUrl !== 'string' ||
+    new URL(meta.finalUrl).href !== new URL(url).href
+  )
+    throw new Error('Cloudflare Browser Rendering native page URL mismatch')
+  return body.result
+}
+
+async function load(url: string, env: ProviderEnvironment, kv?: KVNamespace) {
+  try {
+    if (!env.BROWSER || typeof env.BROWSER.quickAction !== 'function')
+      throw new Error(
+        'Cloudflare Browser Rendering BROWSER binding is required',
+      )
+    const doc = await cachedDocs(
+      kv,
+      `ant-ling:${url}#cloudflare-browser-content-v1`,
+      async () => {
+        const html = await browserHtml(url, env)
+        validateNativeArticle(html)
+        return { html, hash: await sha256Text(html) }
+      },
+    )
+    validateNativeArticle(doc.html)
+    return doc
+  } catch (error) {
+    throw new Error(
+      `ant-ling: native source ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
+  }
 }
 export const provider: ProviderConfig = {
   id: 'ant-ling',
@@ -42,12 +119,19 @@ export const provider: ProviderConfig = {
   defaultDerivation: 'docs-derived',
   bindSyncedRoutesOnly: true,
   connect: bearerConnect('https://api.ant-ling.com'),
-  async listModels(_env, kv) {
-    const [api, overview, pricing, ling, ring, effort] = await Promise.all(
-      [ANT_OPENAI, ANT_OVERVIEW, ANT_PRICE, ANT_LING, ANT_RING, ANT_EFFORT].map(
-        (url) => load(url, kv),
-      ),
-    )
+  async listModels(env, kv) {
+    // Sequential cache misses keep browser requests within session capacity.
+    const sources = []
+    for (const url of [
+      ANT_OPENAI,
+      ANT_OVERVIEW,
+      ANT_PRICE,
+      ANT_LING,
+      ANT_RING,
+      ANT_EFFORT,
+    ])
+      sources.push(await load(url, env, kv))
+    const [api, overview, pricing, ling, ring, effort] = sources
     if (!api || !overview || !pricing || !ling || !ring || !effort)
       throw new Error('ant-ling: missing loaded source')
     const overviewIds = overviewContextIds(overview.html)
@@ -237,8 +321,8 @@ export const provider: ProviderConfig = {
       ),
     }
   },
-  async fetchSpec(_env) {
-    const api = await load(ANT_OPENAI)
+  async fetchSpec(env) {
+    const api = await load(ANT_OPENAI, env)
     return {
       specs: [antSpec(api.html)],
       sources: [{ url: ANT_OPENAI, hash: api.hash }],

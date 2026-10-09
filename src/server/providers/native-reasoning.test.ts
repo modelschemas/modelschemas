@@ -21,12 +21,15 @@ import {
   TOGETHER_DEEPSEEK_URL,
 } from './together-native-thinking.ts'
 
+import openRouterGuide from './fixtures/openrouter-native-toggle.json'
+
 const docs = nativeDocs as Record<string, string>
 const originalFetch = globalThis.fetch
 function serve() {
   globalThis.fetch = async (input) => {
     const url = String(input)
-    const body = docs[url]
+    const body =
+      url === openRouterGuide.sourceUrl ? openRouterGuide.markdown : docs[url]
     if (body === undefined) throw new Error(`unexpected native source ${url}`)
     return new Response(body)
   }
@@ -99,12 +102,15 @@ it('reads Mistral normative scoped control values and the model-specific overrid
   expect(silentMandatory.get('mistral-large-4-0')?.mandatory).toBeNull()
   expect(silentMandatory.get('zai-glm-5-3')?.mandatory).toBeNull()
 })
-it('keeps OpenRouter native capability when mode metadata is incomplete', async () => {
+it('binds own OpenRouter gateway toggle when native effort metadata is absent', async () => {
   serve()
   const { models } = await openrouterProvider.listModels({})
   expect(models).toHaveLength(3)
   for (const model of models) expect(model.capabilities).toContain('reasoning')
-  expect(models.find((m) => m.rawId === 'qwen/qwen3-max')?.reasoning).toBeNull()
+  expect(models.find((m) => m.rawId === 'qwen/qwen3-max')?.reasoning).toEqual({
+    mode: 'toggle',
+    mandatory: false,
+  })
   expect(openRouterReasoning({ reasoning: { mandatory: false } })).toBeNull()
   expect(() => openrouterCapabilities({ reasoning: [] })).toThrow(
     'unreadable native reasoning',
@@ -219,9 +225,7 @@ it('uses Together own preserved-thinking wire and keeps undocumented sibling con
     evidence,
   )
   expect(flash.capabilities).toContain('reasoning')
-  expect(flash.requestMap?.thinking).toBeNull()
-  expect(flash.requestMap?.reasoningEffort).toBeNull()
-  expect(flash.requestMap?.replayReasoningContent).toBeNull()
+  expect(flash.requestMap).toBeNull()
 })
 
 it('preserves native map provenance, capability negatives and explicit replay rejections', async () => {

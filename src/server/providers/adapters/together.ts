@@ -18,6 +18,8 @@ import {
   applyTogetherDocs,
   loadTogetherQuickstart,
   loadTogetherReasoningPage,
+  togetherGptOssFamilyMatches,
+  togetherNamedHybridMatches,
   loadTogetherServerlessChat,
   reasoningHit,
   supportedFactSources,
@@ -259,6 +261,7 @@ async function listModels(
       factSources.maxOutput = listingFact('config.max_output_length')
     const model: ModelInfo = {
       rawId: item.id as string,
+      requestMap: null,
       displayName:
         typeof item.display_name === 'string' ? item.display_name : null,
       activity,
@@ -312,6 +315,47 @@ async function listModels(
         id,
         reasoningHit(mode, TOGETHER_REASONING_URL, reasoningPage.hash),
       )
+    }
+    if (reasoningPage.gptOssFamily) {
+      for (const model of models) {
+        if (
+          model.activity !== 'chat' ||
+          !togetherGptOssFamilyMatches(model.displayName ?? null) ||
+          reasoning.has(model.rawId)
+        )
+          continue
+        reasoning.set(
+          model.rawId,
+          reasoningHit(
+            reasoningPage.gptOssFamily,
+            TOGETHER_REASONING_URL,
+            reasoningPage.hash,
+            reasoningPage.familyThinking.effort,
+          ),
+        )
+      }
+    }
+    if (reasoningPage.namedHybrid) {
+      for (const model of models) {
+        if (
+          model.activity !== 'chat' ||
+          !togetherNamedHybridMatches(
+            model.rawId,
+            reasoningPage.namedHybrid.nativeBasename,
+          ) ||
+          reasoning.has(model.rawId)
+        )
+          continue
+        reasoning.set(
+          model.rawId,
+          reasoningHit(
+            reasoningPage.namedHybrid.reasoning,
+            TOGETHER_REASONING_URL,
+            reasoningPage.hash,
+            reasoningPage.familyThinking.hybrid,
+          ),
+        )
+      }
     }
   }
   TOGETHER_REASONING_QUICKSTARTS.forEach((url, index) => {
