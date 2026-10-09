@@ -1,3 +1,4 @@
+import nativeDocs from '../fixtures/native-reasoning-docs.json'
 import { describe, expect, it } from 'vitest'
 
 import { price } from '@modelschemas/rate-card'
@@ -337,15 +338,28 @@ function installTogetherFetch(docsFetches?: { count: number }): () => void {
       )
     }
     if (target.includes('.md') && docsFetches) docsFetches.count += 1
+    if (target.includes('/deepseek-v4-quickstart.md'))
+      return textResponse(
+        nativeDocs['https://docs.together.ai/docs/deepseek-v4-quickstart.md'],
+      )
     if (target.includes('/serverless/models.md')) {
       return textResponse(LIST_DOCS)
     }
     if (target.includes('/inference/chat/reasoning.md')) {
-      return textResponse(LIST_REASONING)
+      return textResponse(
+        LIST_REASONING +
+          '\n' +
+          nativeDocs[
+            'https://docs.together.ai/docs/inference/chat/reasoning.md'
+          ],
+      )
     }
     if (target.includes('/kimi-k3-quickstart.md'))
       return textResponse(LIST_KIMI)
-    if (target.includes('/glm-5.3-quickstart.md')) return textResponse(LIST_GLM)
+    if (target.includes('/glm-5.3-quickstart.md'))
+      return textResponse(
+        nativeDocs['https://docs.together.ai/docs/glm-5.3-quickstart.md'],
+      )
     if (target.endsWith('/gpt-oss.md')) return textResponse(LIST_GPT)
     expect(target).toBe('https://api.together.xyz/v1/models')
     return Promise.resolve(
@@ -443,26 +457,6 @@ The model ID is \`moonshotai/Kimi-K3\`.
 | - | - |
 | \`reasoning_effort\` | \`"low"\`, \`"medium"\`, \`"high"\`, or \`"max"\` (default). |
 | \`reasoning\` | \`{"enabled": False}\` disables thinking entirely. |
-`
-
-const LIST_GLM = `
-| Model | Model ID | Input / 1M tokens |
-| - | - | - |
-| GLM-5.3 | \`zai-org/GLM-5.3\` | \\$1.40 |
-| GLM-5.3 Flash | \`zai-org/GLM-5.3-Flash\` | \\$0.15 |
-
-## Set the reasoning effort
-
-\`reasoning_effort\` accepts \`"low"\`, \`"medium"\`, \`"high"\`, and \`"max"\`.
-
-Thinking cannot be disabled entirely on GLM-5.3.
-
-\`\`\`python
-completion = client.chat.completions.create(
-    model="zai-org/GLM-5.3",
-    reasoning_effort="max",
-)
-\`\`\`
 `
 
 const LIST_GPT = `

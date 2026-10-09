@@ -495,7 +495,7 @@ describe('gemini features (issue #77)', () => {
       )
     })
 
-    it('keeps page thinking levels only when the API says the model thinks', () => {
+    it('uses native page thinking levels even when listing omits its flag', () => {
       const body = [
         '- Configurable Thinking levels (`minimal`, `medium` default, and `high`).',
         '## gemini-nano-banana-2.1',
@@ -519,7 +519,9 @@ describe('gemini features (issue #77)', () => {
             },
           },
         })
-        expect(features('gemini-nano-banana-2.1', false).reasoning).toBeNull()
+        expect(features('gemini-nano-banana-2.1', undefined).reasoning).toEqual(
+          features('gemini-nano-banana-2.1', true).reasoning,
+        )
       })
     })
 

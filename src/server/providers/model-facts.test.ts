@@ -172,7 +172,7 @@ Reasoning.effort supports: minimal, low, medium, and high.
       ],
       reasoning: {
         mode: 'effort',
-        mandatory: true,
+        mandatory: null,
         efforts: ['minimal', 'low', 'medium', 'high'],
       },
       // Docs names map to Responses tool types; client-side ones drop.
@@ -204,18 +204,15 @@ Reasoning.effort supports: minimal, low, medium, and high.
       ),
     ).toEqual({
       mode: 'effort',
-      mandatory: true,
+      mandatory: null,
       efforts: ['medium', 'high', 'xhigh'],
     })
     expect(
       parseReasoningEffort(
         'GPT-5 Pro defaults to (and only supports) `reasoning.effort: high`.',
       ),
-    ).toEqual({ mode: 'effort', mandatory: true, efforts: ['high'] })
-    expect(parseReasoningEffort('No effort prose.')).toEqual({
-      mode: 'effort',
-      mandatory: true,
-    })
+    ).toEqual({ mode: 'effort', mandatory: null, efforts: ['high'] })
+    expect(parseReasoningEffort('No effort prose.')).toBeNull()
   })
 
   it('resolves listed ids to index slugs, dated snapshots via the alias', () => {

@@ -22,6 +22,10 @@ import {
   loadDashscopeModelLimits,
 } from '../dashscope-model-limits.ts'
 import type { DashscopeLimitsDoc } from '../dashscope-model-limits.ts'
+import {
+  dashscopeThinking,
+  applyDashscopeThinking,
+} from '../dashscope-thinking.ts'
 import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
 import {
   compatGenerationEndpointId,
@@ -379,7 +383,9 @@ function withCompat(
     ...model,
     requestMap: compat.requestMap,
     capabilities: flags,
-    exactCapabilities: true,
+    // This shared request table does not enumerate model-specific reasoning
+    // capabilities. Omitted flags remain unknown, not a sourced rejection.
+    exactCapabilities: false,
     factSources: sources,
   }
 }
@@ -464,6 +470,9 @@ async function listModels(
     }
     page += 1
   }
+  const thinking = listed.some((model) => model.activity === 'chat')
+    ? await dashscopeThinking(kv)
+    : null
   const compat = await tryDocs(run, DASHSCOPE_COMPAT_URL, (cached) =>
     cached(kv, DASHSCOPE_COMPAT_URL, async () =>
       parseDashscopeCompat(await fetchText(DASHSCOPE_COMPAT_URL, DOCS_INIT)),
@@ -488,8 +497,8 @@ async function listModels(
     )
   }
   return {
-    models: listed.map((model) =>
-      withCompat(
+    models: listed.map((model) => {
+      const configured = withCompat(
         needsModelPage(model)
           ? applyModelLimits(
               model,
@@ -498,8 +507,11 @@ async function listModels(
             )
           : model,
         compat,
-      ),
-    ),
+      )
+      return thinking
+        ? applyDashscopeThinking(configured, thinking)
+        : configured
+    }),
     docsFailures: docsReport(run),
   }
 }

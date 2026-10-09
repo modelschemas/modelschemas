@@ -4,6 +4,10 @@
  * Platform/admin (files, fine-tunes, endpoints, batches, rerank) classify
  * null. listModels requires TOGETHER_API_KEY; Together returns a bare array.
  */
+import {
+  togetherNativeThinking,
+  applyTogetherNativeThinking,
+} from '../together-native-thinking.ts'
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
@@ -281,6 +285,9 @@ async function listModels(
     }
     models.push(model)
   }
+  const nativeThinking = models.some((model) => model.activity === 'chat')
+    ? await togetherNativeThinking(kv)
+    : []
   const supported = await togetherSupportedFacts(key)
   const docs = docsRun()
   const [chatDocs, reasoningPage, quickstarts] = await Promise.all([
@@ -327,11 +334,14 @@ async function listModels(
       }
       const merged = mergeSources(model.factSources, extra?.factSources)
       if (merged) withSupported.factSources = merged
-      return applyTogetherDocs(
-        withSupported,
-        chatDocs,
-        reasoning,
-        pageMeta.loaded ? pageMeta : null,
+      return applyTogetherNativeThinking(
+        applyTogetherDocs(
+          withSupported,
+          chatDocs,
+          reasoning,
+          pageMeta.loaded ? pageMeta : null,
+        ),
+        nativeThinking,
       )
     }),
     docsFailures: docsReport(docs),

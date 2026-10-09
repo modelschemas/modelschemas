@@ -115,9 +115,22 @@ export function parseGlmReplay(text: string): Array<string> {
       ),
     ),
   ]
+  const interleaved = text
+    .split(/^## /m)
+    .find((part) => /^\*\*Interleaved thinking/.test(part))
+  // The native guide names the first supported model explicitly. It does
+  // not enumerate variants; only that exact id gets this tool-turn rule.
+  const since = interleaved?.match(
+    /supported since (GLM-\d+(?:\.\d+)?(?:-[A-Za-z0-9]+)*)(?![\w-]|\.\d)/,
+  )?.[1]
+  if (
+    since &&
+    /thinking blocks should be explicitly preserved/i.test(plain(interleaved))
+  )
+    ids.push(since.toLowerCase())
   if (ids.length === 0)
     throw new Error('glm: thinking-mode guide names no supported model ids')
-  return ids
+  return [...new Set(ids)]
 }
 
 export function parseKimiReplay(text: string): Array<string> {
