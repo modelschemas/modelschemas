@@ -69,7 +69,9 @@ const getCatalog = createServerFn({ method: 'GET' })
       ).providers
       if (!report) continue
       const counted = FACT_KEYS.filter(
-        (key) => !report.silent.includes(key) && report.facts[key].need > 0,
+        (key) =>
+          !report.silent.includes(key) &&
+          report.facts[key].need - (report.modelSilent?.[key] ?? 0) > 0,
       )
       const missing = counted.filter((key) => report.facts[key].have === 0)
       completeness[row.id] = {

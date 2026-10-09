@@ -132,6 +132,7 @@ async function scoreCompleteness(
     rows.map(
       (row): ModelRow => ({
         provider: row.providerId,
+        rawId: row.rawId,
         activity: row.activity,
         contextWindow: row.contextWindow,
         maxOutput: row.maxOutput,

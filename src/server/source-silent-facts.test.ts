@@ -141,3 +141,85 @@ describe('source-silent API evidence', () => {
     ).toBeNull()
   })
 })
+
+describe('model-scoped replay silence evidence', () => {
+  const scoped = parseSourceSilentEvidence(
+    '- synthetic/maker/model: replayReasoningContent — absent, https://example.com/model, checked 2026-10-09\n- synthetic/maker/model: maxOutput — absent',
+  )
+  it('adds only exact native-model leaf evidence without inventing a value or parent source', () => {
+    const model = {
+      ...row,
+      rawId: 'maker/model',
+      requestMap: {
+        maxTokensField: 'max_tokens',
+        replayReasoningContent: null,
+      },
+    }
+    const source = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://example.com/body',
+    }
+    const stored = {
+      requestMap: source,
+      requestMapFields: { maxTokensField: source },
+      sameAs: { derivation: 'listing' as const },
+    }
+    expect(withSourceSilentEvidence(model, null, stored, scoped)).toMatchObject(
+      {
+        requestMap: source,
+        requestMapFields: {
+          maxTokensField: source,
+          replayReasoningContent: {
+            derivation: 'source-silent',
+            sourceUrl: 'https://example.com/model',
+            checkedAt: '2026-10-09',
+          },
+        },
+        sameAs: stored.sameAs,
+        maxOutput: { derivation: 'source-silent' },
+      },
+    )
+    expect(model.requestMap.replayReasoningContent).toBeNull()
+    expect(stored.requestMapFields).not.toHaveProperty('replayReasoningContent')
+    expect(
+      withSourceSilentEvidence(
+        { ...model, rawId: 'maker/model-snapshot' },
+        null,
+        stored,
+        scoped,
+      ),
+    ).toEqual(stored)
+  })
+  it('preserves true and false replay facts and their original provenance', () => {
+    const source = {
+      derivation: 'docs-derived' as const,
+      sourceUrl: 'https://example.com/known',
+    }
+    const stored = { requestMapFields: { replayReasoningContent: source } }
+    for (const replayReasoningContent of [true, false]) {
+      const result = withSourceSilentEvidence(
+        {
+          ...row,
+          rawId: 'maker/model',
+          maxOutput: 1,
+          requestMap: { replayReasoningContent },
+        },
+        null,
+        stored,
+        scoped,
+      )
+      expect(result).toEqual(stored)
+    }
+  })
+  it('adds leaf evidence for missing request maps without fabricating a request map', () => {
+    const model = { ...row, rawId: 'maker/model' }
+    expect(
+      withSourceSilentEvidence(model, null, null, scoped)?.requestMapFields
+        ?.replayReasoningContent?.derivation,
+    ).toBe('source-silent')
+    expect(model.requestMap).toBeNull()
+    expect(
+      withSourceSilentEvidence(model, null, null, scoped),
+    ).not.toHaveProperty('requestMap')
+  })
+})

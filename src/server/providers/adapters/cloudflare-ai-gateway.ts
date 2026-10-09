@@ -476,6 +476,8 @@ function parsedReasoning(
   }
   if (schemaShared) return null
   if (adaptiveThinking(schema, rawId)) {
+    const alwaysOn =
+      metaString(metadata, 'Adaptive Thinking', rawId) === 'Always on'
     const effort = fields.filter(
       (field) => field.wire === 'output_config.effort',
     )
@@ -486,15 +488,21 @@ function parsedReasoning(
     if (others.length > 0 || effort.length > 1) return null
     if (!only) {
       return {
-        reasoning: { mode: 'adaptive', mandatory: true },
+        reasoning: { mode: 'adaptive', mandatory: alwaysOn ? true : null },
         wire: null,
         path: 'schema.input.properties.thinking.type',
       }
     }
+    if (alwaysOn && only.efforts.includes('none'))
+      throw fail(rawId, 'Always on thinking contradicts the none effort')
     return {
       reasoning: {
         mode: 'adaptive',
-        mandatory: only.efforts.includes('none') ? false : true,
+        mandatory: alwaysOn
+          ? true
+          : only.efforts.includes('none')
+            ? false
+            : null,
         efforts: only.efforts,
       },
       wire: only.wire,
