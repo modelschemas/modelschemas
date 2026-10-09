@@ -163,7 +163,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v27: native reasoning controls now distinguish published levels, mandatory
 // status and genuine source silence. Re-read cached parsed facts so earlier
 // guesses cannot survive the new parsers until the six-hour TTL expires.
-const DOCS_CACHE_VERSION = 'v27'
+// v28: re-read native budget applicability and replay declarations after the
+// scoped guide enrichments and stricter normative-prose checks.
+const DOCS_CACHE_VERSION = 'v28'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

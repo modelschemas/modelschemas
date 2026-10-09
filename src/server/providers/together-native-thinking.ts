@@ -19,6 +19,12 @@ interface Evidence {
   hash: string
   url: string
 }
+const normativeSentences = (text: string): string[] =>
+  text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/<[^>]+>/g, '')
+    .split(/[.!?]\s+|\n/)
+    .map((sentence) => sentence.trim())
 const modelsInSamples = (text: string): Array<string> => [
   ...new Set(
     [...text.matchAll(/model[=:]\s*["']([\w.+-]+\/[\w.+-]+)["']/g)].flatMap(
@@ -50,8 +56,10 @@ export function parseTogetherNativeThinking(
     )?.[1]
   if (
     preserved &&
-    /(?:include the unmodified|return the model's) `reasoning_content`/i.test(
-      preserved,
+    normativeSentences(preserved).some((sentence) =>
+      /^When using preserved thinking, (?:include the unmodified|return the model's) `reasoning_content`/i.test(
+        sentence,
+      ),
     )
   ) {
     for (const id of modelsInSamples(preserved)) replay.add(id)
@@ -60,11 +68,15 @@ export function parseTogetherNativeThinking(
   // when its response uses the reasoning alias. Scope to the page's own ID.
   if (
     named &&
-    /For multi-turn function calling, pass the assistant message's reasoning trace back/i.test(
-      markdown,
+    normativeSentences(markdown).some((sentence) =>
+      /^For multi-turn function calling, pass the assistant message's reasoning trace back/i.test(
+        sentence,
+      ),
     ) &&
-    /Include the assistant message's `content`, `reasoning_content`, and `tool_calls`/i.test(
-      markdown,
+    normativeSentences(markdown).some((sentence) =>
+      /^Include the assistant message's `content`, `reasoning_content`, and `tool_calls`/i.test(
+        sentence,
+      ),
     )
   )
     replay.add(named)

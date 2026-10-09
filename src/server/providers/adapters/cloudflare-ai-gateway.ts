@@ -441,7 +441,7 @@ function adaptiveThinking(schema: unknown, rawId: string): boolean {
 function effortReasoning(field: EffortField): ModelReasoning {
   return {
     mode: 'effort',
-    mandatory: field.efforts.includes('none') ? false : null,
+    mandatory: null,
     efforts: field.efforts,
   }
 }
@@ -451,6 +451,7 @@ function parsedReasoning(
   schema: unknown,
   rawId: string,
   schemaShared: boolean,
+  nativeReasoningTag: boolean,
 ): ParsedReasoning | null {
   const stated = metaString(metadata, 'Reasoning', rawId)
   if (stated === 'No') return null
@@ -474,8 +475,24 @@ function parsedReasoning(
       path: 'metadata.Reasoning',
     }
   }
-  if (schemaShared) return null
-  if (adaptiveThinking(schema, rawId)) {
+  // Identical schemas do not negate an exact catalog's unqualified control.
+  const adaptive = adaptiveThinking(schema, rawId)
+  const adaptiveDeclaration = metaString(metadata, 'Adaptive Thinking', rawId)
+  const ownedAdaptive =
+    adaptive &&
+    (adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on')
+  const ownedResponses =
+    nativeReasoningTag &&
+    metaString(metadata, 'API', rawId) === 'Responses' &&
+    fields.length === 1
+  if (
+    schemaShared &&
+    !(stated === 'Yes' && fields.length === 1) &&
+    !ownedAdaptive &&
+    !ownedResponses
+  )
+    return null
+  if (adaptive) {
     const alwaysOn =
       metaString(metadata, 'Adaptive Thinking', rawId) === 'Always on'
     const effort = fields.filter(
@@ -493,16 +510,10 @@ function parsedReasoning(
         path: 'schema.input.properties.thinking.type',
       }
     }
-    if (alwaysOn && only.efforts.includes('none'))
-      throw fail(rawId, 'Always on thinking contradicts the none effort')
     return {
       reasoning: {
         mode: 'adaptive',
-        mandatory: alwaysOn
-          ? true
-          : only.efforts.includes('none')
-            ? false
-            : null,
+        mandatory: alwaysOn ? true : null,
         efforts: only.efforts,
       },
       wire: only.wire,
@@ -614,7 +625,7 @@ function toolsPath(
 }
 
 function effortLevels(efforts: Array<string>): EffortLevelMap {
-  const off = efforts.includes('none') ? 'none' : null
+  const off = null
   return {
     off,
     minimal: efforts.includes('minimal') ? 'minimal' : null,
@@ -643,7 +654,7 @@ function thinkingRequest(parsed: ParsedReasoning): ThinkingRequest | null {
   const efforts = parsed.reasoning.efforts
   if (!parsed.wire || !efforts?.includes('high')) return null
   const canStop =
-    parsed.reasoning.mandatory !== true && efforts.includes('none')
+    parsed.reasoning.mandatory === false && efforts.includes('none')
   return {
     on: thinkingOn(parsed.wire, false),
     off: canStop ? thinkingOn(parsed.wire, true) : null,
@@ -716,7 +727,13 @@ export function parseCatalogModel(
   const schema = schemaInput(model, rawId)
   const schemaShared = options?.schemaShared === true
   const modalities = inputModalities(metadata, rawId, activity)
-  const parsed = parsedReasoning(metadata, schema, rawId, schemaShared)
+  const parsed = parsedReasoning(
+    metadata,
+    schema,
+    rawId,
+    schemaShared,
+    tags.includes('Reasoning'),
+  )
   const requestMap = gatewayRequestMap(
     activity,
     maxTokenField(schema, rawId),

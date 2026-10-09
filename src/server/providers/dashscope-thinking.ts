@@ -7,7 +7,10 @@ import type { ModelInfo } from './types.ts'
 export const DASHSCOPE_THINKING_URL =
   'https://www.alibabacloud.com/help/en/model-studio/deep-thinking.md'
 interface ThinkingDoc {
-  models: Record<string, { hybrid: boolean }>
+  models: Record<
+    string,
+    { hybrid: boolean; budget?: boolean; mandatory?: boolean | null }
+  >
   replay: Array<string>
   hash: string
 }
@@ -29,6 +32,31 @@ export function parseDashscopeThinking(
     )
   )
     throw new Error('dashscope thinking: missing native modes')
+  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const budgetLine = prose
+    .split('\n')
+    .find((line) => /`thinking_budget`[^\n]*Applicable to /.test(line))
+  if (
+    budgetLine &&
+    /\b(?:not|never|cannot|unsupported|except)\b|\b(?:can't|don't|doesn't|isn't)\b/i.test(
+      budgetLine,
+    )
+  )
+    throw new Error('dashscope thinking: negated native budget declaration')
+  const budgetScope = budgetLine?.match(
+    /Applicable to ([^\n]+?) series models\./,
+  )?.[1]
+  if (!budgetScope)
+    throw new Error('dashscope thinking: missing native thinking-budget scope')
+  const budgetFamilies = budgetScope
+    .split(/,|\band\b/)
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+  if (
+    !budgetFamilies.length ||
+    budgetFamilies.some((value) => !/^[a-z0-9.-]+$/.test(value))
+  )
+    throw new Error('dashscope thinking: malformed native budget families')
   const models: ThinkingDoc['models'] = {}
   for (const raw of scope.split('\n')) {
     const line = raw.replace(/<[^>]+>/g, '').trim()
@@ -40,6 +68,16 @@ export function parseDashscopeThinking(
         '',
       ),
     )
+    if (
+      names.length &&
+      /thinking.mode only|only thinking mode|thinking-only mode/i.test(line) &&
+      /\b(?:not|never|no|unsupported)\b|\b(?:can't|don't|doesn't|isn't)\b/i.test(
+        line,
+      )
+    )
+      throw new Error(
+        'dashscope thinking: negated native model mode declaration',
+      )
     for (const id of names) {
       // The supported-model section includes thinking models whose control
       // details are absent. Their capability is still independently stated.
@@ -47,7 +85,21 @@ export function parseDashscopeThinking(
       const previous = models[id]
       if (previous && previous.hybrid !== hybrid)
         throw new Error(`dashscope thinking: conflicting mode for ${id}`)
-      models[id] = { hybrid }
+      const only =
+        /thinking.mode only|only thinking mode|thinking-only mode|only thinking mode supported/i.test(
+          line,
+        )
+      const budget = budgetFamilies.some(
+        (family) =>
+          id.toLowerCase() === family ||
+          id.toLowerCase().startsWith(family + '-') ||
+          id.toLowerCase().startsWith(family + '.') ||
+          id.toLowerCase().startsWith(family + '/'),
+      )
+      models[id] = {
+        hybrid,
+        ...(budget ? { budget: true, mandatory: only ? true : null } : {}),
+      }
     }
   }
   if (!Object.keys(models).length)
@@ -123,7 +175,14 @@ export function applyDashscopeThinking(
           capabilities,
           ...(stated.hybrid
             ? { reasoning: { mode: 'toggle' as const, mandatory: false } }
-            : {}),
+            : stated.budget
+              ? {
+                  reasoning: {
+                    mode: 'budget' as const,
+                    mandatory: stated.mandatory ?? null,
+                  },
+                }
+              : {}),
         }
       : {}),
     ...(replay && model.requestMap
@@ -139,7 +198,13 @@ export function applyDashscopeThinking(
             },
             ...(stated.hybrid
               ? { reasoning: source('Supported models.Hybrid thinking mode') }
-              : {}),
+              : stated.budget
+                ? {
+                    reasoning: source(
+                      'Supported models.Thinking-only mode; Limit Thinking Length.thinking_budget applicability',
+                    ),
+                  }
+                : {}),
           }
         : {}),
       ...(replay && model.requestMap

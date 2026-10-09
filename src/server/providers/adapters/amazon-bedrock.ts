@@ -9,13 +9,16 @@ import type { Activity } from '#/db/schema.ts'
 import {
   BEDROCK_CARDS_URL,
   BEDROCK_CONVERSE_PATH,
-  bedrockCardModels,
+  bedrockCardListing,
 } from '../bedrock-cards.ts'
 import {
   BEDROCK_SDK_MODEL_URL,
   bedrockConverseSpec,
 } from '../bedrock-sdk-spec.ts'
 import type { BedrockServiceModel } from '../bedrock-sdk-spec.ts'
+import { loadBedrockConverseWireMaps } from '../bedrock-converse-facts.ts'
+import { loadBedrockThinkingGuides } from '../bedrock-thinking-guides.ts'
+import { docsRun, docsReport } from '../model-facts.ts'
 import { bearerConnect } from '../connect.ts'
 import { fetchText, sha256Text } from '../types.ts'
 import type {
@@ -40,7 +43,16 @@ async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  return { models: await bedrockCardModels(kv) }
+  const catalog = await bedrockCardListing(kv)
+  const run = docsRun()
+  const thinking = await loadBedrockThinkingGuides(
+    catalog.models,
+    catalog.groups,
+    run,
+    kv,
+  )
+  const models = await loadBedrockConverseWireMaps(thinking, run, kv)
+  return { models, docsFailures: docsReport(run) }
 }
 
 export const provider: ProviderConfig = {
