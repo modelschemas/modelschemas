@@ -89,7 +89,7 @@ it('syncs the native primary before secondary discovery and keeps real path sepa
     'https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-5-content-safety-infer.md',
   )
   const model = rows.models[0]
-  expect(rows.docsFailures).toBeUndefined()
+  expect(rows.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
   expect(model?.reasoning).toEqual({ mode: 'toggle', mandatory: false })
   expect(model?.capabilities).toContain('reasoning')
   expect(model?.factSources?.reasoning).toMatchObject({
@@ -194,7 +194,11 @@ it('never caches a malformed primary and rejects cached wrong identities without
   expect(invalid.docsFailures?.failed).toBe(1)
   expect(values.has(key)).toBe(false)
   ownSources(html)
-  expect((await provider.listModels({}, kv)).docsFailures).toBeUndefined()
+  expect((await provider.listModels({}, kv)).docsFailures).toEqual({
+    failed: 0,
+    skipped: 0,
+    first: [],
+  })
   expect(values.has(key)).toBe(true)
   const contract = values.get(key)
   if (!contract) throw new Error('Missing healthy native cached contract')
@@ -221,7 +225,7 @@ it('keeps an exact healthy ReadMe contract primary when the competing Build body
     throw new Error('Unexpected native source ' + url)
   }
   const result = await provider.listModels({})
-  expect(result.docsFailures).toBeUndefined()
+  expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
   expect(result.models[0]?.reasoning).toEqual({
     mode: 'toggle',
     mandatory: false,
@@ -323,7 +327,7 @@ it('does not turn an absent capability label into an unsupported fact', async ()
         )
       : nativeFetch(...args)
   const result = await provider.listModels({})
-  expect(result.docsFailures).toBeUndefined()
+  expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
   expect(result.models[0]?.unsupportedCapabilities).not.toContain('reasoning')
   expect(result.models[0]?.capabilities).toContain('reasoning')
 })

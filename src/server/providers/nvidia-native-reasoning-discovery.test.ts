@@ -286,7 +286,7 @@ it('native absent Build pages preserve independent owned contracts without consu
     ),
   })
   const result = await provider.listModels({})
-  expect(result.docsFailures).toBeUndefined()
+  expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
   expect(result.models).toHaveLength(ids.length)
   expect(result.models.every((row) => row.schemaEndpointId === row.rawId)).toBe(
     true,

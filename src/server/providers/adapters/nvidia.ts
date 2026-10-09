@@ -531,10 +531,9 @@ async function loadBuildContract(
   return contract
 }
 
-function mergeDocs(runs: Array<DocsRun>): DocsFailures | undefined {
+function mergeDocs(runs: Array<DocsRun>): DocsFailures {
   const failed = runs.reduce((sum, run) => sum + run.failed, 0)
   const skipped = runs.reduce((sum, run) => sum + run.skipped, 0)
-  if (failed + skipped === 0) return undefined
   return {
     failed,
     skipped,
