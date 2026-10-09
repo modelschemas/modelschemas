@@ -11,8 +11,13 @@
  * is stored only when a label or the model's own request schema states the
  * control. NVIDIA publishes no per-token price for the hosted trial API.
  */
+import { getJson, putJson } from '#/server/kv.ts'
 import { explicitCardReplay, replayRequestMap } from '../provider-replay.ts'
-import { discoverNvidiaSitemap } from '../nvidia-sitemap.ts'
+import {
+  NVIDIA_SITEMAP_URL,
+  parseNvidiaInferSitemap,
+  nvidiaSitemapCandidates,
+} from '../nvidia-sitemap.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import { tagDocsFacts } from '../fact-sources.ts'
@@ -41,14 +46,19 @@ import type {
 import {
   classifyNvidiaOperation,
   fetchNvidiaText,
-  nvidiaInferNamesModel,
   nvidiaStatedModelIds,
-  nvidiaModelSpec,
   NVIDIA_REFERENCE_INDEXES,
   parseNvidiaInfer,
+  nvidiaWireFacts,
   parseNvidiaReferenceIndex,
 } from '../nvidia-openapi.ts'
 import type { NvidiaIndexRow, NvidiaInferFacts } from '../nvidia-openapi.ts'
+
+import {
+  parseNvidiaBuildSpec,
+  nvidiaOwnedEndpoint,
+  validateNvidiaBuildFacts,
+} from '../nvidia-build-spec.ts'
 
 export const NVIDIA_MODELS_URL = 'https://integrate.api.nvidia.com/v1/models'
 export const NVIDIA_CARD_BASE = 'https://build.nvidia.com/'
@@ -72,7 +82,6 @@ const CARD_FACTS: Array<ModelFact> = [
   'modalities',
   'capabilities',
   'reasoning',
-  'requestMap',
 ]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -93,6 +102,7 @@ export function parseNvidiaModels(payload: unknown): Array<ModelInfo> {
       releasedAt:
         typeof row.created === 'number' && row.created > 0 ? row.created : null,
       pricing: null,
+      requestMap: null,
     })
   }
   if (models.length === 0) {
@@ -109,6 +119,7 @@ type CardFacts = Pick<
   | 'modalities'
   | 'capabilities'
   | 'exactCapabilities'
+  | 'unsupportedCapabilities'
   | 'reasoning'
   | 'requestMap'
 >
@@ -319,7 +330,8 @@ function reasoningFromCard(markdown: string): ModelReasoning | undefined {
       return { mode: 'toggle', mandatory: false }
     }
   }
-  const modeSection = cardSection(markdown, 'Reasoning Mode', true)
+  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const modeSection = cardSection(prose, 'Reasoning Mode', true)
   if (
     /enable_thinking/i.test(modeSection) &&
     /false/i.test(modeSection) &&
@@ -329,36 +341,38 @@ function reasoningFromCard(markdown: string): ModelReasoning | undefined {
   }
   const listed =
     effortWords(
-      markdown.match(
+      prose.match(
         /reasoning_effort`, which accepts ([\s\S]{0,200}?)(?:\.|and defaults)/,
       )?.[1],
     ).length > 0
       ? effortWords(
-          markdown.match(
+          prose.match(
             /reasoning_effort`, which accepts ([\s\S]{0,200}?)(?:\.|and defaults)/,
           )?.[1],
         )
       : effortWords(
-            markdown.match(
+            prose.match(
               /configurable\s+([^.\n]{0,80}?)\s+reasoning effort/i,
             )?.[1],
           ).length > 0
         ? effortWords(
-            markdown.match(
+            prose.match(
               /configurable\s+([^.\n]{0,80}?)\s+reasoning effort/i,
             )?.[1],
           )
         : effortWords(
-            markdown.match(
+            prose.match(
               /\*\*Configurable reasoning effort:\*\*[^\n]*\(([^)]+)\)/i,
             )?.[1],
           )
   if (listed.length === 0) return undefined
-  const off = listed.some((effort) => /^(none|off|disabled)$/i.test(effort))
-  const always = /thinking is always enabled/i.test(markdown)
+  const always =
+    /(?:^|[.!?]\s+)Thinking is always enabled(?:[.!:,]|\s+(?:for|when|in)\b)/im.test(
+      prose,
+    )
   return {
     mode: 'effort',
-    mandatory: off ? false : always ? true : null,
+    mandatory: always ? true : null,
     efforts: listed,
   }
 }
@@ -407,10 +421,17 @@ export function parseNvidiaCard(markdown: string): CardFacts {
     ...(modalities ? { modalities } : {}),
     ...(capabilities.size > 0
       ? {
-          exactCapabilities: true,
+          unsupportedCapabilities: [...capabilities].flatMap(
+            ([label, value]) => {
+              const flag = CAPABILITY_FLAGS[label]
+              return flag && /^(?:not supported|unsupported)$/i.test(value)
+                ? [flag]
+                : []
+            },
+          ),
           capabilities: [...capabilities].flatMap(([label, value]) => {
             const flag = CAPABILITY_FLAGS[label]
-            return flag && value === 'Supported' ? [flag] : []
+            return flag && /^supported$/i.test(value) ? [flag] : []
           }),
         }
       : {}),
@@ -457,6 +478,57 @@ async function fetchCard(
     return { url, markdown, hash: await sha256Text(markdown) }
   }
   return { url: null }
+}
+
+async function readBuildPage(url: string) {
+  const response = await fetch(url, {
+    headers: { accept: 'text/html' },
+    signal: AbortSignal.timeout(CARD_TIMEOUT_MS),
+  })
+  const html = await response.text()
+  if (!response.ok && response.status !== 404)
+    throw new Error(
+      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
+    )
+  return { html, absent: response.status === 404 }
+}
+function buildContract(page: { html: string; absent: boolean }, rawId: string) {
+  return page.absent ? null : parseNvidiaBuildSpec(page.html, rawId)
+}
+/** Only network failures consume the host failure budget; rejected content remains visible. */
+async function loadBuildContract(
+  kv: KVNamespace | undefined,
+  run: DocsRun,
+  url: string,
+  rawId: string,
+) {
+  const key = `nvidia-build-contract:v1:${url}`
+  const hit = kv
+    ? await getJson<{ infer: NvidiaInferFacts | null; hash: string }>(kv, key)
+    : null
+  if (hit !== null)
+    return tryDocs(run, url, async () => {
+      if (typeof hit.hash !== 'string' || !/^[a-f0-9]{64}$/.test(hit.hash))
+        throw new Error('nvidia Build: cached source hash missing')
+      return {
+        infer:
+          hit.infer === null
+            ? null
+            : validateNvidiaBuildFacts(hit.infer, rawId),
+        hash: hit.hash,
+      }
+    })
+  const page = await tryDocs(run, url, (cached) =>
+    cached(undefined, key, () => readBuildPage(url)),
+  )
+  if (page === null) return null
+  const contract = await tryDocs(run, url, async () => ({
+    infer: buildContract(page, rawId),
+    hash: await sha256Text(page.html),
+  }))
+  if (contract !== null && kv)
+    await putJson(kv, key, contract, { expirationTtl: 6 * 60 * 60 })
+  return contract
 }
 
 function mergeDocs(runs: Array<DocsRun>): DocsFailures | undefined {
@@ -540,6 +612,17 @@ function applyInfer(
   inferUrl: string,
   inferHash: string,
 ): ModelInfo {
+  const nativeCapabilities =
+    model.capabilities == null ? [] : model.capabilities
+  if (
+    !Array.isArray(nativeCapabilities) ||
+    !nativeCapabilities.every((value) => typeof value === 'string')
+  )
+    throw new Error('nvidia: invalid native capability list')
+  if (infer.reasoning && model.unsupportedCapabilities?.includes('reasoning'))
+    throw new Error(
+      'nvidia: native card explicitly rejects reasoning but its schema publishes a reasoning control',
+    )
   const reasoning = mergeReasoning(
     model.reasoning ?? undefined,
     infer.reasoning,
@@ -556,10 +639,43 @@ function applyInfer(
     sourceHash: inferHash,
   }
   if (maxFromSchema)
-    factSources.maxOutput = { ...schemaSource, path: 'max_tokens' }
+    factSources.maxOutput = { ...schemaSource, path: infer.maxOutputField }
   if (reasoning?.source === 'schema') {
-    factSources.reasoning = { ...schemaSource, path: 'reasoning' }
+    factSources.reasoning = { ...schemaSource, path: infer.reasoningField }
   }
+  if (infer.reasoning)
+    factSources.capabilities = {
+      ...factSources.capabilities,
+      reasoning: { ...schemaSource, path: infer.reasoningField },
+    }
+  if (bind) factSources.schemaEndpointId = { ...schemaSource, path: 'paths' }
+  const wire = nvidiaWireFacts(infer.document)
+  const wireMap =
+    model.requestMap ??
+    (Object.keys(wire.fields).length
+      ? {
+          thinking: null,
+          maxTokensField: null,
+          developerRole: null,
+          replayReasoningContent: null,
+          store: null,
+          strictTools: null,
+          sessionAffinity: null,
+          cacheControl: null,
+          toolStream: null,
+          reasoningEffort: null,
+        }
+      : null)
+  if (Object.keys(wire.paths).length)
+    factSources.requestMapFields = {
+      ...factSources.requestMapFields,
+      ...Object.fromEntries(
+        Object.entries(wire.paths).map(([key, path]) => [
+          key,
+          { ...schemaSource, path },
+        ]),
+      ),
+    }
   const filled: Array<ModelFact> = []
   if (activity && model.activity == null) filled.push('activity')
   if (maxFromSchema) filled.push('maxOutput')
@@ -569,6 +685,12 @@ function applyInfer(
     {
       ...model,
       ...(activity ? { activity } : {}),
+      requestMap: wireMap ? { ...wireMap, ...wire.fields } : null,
+      ...(infer.reasoning
+        ? {
+            capabilities: [...new Set([...nativeCapabilities, 'reasoning'])],
+          }
+        : {}),
       ...(maxFromSchema ? { maxOutput: infer.maxOutput } : {}),
       ...(reasoning ? { reasoning: reasoning.reasoning } : {}),
       ...(bind ? { schemaEndpointId: model.rawId } : {}),
@@ -597,7 +719,115 @@ async function loadIndex(
       rows.push(row)
     }
   }
-  return { rows, failed: parsed === 0 && docs.failed + docs.skipped > 0 }
+  return { rows, failed: parsed !== NVIDIA_REFERENCE_INDEXES.length }
+}
+
+interface OwnedContract {
+  infer: NvidiaInferFacts
+  url: string
+  hash: string
+}
+/** ReadMe discovery uses actual published index/sitemap paths, never fabricated routes. */
+async function chooseNativeContracts(
+  models: ModelInfo[],
+  cardUrl: (rawId: string) => Promise<string | null>,
+  run: DocsRun,
+  kv?: KVNamespace,
+) {
+  const diagnostics: string[] = []
+  const index = await loadIndex(kv, run)
+  const indexed = new Map(index.rows.map((row) => [row.rawId, row.inferUrl]))
+  const missing = models.filter((row) => !indexed.has(row.rawId))
+  const sitemap = missing.length
+    ? await tryDocs(run, NVIDIA_SITEMAP_URL, (cached) =>
+        cached(kv, NVIDIA_SITEMAP_URL, async () =>
+          parseNvidiaInferSitemap(await fetchNvidiaText(NVIDIA_SITEMAP_URL)),
+        ),
+      )
+    : []
+  const selected = new Map<string, OwnedContract>()
+  const unavailableIds = new Set<string>()
+  await mapConcurrent(models, INFER_CONCURRENCY, async (model) => {
+    const linked = indexed.get(model.rawId)
+    if (!linked && sitemap === null) {
+      unavailableIds.add(model.rawId)
+      return
+    }
+    const candidates = linked
+      ? [linked]
+      : nvidiaSitemapCandidates(model.rawId, sitemap ?? [])
+    if (!candidates.length && index.failed) {
+      unavailableIds.add(model.rawId)
+      return
+    }
+    const conflicts: string[] = []
+    for (const candidate of candidates) {
+      const page = candidate + '.md'
+      const markdown = await tryDocs(run, page, (cached) =>
+        cached(kv, page, () => fetchNvidiaText(page)),
+      )
+      if (markdown === null) {
+        unavailableIds.add(model.rawId)
+        return
+      }
+      const infer = await tryDocs(run, page, async () => {
+        const facts = parseNvidiaInfer(markdown)
+        if (!facts)
+          throw new Error(
+            'nvidia: published reference infer page has no OpenAPI document readable: ' +
+              page,
+          )
+        return facts
+      })
+      if (infer === null) {
+        unavailableIds.add(model.rawId)
+        return
+      }
+      const ids = nvidiaStatedModelIds(infer.document)
+      const exact = ids.length === 1 && ids[0] === model.rawId
+      // An explicit native index row can bind a document that states no IDs.
+      if (exact || (linked && ids.length === 0)) {
+        selected.set(model.rawId, {
+          infer,
+          url: page,
+          hash: await sha256Text(markdown),
+        })
+        return
+      }
+      conflicts.push(
+        `nvidia: rejected competing reference identity conflict: ${page}; expected ${model.rawId}; stated ${ids.join(', ')}`,
+      )
+    }
+    diagnostics.push(...conflicts)
+    const url = await tryDocs(
+      run,
+      'nvidia Build card discovery: ' + model.rawId,
+      async () => cardUrl(model.rawId),
+    )
+    if (url === null) {
+      if (conflicts.length) {
+        await tryDocs(run, candidates[0] + '.md', async () => {
+          throw new Error(conflicts.join('; '))
+        })
+        unavailableIds.add(model.rawId)
+      }
+      return
+    }
+    const build = await loadBuildContract(kv, run, url, model.rawId)
+    if (build === null) {
+      unavailableIds.add(model.rawId)
+      return
+    }
+    if (build.infer)
+      selected.set(model.rawId, { ...build, infer: build.infer, url })
+    else if (conflicts.length) {
+      await tryDocs(run, candidates[0] + '.md', async () => {
+        throw new Error(conflicts.join('; '))
+      })
+      unavailableIds.add(model.rawId)
+    }
+  })
+  return { selected, unavailableIds, diagnostics }
 }
 
 async function listModels(
@@ -607,15 +837,7 @@ async function listModels(
   const listed = parseNvidiaModels(await fetchJson(NVIDIA_MODELS_URL))
   const cardDocs = docsRun()
   const specDocs = docsRun()
-  const index = await loadIndex(kv, specDocs)
-  const indexed = new Set(index.rows.map((row) => row.rawId))
-  const discovered = await discoverNvidiaSitemap(
-    listed.map((model) => model.rawId).filter((id) => !indexed.has(id)),
-    kv,
-    specDocs,
-  )
-  index.rows.push(...discovered.rows)
-  const byInfer = new Map(index.rows.map((row) => [row.rawId, row.inferUrl]))
+  const cardUrls = new Map<string, string>()
   // A card takes about ten seconds to render. The six-hour cache per card
   // (misses included) keeps that off most polls.
   // A card that fails to load is that model's alone: its row keeps the
@@ -631,47 +853,45 @@ async function listModels(
       // A throw keeps stored card facts. A missing card is not a failure.
       if (card === null) return { ...model, ...unavailable(...CARD_FACTS) }
       if (card.url === null) return model
+      cardUrls.set(model.rawId, card.url)
       const facts = parseNvidiaCard(card.markdown)
+      const factSources = tagDocsFacts(facts, card.url, card.hash)
+      for (const flag of facts.unsupportedCapabilities ?? []) {
+        factSources.capabilities = {
+          ...factSources.capabilities,
+          [flag]: {
+            derivation: 'docs-derived',
+            sourceUrl: card.url,
+            sourceHash: card.hash,
+            path: `capabilities.${flag}`,
+          },
+        }
+      }
       return {
         ...model,
         ...facts,
-        factSources: tagDocsFacts(facts, card.url, card.hash),
+        factSources,
       }
     },
   )
-  // Infer pages are a second host. Keep them off the card concurrency and
-  // off the card failure budget.
+  const choices = await chooseNativeContracts(
+    models,
+    async (rawId) => cardUrls.get(rawId) ?? null,
+    specDocs,
+    kv,
+  )
   const merged = await mapConcurrent(
     models,
     INFER_CONCURRENCY,
     async (model) => {
-      const inferUrl = byInfer.get(model.rawId)
-      if (!inferUrl) {
-        return index.failed || discovered.unavailable.includes(model.rawId)
-          ? markUnavailable(model, schemaGaps(model))
-          : model
-      }
-      const page = `${inferUrl}.md`
-      const checked = await tryDocs(specDocs, page, async (cached) => {
-        const loaded = await cached(kv, page, () => fetchNvidiaText(page))
-        const infer = parseNvidiaInfer(loaded)
-        if (!infer)
-          throw new Error(
-            'nvidia: reference infer page has no OpenAPI document: ' + page,
-          )
-        if (!nvidiaInferNamesModel(model.rawId, infer.document))
-          throw new Error(
-            'nvidia: reference infer page identity conflict: ' +
-              page +
-              '; expected ' +
-              model.rawId +
-              '; stated ' +
-              nvidiaStatedModelIds(infer.document).join(', '),
-          )
-        return { infer, hash: await sha256Text(loaded) }
-      })
-      if (checked === null) return markUnavailable(model, schemaGaps(model))
-      return applyInfer(model, checked.infer, inferUrl, checked.hash)
+      if (choices.unavailableIds.has(model.rawId))
+        return markUnavailable(model, schemaGaps(model))
+      const own = choices.selected.get(model.rawId)
+      if (!own) return model
+      const applied = await tryDocs(specDocs, own.url, async () =>
+        applyInfer(model, own.infer, own.url, own.hash),
+      )
+      return applied ?? markUnavailable(model, schemaGaps(model))
     },
   )
   const parsed = new Map(
@@ -686,85 +906,37 @@ async function listModels(
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const warnings: Array<string> = []
-  const indexes: Array<string> = []
-  for (const url of NVIDIA_REFERENCE_INDEXES) {
-    try {
-      indexes.push(await fetchNvidiaText(url))
-    } catch (error) {
-      warnings.push(
-        error instanceof Error ? error.message : `nvidia: ${url} failed`,
-      )
-    }
-  }
-  if (indexes.length === 0) {
-    throw new Error('nvidia: reference indexes could not be fetched')
-  }
-  const listed = new Set(
-    parseNvidiaModels(await fetchJson(NVIDIA_MODELS_URL)).map(
-      (model) => model.rawId,
-    ),
+  const run = docsRun()
+  const listed = parseNvidiaModels(await fetchJson(NVIDIA_MODELS_URL))
+  const choices = await chooseNativeContracts(
+    listed,
+    async (rawId) => (await fetchCard(rawId)).url,
+    run,
   )
-  const wanted = new Map<string, string>()
-  for (const markdown of indexes) {
-    for (const row of parseNvidiaReferenceIndex(markdown)) {
-      if (listed.has(row.rawId) && !wanted.has(row.rawId)) {
-        wanted.set(row.rawId, row.inferUrl)
-      }
-    }
-  }
-  const discovery = await discoverNvidiaSitemap(
-    [...listed].filter((id) => !wanted.has(id)),
-  )
-  for (const row of discovery.rows) wanted.set(row.rawId, row.inferUrl)
-  for (const failure of discovery.failures.first)
-    warnings.push(`nvidia: ${failure.source}: ${failure.error}`)
-  const fetched = await mapConcurrent(
-    [...wanted],
-    INFER_CONCURRENCY,
-    async ([rawId, inferUrl]) => {
-      const page = `${inferUrl}.md`
-      try {
-        const markdown = await fetchNvidiaText(page)
-        const infer = parseNvidiaInfer(markdown)
-        if (!infer)
-          throw new Error(
-            'nvidia: reference infer page has no OpenAPI document: ' + page,
-          )
-        if (!nvidiaInferNamesModel(rawId, infer.document))
-          throw new Error(
-            'nvidia: reference infer page identity conflict: ' +
-              page +
-              '; expected ' +
-              rawId +
-              '; stated ' +
-              nvidiaStatedModelIds(infer.document).join(', '),
-          )
-        const spec = nvidiaModelSpec(rawId, infer)
-        if (!spec) return null
-        return {
-          spec,
-          source: { url: page, hash: await sha256Text(markdown) },
-        }
-      } catch (error) {
-        warnings.push(
-          error instanceof Error ? error.message : `nvidia: ${page} failed`,
-        )
-        return null
-      }
-    },
-  )
-  const docs = fetched.filter((doc) => doc !== null)
-  if (docs.length === 0) {
+  const warnings = [
+    ...choices.diagnostics,
+    ...run.first.map((failure) => `${failure.source}: ${failure.error}`),
+  ]
+  const endpoints = [...choices.selected].flatMap(([rawId, own]) => {
+    const result = nvidiaOwnedEndpoint(rawId, own.infer, {
+      url: own.url,
+      hash: own.hash,
+    })
+    if (!result) return []
+    warnings.push(...result.warnings)
+    return [result.endpoint]
+  })
+  if (!endpoints.length)
     throw new Error(
-      'nvidia: per-model OpenAPI documents parsed 0 generation specs',
+      'nvidia: native per-model documents parsed 0 generation specs; ' +
+        warnings.join('; '),
     )
-  }
   return {
-    specs: docs.map((doc) => doc.spec),
-    sources: docs.map((doc) => doc.source),
+    specs: [],
+    sources: [],
+    bundledEndpoints: endpoints,
     outputStrategy: 'post-200',
-    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(warnings.length ? { warnings } : {}),
   }
 }
 
@@ -776,6 +948,7 @@ export const provider: ProviderConfig = {
   defaultDerivation: 'upstream-spec',
   // A poll can name a per-model route the spec sync has not stored yet.
   bindSyncedRoutesOnly: true,
+  specGrain: 'model',
   fetchSpec,
   listModels,
   classify: classifyNvidiaOperation,

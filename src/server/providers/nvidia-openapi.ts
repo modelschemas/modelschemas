@@ -3,9 +3,10 @@
  * Each reference index row names a listing id and its infer page. The
  * infer page embeds one OpenAPI document for that model. A shared
  * `/chat/completions` path would keep only the last model's schema, so
- * the synced path is the model's own id. A document that names a different
+ * the public endpoint identity is the model's own id; the wire path remains native. A document that names a different
  * model is not that row's schema.
  */
+import type { ChatRequestMap } from './request-map.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import type {
@@ -37,6 +38,8 @@ export interface NvidiaInferFacts {
   activity: Activity | null
   maxOutput?: number
   reasoning?: ModelReasoning
+  reasoningField?: string
+  maxOutputField?: string
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -157,10 +160,26 @@ function isOpenApiDocument(value: unknown): value is OpenApiDocument {
 
 function extractOpenApi(markdown: string): OpenApiDocument | null {
   const section = markdown.split('# OpenAPI definition')[1] ?? markdown
-  for (const match of section.matchAll(/```json\s*([\s\S]*?)```/g)) {
+  for (const match of section.matchAll(/```json\s*/g)) {
     try {
-      const parsed: unknown = JSON.parse(match[1] ?? '')
-      if (isOpenApiDocument(parsed)) return parsed
+      const start = match.index + match[0].length
+      let depth = 0,
+        quoted = false,
+        escaped = false
+      for (let end = start; end < section.length; end++) {
+        const char = section[end]
+        if (quoted) {
+          if (escaped) escaped = false
+          else if (char === '\\') escaped = true
+          else if (char === '"') quoted = false
+        } else if (char === '"') quoted = true
+        else if (char === '{') depth++
+        else if (char === '}' && --depth === 0) {
+          const parsed: unknown = JSON.parse(section.slice(start, end + 1))
+          if (isOpenApiDocument(parsed)) return parsed
+          break
+        }
+      }
     } catch {
       // An example fence is not the document.
     }
@@ -322,8 +341,13 @@ export function nvidiaReasoning(
   if (props.reasoning_budget !== undefined) {
     return { mode: 'budget', mandatory: null }
   }
+  const template = deref(doc, props.chat_template_kwargs, 0)
+  const templateProperties = isRecord(template?.properties)
+    ? template.properties
+    : {}
   const toggle =
     isBooleanSchema(props.enable_thinking) ||
+    isBooleanSchema(templateProperties.enable_thinking) ||
     statesOnAndOff(props.chat_template_kwargs) ||
     statesOnAndOff(props.enable_thinking)
   if (toggle) return { mode: 'toggle', mandatory: false }
@@ -338,11 +362,44 @@ function activityForPath(path: string): Activity | null {
 }
 
 /**
- * Model ids the document itself names. A title with no slash is the API
- * name. No stated id means the reference-index join is the only link.
+ * Native request selectors identify the serving model. OpenAPI info.title
+ * names the API, so it is only identity evidence when no selector is published.
+ * Every literal selector must agree; no aliases are normalized.
  */
 export function nvidiaStatedModelIds(doc: OpenApiDocument): Array<string> {
   const ids = new Set<string>()
+  const selectors = (node: unknown, depth: number): void => {
+    const model = deref(doc, node, depth)
+    if (!model) return
+    const add = (value: unknown) => {
+      if (typeof value === 'string' && value.trim()) ids.add(value.trim())
+    }
+    add(model.const)
+    add(model.default)
+    if (Array.isArray(model.enum)) for (const value of model.enum) add(value)
+    for (const key of ['allOf', 'anyOf', 'oneOf']) {
+      if (Array.isArray(model[key]))
+        for (const value of model[key]) selectors(value, depth + 1)
+    }
+  }
+  const request = (node: unknown, depth: number): void => {
+    const schema = deref(doc, node, depth)
+    if (!schema) return
+    if (isRecord(schema.properties))
+      selectors(schema.properties.model, depth + 1)
+    for (const key of ['allOf', 'anyOf', 'oneOf']) {
+      if (Array.isArray(schema[key]))
+        for (const value of schema[key]) request(value, depth + 1)
+    }
+  }
+  for (const operations of Object.values(doc.paths ?? {})) {
+    if (!isRecord(operations) || !isRecord(operations.post)) continue
+    const body = operations.post.requestBody
+    if (!isRecord(body) || !isRecord(body.content)) continue
+    const json = body.content['application/json']
+    if (isRecord(json)) request(json.schema, 0)
+  }
+  if (ids.size) return [...ids]
   const title = doc.info?.title
   const named =
     typeof title === 'string'
@@ -352,19 +409,7 @@ export function nvidiaStatedModelIds(doc: OpenApiDocument): Array<string> {
             /^(?:NVIDIA NIM API for )?([a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)$/i,
           )?.[1]
       : undefined
-  if (named) ids.add(named)
-  const model = requestProperties(doc).model
-  if (isRecord(model)) {
-    const add = (value: unknown) => {
-      if (typeof value === 'string' && value.includes('/'))
-        ids.add(value.trim())
-    }
-    add(model.default)
-    if (Array.isArray(model.enum)) {
-      for (const item of model.enum) add(item)
-    }
-  }
-  return [...ids]
+  return named ? [named] : []
 }
 
 /** True when every stated id is this listing id, or the document names none. */
@@ -378,26 +423,158 @@ export function nvidiaInferNamesModel(
 
 export function parseNvidiaInfer(markdown: string): NvidiaInferFacts | null {
   const document = extractOpenApi(markdown)
-  if (!document) return null
+  return nvidiaFactsFromDocument(document)
+}
+
+/** Parse native JSON directly; descriptions may themselves contain Markdown fences. */
+export function nvidiaFactsFromDocument(
+  value: unknown,
+): NvidiaInferFacts | null {
+  if (!isOpenApiDocument(value)) return null
+  const document = value
   const paths = Object.keys(document.paths ?? {})
   const activity =
     paths.map(activityForPath).find((item) => item !== null) ?? null
   const maxOutput = nvidiaMaxOutput(document)
   const reasoning = nvidiaReasoning(document)
+  const props = requestProperties(document)
+  const maxOutputField = ['max_tokens', 'max_completion_tokens'].find(
+    (key) => integerMaximum(props[key]) !== null,
+  )
+  const template = deref(document, props.chat_template_kwargs, 0)
+  const templateProperties = isRecord(template?.properties)
+    ? template.properties
+    : {}
+  const reasoningField =
+    reasoning?.mode === 'effort'
+      ? 'reasoning_effort'
+      : reasoning?.mode === 'budget'
+        ? 'reasoning_budget'
+        : reasoning?.mode === 'toggle'
+          ? props.enable_thinking
+            ? 'enable_thinking'
+            : templateProperties.enable_thinking
+              ? 'chat_template_kwargs.enable_thinking'
+              : 'chat_template_kwargs.description'
+          : undefined
   return {
     document,
     activity,
     ...(maxOutput !== undefined ? { maxOutput } : {}),
-    ...(reasoning ? { reasoning } : {}),
+    ...(reasoning ? { reasoning, reasoningField } : {}),
+    ...(maxOutputField ? { maxOutputField } : {}),
   }
 }
 
+/** Only published per-model request members can supply caller wire facts. */
+export function nvidiaWireFacts(doc: OpenApiDocument): {
+  fields: Partial<ChatRequestMap>
+  paths: Partial<Record<keyof ChatRequestMap, string>>
+} {
+  const props = requestProperties(doc)
+  const fields: Partial<ChatRequestMap> = {}
+  const paths: Partial<Record<keyof ChatRequestMap, string>> = {}
+  const tokenField = ['max_completion_tokens', 'max_tokens'].find(
+    (key) => props[key] !== undefined,
+  )
+  if (tokenField === 'max_tokens' || tokenField === 'max_completion_tokens') {
+    fields.maxTokensField = tokenField
+    paths.maxTokensField = tokenField
+  }
+  const roles = (node: unknown, depth = 0): string[] | null => {
+    const resolved = deref(doc, node, depth)
+    if (!resolved) return null
+    if (Array.isArray(resolved.enum)) {
+      if (
+        !resolved.enum.length ||
+        !resolved.enum.every((item) => typeof item === 'string')
+      )
+        throw new Error('nvidia: unreadable native role enum')
+      return resolved.enum
+    }
+    if (typeof resolved.const === 'string') return [resolved.const]
+    if (Array.isArray(resolved.allOf)) {
+      const results = resolved.allOf.map((item) => roles(item, depth + 1))
+      if (!results.length || !results.every((item) => item !== null))
+        return null
+      return results[0]!.filter((value) =>
+        results.every((list) => list.includes(value)),
+      )
+    }
+    for (const key of ['anyOf', 'oneOf']) {
+      const alternatives = resolved[key]
+      if (!Array.isArray(alternatives)) continue
+      const results = alternatives
+        .filter((item) => !isRecord(item) || item.type !== 'null')
+        .map((item) => roles(item, depth + 1))
+      return results.length && results.every((item) => item !== null)
+        ? results.flatMap((item) => item)
+        : null
+    }
+    return null
+  }
+  const messageRoles = (node: unknown, depth = 0): string[] | null => {
+    const message = deref(doc, node, depth)
+    if (!message) return null
+    if (isRecord(message.properties) && message.properties.role !== undefined)
+      return roles(message.properties.role, depth + 1)
+    for (const key of ['anyOf', 'oneOf']) {
+      const alternatives = message[key]
+      if (!Array.isArray(alternatives)) continue
+      const results = alternatives.map((item) => messageRoles(item, depth + 1))
+      return results.length && results.every((item) => item !== null)
+        ? results.flatMap((item) => item)
+        : null
+    }
+    return null
+  }
+  const messages = deref(doc, props.messages, 0)
+  const acceptedRoles = messages ? messageRoles(messages.items) : null
+  if (acceptedRoles) {
+    fields.developerRole = acceptedRoles.includes('developer')
+    paths.developerRole = 'messages.items.role'
+  }
+  if (props.reasoning_effort !== undefined) {
+    fields.reasoningEffort = true
+    paths.reasoningEffort = 'reasoning_effort'
+    const high = enumStrings(props.reasoning_effort)?.find(
+      (value) => value === 'high',
+    )
+    if (high) {
+      fields.thinking = {
+        on: { reasoning_effort: high },
+        off: null,
+        levels: null,
+      }
+      paths.thinking = 'reasoning_effort'
+    }
+  }
+  const template = deref(doc, props.chat_template_kwargs, 0)
+  const nested = isRecord(template?.properties) ? template.properties : {}
+  if (!fields.thinking && isBooleanSchema(props.enable_thinking)) {
+    fields.thinking = {
+      on: { enable_thinking: true },
+      off: { enable_thinking: false },
+      levels: null,
+    }
+    paths.thinking = 'enable_thinking'
+  } else if (!fields.thinking && isBooleanSchema(nested.enable_thinking)) {
+    fields.thinking = {
+      on: { chat_template_kwargs: { enable_thinking: true } },
+      off: { chat_template_kwargs: { enable_thinking: false } },
+      levels: null,
+    }
+    paths.thinking = 'chat_template_kwargs.enable_thinking'
+  }
+  return { fields, paths }
+}
+
 /**
- * One document whose only generation path is `/${rawId}`. The operation
- * is the model's real POST, including its request schema.
+ * Preserve the native generation path and request/response document.
+ * Logical model identity belongs to the bundled endpoint publicId.
  */
 export function nvidiaModelSpec(
-  rawId: string,
+  _rawId: string,
   facts: NvidiaInferFacts,
 ): OpenApiDocument | null {
   if (!facts.activity) return null
@@ -408,7 +585,7 @@ export function nvidiaModelSpec(
     return {
       ...facts.document,
       paths: {
-        [`/${rawId}`]: {
+        [path]: {
           post: {
             ...post,
             [NVIDIA_ACTIVITY_MARKER]: facts.activity,

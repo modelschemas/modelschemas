@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import docs from './fixtures/nvidia-native-reasoning-discovery.json'
+import absentBuild from './fixtures/nvidia-build-absent-page.json'
 import {
   parseNvidiaInfer,
   nvidiaReasoning,
@@ -24,7 +25,22 @@ afterEach(() => {
 function serve(overrides: Record<string, string> = {}) {
   globalThis.fetch = async (input) => {
     const url = String(input)
-    const body = overrides[url] ?? native[url]
+    const body =
+      overrides[url] ??
+      native[url] ??
+      (absentBuild.cards as Record<string, string>)[url] ??
+      (url.startsWith('https://build.nvidia.com/') &&
+      !url.endsWith('.md') &&
+      (native[`${url}.md`] ||
+        (absentBuild.cards as Record<string, string>)[`${url}.md`])
+        ? absentBuild.html
+        : undefined)
+    if (
+      body === undefined &&
+      url.startsWith('https://build.nvidia.com/') &&
+      url.endsWith('.md')
+    )
+      return new Response(absentBuild.html, { status: 404 })
     if (body === undefined) throw new Error('unexpected native source ' + url)
     return new Response(body)
   }
@@ -137,13 +153,15 @@ it('uses discovered schema facts and binding for the native production row and f
   })
   expect(result.models[0]?.schemaEndpointId).toBe('google/gemma-4-31b-it')
   expect(result.models[0]?.factSources?.reasoning?.sourceUrl).toBe(
-    source('google-gemma-4-31b-it').slice(0, -3),
+    source('google-gemma-4-31b-it'),
   )
   const fetched = await provider.fetchSpec({})
-  expect(fetched.specs).toHaveLength(1)
-  const bound = fetched.specs[0]
-  if (!bound || !bound.paths) throw new Error('native model schema missing')
-  expect(bound.paths['/google/gemma-4-31b-it']).toBeDefined()
+  expect(fetched.specs).toEqual([])
+  expect(fetched.bundledEndpoints).toHaveLength(1)
+  expect(fetched.bundledEndpoints?.[0]).toMatchObject({
+    publicId: 'google/gemma-4-31b-it',
+    path: '/chat/completions',
+  })
 })
 
 it('reports an unreadable native discovery source for every affected model', async () => {
@@ -244,3 +262,41 @@ for (const malformed of [true, false])
       )
     },
   )
+
+it('native absent Build pages preserve independent owned contracts without consuming failure budget', async () => {
+  const listing = JSON.parse(native[NVIDIA_MODELS_URL]!) as {
+    data: Array<{ id: string }>
+  }
+  const ids = [
+    'google/gemma-4-31b-it',
+    'google/diffusiongemma-26b-a4b-it',
+    'meta/muse-glimmer-30b',
+    'deepseek-ai/deepseek-v4.1-flash',
+    'poolside/laguna-xs-2.1',
+  ]
+  const data = listing.data.filter((row) => ids.includes(row.id))
+  expect(data).toHaveLength(ids.length)
+  serve({
+    [NVIDIA_MODELS_URL]: JSON.stringify({ ...listing, data }),
+    ...Object.fromEntries(
+      NVIDIA_REFERENCE_INDEXES.slice(1).map((url) => [
+        url,
+        '---\n---\n# No relevant models\n',
+      ]),
+    ),
+  })
+  const result = await provider.listModels({})
+  expect(result.docsFailures).toBeUndefined()
+  expect(result.models).toHaveLength(ids.length)
+  expect(result.models.every((row) => row.schemaEndpointId === row.rawId)).toBe(
+    true,
+  )
+  expect(
+    result.models.find((row) => row.rawId === 'google/gemma-4-31b-it')
+      ?.reasoning?.mode,
+  ).toBe('toggle')
+  expect(
+    result.models.find((row) => row.rawId === 'meta/muse-glimmer-30b')
+      ?.reasoning?.mode,
+  ).toBe('effort')
+})

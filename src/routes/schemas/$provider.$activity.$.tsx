@@ -1,3 +1,5 @@
+import { Provenance } from '#/components/provenance.tsx'
+import { sourceHref } from '#/lib/provenance.ts'
 import { Fragment, useMemo, useState } from 'react'
 import { createFileRoute, notFound, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
@@ -205,7 +207,7 @@ function SchemaDetail() {
   const table = useMemo(() => schemaToRows(result.schema), [result.schema])
 
   const validateCurl = `curl -X POST https://modelschemas.com/v1/validate -d '{"provider":"${result.provider}","endpointId":"${result.endpointId}","payload":{}}'`
-  const sourceUrl = result.provenance.sourceUrl
+  const sourceUrl = sourceHref(result.provenance.sourceUrl)
   const jsonBytes = new Blob([jsonBody]).size
 
   return (
@@ -279,7 +281,7 @@ function SchemaDetail() {
                 </span>
               ),
             ],
-            ...(sourceUrl?.startsWith('http')
+            ...(sourceUrl !== null
               ? ([
                   [
                     'source',
@@ -291,6 +293,13 @@ function SchemaDetail() {
               : []),
           ]}
         />
+
+        <section id="sources" className="mb-6">
+          <Provenance
+            facts={{ schema: result.provenance }}
+            omitLinks={sourceUrl !== null}
+          />
+        </section>
 
         {view === 'json' ? (
           <JsonPane

@@ -118,6 +118,7 @@ export const provider: ProviderConfig = {
   modelsEndpoint: ANT_PRICE,
   defaultDerivation: 'docs-derived',
   bindSyncedRoutesOnly: true,
+  perModelSchemaFlags: ['reasoning'],
   connect: bearerConnect('https://api.ant-ling.com'),
   async listModels(env, kv) {
     // Sequential cache misses keep browser requests within session capacity.

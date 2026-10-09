@@ -1,3 +1,5 @@
+import { Provenance } from '#/components/provenance.tsx'
+import { sourceHref } from '#/lib/provenance.ts'
 import { useEffect, useRef, useState } from 'react'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
@@ -28,7 +30,8 @@ interface CalculatorData {
     outputPerMillion?: number
     tiered?: true
   }
-  sourceUrl: string
+  sourceUrl: string | null
+  sourceTrace: { sourceUrl: string; sourceHash: string | null }
   examples: Array<{ usd: number; quote: string }>
   values: Record<string, FieldValue>
   quote: Quote
@@ -101,7 +104,11 @@ const getCalculator = createServerFn({ method: 'GET' })
       displayName: model.displayName,
       inputs: card.inputs,
       compact: projectTokenPricing(card),
-      sourceUrl: card.source.url,
+      sourceUrl: sourceHref(card.source.url),
+      sourceTrace: {
+        sourceUrl: card.source.url,
+        sourceHash: card.source.hash,
+      },
       examples: card.examples.map(({ usd, quote }) => ({ usd, quote })),
       values,
       quote: await runQuote({
@@ -230,15 +237,21 @@ function RateCardCalculator() {
               <a
                 key="s"
                 className="press-link"
-                href={data.sourceUrl}
-                title={data.sourceUrl}
+                href={data.sourceUrl ?? undefined}
+                title={data.sourceUrl ?? undefined}
               >
-                pricing page ↗
+                {data.sourceUrl ? 'pricing page ↗' : 'Source unknown'}
               </a>,
             ],
           ]}
         />
 
+        <section id="sources" className="mb-6">
+          <Provenance
+            facts={{ pricing: data.sourceTrace }}
+            omitLinks={data.sourceUrl !== null}
+          />
+        </section>
         <div className="figure overflow-x-auto">
           <table className="dtable">
             <tbody>

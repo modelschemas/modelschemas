@@ -108,7 +108,7 @@ only: the row's price, limits, and other facts stay its own provider's.
   row or more than one. Priced variants such as `:batch` stay unlinked.
 - `factSources.sameAs` records the source when the link is set, with
   `normalized: true` for a dots-as-hyphens match. Detail responses include
-  it; `/v1/models` includes it with `?provenance=1`.
+  it; model lists include it by default (`?provenance=0` explicitly omits it).
 - Links refresh on each model poll (every 15 minutes) and a change emits
   `model.updated`.
 

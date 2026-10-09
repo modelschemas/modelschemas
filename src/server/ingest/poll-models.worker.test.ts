@@ -144,6 +144,65 @@ describe('pollProviderModels', () => {
     }
   })
 
+  it('clears legacy NVIDIA static request fields when native wire evidence is unknown or unavailable', async () => {
+    const deps = await freshDeps('nvidia')
+    const rawId = 'native-wire-unknown'
+    await pollProviderModels(
+      deps,
+      stubProvider('nvidia', [
+        {
+          rawId,
+          activity: 'chat',
+          requestMap: {
+            thinking: null,
+            maxTokensField: 'max_tokens',
+            developerRole: false,
+            replayReasoningContent: null,
+            store: null,
+            strictTools: null,
+            sessionAffinity: null,
+            cacheControl: null,
+            toolStream: null,
+            reasoningEffort: null,
+          },
+        },
+      ]),
+    )
+    const legacy = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId('nvidia', rawId)))
+    expect(legacy[0]?.requestMap).toMatchObject({
+      maxTokensField: 'max_tokens',
+      developerRole: false,
+    })
+    await pollProviderModels(
+      deps,
+      stubProvider('nvidia', [
+        {
+          rawId,
+          activity: 'chat',
+          requestMap: null,
+          absent: { reasoning: 'unavailable', schemaEndpointId: 'unavailable' },
+        },
+      ]),
+    )
+    const unknown = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId('nvidia', rawId)))
+    expect(unknown[0]?.requestMap).toBeNull()
+    await pollProviderModels(
+      deps,
+      stubProvider('nvidia', [{ rawId, activity: 'chat' }]),
+    )
+    const unbound = await deps.db
+      .select()
+      .from(models)
+      .where(eq(models.id, modelDbId('nvidia', rawId)))
+    expect(unbound[0]?.requestMap).toBeNull()
+  })
+
   it('covers add / no-change / update / remove cycles', async () => {
     const id = 'poll-main'
     const deps = await freshDeps(id)

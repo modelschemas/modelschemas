@@ -116,8 +116,18 @@ export const openApiDocument = {
       get: {
         operationId: 'listProviderModels',
         summary: 'List models for one provider',
-        parameters: [providerParam],
+        parameters: [
+          providerParam,
+          {
+            name: 'provenance',
+            in: 'query',
+            description:
+              'Include recorded per-field sources by default; 0 omits them.',
+            schema: { type: 'string', enum: ['0', '1'], default: '1' },
+          },
+        ],
         responses: {
+          '400': errorResponse,
           '200': {
             description: 'Models for the provider.',
             content: { 'application/json': { schema: { type: 'object' } } },
@@ -156,8 +166,8 @@ export const openApiDocument = {
             name: 'provenance',
             in: 'query',
             description:
-              'Set to 1 to include per-field factSources on each list row. Model detail always includes factSources and OpenRouter discrepancies.',
-            schema: { type: 'string', enum: ['1'] },
+              'Per-field factSources are included by default. Set to 0 to omit them on list rows; 1 explicitly includes them. Model detail always includes factSources and OpenRouter discrepancies.',
+            schema: { type: 'string', enum: ['0', '1'], default: '1' },
           },
           {
             name: 'pricing',
@@ -960,7 +970,7 @@ export const openApiDocument = {
           },
           factSources: {
             description:
-              'Per-field provenance. Detail always includes this; lists include it with provenance=1. A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.',
+              'Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.',
           },
           releasedAt: {
             description:

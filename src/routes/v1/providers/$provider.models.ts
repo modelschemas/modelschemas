@@ -10,8 +10,20 @@ export const Route = createFileRoute('/v1/providers/$provider/models')({
   server: {
     handlers: {
       GET: async ({ request, params }) => {
+        const provenance = new URL(request.url).searchParams.get('provenance')
+        if (provenance !== null && provenance !== '0' && provenance !== '1') {
+          return jsonError(
+            400,
+            'invalid_provenance',
+            'provenance must be 0 or 1.',
+          )
+        }
         const db = getDb(env)
-        const body = await listProviderModels(db, params.provider)
+        const body = await listProviderModels(
+          db,
+          params.provider,
+          provenance !== '0',
+        )
         if (!body) {
           const valid = (await knownProviderIds(db)).join(', ')
           return jsonError(

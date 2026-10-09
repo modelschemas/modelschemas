@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Provenance } from '#/components/provenance.tsx'
+import { sourceHref, sourceLinkAlreadyShown } from '#/lib/provenance.ts'
 import { createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 
@@ -99,7 +101,7 @@ const getModelDetail = createServerFn({ method: 'GET' })
         ? null
         : {
             compact: projectTokenPricing(card),
-            sourceUrl: card.source.url,
+            sourceUrl: sourceHref(card.source.url),
             inputs: Object.values(card.inputs).map(
               (input) => `${input.param} (${input.bound ?? 'request'})`,
             ),
@@ -477,6 +479,31 @@ function ModelDetail() {
               </>
             )}
 
+            <section id="sources">
+              <SectionHead title="Sources" />
+              <Provenance
+                facts={model.factSources}
+                omitFieldLinks={
+                  sourceLinkAlreadyShown(
+                    model.factSources?.pricing,
+                    pricing?.sourceUrl,
+                  )
+                    ? ['pricing']
+                    : []
+                }
+                fields={[
+                  'activity',
+                  'contextWindow',
+                  'maxOutput',
+                  'modalities',
+                  'pricing',
+                  'capabilities',
+                  'reasoning',
+                  'requestMap',
+                  'schemaEndpointId',
+                ]}
+              />
+            </section>
             <SectionHead title="Use it" />
             <CodePanel title="shell" copyText={schemaCurl}>
               <code>

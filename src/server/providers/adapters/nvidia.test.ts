@@ -116,6 +116,11 @@ function stubFetch(pages: Record<string, string>): Array<string> {
     urls.push(url)
     const body =
       pages[url] ??
+      (url.startsWith('https://build.nvidia.com/') &&
+      !url.endsWith('.md') &&
+      pages[`${url}.md`]?.startsWith('---\n')
+        ? '<script>self.__next_f.push([1,"1:{}"])</script>'
+        : undefined) ??
       (url === NVIDIA_SITEMAP_URL
         ? '<urlset><url><loc>https://docs.api.nvidia.com/nim/reference/google-gemma-4-31b-it-infer</loc></url></urlset>'
         : /\/nim\/reference\/[a-z0-9-]+-apis\.md$/.test(url)
@@ -136,7 +141,7 @@ describe('parseNvidiaCard', () => {
       activity: 'chat',
       contextWindow: 1048576,
       modalities: { input: ['text', 'image'], output: ['text'] },
-      exactCapabilities: true,
+      unsupportedCapabilities: [],
       capabilities: ['tools', 'structured_outputs', 'reasoning'],
     })
   })
@@ -305,6 +310,11 @@ description: "1B embedding model for semantic search."
   it('reads a reasoning_effort list and an always-on sentence', () => {
     expect(
       parseNvidiaCard(
+        'Thinking budget is controlled by `reasoning_effort`, which accepts `none`, `low`, or `high` and defaults to `high`.',
+      ).reasoning?.mandatory,
+    ).toBeNull()
+    expect(
+      parseNvidiaCard(
         'Thinking budget is controlled by `reasoning_effort`, which accepts `low`,\n`high`, or `max` and defaults to `max`.',
       ).reasoning,
     ).toEqual({
@@ -344,7 +354,8 @@ numeric reasoning effort from 1 to 100.
     const facts = parseNvidiaCard(card)
     expect(facts.reasoning).toBeUndefined()
     expect(facts.capabilities).toEqual(['reasoning'])
-    expect(facts.exactCapabilities).toBe(true)
+    expect(facts.exactCapabilities).toBeUndefined()
+    expect(facts.unsupportedCapabilities).toEqual([])
   })
 })
 
@@ -371,6 +382,7 @@ describe('nvidia', () => {
         rawId: '01-ai/yi-large',
         releasedAt: 735790403,
         pricing: null,
+        requestMap: null,
         activity: 'chat',
         factSources: {},
       },
@@ -378,10 +390,11 @@ describe('nvidia', () => {
         rawId: 'z-ai/glm-5.3-flash',
         releasedAt: 735790403,
         pricing: null,
+        requestMap: null,
         activity: 'chat',
         contextWindow: 1048576,
         modalities: { input: ['text', 'image'], output: ['text'] },
-        exactCapabilities: true,
+        unsupportedCapabilities: [],
         capabilities: ['tools', 'structured_outputs', 'reasoning'],
         factSources: {
           contextWindow: { ...source, path: 'contextWindow' },
@@ -397,7 +410,12 @@ describe('nvidia', () => {
         },
       },
       // No card under any slug: listed, no facts.
-      { rawId: 'google/deplot', releasedAt: 735790403, pricing: null },
+      {
+        rawId: 'google/deplot',
+        releasedAt: 735790403,
+        pricing: null,
+        requestMap: null,
+      },
     ])
     expect(urls).toContain('https://build.nvidia.com/z-ai/glm-5_3-flash.md')
   })
@@ -431,7 +449,6 @@ describe('nvidia', () => {
         modalities: 'unavailable',
         capabilities: 'unavailable',
         reasoning: 'unavailable',
-        requestMap: 'unavailable',
         schemaEndpointId: 'unavailable',
       })
     }
@@ -450,6 +467,7 @@ describe('nvidia', () => {
       rawId: 'google/deplot',
       releasedAt: 735790403,
       pricing: null,
+      requestMap: null,
     })
   })
 
@@ -543,7 +561,7 @@ updatedAt: test
       schemaEndpointId: 'z-ai/glm-5.3-flash',
     })
     expect(glm?.factSources?.maxOutput).toMatchObject({
-      sourceUrl: infer,
+      sourceUrl: infer + '.md',
       path: 'max_tokens',
     })
     expect(glm?.factSources?.contextWindow?.sourceUrl).toBe(
@@ -551,8 +569,12 @@ updatedAt: test
     )
     const spec = await provider.fetchSpec({})
     expect(spec.skipped).toBeUndefined()
-    expect(spec.specs).toHaveLength(1)
-    expect(spec.specs[0]?.paths).toHaveProperty('/z-ai/glm-5.3-flash')
+    expect(spec.specs).toEqual([])
+    expect(spec.bundledEndpoints).toHaveLength(1)
+    expect(spec.bundledEndpoints?.[0]).toMatchObject({
+      publicId: 'z-ai/glm-5.3-flash',
+      path: '/chat/completions',
+    })
     expect(
       provider.classify('/z-ai/glm-5.3-flash', {
         'x-modelschemas-activity': 'chat',
@@ -663,4 +685,21 @@ it('reads hosted replay instructions rather than copying maker behavior', () => 
       ),
     ).requestMap,
   ).toBeUndefined()
+})
+
+it('does not make card reasoning mandatory from negated or fenced always-enabled prose', () => {
+  const effort = '**Configurable reasoning effort:** levels (`low`, `high`)'
+  for (const phrase of [
+    'Do not assume thinking is always enabled.',
+    'Never assume thinking is always enabled.',
+    '```text\nThinking is always enabled.\n```',
+  ]) {
+    expect(
+      parseNvidiaCard(effort + '\n' + phrase).reasoning?.mandatory,
+    ).toBeNull()
+  }
+  expect(
+    parseNvidiaCard(effort + '\nThinking is always enabled.').reasoning
+      ?.mandatory,
+  ).toBe(true)
 })

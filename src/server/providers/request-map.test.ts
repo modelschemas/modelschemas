@@ -187,12 +187,7 @@ describe('chatRequestMap', () => {
   it('names max_tokens and rejects reasoning_effort where the docs do', () => {
     // Workers AI states request fields per model; its adapter reads them.
     expect(chatRequestMap('cloudflare-workers-ai', 'x', 'chat')).toBeNull()
-    const map = chatRequestMap('nvidia', 'some-chat', 'chat')
-    expect(map?.maxTokensField).toBe('max_tokens')
-    // NVIDIA's per-model reference pages are not read yet: unknown.
-    expect(map?.reasoningEffort).toBeNull()
-    expect(map?.developerRole).toBe(false)
-    expect(map?.thinking).toBeNull()
+    expect(chatRequestMap('nvidia', 'some-chat', 'chat')).toBeNull()
     expect(chatRequestMap('grok', 'grok-4', 'chat')?.reasoningEffort).toBe(
       false,
     )
