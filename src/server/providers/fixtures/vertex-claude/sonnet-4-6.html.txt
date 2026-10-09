@@ -1,0 +1,782 @@
+<article class="devsite-article">
+  
+  
+  
+  
+  
+
+  <div class="devsite-article-meta nocontent" role="navigation" data-nosnippet>
+    
+    
+    <ul class="devsite-breadcrumb-list"
+  
+    aria-label="Breadcrumb">
+  
+  <li class="devsite-breadcrumb-item
+             ">
+    
+    
+    
+      
+        
+  <a href="https://docs.cloud.google.com/"
+      
+        class="devsite-breadcrumb-link gc-analytics-event"
+      
+        data-category="Site-Wide Custom Events"
+      
+        data-label="Breadcrumbs"
+      
+        data-value="1"
+      
+        track-type="globalNav"
+      
+        track-name="breadcrumb"
+      
+        track-metadata-position="1"
+      
+        track-metadata-eventdetail="Google Cloud Documentation"
+      
+    >
+    
+          Home
+        
+  </a>
+  
+      
+    
+  </li>
+  
+  <li class="devsite-breadcrumb-item
+             ">
+    
+      
+      <div class="devsite-breadcrumb-guillemet material-icons" aria-hidden="true"></div>
+    
+    
+    
+      
+        
+  <a href="https://docs.cloud.google.com/docs"
+      
+        class="devsite-breadcrumb-link gc-analytics-event"
+      
+        data-category="Site-Wide Custom Events"
+      
+        data-label="Breadcrumbs"
+      
+        data-value="2"
+      
+        track-type="globalNav"
+      
+        track-name="breadcrumb"
+      
+        track-metadata-position="2"
+      
+        track-metadata-eventdetail="Documentation"
+      
+    >
+    
+          Documentation
+        
+  </a>
+  
+      
+    
+  </li>
+  
+  <li class="devsite-breadcrumb-item
+             ">
+    
+      
+      <div class="devsite-breadcrumb-guillemet material-icons" aria-hidden="true"></div>
+    
+    
+    
+      
+        
+  <a href="https://docs.cloud.google.com/docs/ai-ml"
+      
+        class="devsite-breadcrumb-link gc-analytics-event"
+      
+        data-category="Site-Wide Custom Events"
+      
+        data-label="Breadcrumbs"
+      
+        data-value="3"
+      
+        track-type="globalNav"
+      
+        track-name="breadcrumb"
+      
+        track-metadata-position="3"
+      
+        track-metadata-eventdetail="AI and ML"
+      
+    >
+    
+          AI and ML
+        
+  </a>
+  
+      
+    
+  </li>
+  
+  <li class="devsite-breadcrumb-item
+             ">
+    
+      
+      <div class="devsite-breadcrumb-guillemet material-icons" aria-hidden="true"></div>
+    
+    
+    
+      
+        
+  <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform"
+      
+        class="devsite-breadcrumb-link gc-analytics-event"
+      
+        data-category="Site-Wide Custom Events"
+      
+        data-label="Breadcrumbs"
+      
+        data-value="4"
+      
+        track-type="globalNav"
+      
+        track-name="breadcrumb"
+      
+        track-metadata-position="4"
+      
+        track-metadata-eventdetail="Gemini Enterprise Agent Platform"
+      
+    >
+    
+          Gemini Enterprise Agent Platform
+        
+  </a>
+  
+      
+    
+  </li>
+  
+  <li class="devsite-breadcrumb-item
+             ">
+    
+      
+      <div class="devsite-breadcrumb-guillemet material-icons" aria-hidden="true"></div>
+    
+    
+    
+      
+        
+  <a href="https://docs.cloud.google.com/gemini-enterprise-agent-platform/models"
+      
+        class="devsite-breadcrumb-link gc-analytics-event"
+      
+        data-category="Site-Wide Custom Events"
+      
+        data-label="Breadcrumbs"
+      
+        data-value="5"
+      
+        track-type="globalNav"
+      
+        track-name="breadcrumb"
+      
+        track-metadata-position="5"
+      
+        track-metadata-eventdetail=""
+      
+    >
+    
+          Models
+        
+  </a>
+  
+      
+    
+  </li>
+  
+</ul>
+    
+      
+    <devsite-thumb-rating position="header">
+    </devsite-thumb-rating>
+  
+    
+  </div>
+  
+    <devsite-feedback
+  position="header"
+  project-name="Gemini Enterprise Agent Platform"
+  product-id="5041938"
+  bucket="Documentation"
+  context=""
+  version="t-devsite-webserver-20260929-r00-rc00.480826398110805643"
+  data-label="Send Feedback Button"
+  track-type="feedback"
+  track-name="sendFeedbackLink"
+  track-metadata-position="header"
+  class="nocontent"
+  data-nosnippet
+  
+  
+  
+    
+      project-icon="https://www.gstatic.com/images/branding/productlogos/gemini_2025/v1/192px.svg"
+    
+  
+  
+  
+  >
+
+  <button>
+  
+    
+    Send feedback
+  
+  </button>
+</devsite-feedback>
+  
+    <h1 class="devsite-page-title" tabindex="-1">
+      Claude Sonnet 4.6 on Google Cloud<devsite-actions hidden data-nosnippet><devsite-feature-tooltip
+      ack-key="AckCollectionsBookmarkTooltipDismiss"
+      analytics-category="Site-Wide Custom Events"
+      analytics-action-show="Callout Profile displayed"
+      analytics-action-close="Callout Profile dismissed"
+      analytics-label="Create Collection Callout"
+      class="devsite-page-bookmark-tooltip nocontent"
+      data-nosnippet
+      dismiss-button="true"
+      id="devsite-collections-dropdown"
+      
+      dismiss-button-text="Dismiss"
+
+      
+      close-button-text="Got it">
+
+    
+    
+      <devsite-bookmark></devsite-bookmark>
+    
+
+    <span slot="popout-heading">
+      
+      Stay organized with collections
+    </span>
+    <span slot="popout-contents">
+      
+      Save and categorize content based on your preferences.
+    </span>
+  </devsite-feature-tooltip>
+    <devsite-llm-tools></devsite-llm-tools></devsite-actions>
+  
+      
+    </h1>
+  
+
+  <devsite-toc class="devsite-nav"
+    depth="2"
+    devsite-toc-embedded
+    >
+  </devsite-toc>
+  
+    
+  <div class="devsite-article-body clearfix
+  ">
+
+  
+    
+    
+    
+    
+
+<p>Claude Sonnet 4.6 on Google Cloud delivers frontier intelligence at scale—built for
+coding, agents, and enterprise workflows.</p>
+
+<ul>
+<li><strong>Long-running agents</strong>: Power production-ready assistants for multi-step,
+real-time applications—from customer support automation to complex
+operational workflows that require peak accuracy, intelligence, and speed.</li>
+<li><strong>Coding</strong>: Handle everyday development tasks with enhanced performance––or
+plan and execute complex software projects spanning hours or days––with the
+ability to save, maintain, and reference information across multiple
+sessions.</li>
+<li><strong>Cybersecurity</strong>: Deploy agents that autonomously patch vulnerabilities
+before exploitation––shifting from reactive detection to proactive defense.</li>
+<li><strong>Financial analysis</strong>: Conduct entry-level financial analysis, deliver
+advanced predictive analysis, or preemptively develop intelligent risk
+management strategies that leverage best-in-class domain knowledge.</li>
+<li><strong>Computer use</strong>: Claude Sonnet 4.6 on Google Cloud is a highly accurate model for
+computer use, enabling developers to direct Claude to use computers the way
+people do.</li>
+<li><strong>Business tasks</strong>: Generate and edit office files like slides, documents,
+and spreadsheets with minimal input.</li>
+<li><strong>Research</strong>: Perform focused analysis across multiple data sources, turning
+expert analysis into final deliverables. Ideal for complex problem solving,
+rapid business intelligence, and real-time decision support.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+<p>
+
+  
+    <a href="https://console.cloud.google.com/agent-platform/publishers/anthropic/model-garden/claude-sonnet-4-6" class="geap-model-button geap-button-primary geap">Try in Agent Studio</a>
+  
+
+  <a href="https://console.cloud.google.com/agent-platform/publishers/anthropic/model-garden/claude-sonnet-4-6" class="geap-model-button model-garden">View model card in Model Garden</a>
+</p>
+
+<table class="geap-model-table">
+  <tr>
+    <th id="model-id">Model ID</th>
+    <td colspan="2"><code translate="no" dir="ltr">claude-sonnet-4-6</code></td>
+  </tr>
+
+  
+  <tr>
+    <th id="launch-stage">Launch stage</th>
+    
+    <td colspan="2">GA</td>
+    
+  </tr>
+  
+
+  
+  <tr>
+    <th id="supported-io">Supported inputs & outputs</th>
+    <td colspan="2">
+      <ul>
+      <li>
+        Inputs:
+        <section class="geap-list">
+        
+        <span>Text</span>, 
+        
+        <span>Code</span>, 
+        
+        <span>Images</span>, 
+        
+        <span>Documents</span>
+        
+        </section>
+      </li>
+      <li>
+        Outputs:
+        <section class="geap-list">
+        
+        <span>Text</span>
+        
+        </section>
+      </li>
+      </ul>
+    </td>
+  </tr>
+  
+
+  
+  <tr>
+    <th id="token-limits">Token limits</th>
+    <td colspan="2">
+    <ul>
+    
+      <li>Maximum input tokens: 1,000,000</li>
+    
+      <li>Maximum output tokens: 128,000</li>
+    
+    </ul>
+    </td>
+  </tr>
+  
+
+  
+  <tr>
+    <th id="capabilities">Capabilities</th>
+    <td colspan="2">
+      <ul class="geap-capabilities">
+        <section class="geap-capabilities-supported">
+          <li class="geap-supported">Supported</li>
+          <ul>
+            
+              <li>
+                <a href="https://docs.anthropic.com/en/docs/build-with-claude/computer-use">Computer use</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/web-search">Web search</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/batch">Batch predictions</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/prompt-caching">Prompt caching</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude#tool_use_function_calling">Function calling</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude#use_a_curl_command">Extended thinking</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/count-tokens">Count tokens</a>
+                
+              </li>
+            
+          </ul>
+        </section>
+        <section class="geap-capabilities-not-supported">
+          <li class="geap-not-supported">Not supported</li>
+          <ul>
+            
+          </ul>
+        </section>
+      </ul>
+    </td>
+  </tr>
+  
+
+  
+  <tr>
+    <th id="usage-types">Usage types</th>
+    <td colspan="2">
+      <ul class="geap-capabilities">
+        <section class="geap-capabilities-supported">
+          <li class="geap-supported">Supported</li>
+          <ul>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/quotas">Fixed quota</a>
+                
+              </li>
+            
+              <li>
+                <a href="/gemini-enterprise-agent-platform/models/provisioned-throughput">Provisioned Throughput</a>
+                
+              </li>
+            
+          </ul>
+        </section>
+        <section class="geap-capabilities-not-supported">
+          <li class="geap-not-supported">Not supported</li>
+          <ul>
+            
+          </ul>
+        </section>
+      </ul>
+    </td>
+  </tr>
+  
+
+  
+  <tr>
+    <th id="technical-specifications" rowspan="3">Technical specifications</th>
+  </tr>
+  
+  <tr>
+    <td>Images</td>
+    <td>
+      <ul class="geap-media-list">
+      
+      <li><b>Limitation and specifications:</b> See <a href="https://docs.anthropic.com/en/docs/build-with-claude/vision">Vision</a> in Anthropic's documentation</li>
+      
+      
+      </ul>
+    </td>
+  </tr>
+  
+  <tr>
+    <td>Documents</td>
+    <td>
+      <ul class="geap-media-list">
+      
+      <li><b>Limitation and specifications:</b> See <a href="https://docs.anthropic.com/en/docs/build-with-claude/pdf-support">PDF support</a> in Anthropic's documentation</li>
+      
+      
+      </ul>
+    </td>
+  </tr>
+  
+  
+
+  
+
+  
+
+  
+  <tr>
+    <th id="versions">Versions</th>
+    <td colspan="2">
+    <ul>
+      
+      <li><code translate="no" dir="ltr">claude-sonnet-4-6</code></li>
+      <ul>
+        <li><b>Launch stage:</b> Generally available</li>
+        <li><b>Release date:</b> February 17, 2026</li>
+        
+        
+      </ul>
+      
+    </ul>
+    </td>
+  </tr>
+  
+
+  <tr>
+    <th id="supported-regions" rowspan="3">Supported regions</th>
+  </tr>
+  
+  <tr>
+    <td>
+      <p>Model availability</p>
+      
+      <p>(Includes fixed quota & Provisioned Throughput)</p>
+      
+    </td>
+    <td>
+      <ul>
+      
+      <section class="geap-region">
+        <li>United States</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">us-east5</code></li>
+        
+        </ul>
+      </section>
+      
+      <section class="geap-region">
+        <li>Europe</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">europe-west1</code></li>
+        
+        </ul>
+      </section>
+      
+      <section class="geap-region">
+        <li>Asia Pacific</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">asia-southeast1</code></li>
+        
+        </ul>
+      </section>
+      
+      <section class="geap-region">
+        <li>Global</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">global endpoint</code></li>
+        
+        </ul>
+      </section>
+      
+      </ul>
+    </td>
+  </tr>
+  
+  <tr>
+    <td>
+      <p>ML processing</p>
+      
+    </td>
+    <td>
+      <ul>
+      
+      <section class="geap-region">
+        <li>United States</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">Multi-region</code></li>
+        
+        </ul>
+      </section>
+      
+      <section class="geap-region">
+        <li>Europe</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">Multi-region</code></li>
+        
+        </ul>
+      </section>
+      
+      <section class="geap-region">
+        <li>Asia Pacific</li>
+        <ul>
+        
+        <li><code translate="no" dir="ltr">asia-southeast1</code></li>
+        
+        </ul>
+      </section>
+      
+      </ul>
+    </td>
+  </tr>
+  
+
+  <tr>
+    <th id="quota-limits">Quota limits</th>
+    <td colspan="2">
+    
+      
+        
+          
+          <p>us-east5:
+            <ul>
+             <li>QPM: 1500</li>
+             
+             <li>Input TPM: 1,500,000 <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude#input">uncached and cache write</a></li>
+             <li>Output TPM: 150,000</li>
+             
+             
+             
+             <li>Context length: 1,000,000</li>
+             
+            </ul>
+          </p>
+          
+        
+          
+          <p>europe-west1:
+            <ul>
+             <li>QPM: 1800</li>
+             
+             <li>Input TPM: 1,800,000 <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude#input">uncached and cache write</a></li>
+             <li>Output TPM: 180,000</li>
+             
+             
+             
+             <li>Context length: 1,000,000</li>
+             
+            </ul>
+          </p>
+          
+        
+          
+          <p>asia-southeast1:
+            <ul>
+             <li>QPM: 1500</li>
+             
+             <li>Input TPM: 1,500,000 <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude#input">uncached and cache write</a></li>
+             <li>Output TPM: 150,000</li>
+             
+             
+             
+             <li>Context length: 1,000,000</li>
+             
+            </ul>
+          </p>
+          
+        
+          
+          <p>global endpoint:
+            <ul>
+             <li>QPM: 1500</li>
+             
+             <li>Input TPM: 1,500,000 <a href="/gemini-enterprise-agent-platform/models/partner-models/claude/use-claude#input">uncached and cache write</a></li>
+             <li>Output TPM: 150,000</li>
+             
+             
+             
+             <li>Context length: 1,000,000</li>
+             
+            </ul>
+          </p>
+          
+        
+      
+    
+      
+    
+    </td>
+  </tr>
+
+
+  
+
+  <tr>
+    <th id="pricing">Pricing</th>
+    <td colspan="2">See <a href="https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing">Pricing</a>.</td>
+  </tr>
+</table>
+
+
+  <link href="https://fonts.googleapis.com/css2?family=Google+Symbols:wght,GRAD@300,-25;400,0;700,200" rel="stylesheet" data-page-link>
+  
+
+  
+    <devsite-hats-survey class="nocontent" data-nosnippet
+      hats-id="mwETRvWii0eU5NUYprb0Y9z5GVbc"
+      listnr-id="83405"></devsite-hats-survey>
+  
+
+  
+</div>
+
+  
+    
+    
+      
+    <devsite-thumb-rating position="footer">
+    </devsite-thumb-rating>
+  
+       
+         <devsite-feedback
+  position="footer"
+  project-name="Gemini Enterprise Agent Platform"
+  product-id="5041938"
+  bucket="Documentation"
+  context=""
+  version="t-devsite-webserver-20260929-r00-rc00.480826398110805643"
+  data-label="Send Feedback Button"
+  track-type="feedback"
+  track-name="sendFeedbackLink"
+  track-metadata-position="footer"
+  class="nocontent"
+  data-nosnippet
+  
+  
+  
+    
+      project-icon="https://www.gstatic.com/images/branding/productlogos/gemini_2025/v1/192px.svg"
+    
+  
+  
+  
+  >
+
+  <button>
+  
+    
+    Send feedback
+  
+  </button>
+</devsite-feedback>
+       
+    
+    
+  
+
+  <div class="devsite-floating-action-buttons"></div></article>
