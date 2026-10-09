@@ -596,6 +596,8 @@ function priceFamily(
       return 'audio_minutes'
     case '/1000 pages':
     case '/1000 page':
+    case '/1000 annotated pages':
+    case '/1000 annotated page':
       return 'pages'
     case '/m chars':
     case '/m char':
@@ -718,7 +720,16 @@ function listedFromMeters(
       tokenRates[lever] = meter.amount / 1e6
       continue
     }
-    const param = unitParam(family, meter.side, meter.label)
+    // The native OCR widget publishes annotated pages as a distinct billed
+    // quantity, not an ordinary-page rate or a surcharge on all pages.
+    const annotated = /^\/1000 annotated pages?$/i.test(
+      meter.denominator.trim(),
+    )
+    const param = annotated
+      ? meter.side === 'input'
+        ? 'annotated_pages'
+        : 'output_annotated_pages'
+      : unitParam(family, meter.side, meter.label)
     if (units.some((unit) => unit.param === param)) {
       throw new Error(`mistral model page pricing: repeated ${param}`)
     }

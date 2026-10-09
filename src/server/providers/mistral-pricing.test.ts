@@ -401,6 +401,56 @@ describe('mistral model page price and max output', () => {
   const page = (extra: Record<string, unknown>) =>
     mistralModelPage(['voxtral-small-2507'], [[tip('Text input')]], extra)
 
+  it('keeps native OCR annotated-page pricing distinct from ordinary pages', () => {
+    // OCR 4.1's source widget names both denominators; numbers here are synthetic.
+    const ocr = {
+      type: 'custom',
+      free: false,
+      input: [
+        { type: 'flat', price: 7, denominator: '/1000 Pages' },
+        { type: 'flat', price: 11, denominator: '/1000 Annotated Pages' },
+      ],
+      output: [],
+    }
+    expect(parseMistralPagePrice(page({ a1: ocr }))).toEqual({
+      kind: 'unit',
+      meters: [
+        { param: 'pages', rate: 7 / 1000 },
+        { param: 'annotated_pages', rate: 11 / 1000, default: 0 },
+      ],
+    })
+    expect(() =>
+      parseMistralPagePrice(
+        page({
+          a1: {
+            ...ocr,
+            input: [
+              ocr.input[0],
+              {
+                type: 'flat',
+                originalPrice: 11,
+                denominator: '/1000 Annotated Pages',
+              },
+            ],
+          },
+        }),
+      ),
+    ).toThrow('unreadable amount')
+    expect(() =>
+      parseMistralPagePrice(
+        page({
+          a1: {
+            ...ocr,
+            input: [
+              ocr.input[0],
+              { type: 'flat', price: -1, denominator: '/1000 Annotated Pages' },
+            ],
+          },
+        }),
+      ),
+    ).toThrow('negative amount')
+  })
+
   it('reads mixed units and uses the current widget price', () => {
     expect(parseMistralPagePrice(page({ a1: widget }))).toEqual({
       kind: 'tokens',
