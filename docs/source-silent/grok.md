@@ -1,1 +1,1 @@
-- grok: maxOutput — xAI's spec states only a 128k default, no per-model cap (#75, checked 2026-09-26)
+- grok: maxOutput — xAI's spec states a 128,000-token default and explicitly permits larger values; neither the spec nor the Grok 4.7 model page publishes a per-model output cap, https://docs.x.ai/openapi.json, checked 2026-10-09

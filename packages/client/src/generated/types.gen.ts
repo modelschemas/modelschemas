@@ -318,6 +318,9 @@ export type Model = {
    * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
    */
   aliases?: Array<string> | null
+  /**
+   * Per-field provenance. Detail always includes this; lists include it with provenance=1. A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   */
   factSources?: unknown
   /**
    * The provider's own stated release or creation date, epoch seconds. null when the provider reports none. Unlike firstSeenAt it is never our observation.

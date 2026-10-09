@@ -5,10 +5,14 @@
  * `import.meta.glob`; bun does not, so the script reads them with `fs`.
  */
 import { parseLedger } from '#/lib/completeness.ts'
+import { parseSourceSilentEvidence } from './source-silent-facts.ts'
 
 const files = import.meta.glob<string>(
   ['../../docs/source-silent/*.md', '!**/README.md'],
   { query: '?raw', import: 'default', eager: true },
 )
 
-export const sourceSilentLedger = parseLedger(Object.values(files).join('\n'))
+const markdown = Object.values(files).join('\n')
+
+export const sourceSilentLedger = parseLedger(markdown)
+export const sourceSilentEvidenceLedger = parseSourceSilentEvidence(markdown)

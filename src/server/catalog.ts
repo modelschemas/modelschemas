@@ -29,6 +29,8 @@ import {
 import { servePricing } from '#/server/rate-card.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
+import { sourceSilentEvidenceLedger } from './source-silent.ts'
+import { withSourceSilentEvidence } from './source-silent-facts.ts'
 
 export interface ModelFilters {
   activity?: Activity
@@ -183,7 +185,14 @@ function toApiModel(
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
     ...(opts.includeFactSources
-      ? { factSources: modelFactSources(row, match) }
+      ? {
+          factSources: withSourceSilentEvidence(
+            row,
+            schemaEndpointId,
+            modelFactSources(row, match),
+            sourceSilentEvidenceLedger,
+          ),
+        }
       : {}),
     _links: {
       ...modelLinks(row.providerId),
