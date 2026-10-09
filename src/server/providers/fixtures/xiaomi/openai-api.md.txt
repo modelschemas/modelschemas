@@ -1,0 +1,1515 @@
+﻿# OpenAI Chat Completions API Compatibility
+
+<div className='mdx-highlight mdx-highlight-info' data-highlight-icon='info'>
+
+Please refer to [Speech Synthesis (MiMo-TTS Series) - OpenAI API Compatibility](https://mimo.mi.com/docs/en-US/api/audio/tts) for the protocol documentation of the MiMo-TTS series models.
+
+</div>
+
+## Request Address
+
+```bash
+https://api.xiaomimimo.com/v1/chat/completions
+```
+
+## Request Headers
+
+{/* feishu-style:text-align:left */}
+The API supports the following two authentication methods. Please choose one and add it to the request headers:
+
+<Tab>
+  <TabItem label={`API Key Authentication`}>
+
+```json
+api-key: $MIMO_API_KEY
+Content-Type: application/json
+```
+
+  </TabItem>
+  <TabItem label={`Bearer Authentication`}>
+
+```json
+Authorization: Bearer $MIMO_API_KEY
+Content-Type: application/json
+```
+
+  </TabItem>
+</Tab>
+
+## Request body 
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "messages",
+    "type": "array",
+    "isBold": true,
+    "required": true,
+    "description": "The current conversation message list.",
+    "children": [
+      {
+        "name": "Developer message",
+        "type": "object",
+        "isBold": false,
+        "description": "Developer-provided instructions that the model should follow, regardless of messages sent by the user.",
+        "children": [
+          {
+            "name": "content",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "required": true,
+            "description": "The contents of the developer message.",
+            "children": [
+              {
+                "name": "Text content",
+                "type": "string",
+                "isBold": false,
+                "description": "The contents of the developer message."
+              },
+              {
+                "name": "Array of content parts",
+                "type": "array",
+                "isBold": false,
+                "description": "An array of content parts with a defined type. For developer messages, only type <code class=\\"schema-inline-code\\">text</code> is supported.",
+                "children": [
+                  {
+                    "name": "Text content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text content."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part."
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The role of the message author.<br />Available options: <code class=\\"schema-inline-code\\">developer</code>"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": false,
+            "description": "An optional name for the participant. Provides the model information to differentiate between participants of the same role."
+          }
+        ]
+      },
+      {
+        "name": "System message",
+        "type": "object",
+        "isBold": false,
+        "description": "Developer-provided instructions that the model should follow, regardless of messages sent by the user.",
+        "children": [
+          {
+            "name": "content",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "required": true,
+            "description": "The contents of the system message.",
+            "children": [
+              {
+                "name": "Text content",
+                "type": "string",
+                "isBold": false,
+                "description": "The contents of the system message."
+              },
+              {
+                "name": "Array of content parts",
+                "type": "array",
+                "isBold": false,
+                "description": "An array of content parts with a defined type. For system messages, only type <code class=\\"schema-inline-code\\">text</code> is supported.",
+                "children": [
+                  {
+                    "name": "Text content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text content."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part."
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Role of the message author.<br />Available options: <code class=\\"schema-inline-code\\">system</code>"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": false,
+            "description": "An optional name for the participant. Provides the model information to differentiate between participants of the same role."
+          }
+        ]
+      },
+      {
+        "name": "User message",
+        "type": "object",
+        "isBold": false,
+        "description": "Messages sent by an end user, containing prompts or additional context information.",
+        "children": [
+          {
+            "name": "content",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "required": true,
+            "description": "The contents of the user message.",
+            "children": [
+              {
+                "name": "Text content",
+                "type": "string",
+                "isBold": false,
+                "description": "The text contents of the message."
+              },
+              {
+                "name": "Array of content parts",
+                "type": "array",
+                "isBold": false,
+                "description": "An array of content parts with a defined type. Supported options differ based on the model being used to generate the response. Can contain text, image, audio or video inputs.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                "children": [
+                  {
+                    "name": "Text content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text content."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part."
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Image content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "image_url",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Either a URL of the image or the base64 encoded image data."
+                          }
+                        ]
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part.<br />Available options: <code class=\\"schema-inline-code\\">image_url</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Audio content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "input_audio",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "children": [
+                          {
+                            "name": "data",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Either a URL of the audio or the base64 encoded audio data."
+                          }
+                        ]
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part.<br />Available options: <code class=\\"schema-inline-code\\">input_audio</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Video content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "video_url",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Either a URL of the video or the base64 encoded video data."
+                          }
+                        ]
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part.<br />Available options: <code class=\\"schema-inline-code\\">video_url</code>"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Role of the message author.<br />Available options: <code class=\\"schema-inline-code\\">user</code>"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": false,
+            "description": "An optional name for the participant. Provides model information to differentiate between participants of the same role."
+          }
+        ]
+      },
+      {
+        "name": "Assistant message",
+        "type": "object",
+        "isBold": false,
+        "description": "Messages sent by the model in response to user messages.",
+        "children": [
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Role of the message author.<br />Available options: <code class=\\"schema-inline-code\\">assistant</code>"
+          },
+          {
+            "name": "content",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "required": false,
+            "description": "The contents of the assistant message. Required unless <code class=\\"schema-inline-code\\">tool_calls</code> is specified.",
+            "children": [
+              {
+                "name": "Text content",
+                "type": "string",
+                "isBold": false,
+                "description": "The contents of the assistant message."
+              },
+              {
+                "name": "Array of content parts",
+                "type": "array",
+                "isBold": false,
+                "description": "An array of content parts with a defined type. Can be one or more of type <code class=\\"schema-inline-code\\">text</code>.",
+                "children": [
+                  {
+                    "name": "Text content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text content."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part."
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": false,
+            "description": "An optional name for the participant. Provides model information to differentiate between participants of the same role."
+          },
+          {
+            "name": "tool_calls",
+            "type": "array",
+            "isBold": true,
+            "required": false,
+            "description": "The tool calls generated by the model, such as function calls.",
+            "children": [
+              {
+                "name": "Function tool call",
+                "type": "object",
+                "isBold": false,
+                "description": "A call to a function tool created by the model.",
+                "children": [
+                  {
+                    "name": "function",
+                    "type": "object",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The function that the model called.",
+                    "children": [
+                      {
+                        "name": "arguments",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The arguments to call the function with, as generated by the model in JSON format. Note that the model does not always generate valid JSON, and may hallucinate parameters not defined by your function schema. Validate the arguments in your code before calling your function."
+                      },
+                      {
+                        "name": "name",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The name of the function to call."
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The ID of the tool call."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Tool type. Currently, only <code class=\\"schema-inline-code\\">function</code> is supported."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Tool message",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "content",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "required": true,
+            "description": "The contents of the tool message.",
+            "children": [
+              {
+                "name": "Text content",
+                "type": "string",
+                "isBold": false,
+                "description": "The contents of the tool message."
+              },
+              {
+                "name": "Array of content parts",
+                "type": "array",
+                "isBold": false,
+                "description": "An array of content parts with a defined type. For tool messages, text, image, audio and video are supported.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                "children": [
+                  {
+                    "name": "Text content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text content."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part."
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Image content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "image_url",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Either a URL of the image or the base64 encoded image data."
+                          }
+                        ]
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part.<br />Available options: <code class=\\"schema-inline-code\\">image_url</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Audio content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "input_audio",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "children": [
+                          {
+                            "name": "data",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Either a URL of the audio or the base64 encoded audio data."
+                          }
+                        ]
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part.<br />Available options: <code class=\\"schema-inline-code\\">input_audio</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Video content part",
+                    "type": "object",
+                    "isBold": false,
+                    "children": [
+                      {
+                        "name": "video_url",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Either a URL of the video or the base64 encoded video data."
+                          }
+                        ]
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the content part.<br />Available options: <code class=\\"schema-inline-code\\">video_url</code>"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Role of the message author.<br />Available options: <code class=\\"schema-inline-code\\">tool</code>"
+          },
+          {
+            "name": "tool_call_id",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Tool call that this message is responding to."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "required": true,
+    "description": "Model ID is used to generate the response.<br />Available options: <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>"
+  },
+  {
+    "name": "frequency_penalty",
+    "type": [
+      "number",
+      "null"
+    ],
+    "isBold": true,
+    "required": false,
+    "defaultValue": "0",
+    "description": "Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.<br />Required range: <code class=\\"schema-inline-code\\">[-2.0, 2.0]</code>"
+  },
+  {
+    "name": "max_completion_tokens",
+    "type": [
+      "integer",
+      "null"
+    ],
+    "isBold": true,
+    "required": false,
+    "description": "An upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">32768</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[1, 131072]</code>"
+  },
+  {
+    "name": "presence_penalty",
+    "type": [
+      "number",
+      "null"
+    ],
+    "isBold": true,
+    "required": false,
+    "defaultValue": "0",
+    "description": "Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, increasing the model's likelihood to talk about new topics.<br />Required range: <code class=\\"schema-inline-code\\">[-2.0, 2.0]</code>"
+  },
+  {
+    "name": "response_format",
+    "type": "object",
+    "isBold": true,
+    "required": false,
+    "description": "An object specifying the format that the model must output.",
+    "children": [
+      {
+        "name": "Text",
+        "type": "object",
+        "isBold": false,
+        "description": "Default response format. Used to generate text responses.",
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of response format being defined. Always <code class=\\"schema-inline-code\\">text</code>."
+          }
+        ]
+      },
+      {
+        "name": "JSON object",
+        "type": "object",
+        "isBold": false,
+        "description": "JSON object response format. Note that the model will not generate JSON without a system or user message instructing it to do so.",
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of response format being defined. Always <code class=\\"schema-inline-code\\">json_object</code>."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "stop",
+    "type": [
+      "string",
+      "array",
+      "null"
+    ],
+    "isBold": true,
+    "required": false,
+    "defaultValue": "null",
+    "description": "Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence."
+  },
+  {
+    "name": "stream",
+    "type": [
+      "boolean",
+      "null"
+    ],
+    "isBold": true,
+    "required": false,
+    "defaultValue": "false",
+    "description": "If set to true, the model response data will be streamed to the client as it is generated using server-sent events."
+  },
+  {
+    "name": "thinking",
+    "type": "object",
+    "isBold": true,
+    "required": false,
+    "description": "This parameter is used to control whether the model enables the chain of thought.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns a <code class=\\"schema-inline-code\\">reasoning_content</code> field alongside <code class=\\"schema-inline-code\\">tool_calls</code>. To continue the conversation, it is recommended to keep all previous <code class=\\"schema-inline-code\\">reasoning_content</code> in the <code class=\\"schema-inline-code\\">messages</code> array for each subsequent request to achieve the best performance.</blockquote><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> and <code class=\\"schema-inline-code\\">top_p</code> parameters. Even if these parameters are passed in, the actual effective values will be forcibly set by the model to its recommended default values of <code class=\\"schema-inline-code\\">1.0</code> and <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>",
+    "children": [
+      {
+        "name": "type",
+        "type": "string",
+        "isBold": true,
+        "required": true,
+        "description": "Whether to enable the chain of thought.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">enabled</code></li></ul>Available options: <code class=\\"schema-inline-code\\">enabled</code>, <code class=\\"schema-inline-code\\">disabled</code>"
+      }
+    ]
+  },
+  {
+    "name": "temperature",
+    "type": "number",
+    "isBold": true,
+    "required": false,
+    "description": "What sampling temperature to use, between 0 and 1.5. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. We generally recommend altering this or <code class=\\"schema-inline-code\\">top_p</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">1.0</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">1.0</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[0, 1.5]</code>"
+  },
+  {
+    "name": "tool_choice",
+    "type": "string",
+    "isBold": true,
+    "required": false,
+    "description": "Controls how the model selects a tool.<br /><blockquote class=\\"schema-blockquote\\">Note: When a value other than <code class=\\"schema-inline-code\\">auto</code> is passed to <code class=\\"schema-inline-code\\">tool_choice</code>, the backend will remove this field by default, and the model response behavior will still be equivalent to the <code class=\\"schema-inline-code\\">auto</code> mode (this logic is subject to future adjustments).</blockquote>Available options: <code class=\\"schema-inline-code\\">auto</code>"
+  },
+  {
+    "name": "tools",
+    "type": "array",
+    "isBold": true,
+    "required": false,
+    "description": "A list of tools the model may call. You can provide function tools.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns a <code class=\\"schema-inline-code\\">reasoning_content</code> field alongside <code class=\\"schema-inline-code\\">tool_calls</code>. To continue the conversation, it is recommended to keep all previous <code class=\\"schema-inline-code\\">reasoning_content</code> in the <code class=\\"schema-inline-code\\">messages</code> array for each subsequent request to achieve the best performance.</blockquote>",
+    "children": [
+      {
+        "name": "Function tool",
+        "type": "object",
+        "isBold": false,
+        "description": "A function tool that can be used to generate a response.",
+        "children": [
+          {
+            "name": "function",
+            "type": "object",
+            "isBold": true,
+            "required": true,
+            "children": [
+              {
+                "name": "name",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The name of the tool function. Must be <code class=\\"schema-inline-code\\">a-z</code>, <code class=\\"schema-inline-code\\">A-Z</code>, <code class=\\"schema-inline-code\\">0-9</code>, or contain underscores (<code class=\\"schema-inline-code\\">_</code>) and dashes (<code class=\\"schema-inline-code\\">-</code>), with a maximum length of 64.<br />Required string length: <code class=\\"schema-inline-code\\">1 - 64</code>"
+              },
+              {
+                "name": "description",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "A description of what the function does, used by the model to choose when and how to call the function."
+              },
+              {
+                "name": "parameters",
+                "type": "object",
+                "isBold": true,
+                "required": false,
+                "description": "The parameters the functions accept, described as a JSON Schema object.<br />Omitting <code class=\\"schema-inline-code\\">parameters</code> defines a function with an empty parameter list."
+              },
+              {
+                "name": "strict",
+                "type": "boolean",
+                "isBold": true,
+                "required": false,
+                "defaultValue": "false",
+                "description": "Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the <code class=\\"schema-inline-code\\">parameters</code> field. Only a subset of JSON Schema is supported when <code class=\\"schema-inline-code\\">strict</code> is <code class=\\"schema-inline-code\\">true</code>."
+              }
+            ]
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Tool type. Currently, only <code class=\\"schema-inline-code\\">function</code> is supported."
+          }
+        ]
+      },
+      {
+        "name": "Web search tool",
+        "type": "object",
+        "isBold": false,
+        "description": "A web search tool that can be used to generate a response.For details, please refer to <a target=\\"_blank\\" rel=\\"noopener noreferrer\\" href=\\"https://platform.xiaomimimo.com/#/docs/usage-guide/tool-calling/web-search\\">Web Search</a>.<br /><blockquote class=\\"schema-blockquote\\">Note：<a target=\\"_blank\\" rel=\\"noopener noreferrer\\" href=\\"https://platform.xiaomimimo.com/#/console/plugin\\">Web Search plugin</a> must be activated before use.</blockquote>",
+        "children": [
+          {
+            "name": "user_location",
+            "type": "object",
+            "isBold": true,
+            "required": false,
+            "children": [
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "approximate"
+              },
+              {
+                "name": "country",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "country"
+              },
+              {
+                "name": "region",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "region"
+              },
+              {
+                "name": "city",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "city"
+              },
+              {
+                "name": "district",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "district"
+              },
+              {
+                "name": "longitude",
+                "type": "long",
+                "isBold": true,
+                "required": false,
+                "description": "longitude<strong> </strong>"
+              },
+              {
+                "name": "latitude",
+                "type": "long",
+                "isBold": true,
+                "required": false,
+                "description": "latitude"
+              }
+            ]
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "Tool type. Currently, only <code class=\\"schema-inline-code\\">web_search</code> is supported."
+          },
+          {
+            "name": "force_search",
+            "type": "boolean",
+            "isBold": true,
+            "required": false,
+            "defaultValue": "false",
+            "description": "Whether to enable forced search. <code class=\\"schema-inline-code\\">true</code> for forced search, <code class=\\"schema-inline-code\\">false</code> for the model to decide whether search is needed."
+          },
+          {
+            "name": "max_keyword",
+            "type": "integer",
+            "isBold": true,
+            "required": false,
+            "defaultValue": "5",
+            "description": "Limit the maximum number of keywords that can be used in a single search.<br />Required range: <code class=\\"schema-inline-code\\">[1, 50]</code>"
+          },
+          {
+            "name": "limit",
+            "type": "integer",
+            "isBold": true,
+            "required": false,
+            "defaultValue": "5",
+            "description": "Limit the maximum number of results returned by a single search operation.<br />Required range: <code class=\\"schema-inline-code\\">[1, 50]</code>"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "top_p",
+    "type": "number",
+    "isBold": true,
+    "required": false,
+    "defaultValue": "0.95",
+    "description": "The probability threshold for nucleus sampling, which controls the diversity of the text that the model generates. A higher <code class=\\"schema-inline-code\\">top_p</code> value results in more diverse text. A lower <code class=\\"schema-inline-code\\">top_p</code> value results in more deterministic text.<br />Because both <code class=\\"schema-inline-code\\">temperature</code> and <code class=\\"schema-inline-code\\">top_p</code> control the diversity of the generated text, we recommend that you set only one of them.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">top_p</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>Required range: <code class=\\"schema-inline-code\\">[0.01, 1.0]</code>"
+  }
+]`} />
+
+## Chat response object (non-streaming output) 
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "choices",
+    "type": "array",
+    "isBold": true,
+    "description": "A list of chat completion choices.",
+    "children": [
+      {
+        "name": "finish_reason",
+        "type": "string",
+        "isBold": true,
+        "description": "The reason the model stopped generating tokens. This will be <code class=\\"schema-inline-code\\">stop</code> if the model hit a natural stop point or a provided stop sequence, <code class=\\"schema-inline-code\\">length</code> if the maximum number of tokens specified in the request was reached, <code class=\\"schema-inline-code\\">tool_calls</code> if the model called a tool, <code class=\\"schema-inline-code\\">content_filter</code> if content was omitted due to a flag from our content filters, <code class=\\"schema-inline-code\\">repetition_truncation</code> if the model detects repetition."
+      },
+      {
+        "name": "index",
+        "type": "integer",
+        "isBold": true,
+        "description": "The index of the choice in the list of choices."
+      },
+      {
+        "name": "message",
+        "type": "object",
+        "isBold": true,
+        "description": "A chat completion message generated by the model.",
+        "children": [
+          {
+            "name": "content",
+            "type": "string",
+            "isBold": true,
+            "description": "The contents of the message."
+          },
+          {
+            "name": "reasoning_content",
+            "type": "string",
+            "isBold": true,
+            "description": "The reasoning contents of the assistant message, before the final answer."
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "description": "The role of the author of this message."
+          },
+          {
+            "name": "tool_calls",
+            "type": "array",
+            "isBold": true,
+            "description": "After a function call is initiated, the model returns the tool to be called and the parameters that are Required for the call. This parameter can contain one or more tool response objects.",
+            "children": [
+              {
+                "name": "Function tool call",
+                "type": "object",
+                "isBold": false,
+                "description": "A call to a function tool created by the model.",
+                "children": [
+                  {
+                    "name": "function",
+                    "type": "object",
+                    "isBold": true,
+                    "description": "The function that the model called.",
+                    "children": [
+                      {
+                        "name": "arguments",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The arguments to call the function with, as generated by the model in JSON format. Note      that the model does not always generate valid JSON, and may hallucinate parameters not    defined by your function schema. Validate the arguments in your code before calling your function."
+                      },
+                      {
+                        "name": "name",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The name of the function to call."
+                      }
+                    ]
+                  },
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "The ID of the tool call."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "The type of the tool. Currently, only <code class=\\"schema-inline-code\\">function</code> is supported."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "annotations",
+            "type": "array",
+            "isBold": true,
+            "description": "After web search, the model returns annotations for all referenced URLs.",
+            "children": [
+              {
+                "name": "web_search tool call",
+                "type": "object",
+                "isBold": false,
+                "description": "A call to a web search tool created by the model.",
+                "children": [
+                  {
+                    "name": "logo_url",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Logo url."
+                  },
+                  {
+                    "name": "publish_time",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Publish time."
+                  },
+                  {
+                    "name": "site_name",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Site name."
+                  },
+                  {
+                    "name": "summary",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Summary."
+                  },
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Title."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Type."
+                  },
+                  {
+                    "name": "url",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Url."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "error_message",
+            "type": "string",
+            "isBold": true,
+            "description": "Error message of web search."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "created",
+    "type": "integer",
+    "isBold": true,
+    "description": "The Unix timestamp (in seconds) of when the chat completion was created."
+  },
+  {
+    "name": "id",
+    "type": "string",
+    "isBold": true,
+    "description": "A unique identifier for the chat completion."
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "description": "The model to generate the completion."
+  },
+  {
+    "name": "object",
+    "type": "string",
+    "isBold": true,
+    "description": "The object type, which is always <code class=\\"schema-inline-code\\">chat.completion</code>."
+  },
+  {
+    "name": "usage",
+    "type": [
+      "object",
+      "null"
+    ],
+    "isBold": true,
+    "description": "Usage statistics for the completion request.",
+    "children": [
+      {
+        "name": "completion_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "Number of tokens in the generated completion."
+      },
+      {
+        "name": "prompt_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "Number of tokens in the prompt."
+      },
+      {
+        "name": "total_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "Total number of tokens used in the request (prompt + completion)."
+      },
+      {
+        "name": "completion_tokens_details",
+        "type": "object",
+        "isBold": true,
+        "description": "Breakdown of tokens used in a completion.",
+        "children": [
+          {
+            "name": "reasoning_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Tokens generated by the model for reasoning."
+          }
+        ]
+      },
+      {
+        "name": "prompt_tokens_details",
+        "type": "object",
+        "isBold": true,
+        "description": "Breakdown of tokens used in the prompt.",
+        "children": [
+          {
+            "name": "cached_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Number of tokens served from cache."
+          },
+          {
+            "name": "audio_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Audio input tokens present in the prompt."
+          },
+          {
+            "name": "image_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Image input tokens present in the prompt."
+          },
+          {
+            "name": "video_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Video input tokens present in the prompt."
+          }
+        ]
+      },
+      {
+        "name": "web_search_usage",
+        "type": "object",
+        "isBold": true,
+        "description": "Detailed usage of the web search API.",
+        "children": [
+          {
+            "name": "tool_usage",
+            "type": "integer",
+            "isBold": true,
+            "description": "Number of API calls in web search."
+          },
+          {
+            "name": "page_usage",
+            "type": "integer",
+            "isBold": true,
+            "description": "Number of web pages returned by the web search API."
+          }
+        ]
+      }
+    ]
+  }
+]`} />
+
+## Chat response chunk object (streaming output) 
+<InlineSchemaV2 schema={`[
+  {
+    "name": "choices",
+    "type": "array",
+    "isBold": true,
+    "description": "A list of chat completion choices.",
+    "children": [
+      {
+        "name": "delta",
+        "type": "object",
+        "isBold": true,
+        "description": "A chat completion delta generated by streamed model responses.",
+        "children": [
+          {
+            "name": "content",
+            "type": "string",
+            "isBold": true,
+            "description": "The contents of the chunk message."
+          },
+          {
+            "name": "reasoning_content",
+            "type": "string",
+            "isBold": true,
+            "description": "The reasoning contents of the assistant message, before the final answer."
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "description": "The role of the author of this message."
+          },
+          {
+            "name": "tool_calls",
+            "type": "array",
+            "isBold": true,
+            "description": "The tools to be called by the model and the parameters Required for the calls. It can contain one or more tool response objects.",
+            "children": [
+              {
+                "name": "index",
+                "type": "integer",
+                "isBold": true,
+                "description": "The index of the called tool in the <code class=\\"schema-inline-code\\">tool_calls</code> list, starting from 0."
+              },
+              {
+                "name": "function",
+                "type": "object",
+                "isBold": true,
+                "description": "The function to be called.",
+                "children": [
+                  {
+                    "name": "arguments",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "The arguments to call the function with, as generated by the model in JSON format. Note that the model does not always generate valid JSON, and may hallucinate parameters not defined by your function schema. Validate the arguments in your code before calling your function."
+                  },
+                  {
+                    "name": "name",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "The name of the function to call."
+                  }
+                ]
+              },
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "description": "The ID of the tool call."
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "description": "The type of the tool. Currently, only <code class=\\"schema-inline-code\\">function</code> is supported."
+              }
+            ]
+          },
+          {
+            "name": "annotations",
+            "type": "array",
+            "isBold": true,
+            "description": "After web search, the model returns annotations for all referenced URLs.",
+            "children": [
+              {
+                "name": "web_search tool call",
+                "type": "object",
+                "isBold": false,
+                "description": "A call to a web search tool created by the model.",
+                "children": [
+                  {
+                    "name": "logo_url",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Logo url."
+                  },
+                  {
+                    "name": "publish_time",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Publish time."
+                  },
+                  {
+                    "name": "site_name",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Site name."
+                  },
+                  {
+                    "name": "summary",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Summary."
+                  },
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Title."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Type."
+                  },
+                  {
+                    "name": "url",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Url."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "error_message",
+            "type": "string",
+            "isBold": true,
+            "description": "Error message of web search."
+          }
+        ]
+      },
+      {
+        "name": "finish_reason",
+        "type": [
+          "string",
+          "null"
+        ],
+        "isBold": true,
+        "description": "The reason the model stopped generating tokens. This will be <code class=\\"schema-inline-code\\">stop</code> if the model hit a natural stop point or a provided stop sequence, <code class=\\"schema-inline-code\\">length</code> if the maximum number of tokens specified in the request was reached, <code class=\\"schema-inline-code\\">tool_calls</code> if the model called a tool, <code class=\\"schema-inline-code\\">content_filter</code> if content was omitted due to a flag from our content filters, <code class=\\"schema-inline-code\\">repetition_truncation</code> if the model detects repetition."
+      },
+      {
+        "name": "index",
+        "type": "integer",
+        "isBold": true,
+        "description": "The index of the choice in the list of choices."
+      }
+    ]
+  },
+  {
+    "name": "created",
+    "type": "integer",
+    "isBold": true,
+    "description": "The Unix timestamp (in seconds) of when the chat completion was created. Each chunk has the same timestamp."
+  },
+  {
+    "name": "id",
+    "type": "string",
+    "isBold": true,
+    "description": "A unique identifier for the chat completion.  Each chunk has the same ID."
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "description": "The model to generate the completion."
+  },
+  {
+    "name": "object",
+    "type": "string",
+    "isBold": true,
+    "description": "The object type, which is always <code class=\\"schema-inline-code\\">chat.completion.chunk</code>."
+  },
+  {
+    "name": "usage",
+    "type": [
+      "object",
+      "null"
+    ],
+    "isBold": true,
+    "description": "Usage statistics for the completion request.",
+    "children": [
+      {
+        "name": "completion_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "Number of tokens in the generated completion."
+      },
+      {
+        "name": "prompt_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "Number of tokens in the prompt."
+      },
+      {
+        "name": "total_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "Total number of tokens used in the request (prompt + completion)."
+      },
+      {
+        "name": "completion_tokens_details",
+        "type": "object",
+        "isBold": true,
+        "description": "Breakdown of tokens used in a completion.",
+        "children": [
+          {
+            "name": "reasoning_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Tokens generated by the model for reasoning."
+          }
+        ]
+      },
+      {
+        "name": "prompt_tokens_details",
+        "type": "object",
+        "isBold": true,
+        "description": "Breakdown of tokens used in the prompt.",
+        "children": [
+          {
+            "name": "cached_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Number of tokens served from cache."
+          },
+          {
+            "name": "audio_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Audio input tokens present in the prompt."
+          },
+          {
+            "name": "image_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Image input tokens present in the prompt."
+          },
+          {
+            "name": "video_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "Video input tokens present in the prompt."
+          }
+        ]
+      },
+      {
+        "name": "web_search_usage",
+        "type": "object",
+        "isBold": true,
+        "description": "Detailed usage of the web search API.",
+        "children": [
+          {
+            "name": "tool_usage",
+            "type": "integer",
+            "isBold": true,
+            "description": "Number of API calls in web search."
+          },
+          {
+            "name": "page_usage",
+            "type": "integer",
+            "isBold": true,
+            "description": "Number of web pages returned by the web search API."
+          }
+        ]
+      }
+    ]
+  }
+]`} />

@@ -1,0 +1,3183 @@
+﻿# OpenAI Responses API Compatibility
+
+{/* feishu-style:text-align:left */}
+MiMo provides a calling interface compatible with the OpenAI Responses API format. This document covers request parameters, response schemas and code examples.
+
+{/* feishu-style:text-align:left */}
+**Compatibility Notes & Limitations:** 
+
+{/* feishu-style:text-align:left */}
+This interface aligns with the OpenAI Responses API specification to facilitate quick integration for developers. Only the parameters documented here will be processed normally; undefined parameters will be filtered out and may cause request errors. See below for specific behavioral differences.
+
+- **Incompatible parameters**: Fields such as `background`, `previous_response_id`, and `context_management` are not currently supported. Carrying these parameters in a request will be ignored or trigger an error.
+
+- **Reasoning level control**: `reasoning.effort` controls model reasoning. `none` disables thinking; Every other level enables thinking with identical behavior — The reasoning intensity is not differentiated at this stage. 
+
+## Request Address
+
+```bash
+https://api.xiaomimimo.com/v1/responses
+```
+
+## Request Headers
+
+{/* feishu-style:text-align:left */}
+The API supports the following two authentication methods. Please choose one and add it to the request headers:
+
+<Tab>
+  <TabItem label={`API Key Authentication`}>
+
+```json
+api-key: $MIMO_API_KEY
+Content-Type: application/json
+```
+
+  </TabItem>
+  <TabItem label={`Bearer Authentication`}>
+
+```json
+Authorization: Bearer $MIMO_API_KEY
+Content-Type: application/json
+```
+
+  </TabItem>
+</Tab>
+
+## Request Body
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "input",
+    "type": [
+      "string",
+      "array"
+    ],
+    "isBold": true,
+    "required": true,
+    "description": "Text, image, audio, video inputs to the model, used to generate a response.",
+    "children": [
+      {
+        "name": "TextInput",
+        "type": "string",
+        "isBold": false,
+        "description": "A text input to the model, equivalent to a text input with the <code class=\\"schema-inline-code\\">user</code> role."
+      },
+      {
+        "name": "InputItemList",
+        "type": "array",
+        "isBold": false,
+        "description": "A list of one or many input items to the model, containing different content types.",
+        "children": [
+          {
+            "name": "EasyInputMessage",
+            "type": "object",
+            "isBold": false,
+            "description": "A message input to the model with a role indicating instruction following hierarchy. Instructions given with the <code class=\\"schema-inline-code\\">developer</code> or <code class=\\"schema-inline-code\\">system</code> role take precedence over instructions given with the <code class=\\"schema-inline-code\\">user</code> role.",
+            "children": [
+              {
+                "name": "content",
+                "type": [
+                  "string",
+                  "array"
+                ],
+                "isBold": true,
+                "required": true,
+                "description": "Text, image, audio and video inputs to the model, used to generate a response.",
+                "children": [
+                  {
+                    "name": "TextInput",
+                    "type": "string",
+                    "isBold": false,
+                    "description": "A text input to the model."
+                  },
+                  {
+                    "name": "ResponseInputMessageContentList",
+                    "type": "array",
+                    "isBold": false,
+                    "description": "A list of one or many input items to the model, containing different content types.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                    "children": [
+                      {
+                        "name": "ResponseInputText",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "A text input to the model.",
+                        "children": [
+                          {
+                            "name": "text",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The text input to the model."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputImage",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "An image input to the model.",
+                        "children": [
+                          {
+                            "name": "image_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_image</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputAudio",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "An audio input to the model.",
+                        "children": [
+                          {
+                            "name": "audio_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputVideo",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "A video input to the model.",
+                        "children": [
+                          {
+                            "name": "video_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                          },
+                          {
+                            "name": "fps",
+                            "type": "number",
+                            "isBold": true,
+                            "required": false,
+                            "defaultValue": "2",
+                            "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                          },
+                          {
+                            "name": "media_resolution",
+                            "type": "string",
+                            "isBold": true,
+                            "required": false,
+                            "defaultValue": "default",
+                            "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "role",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The role of the message input.<br />Available options: <code class=\\"schema-inline-code\\">user</code>, <code class=\\"schema-inline-code\\">assistant</code>, <code class=\\"schema-inline-code\\">system</code>, <code class=\\"schema-inline-code\\">developer</code>"
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The type of the message input.<br />Available options: <code class=\\"schema-inline-code\\">message</code>"
+              }
+            ]
+          },
+          {
+            "name": "Message",
+            "type": "object",
+            "isBold": false,
+            "description": "A message input to the model with a role indicating instruction following hierarchy.",
+            "children": [
+              {
+                "name": "content",
+                "type": "array",
+                "isBold": true,
+                "required": true,
+                "description": "A list of one or many input items to the model, containing different content types.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                "children": [
+                  {
+                    "name": "ResponseInputText",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A text input to the model.",
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text input to the model."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputImage",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An image input to the model.",
+                    "children": [
+                      {
+                        "name": "image_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_image</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputAudio",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An audio input to the model.",
+                    "children": [
+                      {
+                        "name": "audio_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputVideo",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A video input to the model.",
+                    "children": [
+                      {
+                        "name": "video_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "role",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The role of the message input.<br />Available options: <code class=\\"schema-inline-code\\">user</code>, <code class=\\"schema-inline-code\\">system</code>, <code class=\\"schema-inline-code\\">developer</code>"
+              },
+              {
+                "name": "status",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The status of item. Populated when items are returned via API.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The type of the message input.<br />Available options: <code class=\\"schema-inline-code\\">message</code>"
+              }
+            ]
+          },
+          {
+            "name": "ResponseOutputMessage",
+            "type": "object",
+            "isBold": false,
+            "description": "An output message from the model.",
+            "children": [
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The unique ID of the output message."
+              },
+              {
+                "name": "content",
+                "type": "array",
+                "isBold": true,
+                "required": true,
+                "description": "The content of the output message.",
+                "children": [
+                  {
+                    "name": "ResponseOutputText",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A text output from the model.",
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text output from the model."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the output text.<br />Available options: <code class=\\"schema-inline-code\\">output_text</code>"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "role",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The role of the output message.<br />Available options: <code class=\\"schema-inline-code\\">assistant</code>"
+              },
+              {
+                "name": "status",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The status of the message input. Populated when input items are returned via API.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of the output message.<br />Available options: <code class=\\"schema-inline-code\\">message</code>"
+              }
+            ]
+          },
+          {
+            "name": "FunctionCall",
+            "type": "object",
+            "isBold": false,
+            "description": "A tool call to run a function.",
+            "children": [
+              {
+                "name": "arguments",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "A JSON string of the arguments to pass to the function."
+              },
+              {
+                "name": "call_id",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The unique ID of the function tool call generated by the model."
+              },
+              {
+                "name": "name",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The name of the function to run."
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of the function tool call.<br />Available options: <code class=\\"schema-inline-code\\">function_call</code>"
+              },
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The unique ID of the function tool call."
+              },
+              {
+                "name": "namespace",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The namespace of the function to run."
+              },
+              {
+                "name": "status",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The status of the item. Populated when items are returned via API.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+              }
+            ]
+          },
+          {
+            "name": "FunctionCallOutput",
+            "type": "object",
+            "isBold": false,
+            "description": "The output of a function tool call.",
+            "children": [
+              {
+                "name": "call_id",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The unique ID of the function tool call generated by the model."
+              },
+              {
+                "name": "output",
+                "type": [
+                  "string",
+                  "array"
+                ],
+                "isBold": true,
+                "required": true,
+                "description": "Text, image, audio or video output of the function tool call.",
+                "children": [
+                  {
+                    "name": "StringOutput",
+                    "type": "string",
+                    "isBold": false,
+                    "description": "A JSON string of the output of the function tool call."
+                  },
+                  {
+                    "name": "OutputContentList",
+                    "type": "array",
+                    "isBold": false,
+                    "description": "An array of content outputs for the function tool call.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                    "children": [
+                      {
+                        "name": "ResponseInputTextContent",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "A text input to the model.",
+                        "children": [
+                          {
+                            "name": "text",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The text input to the model."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputImageContent",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "An image input to the model.",
+                        "children": [
+                          {
+                            "name": "image_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_image</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputAudioContent",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "An audio input to the model.",
+                        "children": [
+                          {
+                            "name": "audio_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputVideoContent",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "A video input to the model.",
+                        "children": [
+                          {
+                            "name": "video_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                          },
+                          {
+                            "name": "fps",
+                            "type": "number",
+                            "isBold": true,
+                            "required": false,
+                            "defaultValue": "2",
+                            "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                          },
+                          {
+                            "name": "media_resolution",
+                            "type": "string",
+                            "isBold": true,
+                            "required": false,
+                            "defaultValue": "default",
+                            "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The unique ID of the function tool call output. Populated when this item is returned via API."
+              },
+              {
+                "name": "status",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The status of the item. Populated when items are returned via API.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of the function tool call output.<br />Available options: <code class=\\"schema-inline-code\\">function_call_output</code>"
+              }
+            ]
+          },
+          {
+            "name": "AgentMessage[Multi-Agent]",
+            "type": "object",
+            "isBold": false,
+            "description": "A message routed between agents.",
+            "children": [
+              {
+                "name": "author",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The sending agent identity."
+              },
+              {
+                "name": "content",
+                "type": "array",
+                "isBold": true,
+                "required": true,
+                "description": "Plaintext, image, audio, video or encrypted content sent between agents.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                "children": [
+                  {
+                    "name": "ResponseInputTextContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A text input to the model.",
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text input to the model."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputImageContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An image input to the model.",
+                    "children": [
+                      {
+                        "name": "image_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_image</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputAudioContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An audio input to the model.",
+                    "children": [
+                      {
+                        "name": "audio_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputVideoContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A video input to the model.",
+                    "children": [
+                      {
+                        "name": "video_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "EncryptedContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "Opaque encrypted content that Responses API decrypts inside trusted model execution. For MiMo, the content is plaintext and no decryption is performed.",
+                    "children": [
+                      {
+                        "name": "encrypted_content",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "Opaque encrypted content."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">encrypted_content</code>"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "recipient",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The destination agent identity."
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The item type.<br />Available options: <code class=\\"schema-inline-code\\">agent_message</code>"
+              },
+              {
+                "name": "id",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "isBold": true,
+                "required": false,
+                "description": "The unique ID of this agent message item."
+              },
+              {
+                "name": "agent",
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "isBold": true,
+                "required": false,
+                "description": "The agent that produced this item.",
+                "children": [
+                  {
+                    "name": "agent_name",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The canonical name of the agent that produced this item."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "AdditionalTools",
+            "type": "object",
+            "isBold": false,
+            "children": [
+              {
+                "name": "role",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The role that provided the additional tools.<br />Available options: <code class=\\"schema-inline-code\\">developer</code>"
+              },
+              {
+                "name": "tools",
+                "type": "array",
+                "isBold": true,
+                "required": true,
+                "description": "A list of additional tools made available at this item.",
+                "children": [
+                  {
+                    "name": "Function",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "Defines a function in your own code the model can choose to call.",
+                    "children": [
+                      {
+                        "name": "name",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The name of the tool function. Must be <code class=\\"schema-inline-code\\">a-z</code>, <code class=\\"schema-inline-code\\">A-Z</code>, <code class=\\"schema-inline-code\\">0-9</code>, or contain underscores (<code class=\\"schema-inline-code\\">_</code>) and dashes (<code class=\\"schema-inline-code\\">-</code>), with a maximum length of 64.<br />Required string length: <code class=\\"schema-inline-code\\">1 - 64</code>"
+                      },
+                      {
+                        "name": "parameters",
+                        "type": "object",
+                        "isBold": true,
+                        "required": true,
+                        "description": "A JSON schema object describing the parameters of the function."
+                      },
+                      {
+                        "name": "strict",
+                        "type": "boolean",
+                        "isBold": true,
+                        "required": true,
+                        "defaultValue": "false",
+                        "description": "Whether to enable strict schema adherence when generating the function call."
+                      },
+                      {
+                        "name": "description",
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "isBold": true,
+                        "required": false,
+                        "description": "A description of the function. Used by the model to determine whether or not to call the function."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the tool.<br />Available options: <code class=\\"schema-inline-code\\">function</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Custom",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A custom tool that processes input using a specified format.",
+                    "children": [
+                      {
+                        "name": "name",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The name of the custom tool, used to identify it in tool calls."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the custom tool.<br />Available options: <code class=\\"schema-inline-code\\">custom</code>"
+                      },
+                      {
+                        "name": "description",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "description": "Optional description of the custom tool, used to provide more context."
+                      },
+                      {
+                        "name": "format",
+                        "type": "object",
+                        "isBold": true,
+                        "required": false,
+                        "description": "The input format for the custom tool. Default is unconstrained text.",
+                        "children": [
+                          {
+                            "name": "CustomToolInputFormat",
+                            "type": "object",
+                            "isBold": false,
+                            "children": [
+                              {
+                                "name": "Text",
+                                "type": "object",
+                                "isBold": false,
+                                "description": "Unconstrained free-form text.",
+                                "children": [
+                                  {
+                                    "name": "type",
+                                    "type": "string",
+                                    "isBold": true,
+                                    "required": true,
+                                    "description": "Unconstrained text format.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "Grammar",
+                                "type": "object",
+                                "isBold": false,
+                                "description": "A grammar defined by the user.",
+                                "children": [
+                                  {
+                                    "name": "definition",
+                                    "type": "string",
+                                    "isBold": true,
+                                    "required": true,
+                                    "description": "The grammar definition."
+                                  },
+                                  {
+                                    "name": "syntax",
+                                    "type": "string",
+                                    "isBold": true,
+                                    "required": true,
+                                    "description": "The syntax of the grammar definition.<br />Available options: <code class=\\"schema-inline-code\\">lark</code>, <code class=\\"schema-inline-code\\">regex</code>"
+                                  },
+                                  {
+                                    "name": "type",
+                                    "type": "string",
+                                    "isBold": true,
+                                    "required": true,
+                                    "description": "Grammar format.<br />Available options: <code class=\\"schema-inline-code\\">grammar</code>"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Namespace",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "Groups function tools under a shared namespace.",
+                    "children": [
+                      {
+                        "name": "description",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "A description of the namespace shown to the model."
+                      },
+                      {
+                        "name": "name",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The namespace name used in tool calls.<br />MinLength: <code class=\\"schema-inline-code\\">1</code>"
+                      },
+                      {
+                        "name": "tools",
+                        "type": "array",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The function tools available inside this namespace.",
+                        "children": [
+                          {
+                            "name": "Function",
+                            "type": "object",
+                            "isBold": false,
+                            "children": [
+                              {
+                                "name": "name",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Required string length: <code class=\\"schema-inline-code\\">1 - 64</code>"
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Available options: <code class=\\"schema-inline-code\\">function</code>"
+                              },
+                              {
+                                "name": "description",
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "isBold": true,
+                                "required": false
+                              },
+                              {
+                                "name": "parameters",
+                                "type": "object",
+                                "isBold": true,
+                                "required": false
+                              },
+                              {
+                                "name": "strict",
+                                "type": "boolean",
+                                "isBold": true,
+                                "required": false
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Custom",
+                            "type": "object",
+                            "isBold": false,
+                            "description": "A custom tool that processes input using a specified format.",
+                            "children": [
+                              {
+                                "name": "name",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The name of the custom tool, used to identify it in tool calls."
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The type of the custom tool.<br />Available options: <code class=\\"schema-inline-code\\">custom</code>"
+                              },
+                              {
+                                "name": "description",
+                                "type": "string",
+                                "isBold": true,
+                                "required": false,
+                                "description": "Optional description of the custom tool, used to provide more context."
+                              },
+                              {
+                                "name": "format",
+                                "type": "object",
+                                "isBold": true,
+                                "required": false,
+                                "description": "The input format for the custom tool. Default is unconstrained text.",
+                                "children": [
+                                  {
+                                    "name": "CustomToolInputFormat",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "Text",
+                                        "type": "object",
+                                        "isBold": false,
+                                        "description": "Unconstrained free-form text.",
+                                        "children": [
+                                          {
+                                            "name": "type",
+                                            "type": "string",
+                                            "isBold": true,
+                                            "required": true,
+                                            "description": "Unconstrained text format.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "name": "Grammar",
+                                        "type": "object",
+                                        "isBold": false,
+                                        "description": "A grammar defined by the user.",
+                                        "children": [
+                                          {
+                                            "name": "definition",
+                                            "type": "string",
+                                            "isBold": true,
+                                            "required": true,
+                                            "description": "The grammar definition."
+                                          },
+                                          {
+                                            "name": "syntax",
+                                            "type": "string",
+                                            "isBold": true,
+                                            "required": true,
+                                            "description": "The syntax of the grammar definition.<br />Available options: <code class=\\"schema-inline-code\\">lark</code>, <code class=\\"schema-inline-code\\">regex</code>"
+                                          },
+                                          {
+                                            "name": "type",
+                                            "type": "string",
+                                            "isBold": true,
+                                            "required": true,
+                                            "description": "Grammar format.<br />Available options: <code class=\\"schema-inline-code\\">grammar</code>"
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the tool.<br />Available options: <code class=\\"schema-inline-code\\">namespace</code>"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The item type.<br />Available options: <code class=\\"schema-inline-code\\">additional_tools</code>"
+              },
+              {
+                "name": "id",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "isBold": true,
+                "required": false,
+                "description": "The unique ID of this additional tools item."
+              }
+            ]
+          },
+          {
+            "name": "Reasoning",
+            "type": "object",
+            "isBold": false,
+            "description": "A description of the chain of thought used by a reasoning model while generating a response.",
+            "children": [
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The unique identifier of the reasoning content."
+              },
+              {
+                "name": "content",
+                "type": "array",
+                "isBold": true,
+                "required": false,
+                "description": "Reasoning text content.",
+                "children": [
+                  {
+                    "name": "text",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The reasoning text from the model."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the object.<br />Available options: <code class=\\"schema-inline-code\\">reasoning_text</code>"
+                  }
+                ]
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of the object.<br />Available options: <code class=\\"schema-inline-code\\">reasoning</code>"
+              },
+              {
+                "name": "status",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The status of the item. Populated when items are returned via API.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+              }
+            ]
+          },
+          {
+            "name": "CustomToolCallOutput",
+            "type": "object",
+            "isBold": false,
+            "description": "The output of a custom tool call from your code, being sent back to the model.",
+            "children": [
+              {
+                "name": "call_id",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The call ID, used to map this custom tool call output to a custom tool call."
+              },
+              {
+                "name": "output",
+                "type": [
+                  "string",
+                  "array"
+                ],
+                "isBold": true,
+                "required": true,
+                "description": "The output from the custom tool call generated by your code. Can be a string or a list of output content.",
+                "children": [
+                  {
+                    "name": "StringOutput",
+                    "type": "string",
+                    "isBold": false,
+                    "description": "A string of the output of the custom tool call."
+                  },
+                  {
+                    "name": "OutputContentList",
+                    "type": "array",
+                    "isBold": false,
+                    "description": "An array of content outputs for the function tool call.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+                    "children": [
+                      {
+                        "name": "ResponseInputText",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "A text input to the model.",
+                        "children": [
+                          {
+                            "name": "text",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The text input to the model."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputImage",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "An image input to the model.",
+                        "children": [
+                          {
+                            "name": "image_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_image</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputAudio",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "An audio input to the model.",
+                        "children": [
+                          {
+                            "name": "audio_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "ResponseInputVideo",
+                        "type": "object",
+                        "isBold": false,
+                        "description": "A video input to the model.",
+                        "children": [
+                          {
+                            "name": "video_url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                          },
+                          {
+                            "name": "fps",
+                            "type": "number",
+                            "isBold": true,
+                            "required": false,
+                            "defaultValue": "2",
+                            "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                          },
+                          {
+                            "name": "media_resolution",
+                            "type": "string",
+                            "isBold": true,
+                            "required": false,
+                            "defaultValue": "default",
+                            "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "description": "The type of the custom tool call output.<br />Available options: <code class=\\"schema-inline-code\\">custom_tool_call_output</code>"
+              },
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The unique ID of the custom tool call output."
+              }
+            ]
+          },
+          {
+            "name": "CustomToolCall",
+            "type": "object",
+            "isBold": false,
+            "description": "A call to a custom tool created by the model.",
+            "children": [
+              {
+                "name": "call_id",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "An identifier used to map this custom tool call to a tool call output."
+              },
+              {
+                "name": "input",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The input for the custom tool call generated by the model."
+              },
+              {
+                "name": "name",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The name of the custom tool being called."
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of the custom tool call.<br />Available options: <code class=\\"schema-inline-code\\">custom_tool_call</code>"
+              },
+              {
+                "name": "id",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The unique ID of the custom tool call."
+              },
+              {
+                "name": "namespace",
+                "type": "string",
+                "isBold": true,
+                "required": false,
+                "description": "The namespace of the custom tool being called."
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "instructions",
+    "type": "string",
+    "isBold": true,
+    "required": false,
+    "description": "A system (or developer) message inserted into the model's context."
+  },
+  {
+    "name": "max_output_tokens",
+    "type": "integer",
+    "isBold": true,
+    "required": false,
+    "description": "An upper bound for the number of tokens that can be generated for a response, including visible output tokens and reasoning tokens.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">32768</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[1, 131072]</code>"
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "required": true,
+    "description": "Model ID used to generate the response.<br />Available options: <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>"
+  },
+  {
+    "name": "stream",
+    "type": "boolean",
+    "isBold": true,
+    "required": false,
+    "defaultValue": "false",
+    "description": "If set to true, the model response data will be streamed to the client as it is generated using server-sent events."
+  },
+  {
+    "name": "reasoning",
+    "type": "object",
+    "isBold": true,
+    "required": false,
+    "description": "Configuration options for reasoning models.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns the reasoning content alongside the tool calls field. To continue the conversation, it is recommended to keep all previous reasoning content in the <code class=\\"schema-inline-code\\">input</code> array for each subsequent request to achieve the best performance.</blockquote><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> and <code class=\\"schema-inline-code\\">top_p</code> parameters. Even if these parameters are passed in, the actual effective values will be forcibly set by the model to its recommended default values of <code class=\\"schema-inline-code\\">1.0</code> and <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>",
+    "children": [
+      {
+        "name": "effort",
+        "type": "string",
+        "isBold": true,
+        "required": true,
+        "description": "Constrains effort on reasoning for reasoning models. Reducing reasoning effort can result in faster responses and fewer tokens used on reasoning in a response.<br /><blockquote class=\\"schema-blockquote\\">Custom tuning of reasoning effort is currently unsupported. When set to <code class=\\"schema-inline-code\\">none</code>, reasoning is disabled; all other valid values map to enabled reasoning. The value <code class=\\"schema-inline-code\\">minimal</code> is mapped to <code class=\\"schema-inline-code\\">low</code>. Values <code class=\\"schema-inline-code\\">xhigh</code>, <code class=\\"schema-inline-code\\">max</code> and <code class=\\"schema-inline-code\\">ultra</code> are mapped to <code class=\\"schema-inline-code\\">high</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">enabled</code></li></ul>Available options: <code class=\\"schema-inline-code\\">none</code>, <code class=\\"schema-inline-code\\">minimal</code>, <code class=\\"schema-inline-code\\">low</code>, <code class=\\"schema-inline-code\\">medium</code>, <code class=\\"schema-inline-code\\">high</code>, <code class=\\"schema-inline-code\\">xhigh</code>, <code class=\\"schema-inline-code\\">max</code>, <code class=\\"schema-inline-code\\">ultra</code>"
+      }
+    ]
+  },
+  {
+    "name": "temperature",
+    "type": "number",
+    "isBold": true,
+    "required": false,
+    "description": "What sampling temperature to use, between 0 and 1.5. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. We generally recommend altering this or <code class=\\"schema-inline-code\\">top_p</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">1.0</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">1.0</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[0, 1.5]</code>"
+  },
+  {
+    "name": "text",
+    "type": "object",
+    "isBold": true,
+    "required": false,
+    "description": "Configuration options for a text response from the model. Can be plain text or structured JSON data.",
+    "children": [
+      {
+        "name": "format",
+        "type": "object",
+        "isBold": true,
+        "required": false,
+        "description": "An object specifying the format that the model must output. The default format is <code class=\\"schema-inline-code\\">{ &quot;type&quot;: &quot;text&quot; }</code> with no additional options.",
+        "children": [
+          {
+            "name": "ResponseFormatText",
+            "type": "object",
+            "isBold": false,
+            "description": "Default response format. Used to generate text responses.",
+            "children": [
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of response format being defined.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+              }
+            ]
+          },
+          {
+            "name": "ResponseFormatJSONObject",
+            "type": "object",
+            "isBold": false,
+            "description": "JSON object response format.<br /><blockquote class=\\"schema-blockquote\\">Note: If the output of JSON is not required by system instructions or user instructions, the model will not actively generate JSON.</blockquote>",
+            "children": [
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "required": true,
+                "description": "The type of response format being defined.<br />Available options: <code class=\\"schema-inline-code\\">json_object</code>"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "tool_choice",
+    "type": "string",
+    "isBold": true,
+    "required": false,
+    "description": "Controls how the model calls tools.<br /><blockquote class=\\"schema-blockquote\\">Note: When a value other than <code class=\\"schema-inline-code\\">auto</code> is passed to <code class=\\"schema-inline-code\\">tool_choice</code>, the backend will remove this field by default, and the model response behavior will still be equivalent to the <code class=\\"schema-inline-code\\">auto</code> mode (this logic is subject to future adjustments).</blockquote>Available options: <code class=\\"schema-inline-code\\">auto</code>"
+  },
+  {
+    "name": "tools",
+    "type": "array",
+    "isBold": true,
+    "required": false,
+    "description": "An array of tools the model may call while generating a response. You can specify which tool to use by setting the <code class=\\"schema-inline-code\\">tool_choice</code> parameter.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns the reasoning content alongside the tool calls field. To continue the conversation, it is recommended to keep all previous reasoning content in the <code class=\\"schema-inline-code\\">input</code> array for each subsequent request to achieve the best performance.</blockquote>",
+    "children": [
+      {
+        "name": "Function",
+        "type": "object",
+        "isBold": false,
+        "description": "Defines a function in your own code the model can choose to call.",
+        "children": [
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The name of the tool function. Must be <code class=\\"schema-inline-code\\">a-z</code>, <code class=\\"schema-inline-code\\">A-Z</code>, <code class=\\"schema-inline-code\\">0-9</code>, or contain underscores (<code class=\\"schema-inline-code\\">_</code>) and dashes (<code class=\\"schema-inline-code\\">-</code>), with a maximum length of 64.<br />Required string length: <code class=\\"schema-inline-code\\">1 - 64</code>"
+          },
+          {
+            "name": "parameters",
+            "type": "object",
+            "isBold": true,
+            "required": true,
+            "description": "A JSON schema object describing the parameters of the function."
+          },
+          {
+            "name": "strict",
+            "type": "boolean",
+            "isBold": true,
+            "required": true,
+            "defaultValue": "false",
+            "description": "Whether to enable strict schema adherence when generating the function call."
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "isBold": true,
+            "required": false,
+            "description": "A description of the function. Used by the model to determine whether or not to call the function."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of the tool.<br />Available options: <code class=\\"schema-inline-code\\">function</code>"
+          }
+        ]
+      },
+      {
+        "name": "Custom",
+        "type": "object",
+        "isBold": false,
+        "description": "A custom tool that processes input using a specified format.",
+        "children": [
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The name of the custom tool, used to identify it in tool calls."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of the custom tool.<br />Available options: <code class=\\"schema-inline-code\\">custom</code>"
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "isBold": true,
+            "required": false,
+            "description": "Optional description of the custom tool, used to provide more context."
+          },
+          {
+            "name": "format",
+            "type": "object",
+            "isBold": true,
+            "required": false,
+            "description": "The input format for the custom tool. Default is unconstrained text.",
+            "children": [
+              {
+                "name": "CustomToolInputFormat",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "Text",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "Unconstrained free-form text.",
+                    "children": [
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "Unconstrained text format.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Grammar",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A grammar defined by the user.",
+                    "children": [
+                      {
+                        "name": "definition",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The grammar definition."
+                      },
+                      {
+                        "name": "syntax",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The syntax of the grammar definition.<br />Available options: <code class=\\"schema-inline-code\\">lark</code>, <code class=\\"schema-inline-code\\">regex</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "Grammar format.<br />Available options: <code class=\\"schema-inline-code\\">grammar</code>"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Namespace",
+        "type": "object",
+        "isBold": false,
+        "description": "Groups function tools under a shared namespace.",
+        "children": [
+          {
+            "name": "description",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "A description of the namespace shown to the model."
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The namespace name used in tool calls.<br />MinLength: <code class=\\"schema-inline-code\\">1</code>"
+          },
+          {
+            "name": "tools",
+            "type": "array",
+            "isBold": true,
+            "required": true,
+            "description": "The function tools available inside this namespace.",
+            "children": [
+              {
+                "name": "Function",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "name",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Required string length: <code class=\\"schema-inline-code\\">1 - 64</code>"
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Available options: <code class=\\"schema-inline-code\\">function</code>"
+                  },
+                  {
+                    "name": "description",
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "isBold": true,
+                    "required": false
+                  },
+                  {
+                    "name": "parameters",
+                    "type": "object",
+                    "isBold": true,
+                    "required": false
+                  },
+                  {
+                    "name": "strict",
+                    "type": "boolean",
+                    "isBold": true,
+                    "required": false
+                  }
+                ]
+              },
+              {
+                "name": "Custom",
+                "type": "object",
+                "isBold": false,
+                "description": "A custom tool that processes input using a specified format.",
+                "children": [
+                  {
+                    "name": "name",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The name of the custom tool, used to identify it in tool calls."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the custom tool.<br />Available options: <code class=\\"schema-inline-code\\">custom</code>"
+                  },
+                  {
+                    "name": "description",
+                    "type": "string",
+                    "isBold": true,
+                    "required": false,
+                    "description": "Optional description of the custom tool, used to provide more context."
+                  },
+                  {
+                    "name": "format",
+                    "type": "object",
+                    "isBold": true,
+                    "required": false,
+                    "description": "The input format for the custom tool. Default is unconstrained text.",
+                    "children": [
+                      {
+                        "name": "CustomToolInputFormat",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "Text",
+                            "type": "object",
+                            "isBold": false,
+                            "description": "Unconstrained free-form text.",
+                            "children": [
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Unconstrained text format.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Grammar",
+                            "type": "object",
+                            "isBold": false,
+                            "description": "A grammar defined by the user.",
+                            "children": [
+                              {
+                                "name": "definition",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The grammar definition."
+                              },
+                              {
+                                "name": "syntax",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The syntax of the grammar definition.<br />Available options: <code class=\\"schema-inline-code\\">lark</code>, <code class=\\"schema-inline-code\\">regex</code>"
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Grammar format.<br />Available options: <code class=\\"schema-inline-code\\">grammar</code>"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of the tool.<br />Available options: <code class=\\"schema-inline-code\\">namespace</code>"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "top_p",
+    "type": "number",
+    "isBold": true,
+    "required": false,
+    "defaultValue": "0.95",
+    "description": "An alternative to sampling with temperature, called nucleus sampling. We generally recommend altering this or <code class=\\"schema-inline-code\\">temperature</code> but not both.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">top_p</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>Required range: <code class=\\"schema-inline-code\\">[0.01, 1.0]</code>"
+  }
+]`} />
+
+## Response Object (non-streaming output) 
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "id",
+    "type": "string",
+    "isBold": true,
+    "description": "Unique identifier for this Response."
+  },
+  {
+    "name": "created_at",
+    "type": "number",
+    "isBold": true,
+    "description": "Unix timestamp (in seconds) of when this Response was created."
+  },
+  {
+    "name": "error",
+    "type": "object",
+    "isBold": true,
+    "description": "An error object returned when the model fails to generate a Response.",
+    "children": [
+      {
+        "name": "ResponseError",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "code",
+            "type": "string",
+            "isBold": true,
+            "description": "The error code for the response."
+          },
+          {
+            "name": "message",
+            "type": "string",
+            "isBold": true,
+            "description": "A human-readable description of the error."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "incomplete_details",
+    "type": "object",
+    "isBold": true,
+    "description": "Details about why the response is incomplete.",
+    "children": [
+      {
+        "name": "reason",
+        "type": "string",
+        "isBold": true,
+        "description": "The reason why the response is incomplete.<br />Available options: <code class=\\"schema-inline-code\\">max_output_tokens</code>, <code class=\\"schema-inline-code\\">content_filter</code>"
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "description": "Model ID used to generate the response."
+  },
+  {
+    "name": "object",
+    "type": "string",
+    "isBold": true,
+    "description": "Available options: <code class=\\"schema-inline-code\\">response</code>"
+  },
+  {
+    "name": "output",
+    "type": "array",
+    "isBold": true,
+    "description": "An array of content items generated by the model.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\">The length and order of items in the <code class=\\"schema-inline-code\\">output</code> array is dependent on the model’s response.</li><li class=\\"schema-list-item\\">Rather than accessing the first item in the <code class=\\"schema-inline-code\\">output</code> array and assuming it’s an <code class=\\"schema-inline-code\\">assistant</code> message with the content generated by the model, you might consider using the <code class=\\"schema-inline-code\\">output_text</code> property where supported in SDKs.</li></ul>",
+    "children": [
+      {
+        "name": "ResponseOutputMessage",
+        "type": "object",
+        "isBold": false,
+        "description": "A message output from the model.",
+        "children": [
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique ID of the output message."
+          },
+          {
+            "name": "content",
+            "type": "array",
+            "isBold": true,
+            "description": "The content of the output message.",
+            "children": [
+              {
+                "name": "ResponseOutputText",
+                "type": "object",
+                "isBold": false,
+                "description": "A text output from the model.",
+                "children": [
+                  {
+                    "name": "text",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "The text output from the model."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "Available options: <code class=\\"schema-inline-code\\">output_text</code>"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "role",
+            "type": "string",
+            "isBold": true,
+            "description": "The role of the output message.<br />Available options: <code class=\\"schema-inline-code\\">assistant</code>"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "isBold": true,
+            "description": "The status of the message.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "Available options: <code class=\\"schema-inline-code\\">message</code>"
+          }
+        ]
+      },
+      {
+        "name": "FunctionCall",
+        "type": "object",
+        "isBold": false,
+        "description": "A tool call to a function tool.",
+        "children": [
+          {
+            "name": "arguments",
+            "type": "string",
+            "isBold": true,
+            "description": "The arguments that the model generated for the tool call, as a JSON string."
+          },
+          {
+            "name": "call_id",
+            "type": "string",
+            "isBold": true,
+            "description": "An identifier used when responding to the tool call with output."
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "description": "The name of the tool to call."
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique ID of the tool call."
+          },
+          {
+            "name": "namespace",
+            "type": "string",
+            "isBold": true,
+            "description": "The namespace of the function to run."
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "isBold": true,
+            "description": "The status of the item.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "Available options: <code class=\\"schema-inline-code\\">function_call</code>"
+          }
+        ]
+      },
+      {
+        "name": "FunctionCallOutput",
+        "type": "object",
+        "isBold": false,
+        "description": "The output of a function tool call.",
+        "children": [
+          {
+            "name": "call_id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique ID of the function tool call generated by the model."
+          },
+          {
+            "name": "output",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "description": "The output from the function call generated by your code. Can be a string or a list of output content.",
+            "children": [
+              {
+                "name": "StringOutput",
+                "type": "string",
+                "isBold": false,
+                "description": "A string of the output of the function tool call."
+              },
+              {
+                "name": "OutputContentList",
+                "type": "array",
+                "isBold": false,
+                "description": "Text, image, audio or video output of the function call.",
+                "children": [
+                  {
+                    "name": "ResponseInputText",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A text input to the model.",
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The text input to the model."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputImage",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An image input to the model.",
+                    "children": [
+                      {
+                        "name": "image_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_image</code>."
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputAudioContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An audio input to the model.",
+                    "children": [
+                      {
+                        "name": "audio_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputVideoContent",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A video input to the model.",
+                    "children": [
+                      {
+                        "name": "video_url",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "required": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique ID of the function tool call output. Populated when this item is returned via API."
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "isBold": true,
+            "description": "The status of the item.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the function tool call output.<br />Always <code class=\\"schema-inline-code\\">function_call_output</code>."
+          }
+        ]
+      },
+      {
+        "name": "Reasoning",
+        "type": "object",
+        "isBold": false,
+        "description": "A description of the chain of thought used by a reasoning model while generating a response. Be sure to include these items in your input to the Responses API for subsequent turns of a conversation if you are manually managing context.",
+        "children": [
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique identifier of the reasoning content."
+          },
+          {
+            "name": "content",
+            "type": "array",
+            "isBold": true,
+            "description": "Reasoning text content.",
+            "children": [
+              {
+                "name": "text",
+                "type": "string",
+                "isBold": true,
+                "description": "The reasoning text from the model."
+              },
+              {
+                "name": "type",
+                "type": "string",
+                "isBold": true,
+                "description": "The type of the reasoning text.<br />Available options: <code class=\\"schema-inline-code\\">reasoning_text</code>"
+              }
+            ]
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the object.<br />Available options: <code class=\\"schema-inline-code\\">reasoning</code>"
+          },
+          {
+            "name": "status",
+            "type": "string",
+            "isBold": true,
+            "description": "The status of the item.<br />Available options: <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">completed</code>"
+          }
+        ]
+      },
+      {
+        "name": "CustomToolCall",
+        "type": "object",
+        "isBold": false,
+        "description": "A call to a custom tool created by the model.",
+        "children": [
+          {
+            "name": "call_id",
+            "type": "string",
+            "isBold": true,
+            "description": "An identifier used to map this custom tool call to a tool call output."
+          },
+          {
+            "name": "input",
+            "type": "string",
+            "isBold": true,
+            "description": "The input for the custom tool call generated by the model."
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "description": "The name of the custom tool being called."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the custom tool call.<br />Available options: <code class=\\"schema-inline-code\\">custom_tool_call</code>"
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique ID of the custom tool call."
+          },
+          {
+            "name": "namespace",
+            "type": "string",
+            "isBold": true,
+            "description": "The namespace of the custom tool being called."
+          }
+        ]
+      },
+      {
+        "name": "CustomToolCallOutput",
+        "type": "object",
+        "isBold": false,
+        "description": "The output of a custom tool call from your code, being sent back to the model.",
+        "children": [
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique ID of the custom tool call output."
+          },
+          {
+            "name": "call_id",
+            "type": "string",
+            "isBold": true,
+            "description": "The call ID, used to map this custom tool call output to a custom tool call."
+          },
+          {
+            "name": "output",
+            "type": [
+              "string",
+              "array"
+            ],
+            "isBold": true,
+            "description": "The output from the custom tool call generated by your code. Can be a string or a list of output content.",
+            "children": [
+              {
+                "name": "StringOutput",
+                "type": "string",
+                "isBold": false,
+                "description": "A string of the output of the custom tool call."
+              },
+              {
+                "name": "OutputContentList",
+                "type": "array",
+                "isBold": false,
+                "description": "An array of content outputs for the function tool call.",
+                "children": [
+                  {
+                    "name": "ResponseInputText",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A text input to the model.",
+                    "children": [
+                      {
+                        "name": "text",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The text input to the model."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The type of the input item.<br />Available options: <code class=\\"schema-inline-code\\">input_text</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputImage",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An image input to the model.",
+                    "children": [
+                      {
+                        "name": "image_url",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The URL of the image to be sent to the model. A fully qualified URL or base64 encoded image in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_image</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputAudio",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "An audio input to the model.",
+                    "children": [
+                      {
+                        "name": "audio_url",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The URL of the audio to be sent to the model. A fully qualified URL or base64 encoded audio in a data URL."
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_audio</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "ResponseInputVideo",
+                    "type": "object",
+                    "isBold": false,
+                    "description": "A video input to the model.",
+                    "children": [
+                      {
+                        "name": "video_url",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The URL of the video to be sent to the model. A fully qualified URL or base64 encoded video in a data URL."
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      },
+                      {
+                        "name": "type",
+                        "type": "string",
+                        "isBold": true,
+                        "description": "The type of the input item.<br />Available options:  <code class=\\"schema-inline-code\\">input_video</code>"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the custom tool call output.<br />Available options: <code class=\\"schema-inline-code\\">custom_tool_call_output</code>"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "output_text",
+    "type": "string",
+    "isBold": true,
+    "description": "SDK-only convenience property that contains the aggregated text output from all <code class=\\"schema-inline-code\\">output_text</code> items in the <code class=\\"schema-inline-code\\">output</code> array, if any are present."
+  },
+  {
+    "name": "status",
+    "type": "string",
+    "isBold": true,
+    "description": "The status of the response.<br />Available options: <code class=\\"schema-inline-code\\">completed</code>, <code class=\\"schema-inline-code\\">in_progress</code>, <code class=\\"schema-inline-code\\">incomplete</code>"
+  },
+  {
+    "name": "usage",
+    "type": "object",
+    "isBold": true,
+    "description": "Usage statistics for the response.",
+    "children": [
+      {
+        "name": "ResponseUsage",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "input_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "The number of input tokens."
+          },
+          {
+            "name": "input_tokens_details",
+            "type": "object",
+            "isBold": true,
+            "description": "Details about input tokens.",
+            "children": [
+              {
+                "name": "cached_tokens",
+                "type": "integer",
+                "isBold": true,
+                "description": "The number of cached input tokens."
+              }
+            ]
+          },
+          {
+            "name": "output_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "The number of output tokens."
+          },
+          {
+            "name": "output_tokens_details",
+            "type": "object",
+            "isBold": true,
+            "description": "Details about output tokens.",
+            "children": [
+              {
+                "name": "reasoning_tokens",
+                "type": "integer",
+                "isBold": true,
+                "description": "The number of reasoning tokens."
+              }
+            ]
+          },
+          {
+            "name": "total_tokens",
+            "type": "integer",
+            "isBold": true,
+            "description": "The total number of tokens."
+          }
+        ]
+      }
+    ]
+  }
+]`} />
+
+## Response chunk object (streaming output) 
+
+{/* feishu-style:text-align:left */}
+When you create a Response with `stream` set to `true`, the server will emit server-sent events to the client as the Response is generated.
+
+### response.created
+
+> An event that is emitted when a response is created.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "response",
+    "type": "object",
+    "isBold": true,
+    "description": "The response that was created. The parameters contained in this object are identical to those returned by the model creation request in non-streaming mode."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number for this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.created</code>."
+  }
+]`} />
+
+### response.in_progress
+
+> Emitted when the response is in progress.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "response",
+    "type": "object",
+    "isBold": true,
+    "description": "The response that is in progress. The parameters contained in this object are identical to those returned by the model creation request in non-streaming mode."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.in_progress</code>."
+  }
+]`} />
+
+### response.completed
+
+> Emitted when the model response is complete.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "response",
+    "type": "object",
+    "isBold": true,
+    "description": "Properties of the completed response. The parameters contained in this object are identical to those returned by the model creation request in non-streaming mode."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number for this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.completed</code>."
+  }
+]`} />
+
+### response.incomplete
+
+> An event that is emitted when a response finishes as incomplete.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "response",
+    "type": "object",
+    "isBold": true,
+    "description": "The response that was incomplete. The parameters contained in this object are identical to those returned by the model creation request in non-streaming mode."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.incomplete</code>."
+  }
+]`} />
+
+### response.output_item.added
+
+> Emitted when a new output item is added.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "item",
+    "type": "object",
+    "isBold": true,
+    "description": "The output item that was added. The parameters contained in this object are identical to those of the <code class=\\"schema-inline-code\\">output</code> field returned by the model creation request in non-streaming mode."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that was added."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.output_item.added</code>."
+  }
+]`} />
+
+### response.output_item.done
+
+> Emitted when an output item is marked done. 
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "item",
+    "type": "object",
+    "isBold": true,
+    "description": "The output item that was marked done. The parameters contained in this object are identical to those of the <code class=\\"schema-inline-code\\">output</code> field returned by the model creation request in non-streaming mode."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that was marked done."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.output_item.done</code>."
+  }
+]`} />
+
+### response.content_part.added
+
+> Emitted when a new content part is added.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "content_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the content part that was added."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the output item that the content part was added to."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that the content part was added to."
+  },
+  {
+    "name": "part",
+    "type": "object",
+    "isBold": true,
+    "description": "The content part that was added.",
+    "children": [
+      {
+        "name": "ResponseOutputText",
+        "type": "object",
+        "isBold": false,
+        "description": "A text output from the model.",
+        "children": [
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "description": "The text output from the model."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the output text. Always <code class=\\"schema-inline-code\\">output_text</code>."
+          }
+        ]
+      },
+      {
+        "name": "ReasoningText",
+        "type": "object",
+        "isBold": false,
+        "description": "Reasoning text from the model.",
+        "children": [
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "description": "The reasoning text from the model."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the reasoning text. Always <code class=\\"schema-inline-code\\">reasoning_text</code>."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.content_part.added</code>."
+  }
+]`} />
+
+### response.content_part.done
+
+> Emitted when a content part is done.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "content_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the content part that is done."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the output item that the content part was added to."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that the content part was added to."
+  },
+  {
+    "name": "part",
+    "type": "object",
+    "isBold": true,
+    "description": "The content part that is done.",
+    "children": [
+      {
+        "name": "ResponseOutputText",
+        "type": "object",
+        "isBold": false,
+        "description": "A text output from the model.",
+        "children": [
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "description": "The text output from the model."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the output text. Always <code class=\\"schema-inline-code\\">output_text</code>."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.content_part.done</code>."
+  }
+]`} />
+
+### response.output_text.delta
+
+> Emitted when there is an additional text delta.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "content_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the content part that the text delta was added to."
+  },
+  {
+    "name": "delta",
+    "type": "string",
+    "isBold": true,
+    "description": "The text delta that was added."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the output item that the text delta was added to."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that the text delta was added to."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number for this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.output_text.delta</code>."
+  }
+]`} />
+
+### response.output_text.done
+
+> Emitted when text content is finalized.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "content_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the content part that the text content is finalized."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the output item that the text content is finalized."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that the text content is finalized."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number for this event."
+  },
+  {
+    "name": "text",
+    "type": "string",
+    "isBold": true,
+    "description": "The text content that is finalized."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.output_text.done</code>."
+  }
+]`} />
+
+### response.function_call_arguments.delta
+
+> Emitted when there is a partial function-call arguments delta.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "delta",
+    "type": "string",
+    "isBold": true,
+    "description": "The function-call arguments delta that is added."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the output item that the function-call arguments delta is added to."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item that the function-call arguments delta is added to."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.function_call_arguments.delta</code>."
+  }
+]`} />
+
+### response.function_call_arguments.done
+
+> Emitted when function-call arguments are finalized.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "arguments",
+    "type": "string",
+    "isBold": true,
+    "description": "The function-call arguments."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the item."
+  },
+  {
+    "name": "name",
+    "type": "string",
+    "isBold": true,
+    "description": "The name of the function that was called."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.function_call_arguments.done</code>."
+  }
+]`} />
+
+### response.reasoning_text.delta
+
+> Emitted when a delta is added to a reasoning text.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "content_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the reasoning content part this delta is associated with."
+  },
+  {
+    "name": "delta",
+    "type": "string",
+    "isBold": true,
+    "description": "The text delta that was added to the reasoning content."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the item this reasoning text delta is associated with."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item this reasoning text delta is associated with."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.reasoning_text.delta</code>."
+  }
+]`} />
+
+### response.reasoning_text.done
+
+> Emitted when a reasoning text is completed.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "content_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the reasoning content part."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "The ID of the item this reasoning text is associated with."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output item this reasoning text is associated with."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "text",
+    "type": "string",
+    "isBold": true,
+    "description": "The full text of the completed reasoning content."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The type of the event. Always <code class=\\"schema-inline-code\\">response.reasoning_text.done</code>."
+  }
+]`} />
+
+### response.custom_tool_call_input.delta
+
+> Event representing a delta (partial update) to the input of a custom tool call.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "delta",
+    "type": "string",
+    "isBold": true,
+    "description": "The incremental input data (delta) for the custom tool call."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "Unique identifier for the API item associated with this event."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output this delta applies to."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The event type identifier. Always <code class=\\"schema-inline-code\\">response.custom_tool_call_input.delta</code>."
+  }
+]`} />
+
+### response.custom_tool_call_input.done
+
+> Event indicating that input for a custom tool call is complete.
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "input",
+    "type": "string",
+    "isBold": true,
+    "description": "The complete input data for the custom tool call."
+  },
+  {
+    "name": "item_id",
+    "type": "string",
+    "isBold": true,
+    "description": "Unique identifier for the API item associated with this event."
+  },
+  {
+    "name": "output_index",
+    "type": "number",
+    "isBold": true,
+    "description": "The index of the output this event applies to."
+  },
+  {
+    "name": "sequence_number",
+    "type": "number",
+    "isBold": true,
+    "description": "The sequence number of this event."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "The event type identifier. Always <code class=\\"schema-inline-code\\">response.custom_tool_call_input.done</code>."
+  }
+]`} />

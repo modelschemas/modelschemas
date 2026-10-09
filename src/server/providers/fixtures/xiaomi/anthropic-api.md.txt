@@ -1,0 +1,1262 @@
+﻿# Anthropic Messages API Compatibility
+
+## Request Address
+
+```bash
+https://api.xiaomimimo.com/anthropic/v1/messages
+```
+
+## Request Headers
+
+{/* feishu-style:text-align:left */}
+The API supports the following two authentication methods. Please choose one and add it to the request headers:
+
+<Tab>
+  <TabItem label={`API Key Authentication`}>
+
+```json
+api-key: $MIMO_API_KEY
+Content-Type: application/json
+```
+
+  </TabItem>
+  <TabItem label={`Bearer Authentication`}>
+
+```json
+Authorization: Bearer $MIMO_API_KEY
+Content-Type: application/json
+```
+
+  </TabItem>
+</Tab>
+
+## Request Body
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "messages",
+    "type": "array",
+    "isBold": true,
+    "required": true,
+    "description": "Input messages. Each input message must be an object with a <code class=\\"schema-inline-code\\">role</code> and <code class=\\"schema-inline-code\\">content</code>.<br />Each input message <code class=\\"schema-inline-code\\">content</code> may be either a single <code class=\\"schema-inline-code\\">string</code> or an array of content blocks, where each block has a specific <code class=\\"schema-inline-code\\">type</code>. Using a <code class=\\"schema-inline-code\\">string</code> for <code class=\\"schema-inline-code\\">content</code> is shorthand for an array of one content block of type <code class=\\"schema-inline-code\\">text</code>.",
+    "children": [
+      {
+        "name": "role",
+        "type": "string",
+        "isBold": true,
+        "required": true,
+        "description": "Role of the message.<br />Available options: <code class=\\"schema-inline-code\\">user</code>, <code class=\\"schema-inline-code\\">assistant</code>, <code class=\\"schema-inline-code\\">system</code>"
+      },
+      {
+        "name": "content",
+        "type": [
+          "string",
+          "array"
+        ],
+        "isBold": true,
+        "required": true,
+        "children": [
+          {
+            "name": "Text content",
+            "type": "string",
+            "isBold": false,
+            "description": "The text contents of the message."
+          },
+          {
+            "name": "Array of content parts",
+            "type": "array",
+            "isBold": false,
+            "description": "An array of content parts with a defined type. Such text, image, audio, video, tool use, tool result, and thinking.<br /><blockquote class=\\"schema-blockquote\\">Currently, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models support image, audio or video input.</blockquote>",
+            "children": [
+              {
+                "name": "Text",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "text",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The content of the text block.<br />Minimum length: <code class=\\"schema-inline-code\\">1</code>"
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+                  }
+                ]
+              },
+              {
+                "name": "Image",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "source",
+                    "type": "object",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Image data is provided via URL or Base64.",
+                    "children": [
+                      {
+                        "name": "Base64ImageSource",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "data",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Base64 encoded image data."
+                          },
+                          {
+                            "name": "media_type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Media type.<br />Available options: <code class=\\"schema-inline-code\\">image/jpeg</code>, <code class=\\"schema-inline-code\\">image/png</code>, <code class=\\"schema-inline-code\\">image/gif</code>, <code class=\\"schema-inline-code\\">image/webp</code>, <code class=\\"schema-inline-code\\">image/bmp</code>"
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Image source type.<br />Available options: <code class=\\"schema-inline-code\\">base64</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "URLImageSource",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "A URL of the image."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Image source type.<br />Available options: <code class=\\"schema-inline-code\\">url</code>"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">image</code>"
+                  }
+                ]
+              },
+              {
+                "name": "Audio",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "source",
+                    "type": "object",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Audio data is provided via URL or Base64.",
+                    "children": [
+                      {
+                        "name": "Base64AudioSource",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "data",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Base64 encoded audio data."
+                          },
+                          {
+                            "name": "media_type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Media type.<br />Available options: <code class=\\"schema-inline-code\\">audio/mpeg</code>, <code class=\\"schema-inline-code\\">audio/wav</code>, <code class=\\"schema-inline-code\\">audio/flac</code>, <code class=\\"schema-inline-code\\">audio/mp4</code>, <code class=\\"schema-inline-code\\">audio/ogg</code>"
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Audio source type.<br />Available options: <code class=\\"schema-inline-code\\">base64</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "URLAudioSource",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "A URL of the audio."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Audio source type.<br />Available options: <code class=\\"schema-inline-code\\">url</code>"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">audio</code>"
+                  }
+                ]
+              },
+              {
+                "name": "Video",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "source",
+                    "type": "object",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Video data is provided via URL or Base64.",
+                    "children": [
+                      {
+                        "name": "Base64VideoSource",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "data",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Base64 encoded video data."
+                          },
+                          {
+                            "name": "media_type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Media type.<br />Available options: <code class=\\"schema-inline-code\\">video/mp4</code>, <code class=\\"schema-inline-code\\">video/quicktime</code>, <code class=\\"schema-inline-code\\">video/x-msvideo</code>, <code class=\\"schema-inline-code\\">video/x-ms-wmv</code>"
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Video source type.<br />Available options: <code class=\\"schema-inline-code\\">base64</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "URLVideoSource",
+                        "type": "object",
+                        "isBold": false,
+                        "children": [
+                          {
+                            "name": "url",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "A URL of the video."
+                          },
+                          {
+                            "name": "type",
+                            "type": "string",
+                            "isBold": true,
+                            "required": true,
+                            "description": "Video source type.<br />Available options: <code class=\\"schema-inline-code\\">url</code>"
+                          }
+                        ]
+                      },
+                      {
+                        "name": "fps",
+                        "type": "number",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "2",
+                        "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                      },
+                      {
+                        "name": "media_resolution",
+                        "type": "string",
+                        "isBold": true,
+                        "required": false,
+                        "defaultValue": "default",
+                        "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">video</code>"
+                  }
+                ]
+              },
+              {
+                "name": "Tool use",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "id",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The unique identifier for tool use."
+                  },
+                  {
+                    "name": "input",
+                    "type": "object",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The parameter object passed when using the tool."
+                  },
+                  {
+                    "name": "name",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Tool name."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">tool_use</code>"
+                  }
+                ]
+              },
+              {
+                "name": "Tool result",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "tool_use_id",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The <code class=\\"schema-inline-code\\">tool_use</code> ID corresponding to this result."
+                  },
+                  {
+                    "name": "content",
+                    "type": [
+                      "string",
+                      "array"
+                    ],
+                    "isBold": true,
+                    "description": "The result returned after the tool is executed.",
+                    "children": [
+                      {
+                        "name": "Text content",
+                        "type": "string",
+                        "isBold": false,
+                        "description": "The text contents of the message."
+                      },
+                      {
+                        "name": "Array of content parts",
+                        "type": "array",
+                        "isBold": false,
+                        "description": "An array of content parts with a defined type. Such text, image, audio and video.",
+                        "children": [
+                          {
+                            "name": "Text",
+                            "type": "object",
+                            "isBold": false,
+                            "children": [
+                              {
+                                "name": "text",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The content of the text block."
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Image",
+                            "type": "object",
+                            "isBold": false,
+                            "children": [
+                              {
+                                "name": "source",
+                                "type": "object",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Image data is provided via URL or Base64.",
+                                "children": [
+                                  {
+                                    "name": "Base64ImageSource",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "data",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Base64 encoded image data."
+                                      },
+                                      {
+                                        "name": "media_type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Media type.<br />Available options: <code class=\\"schema-inline-code\\">image/jpeg</code>, <code class=\\"schema-inline-code\\">image/png</code>, <code class=\\"schema-inline-code\\">image/gif</code>, <code class=\\"schema-inline-code\\">image/webp</code>, <code class=\\"schema-inline-code\\">image/bmp</code>"
+                                      },
+                                      {
+                                        "name": "type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Image source type.<br />Available options: <code class=\\"schema-inline-code\\">base64</code>"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "name": "URLImageSource",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "url",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "A URL of the image."
+                                      },
+                                      {
+                                        "name": "type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Image source type.<br />Available options: <code class=\\"schema-inline-code\\">url</code>"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">image</code>"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Audio",
+                            "type": "object",
+                            "isBold": false,
+                            "children": [
+                              {
+                                "name": "source",
+                                "type": "object",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Audio data is provided via URL or Base64.",
+                                "children": [
+                                  {
+                                    "name": "Base64AudioSource",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "data",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Base64 encoded audio data."
+                                      },
+                                      {
+                                        "name": "media_type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Media type.<br />Available options: <code class=\\"schema-inline-code\\">audio/mpeg</code>, <code class=\\"schema-inline-code\\">audio/wav</code>, <code class=\\"schema-inline-code\\">audio/flac</code>, <code class=\\"schema-inline-code\\">audio/mp4</code>, <code class=\\"schema-inline-code\\">audio/ogg</code>"
+                                      },
+                                      {
+                                        "name": "type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Audio source type.<br />Available options: <code class=\\"schema-inline-code\\">base64</code>"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "name": "URLAudioSource",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "url",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "A URL of the audio."
+                                      },
+                                      {
+                                        "name": "type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Audio source type.<br />Available options: <code class=\\"schema-inline-code\\">url</code>"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">audio</code>"
+                              }
+                            ]
+                          },
+                          {
+                            "name": "Video",
+                            "type": "object",
+                            "isBold": false,
+                            "children": [
+                              {
+                                "name": "source",
+                                "type": "object",
+                                "isBold": true,
+                                "required": true,
+                                "description": "Video data is provided via URL or Base64.",
+                                "children": [
+                                  {
+                                    "name": "Base64VideoSource",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "data",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Base64 encoded video data."
+                                      },
+                                      {
+                                        "name": "media_type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Media type.<br />Available options: <code class=\\"schema-inline-code\\">video/mp4</code>, <code class=\\"schema-inline-code\\">video/quicktime</code>, <code class=\\"schema-inline-code\\">video/x-msvideo</code>, <code class=\\"schema-inline-code\\">video/x-ms-wmv</code>"
+                                      },
+                                      {
+                                        "name": "type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Video source type.<br />Available options: <code class=\\"schema-inline-code\\">base64</code>"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "name": "URLVideoSource",
+                                    "type": "object",
+                                    "isBold": false,
+                                    "children": [
+                                      {
+                                        "name": "url",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "A URL of the video."
+                                      },
+                                      {
+                                        "name": "type",
+                                        "type": "string",
+                                        "isBold": true,
+                                        "required": true,
+                                        "description": "Video source type.<br />Available options: <code class=\\"schema-inline-code\\">url</code>"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "name": "fps",
+                                    "type": "number",
+                                    "isBold": true,
+                                    "required": false,
+                                    "defaultValue": "2",
+                                    "description": "Number of frames sampled per second.<br />Required range: <code class=\\"schema-inline-code\\">[0.1, 10.0]</code>"
+                                  },
+                                  {
+                                    "name": "media_resolution",
+                                    "type": "string",
+                                    "isBold": true,
+                                    "required": false,
+                                    "defaultValue": "default",
+                                    "description": "Resolution level.<br />Available options: <code class=\\"schema-inline-code\\">default</code>, <code class=\\"schema-inline-code\\">max</code>"
+                                  }
+                                ]
+                              },
+                              {
+                                "name": "type",
+                                "type": "string",
+                                "isBold": true,
+                                "required": true,
+                                "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">video</code>"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "name": "is_error",
+                    "type": "boolean",
+                    "isBold": true
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">tool_result</code>"
+                  }
+                ]
+              },
+              {
+                "name": "Thinking",
+                "type": "object",
+                "isBold": false,
+                "children": [
+                  {
+                    "name": "signature",
+                    "type": "string",
+                    "isBold": true,
+                    "description": "The signature of the thinking block."
+                  },
+                  {
+                    "name": "thinking",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "Thinking content."
+                  },
+                  {
+                    "name": "type",
+                    "type": "string",
+                    "isBold": true,
+                    "required": true,
+                    "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">thinking</code>"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "required": true,
+    "description": "The model that will complete your prompt.<br />Available options: <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>"
+  },
+  {
+    "name": "max_tokens",
+    "type": "integer",
+    "isBold": true,
+    "required": false,
+    "description": "The maximum number of tokens to generate before stopping.<br />Note that our models may stop before reaching this maximum. This parameter only specifies the absolute maximum number of tokens to generate.<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>: default <code class=\\"schema-inline-code\\">131072</code></li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">32768</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[1, 131072]</code>"
+  },
+  {
+    "name": "stop_sequences",
+    "type": "array",
+    "isBold": true,
+    "required": false,
+    "description": "Custom text sequences that will cause the model to stop generating.<br />Our models will normally stop when they have naturally completed their turn, which will result in a response <code class=\\"schema-inline-code\\">stop_reason</code> of <code class=\\"schema-inline-code\\">end_turn</code>.<br />If you want the model to stop generating when it encounters custom strings of text, you can use the <code class=\\"schema-inline-code\\">stop_sequences</code> parameter."
+  },
+  {
+    "name": "stream",
+    "type": "boolean",
+    "isBold": true,
+    "required": false,
+    "defaultValue": "false",
+    "description": "Whether to incrementally stream the response using server-sent events."
+  },
+  {
+    "name": "system",
+    "type": [
+      "string",
+      "array"
+    ],
+    "isBold": true,
+    "required": false,
+    "description": "A system prompt is a way of providing context and instructions to model, such as specifying a particular goal or role.",
+    "children": [
+      {
+        "name": "Text content",
+        "type": "string",
+        "isBold": false,
+        "description": "The content of the system prompt."
+      },
+      {
+        "name": "Array of content parts",
+        "type": "array",
+        "isBold": false,
+        "children": [
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The text content.<br />Minimum length: <code class=\\"schema-inline-code\\">1</code>"
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "temperature",
+    "type": "number",
+    "isBold": true,
+    "required": false,
+    "description": "Sampling temperature controls the diversity of the text generated by the model.<br />The higher the temperature, the more diverse the generated text will be; conversely, the lower the temperature, the more deterministic the generated text will be.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">1.0</code>.</blockquote><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">1.0</code></li></ul>Required range: <code class=\\"schema-inline-code\\">[0, 1.5]</code>"
+  },
+  {
+    "name": "thinking",
+    "type": "object",
+    "isBold": true,
+    "required": false,
+    "description": "Configuration for enabling model's extended thinking.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns a <code class=\\"schema-inline-code\\">thinking</code> content block alongside <code class=\\"schema-inline-code\\">tool_use</code> content block. To continue the conversation, it is recommended to keep all previous <code class=\\"schema-inline-code\\">thinking</code> content block in the <code class=\\"schema-inline-code\\">messages</code> array for each subsequent request to achieve the best performance.</blockquote><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">temperature</code> and <code class=\\"schema-inline-code\\">top_p</code> parameters. Even if these parameters are passed in, the actual effective values will be forcibly set by the model to its recommended default values of <code class=\\"schema-inline-code\\">1.0</code> and <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>",
+    "children": [
+      {
+        "name": "type",
+        "type": "string",
+        "isBold": true,
+        "required": true,
+        "description": "<ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.5</code>: default <code class=\\"schema-inline-code\\">enabled</code></li></ul>Available options: <code class=\\"schema-inline-code\\">enabled</code>, <code class=\\"schema-inline-code\\">disabled</code>"
+      }
+    ]
+  },
+  {
+    "name": "tool_choice",
+    "type": "object",
+    "isBold": true,
+    "required": false,
+    "description": "How the model should use the provided tools.",
+    "children": [
+      {
+        "name": "type",
+        "type": "string",
+        "isBold": true,
+        "required": true,
+        "description": "<ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">auto</code> means the model will automatically decide whether to use tools.</li></ul><blockquote class=\\"schema-blockquote\\">Note: When a value other than <code class=\\"schema-inline-code\\">auto</code> is passed to <code class=\\"schema-inline-code\\">type</code>, the backend will remove this field by default, and the model response behavior will still be equivalent to the <code class=\\"schema-inline-code\\">auto</code> mode (this logic is subject to future adjustments).</blockquote>Available options: <code class=\\"schema-inline-code\\">auto</code>"
+      },
+      {
+        "name": "disable_parallel_tool_use",
+        "type": "boolean",
+        "isBold": true,
+        "defaultValue": "false",
+        "description": "Whether to disable parallel tool use.<br />If set to <code class=\\"schema-inline-code\\">true</code>:<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\">When type is <code class=\\"schema-inline-code\\">auto</code>, the model will output at most one tool use.</li></ul>"
+      }
+    ]
+  },
+  {
+    "name": "tools",
+    "type": "array",
+    "isBold": true,
+    "required": false,
+    "description": "Definitions of tools that the model may use.<br />If you include <code class=\\"schema-inline-code\\">tools</code> in your API request, the model may return <code class=\\"schema-inline-code\\">tool_use</code> content blocks that represent the model's use of those tools. You can then run those tools using the tool input generated by the model and then optionally return results back to the model using <code class=\\"schema-inline-code\\">tool_result</code> content blocks.<br /><blockquote class=\\"schema-blockquote\\">Note: During the multi-turn tool calls process in thinking mode, the model returns a <code class=\\"schema-inline-code\\">thinking</code> content block alongside <code class=\\"schema-inline-code\\">tool_use</code> content block. To continue the conversation, it is recommended to keep all previous <code class=\\"schema-inline-code\\">thinking</code> content block in the <code class=\\"schema-inline-code\\">messages</code> array for each subsequent request to achieve the best performance.</blockquote>Each tool definition includes:<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">name</code>: Name of the tool.</li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">description</code>: Optional, but strongly-recommended description of the tool.</li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">input_schema</code>:  JSON schema for the tool <code class=\\"schema-inline-code\\">input</code> shape that the model will produce in <code class=\\"schema-inline-code\\">tool_use</code> output content blocks.</li></ul>",
+    "children": [
+      {
+        "name": "name",
+        "type": "string",
+        "isBold": true,
+        "required": true,
+        "description": "Name of the tool.<br />This is how the tool will be called by the model and in <code class=\\"schema-inline-code\\">tool_use</code> blocks."
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "isBold": true,
+        "description": "Description of what this tool does.<br />Tool descriptions should be as detailed as possible. The more information that the model has about what the tool is and how to use it, the better it will perform. You can use natural language descriptions to reinforce important aspects of the tool input JSON schema."
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "isBold": true,
+        "description": "Available options: <code class=\\"schema-inline-code\\">custom</code>"
+      },
+      {
+        "name": "input_schema",
+        "type": "object",
+        "isBold": true,
+        "required": true,
+        "description": "JSON schema for the tool input shape that the model will produce in <code class=\\"schema-inline-code\\">tool_use</code> output content blocks.",
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "required": true,
+            "description": "The type of <code class=\\"schema-inline-code\\">input_schema</code>, only <code class=\\"schema-inline-code\\">object</code> is supported.<br />Available options: <code class=\\"schema-inline-code\\">object</code>"
+          },
+          {
+            "name": "properties",
+            "type": [
+              "object",
+              "null"
+            ],
+            "isBold": true,
+            "description": "The properties of the tool input."
+          },
+          {
+            "name": "required",
+            "type": [
+              "array",
+              "null"
+            ],
+            "isBold": true,
+            "description": "The list of properties that must be included in the tool input."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "top_p",
+    "type": "number",
+    "isBold": true,
+    "required": false,
+    "defaultValue": "0.95",
+    "description": "Use nucleus sampling.<br />In nucleus sampling, we compute the cumulative distribution over all the options for each subsequent token in decreasing probability order and cut it off once it reaches a particular probability specified by <code class=\\"schema-inline-code\\">top_p</code>. You should either alter <code class=\\"schema-inline-code\\">temperature</code> or <code class=\\"schema-inline-code\\">top_p</code>, but not both.<br />Recommended for advanced use cases only. You usually only need to use <code class=\\"schema-inline-code\\">temperature</code>.<br /><blockquote class=\\"schema-blockquote\\">In thinking mode, the <code class=\\"schema-inline-code\\">mimo-v2.6-flash</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro</code>, <code class=\\"schema-inline-code\\">mimo-v2.6-pro-ultraspeed</code>, <code class=\\"schema-inline-code\\">mimo-v2.5-pro</code> and <code class=\\"schema-inline-code\\">mimo-v2.5</code> models do not support customizing the <code class=\\"schema-inline-code\\">top_p</code> parameter. Even if this parameter is passed in, it will be forcibly overridden and take effect with the model's recommended default value of <code class=\\"schema-inline-code\\">0.95</code>.</blockquote>Required range: <code class=\\"schema-inline-code\\">[0.01, 1.0]</code>"
+  }
+]`} />
+
+## Non-streaming Response
+
+<InlineSchemaV2 schema={`[
+  {
+    "name": "id",
+    "type": "string",
+    "isBold": true,
+    "description": "Unique object identifier. The format and length of IDs may change over time."
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "For Messages, this is always <code class=\\"schema-inline-code\\">message</code>."
+  },
+  {
+    "name": "role",
+    "type": "string",
+    "isBold": true,
+    "description": "Conversational role of the generated message. This will always be <code class=\\"schema-inline-code\\">assistant</code>."
+  },
+  {
+    "name": "content",
+    "type": "array",
+    "isBold": true,
+    "description": "Content generated by the model.",
+    "children": [
+      {
+        "name": "Text",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "description": "The content of the text."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+          }
+        ]
+      },
+      {
+        "name": "Thinking",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "signature",
+            "type": "string",
+            "isBold": true,
+            "description": "The signature of the thinking block."
+          },
+          {
+            "name": "thinking",
+            "type": "string",
+            "isBold": true,
+            "description": "Thinking content."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">thinking</code>"
+          }
+        ]
+      },
+      {
+        "name": "Tool use",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique identifier for tool use."
+          },
+          {
+            "name": "input",
+            "type": "object",
+            "isBold": true,
+            "description": "The parameter object passed when using the tool."
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "description": "Tool name."
+          },
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The type of the content.<br />Available options: <code class=\\"schema-inline-code\\">tool_use</code>"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "type": "string",
+    "isBold": true,
+    "description": "The model that handled the request."
+  },
+  {
+    "name": "stop_reason",
+    "type": "string",
+    "isBold": true,
+    "description": "The reason the message finished.<br />This may be one the following values:<br /><ul class=\\"schema-list\\"><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">end_turn</code>: the model reached a natural stopping point.</li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">max_tokens</code>: we exceeded the requested <code class=\\"schema-inline-code\\">max_tokens</code> or the model's maximum.</li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">tool_use</code>: the model invoked one or more tools.</li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">content_filter</code>: the content was omitted due to a flag from our content filters.</li><li class=\\"schema-list-item\\"><code class=\\"schema-inline-code\\">repetition_truncation</code>: the model detects repetition.</li></ul>Available options: <code class=\\"schema-inline-code\\">end_turn</code>, <code class=\\"schema-inline-code\\">max_tokens</code>, <code class=\\"schema-inline-code\\">tool_use</code>, <code class=\\"schema-inline-code\\">content_filter</code>, <code class=\\"schema-inline-code\\">repetition_truncation</code>"
+  },
+  {
+    "name": "usage",
+    "type": "object",
+    "isBold": true,
+    "description": "Billing and rate-limit usage.",
+    "children": [
+      {
+        "name": "input_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "The number of input tokens which were used."
+      },
+      {
+        "name": "output_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "The number of output tokens which were used."
+      },
+      {
+        "name": "cache_read_input_tokens",
+        "type": [
+          "integer",
+          "null"
+        ],
+        "isBold": true,
+        "description": "The number of input tokens read from the cache."
+      }
+    ]
+  }
+]`} />
+
+## Streaming Response
+<InlineSchemaV2 schema={`[
+  {
+    "name": "SSE.event",
+    "type": "string",
+    "isBold": true,
+    "description": "A string identifying the type of event described.<br />Available options: <code class=\\"schema-inline-code\\">message_start</code>, <code class=\\"schema-inline-code\\">content_block_start</code>,<code class=\\"schema-inline-code\\"> content_block_delta</code>, <code class=\\"schema-inline-code\\">content_block_stop</code>, <code class=\\"schema-inline-code\\">message_delta</code>, <code class=\\"schema-inline-code\\">message_stop</code>"
+  },
+  {
+    "name": "type",
+    "type": "string",
+    "isBold": true,
+    "description": "Each server-sent event includes a named event type and associated JSON data.<br />Available options: <code class=\\"schema-inline-code\\">message_start</code>, <code class=\\"schema-inline-code\\">content_block_start</code>,<code class=\\"schema-inline-code\\"> content_block_delta</code>, <code class=\\"schema-inline-code\\">content_block_stop</code>, <code class=\\"schema-inline-code\\">message_delta</code>, <code class=\\"schema-inline-code\\">message_stop</code>"
+  },
+  {
+    "name": "message",
+    "type": "object",
+    "isBold": true,
+    "description": "Response message.",
+    "children": [
+      {
+        "name": "id",
+        "type": "string",
+        "isBold": true,
+        "description": "The message ID."
+      },
+      {
+        "name": "type",
+        "type": "string",
+        "isBold": true,
+        "description": "Available options: <code class=\\"schema-inline-code\\">message</code>"
+      },
+      {
+        "name": "role",
+        "type": "string",
+        "isBold": true,
+        "description": "Available options: <code class=\\"schema-inline-code\\">assistant</code>"
+      },
+      {
+        "name": "model",
+        "type": "string",
+        "isBold": true,
+        "description": "The model name."
+      },
+      {
+        "name": "content",
+        "type": "array",
+        "isBold": true,
+        "description": "The array of content blocks in the message."
+      },
+      {
+        "name": "stop_reason",
+        "type": [
+          "string",
+          "null"
+        ],
+        "isBold": true,
+        "description": "The reason the message finished."
+      }
+    ]
+  },
+  {
+    "name": "index",
+    "type": "integer",
+    "isBold": true,
+    "description": "The position of the content block within the message.。"
+  },
+  {
+    "name": "content_block",
+    "type": "object",
+    "isBold": true,
+    "description": "The content block that is starting.",
+    "children": [
+      {
+        "name": "Text",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The header for a text content block; actual text arrives via subsequent delta events.<br />Available options: <code class=\\"schema-inline-code\\">text</code>"
+          },
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "description": "Often an empty string at start; text is appended via <code class=\\"schema-inline-code\\">content_block_delta</code> events of type <code class=\\"schema-inline-code\\">text_delta</code>."
+          }
+        ]
+      },
+      {
+        "name": "Thinking",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "The header for a thinking content block; actual thinking content arrives via subsequent delta events.<br />Available options: <code class=\\"schema-inline-code\\">thinking</code>"
+          },
+          {
+            "name": "thinking",
+            "type": "string",
+            "isBold": true,
+            "description": "Often an empty string at start; thinking content is appended via <code class=\\"schema-inline-code\\">content_block_delta</code> events of type <code class=\\"schema-inline-code\\">thinking_delta</code>."
+          }
+        ]
+      },
+      {
+        "name": "Tool use",
+        "type": "object",
+        "isBold": false,
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "Available options: <code class=\\"schema-inline-code\\">tool_use</code>"
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "isBold": true,
+            "description": "The unique identifier for tool use."
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "isBold": true,
+            "description": "Tool name."
+          },
+          {
+            "name": "input",
+            "type": "object",
+            "isBold": true,
+            "description": "The parameter object passed when using the tool."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "delta",
+    "type": "object",
+    "isBold": true,
+    "description": "Actual response content.",
+    "children": [
+      {
+        "name": "Content block delta",
+        "type": "object",
+        "isBold": false,
+        "description": "Incremental data for a content block.",
+        "children": [
+          {
+            "name": "type",
+            "type": "string",
+            "isBold": true,
+            "description": "Available options: <code class=\\"schema-inline-code\\">text_delta</code>, <code class=\\"schema-inline-code\\">thinking_delta</code>, <code class=\\"schema-inline-code\\">input_json_delta</code>"
+          },
+          {
+            "name": "text",
+            "type": "string",
+            "isBold": true,
+            "description": "The text part of the incremental data."
+          },
+          {
+            "name": "thinking",
+            "type": "string",
+            "isBold": true,
+            "description": "The thinking part of the incremental data."
+          },
+          {
+            "name": "partial_json",
+            "type": "string",
+            "isBold": true,
+            "description": "A JSON fragment string. Clients should concatenate fragments in arrival order to form the complete input JSON, then parse."
+          }
+        ]
+      },
+      {
+        "name": "Message delta",
+        "type": "object",
+        "isBold": false,
+        "description": "Message-level stop metadata updates.",
+        "children": [
+          {
+            "name": "stop_reason",
+            "type": [
+              "string",
+              "null"
+            ],
+            "isBold": true,
+            "description": "The reason the message finished.<br />Available options: <code class=\\"schema-inline-code\\">end_turn</code>, <code class=\\"schema-inline-code\\">max_tokens</code>, <code class=\\"schema-inline-code\\">tool_use</code>, <code class=\\"schema-inline-code\\">content_filter</code>, <code class=\\"schema-inline-code\\">repetition_truncation</code>"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "usage",
+    "type": [
+      "object",
+      "null"
+    ],
+    "isBold": true,
+    "description": "Billing and rate-limit usage.",
+    "children": [
+      {
+        "name": "input_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "The number of input tokens which were used."
+      },
+      {
+        "name": "output_tokens",
+        "type": "integer",
+        "isBold": true,
+        "description": "The number of output tokens which were used."
+      },
+      {
+        "name": "cache_read_input_tokens",
+        "type": [
+          "integer",
+          "null"
+        ],
+        "isBold": true,
+        "description": "The number of input tokens read from the cache."
+      }
+    ]
+  }
+]`} />
