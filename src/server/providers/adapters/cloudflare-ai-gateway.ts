@@ -712,10 +712,14 @@ export function parseCatalogModel(
   )
   const tools = toolsPath(metadata, tags, schema, rawId)
   const structured = tags.includes('Structured Output')
+  const reasons =
+    parsed !== null ||
+    tags.includes('Reasoning') ||
+    metaString(metadata, 'Adaptive Thinking', rawId) === 'Yes'
   const capabilities = [
     ...(tools ? ['tools'] : []),
     ...(structured ? ['structured_outputs'] : []),
-    ...(parsed ? ['reasoning'] : []),
+    ...(reasons ? ['reasoning'] : []),
   ]
   const contextWindow = positiveInt(
     model.context_length,
@@ -731,7 +735,10 @@ export function parseCatalogModel(
   const cited = (path: string) => provenance(source, path)
   const flagPath = (flag: string): string => {
     if (flag === 'tools' && tools) return tools
-    if (flag === 'reasoning' && parsed) return parsed.path
+    if (flag === 'reasoning') {
+      if (parsed) return parsed.path
+      if (!tags.includes('Reasoning')) return 'metadata.Adaptive Thinking'
+    }
     return 'tags'
   }
   return {

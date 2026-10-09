@@ -1,3 +1,5 @@
+import { ZHIPU_THINKING_MODE_URL } from '../provider-replay.ts'
+import { GLM_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { chatRequestMap } from '../request-map.ts'
@@ -228,6 +230,7 @@ function spec(
 }
 
 const DOCS: Record<string, string> = {
+  [ZHIPU_THINKING_MODE_URL]: GLM_REPLAY_FIXTURE,
   [ZHIPU_CODING_OVERVIEW_URL]: OVERVIEW,
   [ZHIPU_CODING_MODELS_URL]: LATEST,
   [ZHIPU_OPENAPI_URL]: JSON.stringify(spec()),
@@ -277,6 +280,7 @@ describe('zhipuai-coding-plan', () => {
       ZHIPU_OPENAPI_URL,
       ZHIPU_MODEL_OVERVIEW_URL,
       ZHIPU_THINKING_URL,
+      ZHIPU_THINKING_MODE_URL,
     ])
   })
 

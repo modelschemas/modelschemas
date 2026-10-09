@@ -10,6 +10,12 @@
  * model whose own branch takes only the `thinking.type` switch gets a
  * toggle from it. A failed spec read leaves the stored value alone.
  */
+import {
+  applyReplay,
+  KIMI_THINKING_URL,
+  loadReplayDoc,
+  parseKimiReplay,
+} from '../provider-replay.ts'
 import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import { moonshotModelPricing } from '../moonshot-pricing.ts'
 import {
@@ -67,6 +73,8 @@ async function listModels(
   })
   if (listed.models.length === 0) return listed
   const pricing = await moonshotModelPricing(kv)
+  const replay = await loadReplayDoc(KIMI_THINKING_URL, kv)
+  const replayIds = new Set(parseKimiReplay(replay.text))
   const docs = docsRun()
   const chat = await tryDocs(docs, MOONSHOT_OPENAPI_URL, (cached) =>
     cached(kv, MOONSHOT_OPENAPI_URL, async () => {
@@ -93,7 +101,7 @@ async function listModels(
         ...pricing(model.rawId),
         ...toggle(model.rawId),
       }
-      return {
+      const enriched: ModelInfo = {
         ...model,
         ...over,
         // `created` is one clock on every id and it moves forward on each
@@ -102,6 +110,9 @@ async function listModels(
         releasedAt: null,
         absent: { ...model.absent, ...over.absent, releasedAt: 'cleared' },
       }
+      return replayIds.has(model.rawId)
+        ? applyReplay(enriched, replay.source)
+        : enriched
     }),
     docsFailures: docsReport(docs),
   }

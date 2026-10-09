@@ -169,7 +169,7 @@ const CONVERSE_REQUEST_MAP: ChatRequestMap = {
   reasoningEffort: false,
 }
 
-/** Ticked feature labels only. A bare Reasoning tick is not a capability. */
+/** Ticked feature labels state capabilities; a reasoning tick names no control. */
 function cardFlags(
   markdown: string,
   reasoningOn: boolean,
@@ -181,6 +181,10 @@ function cardFlags(
   for (let index = 1; index < parts.length; index += 2) {
     if (parts[index]?.toLowerCase() !== 'yes') continue
     const label = (parts[index + 1] ?? '').split(/<br|\n|icon-/i)[0] ?? ''
+    if (/\[Reasoning\]/i.test(label) && !seen.has('reasoning')) {
+      seen.add('reasoning')
+      flags.push('reasoning')
+    }
     if (/client-side tool calling/i.test(label) && !seen.has('tools')) {
       seen.add('tools')
       flags.push('tools')

@@ -1,11 +1,18 @@
+import { DEEPSEEK_THINKING_URL } from '../provider-replay.ts'
+import { DEEPSEEK_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { describe, expect, it } from 'vitest'
 
 import { provider } from './deepseek.ts'
 
 describe('deepseek classify', () => {
   it('maps chat completions and drops platform paths', () => {
-    expect(provider.classify('/chat/completions', {})).toBe('chat')
-    expect(provider.classify('/v1/chat/completions', {})).toBe('chat')
+    expect(
+      provider.classify('/chat/completions', {
+        'x-modelschemas-deepseek-native': true,
+      }),
+    ).toBe('chat')
+    expect(provider.classify('/chat/completions', {})).toBeNull()
+    expect(provider.classify('/v1/chat/completions', {})).toBeNull()
     expect(provider.classify('/models', {})).toBeNull()
     expect(provider.classify('/files', {})).toBeNull()
     expect(provider.classify('/fine_tuning/jobs', {})).toBeNull()
@@ -69,4 +76,66 @@ describe('deepseek listModels', () => {
       globalThis.fetch = original
     }
   })
+})
+
+it('sources DeepSeek effort and replay without losing other native capabilities', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) => {
+    if (String(url) === DEEPSEEK_THINKING_URL)
+      return Promise.resolve(new Response(DEEPSEEK_REPLAY_FIXTURE))
+    if (String(url).includes('api-docs.deepseek.com'))
+      return Promise.resolve(
+        new Response(
+          [
+            'MODEL',
+            'deepseek-v4-pro',
+            'PRICING',
+            '$1',
+            '$2',
+            '$3',
+            '$4',
+            '$5',
+            '$6',
+            'Concurrency',
+          ].join('\n'),
+        ),
+      )
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'deepseek-v4-pro',
+              output_modalities: ['text'],
+              supports_tools: true,
+              effort: { supported_levels: ['high', 'max'] },
+            },
+          ],
+        }),
+      ),
+    )
+  }) as typeof fetch
+  try {
+    const model = (await provider.listModels({ DEEPSEEK_API_KEY: 'test-key' }))
+      .models[0]
+    expect(model?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['high', 'max'],
+    })
+    expect(model?.capabilities).toEqual(
+      expect.arrayContaining(['tools', 'reasoning']),
+    )
+    expect(model?.requestMap).toMatchObject({
+      replayReasoningContent: true,
+      thinking: null,
+      developerRole: null,
+    })
+    expect(model?.factSources?.requestMap?.sourceUrl).toBe(
+      DEEPSEEK_THINKING_URL,
+    )
+    expect(model?.pricing).not.toBeNull()
+  } finally {
+    globalThis.fetch = original
+  }
 })

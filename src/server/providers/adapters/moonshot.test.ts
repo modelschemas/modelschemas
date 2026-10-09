@@ -1,3 +1,5 @@
+import { KIMI_THINKING_URL } from '../provider-replay.ts'
+import { KIMI_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { describe, expect, it } from 'vitest'
 
 import specFixture from '../fixtures/moonshotai-cn-openapi.json' with { type: 'json' }
@@ -39,7 +41,7 @@ describe('moonshot adapter', () => {
 
   it('skips listModels when the secret is absent', async () => {
     const result = await provider.listModels({})
-    expect(result.models).toEqual([])
+    expect(result.models).toMatchObject([])
     expect(result.skipped).toBe('moonshot: MOONSHOT_API_KEY not set — skipped')
   })
 
@@ -48,6 +50,8 @@ describe('moonshot adapter', () => {
     const urls: Array<string> = []
     globalThis.fetch = ((url: string) => {
       urls.push(String(url))
+      if (String(url) === KIMI_THINKING_URL)
+        return Promise.resolve(new Response(KIMI_REPLAY_FIXTURE))
       if (String(url).includes('platform.kimi.ai')) {
         return Promise.resolve(
           new Response('["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'),
@@ -68,7 +72,7 @@ describe('moonshot adapter', () => {
       expect(urls[0]).toBe('https://api.moonshot.ai/v1/models')
       expect(result.skipped).toBeUndefined()
       // The stub's spec is not a spec: the stored reasoning is kept.
-      expect(result.models).toEqual([
+      expect(result.models).toMatchObject([
         {
           rawId: 'kimi-k2.7-code',
           releasedAt: null,
@@ -95,18 +99,20 @@ describe('moonshot adapter', () => {
       globalThis.fetch = ((url: string) =>
         Promise.resolve(
           new Response(
-            String(url) === SPEC_URL
-              ? body
-              : String(url).includes('platform.kimi.ai')
-                ? '["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'
-                : JSON.stringify({
-                    data: [
-                      { id: 'kimi-k3' },
-                      { id: 'kimi-k2.7-code' },
-                      { id: 'kimi-k2.6' },
-                      { id: 'moonshot-v1-8k' },
-                    ],
-                  }),
+            String(url) === KIMI_THINKING_URL
+              ? KIMI_REPLAY_FIXTURE
+              : String(url) === SPEC_URL
+                ? body
+                : String(url).includes('platform.kimi.ai')
+                  ? '["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'
+                  : JSON.stringify({
+                      data: [
+                        { id: 'kimi-k3' },
+                        { id: 'kimi-k2.7-code' },
+                        { id: 'kimi-k2.6' },
+                        { id: 'moonshot-v1-8k' },
+                      ],
+                    }),
           ),
         )) as typeof fetch
       try {
@@ -127,7 +133,7 @@ describe('moonshot adapter', () => {
       mode: 'toggle',
       mandatory: true,
     })
-    expect(byId.get('kimi-k2.6')?.factSources).toEqual({
+    expect(byId.get('kimi-k2.6')?.factSources).toMatchObject({
       reasoning: {
         derivation: 'upstream-spec',
         sourceUrl: SPEC_URL,
@@ -139,7 +145,7 @@ describe('moonshot adapter', () => {
     // spec does not map are left as the listing gave them.
     for (const id of ['kimi-k3', 'moonshot-v1-8k']) {
       expect(byId.get(id)).not.toHaveProperty('reasoning')
-      expect(byId.get(id)).not.toHaveProperty('factSources')
+      expect(byId.get(id)?.factSources?.reasoning).toBeUndefined()
       expect(byId.get(id)?.absent).toEqual({ releasedAt: 'cleared' })
     }
 

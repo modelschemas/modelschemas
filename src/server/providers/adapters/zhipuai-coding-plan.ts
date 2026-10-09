@@ -18,6 +18,12 @@
  * says the two take the same body; the plan docs only name the protocol,
  * "OpenAI Chat Completion". The binding rests on that, hence `docs-derived`.
  */
+import {
+  applyReplay,
+  loadReplayDoc,
+  parseGlmReplay,
+  ZHIPU_THINKING_MODE_URL,
+} from '../provider-replay.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import type {
@@ -244,6 +250,8 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
     doc(ZHIPU_MODEL_OVERVIEW_URL),
     doc(ZHIPU_THINKING_URL),
   ])
+  const replay = await loadReplayDoc(ZHIPU_THINKING_MODE_URL)
+  const replayIds = new Set(parseGlmReplay(replay.text))
   return {
     models: parseZhipuCodingModels({
       overview,
@@ -251,7 +259,11 @@ async function listModels(_env: ProviderSecrets): Promise<ListModelsResult> {
       spec,
       models,
       thinking,
-    }),
+    }).map((model) =>
+      replayIds.has(model.rawId) && model.activity === 'chat'
+        ? applyReplay(model, replay.source)
+        : model,
+    ),
   }
 }
 

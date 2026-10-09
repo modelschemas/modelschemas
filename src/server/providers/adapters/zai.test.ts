@@ -1,3 +1,5 @@
+import { ZAI_THINKING_MODE_URL } from '../provider-replay.ts'
+import { GLM_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -337,6 +339,7 @@ function serve(docs: Record<string, string>): Array<string> {
 }
 
 const DOCS = {
+  [ZAI_THINKING_MODE_URL]: GLM_REPLAY_FIXTURE,
   [ZAI_OPENAPI_URL]: JSON.stringify(spec()),
   [ZAI_PRICING_URL]: PRICING,
   [ZAI_OVERVIEW_URL]: OVERVIEW,
@@ -405,6 +408,7 @@ describe('zai', () => {
       ZAI_PRICING_URL,
       ZAI_OVERVIEW_URL,
       ZAI_THINKING_URL,
+      ZAI_THINKING_MODE_URL,
       ZAI_OPENAPI_URL,
     ])
     expect(provider.classify('/paas/v4/videos/generations', {})).toBe('video')
@@ -806,4 +810,19 @@ describe('zai parsers fail closed', () => {
       parseZaiReasoning(THINKING.replace('In the API request:', 'API:')),
     ).toThrow(/no API reasoning_effort list/)
   })
+})
+
+it('sources GLM replay from the native thinking-mode guide and rejects malformed guides', async () => {
+  serve(DOCS)
+  const model = (await provider.listModels({})).models.find(
+    (row) => row.rawId === 'glm-5.2',
+  )
+  expect(model?.requestMap?.replayReasoningContent).toBe(true)
+  expect(model?.factSources?.requestMap?.sourceUrl).toBe(ZAI_THINKING_MODE_URL)
+  serve({
+    ...DOCS,
+    [ZAI_THINKING_MODE_URL]:
+      '# Thinking Mode\nThe response contains reasoning_content.',
+  })
+  await expect(provider.listModels({})).rejects.toThrow(/no verified replay/)
 })

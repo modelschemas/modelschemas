@@ -16,6 +16,11 @@ import { provider as sambanova } from './adapters/sambanova.ts'
 import { parseDeepseekPricing } from './deepseek-pricing.ts'
 import { parseFireworksPricing } from './fireworks-pricing.ts'
 import { parseMoonshotPricing } from './moonshot-pricing.ts'
+import { DEEPSEEK_THINKING_URL, KIMI_THINKING_URL } from './provider-replay.ts'
+import {
+  DEEPSEEK_REPLAY_FIXTURE,
+  KIMI_REPLAY_FIXTURE,
+} from './fixtures/provider-replay.ts'
 import {
   cerebrasCatalogRows,
   parseCerebrasModelPage,
@@ -201,6 +206,8 @@ describe('issue #109 listModels', () => {
         if (url.includes('quick_start/pricing')) {
           return new Response(DEEPSEEK_HTML, { status: 200 })
         }
+        if (url === DEEPSEEK_THINKING_URL)
+          return new Response(DEEPSEEK_REPLAY_FIXTURE)
         return new Response('missing', { status: 404 })
       },
       async () => {
@@ -328,6 +335,7 @@ describe('issue #109 listModels', () => {
         if (url.includes('pricing/chat.md')) {
           return new Response(MOONSHOT_MD, { status: 200 })
         }
+        if (url === KIMI_THINKING_URL) return new Response(KIMI_REPLAY_FIXTURE)
         return new Response('missing', { status: 404 })
       },
       async () => {

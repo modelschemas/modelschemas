@@ -7,6 +7,12 @@
  * Prices on the pricing page are yuan per 1M tokens, stored as CNY cards.
  * `GET /v1/models` needs a CN key, which is region-bound.
  */
+import {
+  applyReplay,
+  KIMI_CN_THINKING_URL,
+  loadReplayDoc,
+  parseKimiReplay,
+} from '../provider-replay.ts'
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import { classifyOpenAiCompat } from '../openai-compat.ts'
@@ -375,6 +381,8 @@ async function listModels(
     const { spec, hash } = await fetchCnSpec()
     return moonshotCnChatFacts(spec, hash)
   })
+  const replay = await loadReplayDoc(KIMI_CN_THINKING_URL, kv)
+  const replayIds = new Set(parseKimiReplay(replay.text))
   const models = parseMoonshotCnModels(markdown).map((model): ModelInfo => {
     const facts = chat[model.rawId]
     const factSources: ModelFactSources = { ...facts?.factSources }
@@ -403,7 +411,10 @@ async function listModels(
         path: 'Pricing',
       }
     }
-    return { ...model, ...facts, pricing, factSources }
+    const enriched = { ...model, ...facts, pricing, factSources }
+    return replayIds.has(model.rawId) && enriched.activity === 'chat'
+      ? applyReplay(enriched, replay.source)
+      : enriched
   })
   return { models }
 }

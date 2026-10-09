@@ -134,7 +134,7 @@ describe('cloudflare-ai-gateway', () => {
       },
     })
     expect(parseCatalogModel(FABLE, SOURCE).reasoning).toBeUndefined()
-    expect(parseCatalogModel(FABLE, SOURCE).capabilities).toBeUndefined()
+    expect(parseCatalogModel(FABLE, SOURCE).capabilities).toEqual(['reasoning'])
   })
 
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
@@ -724,4 +724,15 @@ describe('cloudflare-ai-gateway', () => {
       'duplicate model id anthropic/claude-fable-5',
     )
   })
+})
+
+it('retains explicitly tagged reasoning without inventing a request control', () => {
+  const model = parseCatalogModel(
+    { ...FABLE, metadata: { 'Adaptive Thinking': 'Yes' } },
+    SOURCE,
+    { schemaShared: true },
+  )
+  expect(model.capabilities).toContain('reasoning')
+  expect(model.reasoning).toBeUndefined()
+  expect(model.factSources?.capabilities?.reasoning?.path).toBe('tags')
 })

@@ -11,6 +11,7 @@
  * is stored only when a label or the model's own request schema states the
  * control. NVIDIA publishes no per-token price for the hosted trial API.
  */
+import { explicitCardReplay, replayRequestMap } from '../provider-replay.ts'
 import type { Activity } from '#/db/schema.ts'
 
 import { tagDocsFacts } from '../fact-sources.ts'
@@ -69,6 +70,7 @@ const CARD_FACTS: Array<ModelFact> = [
   'modalities',
   'capabilities',
   'reasoning',
+  'requestMap',
 ]
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,6 +108,7 @@ type CardFacts = Pick<
   | 'capabilities'
   | 'exactCapabilities'
   | 'reasoning'
+  | 'requestMap'
 >
 
 /** `- **Label:** value` lines of one card section. */
@@ -410,6 +413,7 @@ export function parseNvidiaCard(markdown: string): CardFacts {
         }
       : {}),
     ...(reasoning ? { reasoning } : {}),
+    ...(explicitCardReplay(markdown) ? { requestMap: replayRequestMap() } : {}),
   }
 }
 

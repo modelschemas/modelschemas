@@ -169,6 +169,8 @@ export interface ModelFactSources {
   reasoning?: FactSource
   /** Chat wire map read from this model's own request schema. */
   requestMap?: FactSource
+  /** Field-specific evidence when a request map combines native sources. */
+  requestMapFields?: Partial<Record<keyof ChatRequestMap, FactSource>>
   /** One source per tool type id in `serverTools`. */
   serverTools?: Record<string, FactSource>
 }

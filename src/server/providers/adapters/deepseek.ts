@@ -1,19 +1,21 @@
-/**
- * DeepSeek — OpenAI-compatible chat API. No published OpenAPI document;
- * schemas are generated from the canonical OpenAI spec. Official host is
- * https://api.deepseek.com (POST /chat/completions, no /v1 prefix).
- */
+import {
+  DEEPSEEK_CHAT_DOCS,
+  fetchNativeDeepseekSpec,
+} from '../deepseek-native-spec.ts'
+/** DeepSeek — native operation JSON from its own published API docs. */
+import {
+  applyReplay,
+  deepseekEffortFacts,
+  DEEPSEEK_THINKING_URL,
+  loadReplayDoc,
+  parseDeepseekReplay,
+} from '../provider-replay.ts'
 import { deepseekModelPricing } from '../deepseek-pricing.ts'
 import {
-  classifyOpenAiCompat,
-  fetchOpenAiCompatibleSpec,
   listOpenAiCompatibleModels,
-  OPENAI_OPENAPI_URL,
+  openAiCompatModelFacts,
 } from '../openai-compat.ts'
-import {
-  compatGenerationEndpointId,
-  deepseekModelActivity,
-} from '../model-meta.ts'
+import { deepseekModelActivity } from '../model-meta.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -21,27 +23,17 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-const DEEPSEEK_SERVER_URL = 'https://api.deepseek.com'
 const DEEPSEEK_MODELS_URL = 'https://api.deepseek.com/models'
 
-async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const { spec, url, hash } = await fetchOpenAiCompatibleSpec({
-    title: 'DeepSeek',
-    serverUrl: DEEPSEEK_SERVER_URL,
-    include: ['/chat/completions'],
-  })
-  return {
-    specs: [spec],
-    sources: [{ url, hash }],
-    outputStrategy: 'post-200',
-  }
+function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
+  return fetchNativeDeepseekSpec()
 }
 
 export const provider: ProviderConfig = {
   id: 'deepseek',
   displayName: 'DeepSeek',
   authEnvVar: 'DEEPSEEK_API_KEY',
-  specSourceUrl: OPENAI_OPENAPI_URL,
+  specSourceUrl: DEEPSEEK_CHAT_DOCS,
   modelsEndpoint: DEEPSEEK_MODELS_URL,
   defaultDerivation: 'generated',
   fetchSpec,
@@ -52,21 +44,50 @@ export const provider: ProviderConfig = {
       env,
       envVar: 'DEEPSEEK_API_KEY',
       activity: deepseekModelActivity,
-      extend: async (row) =>
-        row.effort?.supported_levels?.length
-          ? { capabilities: ['reasoning'] }
-          : {},
+      extend: async (row) => {
+        const hit = deepseekEffortFacts(row.effort)
+        if (!hit) return {}
+        const capabilities = openAiCompatModelFacts(row).capabilities
+        return {
+          reasoning: hit.reasoning,
+          capabilities: [
+            ...new Set([
+              ...(Array.isArray(capabilities)
+                ? capabilities.filter(
+                    (flag): flag is string => typeof flag === 'string',
+                  )
+                : []),
+              'reasoning',
+            ]),
+          ],
+          factSources: {
+            reasoning: hit.source,
+            capabilities: { reasoning: hit.source },
+          },
+        }
+      },
     })
     if (listed.models.length === 0) return listed
     const pricing = await deepseekModelPricing(kv)
+    const replay = listed.models.some((model) => model.reasoning != null)
+      ? await loadReplayDoc(DEEPSEEK_THINKING_URL, kv)
+      : null
+    if (replay) parseDeepseekReplay(replay.text)
     return {
       ...listed,
-      models: listed.models.map((model) => ({
-        ...model,
-        ...pricing(model.rawId),
-      })),
+      models: listed.models.map((model) => {
+        const priced = { ...model, ...pricing(model.rawId) }
+        return replay && model.reasoning != null
+          ? applyReplay(priced, replay.source)
+          : priced
+      }),
     }
   },
-  classify: (path) => classifyOpenAiCompat(path),
-  generationEndpointId: ({ activity }) => compatGenerationEndpointId(activity),
+  classify: (_path, operation) =>
+    _path === '/chat/completions' &&
+    operation['x-modelschemas-deepseek-native'] === true
+      ? 'chat'
+      : null,
+  generationEndpointId: ({ activity }) =>
+    activity === 'chat' ? 'chat/completions' : null,
 }
