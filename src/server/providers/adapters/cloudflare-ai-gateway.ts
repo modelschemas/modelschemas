@@ -2,6 +2,7 @@ import { bearerConnect } from '../connect.ts'
 import {
   catalogGatewayEndpoint,
   GATEWAY_REST_DOCS,
+  hasGatewayInputSchema,
   parseGatewayRunContract,
 } from '../cloudflare-gateway-schema.ts'
 /**
@@ -748,6 +749,8 @@ export function parseCatalogModel(
     rawId,
     displayName,
     activity,
+    schemaEndpointId:
+      activity != null && hasGatewayInputSchema(schema) ? rawId : null,
     contextWindow,
     maxOutput,
     ...(modalities
@@ -758,6 +761,9 @@ export function parseCatalogModel(
     ...(parsed ? { reasoning: parsed.reasoning } : {}),
     ...(requestMap ? { requestMap } : {}),
     factSources: {
+      ...(activity != null && hasGatewayInputSchema(schema)
+        ? { schemaEndpointId: cited('schema.input') }
+        : {}),
       ...(contextWindow != null
         ? { contextWindow: cited('context_length') }
         : {}),

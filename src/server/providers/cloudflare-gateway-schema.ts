@@ -64,6 +64,11 @@ function wrappedInput(value: unknown): unknown {
   )
 }
 
+/** A native input record containing only its dialect declares no body fields. */
+export function hasGatewayInputSchema(value: unknown): boolean {
+  return record(value) && Object.keys(value).some((key) => key !== '$schema')
+}
+
 export function catalogGatewayEndpoint(
   catalog: unknown,
   info: ModelInfo,
@@ -77,11 +82,7 @@ export function catalogGatewayEndpoint(
       `cloudflare-ai-gateway: ${info.rawId} has no native schema object`,
     )
   const input = catalog.schema.input
-  if (
-    input == null ||
-    (record(input) &&
-      Object.keys(input).filter((key) => key !== '$schema').length === 0)
-  )
+  if (input == null || (record(input) && !hasGatewayInputSchema(input)))
     return null
   if (!record(input))
     throw new Error(

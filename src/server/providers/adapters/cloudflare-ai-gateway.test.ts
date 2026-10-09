@@ -745,3 +745,37 @@ const RUN_DOC = `| Endpoint | Format | Use case |
 | \`POST /ai/run\` | Envelope with \`model\`, \`input\` | All models |
 Model-specific parameters go inside \`input\`.
 curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run"`
+
+describe('Cloudflare native input identity', () => {
+  it('binds only classifiable models with a substantive native input schema', () => {
+    expect(parseCatalogModel(FABLE, SOURCE).schemaEndpointId).toBe(
+      FABLE.model_id,
+    )
+    expect(
+      parseCatalogModel(FABLE, SOURCE).factSources?.schemaEndpointId?.path,
+    ).toBe('schema.input')
+    expect(
+      parseCatalogModel({ ...FABLE, schema: undefined }, SOURCE)
+        .schemaEndpointId,
+    ).toBeNull()
+    expect(
+      parseCatalogModel({ ...FABLE, schema: { input: {} } }, SOURCE)
+        .schemaEndpointId,
+    ).toBeNull()
+    expect(
+      parseCatalogModel(
+        {
+          ...FABLE,
+          schema: {
+            input: { $schema: 'https://json-schema.org/draft-07/schema#' },
+          },
+        },
+        SOURCE,
+      ).schemaEndpointId,
+    ).toBeNull()
+    expect(
+      parseCatalogModel({ ...FABLE, task: 'Unpublished Activity' }, SOURCE)
+        .schemaEndpointId,
+    ).toBeNull()
+  })
+})

@@ -36,6 +36,13 @@ export function resolveSchemaEndpointId(
 ): string | null {
   if (row.schemaEndpointId) return row.schemaEndpointId
   const config = getProvider(row.providerId)
+  // A model-grained provider opting in requires a poll-verified native
+  // binding; its raw model id alone does not establish a schema endpoint.
+  if (
+    config?.bindSyncedRoutesOnly === true &&
+    resolveSpecGrain(config) === 'model'
+  )
+    return null
   if (row.activity !== null && config?.generationEndpointId) {
     const bound = config.generationEndpointId({
       rawId: row.rawId,
