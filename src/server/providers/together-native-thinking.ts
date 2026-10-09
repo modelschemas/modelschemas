@@ -74,9 +74,14 @@ export function parseTogetherNativeThinking(
   if (
     named &&
     history &&
-    /Return the complete assistant message on every turn, `reasoning_content` included/.test(
-      history,
-    ) &&
+    history
+      .replace(/```[\s\S]*?```/g, '')
+      .split(/[.!?]\s+|\n/)
+      .some((sentence) =>
+        /^Return the complete assistant message on every turn, `reasoning_content` included/.test(
+          sentence.trim(),
+        ),
+      ) &&
     modelsInSamples(history).includes(named)
   )
     replay.add(named)

@@ -93,3 +93,18 @@ it('sources Together Kimi K3 replay only from the exact native history instructi
     ).replay,
   ).toEqual([])
 })
+
+it('does not source Together replay from fenced or negated history instructions', () => {
+  const instruction =
+    'Return the complete assistant message on every turn, `reasoning_content` included'
+  for (const replacement of [
+    'Do not ' + instruction,
+    '\n```text\n' + instruction + '\n```\n',
+  ]) {
+    expect(
+      parseTogetherNativeThinking(
+        fixture.kimiMarkdown.replace(instruction, replacement),
+      ).replay,
+    ).toEqual([])
+  }
+})
