@@ -181,11 +181,9 @@ describe('DashScope China native source parsing', () => {
         .filter((row) => row.pricing === null)
         .every((row) => row.absent?.pricing === 'cleared'),
     ).toBe(true)
-    expect(
-      rows
-        .filter((row) => row.pricing !== null)
-        .every((row) => row.absent?.pricing === undefined),
-    ).toBe(true)
+    const priced = rows.filter((row) => row.pricing !== null)
+    expect(priced.length).toBeGreaterThan(0)
+    expect(priced.every((row) => row.absent?.pricing === undefined)).toBe(true)
   })
 })
 

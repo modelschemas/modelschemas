@@ -165,7 +165,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // guesses cannot survive the new parsers until the six-hour TTL expires.
 // v28: re-read native budget applicability and replay declarations after the
 // scoped guide enrichments and stricter normative-prose checks.
-const DOCS_CACHE_VERSION = 'v29'
+// v30: DashScope China priced rows no longer carry absent.pricing 'cleared'.
+// A v29 entry would keep dropping every CNY card for six hours.
+const DOCS_CACHE_VERSION = 'v30'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
