@@ -428,6 +428,55 @@ describe('dashscope listModels docs', () => {
     expect(model?.requestMap?.maxTokensField).toBe('max_tokens')
   })
 
+  it('keeps polling and the stored thinking facts when the thinking page is unreadable', async () => {
+    const { result, calls } = await withStubbedFetch(
+      (url) => {
+        if (url === DASHSCOPE_THINKING_URL)
+          return new Response(
+            '<!DOCTYPE html><html><head><title>Model Studio</title></head><body></body></html>',
+          )
+        if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
+        return new Response(
+          JSON.stringify({
+            output: {
+              total: 1,
+              models: [
+                {
+                  model: 'qwen-plus',
+                  capabilities: ['TG'],
+                  features: ['function-calling'],
+                  inference_metadata: {
+                    request_modality: ['Text'],
+                    response_modality: ['Text'],
+                  },
+                  model_info: {
+                    context_window: 1000000,
+                    max_output_tokens: 32768,
+                  },
+                },
+              ],
+            },
+          }),
+        )
+      },
+      () => provider.listModels({ DASHSCOPE_API_KEY: 'test-key' }),
+    )
+    expect(calls.map((call) => call.url)).toContain(DASHSCOPE_COMPAT_URL)
+    const model = result.models[0]
+    expect(model?.rawId).toBe('qwen-plus')
+    expect(model?.contextWindow).toBe(1000000)
+    expect(model?.absent).toEqual({
+      capabilities: 'unavailable',
+      reasoning: 'unavailable',
+      requestMap: 'unavailable',
+    })
+    expect(result.docsFailures?.failed).toBe(1)
+    expect(result.docsFailures?.first[0]?.source).toBe(DASHSCOPE_THINKING_URL)
+    expect(result.docsFailures?.first[0]?.error).toMatch(
+      /^dashscope thinking: response is HTML, not markdown \(title: Model Studio\)/,
+    )
+  })
+
   it('leaves a non-compat chat id off the OpenAI request map', async () => {
     const { result } = await withStubbedFetch(
       (url) => {

@@ -23,10 +23,11 @@ import {
 } from '../dashscope-model-limits.ts'
 import type { DashscopeLimitsDoc } from '../dashscope-model-limits.ts'
 import {
+  DASHSCOPE_THINKING_URL,
   dashscopeThinking,
   applyDashscopeThinking,
 } from '../dashscope-thinking.ts'
-import { docsReport, docsRun, tryDocs } from '../model-facts.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import {
   compatGenerationEndpointId,
   dashscopeModelActivity,
@@ -471,7 +472,9 @@ async function listModels(
     page += 1
   }
   const thinking = listed.some((model) => model.activity === 'chat')
-    ? await dashscopeThinking(kv)
+    ? await tryDocs(run, DASHSCOPE_THINKING_URL, (cached) =>
+        dashscopeThinking(kv, cached),
+      )
     : null
   const compat = await tryDocs(run, DASHSCOPE_COMPAT_URL, (cached) =>
     cached(kv, DASHSCOPE_COMPAT_URL, async () =>
@@ -508,8 +511,16 @@ async function listModels(
           : model,
         compat,
       )
-      return thinking
-        ? applyDashscopeThinking(configured, thinking)
+      if (thinking) return applyDashscopeThinking(configured, thinking)
+      // The thinking page feeds every chat row's reasoning facts.
+      return configured.activity === 'chat'
+        ? {
+            ...configured,
+            absent: {
+              ...configured.absent,
+              ...unavailable('capabilities', 'reasoning', 'requestMap').absent,
+            },
+          }
         : configured
     }),
     docsFailures: docsReport(run),
