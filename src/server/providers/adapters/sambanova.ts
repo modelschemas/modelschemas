@@ -30,6 +30,7 @@ import {
 } from '../model-meta.ts'
 import { fetchText, sha256Text } from '../types.ts'
 import type {
+  DocsFailures,
   ListModelsResult,
   ProviderConfig,
   ProviderSecrets,
@@ -54,7 +55,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 
 async function loadDocs(kv: KVNamespace | undefined): Promise<{
   loaded: SambanovaDocsLoad
-  failures: ListModelsResult['docsFailures']
+  failures: DocsFailures
 }> {
   const docs = docsRun()
   const [modalities, flags, tools] = await Promise.all([
@@ -90,10 +91,9 @@ async function loadDocs(kv: KVNamespace | undefined): Promise<{
       }),
     ),
   ])
-  const report = docsReport(docs)
   return {
     loaded: { modalities, flags, tools },
-    failures: report.failed + report.skipped > 0 ? report : undefined,
+    failures: docsReport(docs),
   }
 }
 
@@ -120,7 +120,7 @@ async function listModels(
     models: listed.models.map((model) =>
       overlayModelFacts(model, sambanovaDocsPatch(model.rawId, loaded)),
     ),
-    ...(failures ? { docsFailures: failures } : {}),
+    docsFailures: failures,
   }
 }
 
