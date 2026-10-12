@@ -8,6 +8,7 @@ import {
   article,
   plain,
   tables,
+  list,
   parseMetaModels,
   parseMetaPricing,
   parseMetaSchemas,
@@ -66,7 +67,7 @@ export const provider: ProviderConfig = {
         text,
       )?.[1]
     if (!applies) throw new Error('meta: unreadable reasoning applicability')
-    const families = applies.split(/,\s*(?:and\s+)?|\s+and\s+/)
+    const families = list(applies)
     if (
       levels
         .slice(1)
@@ -77,30 +78,46 @@ export const provider: ProviderConfig = {
     ) {
       throw new Error('meta: unreadable reasoning effort row')
     }
-    const ids = (value?: string): Array<string> =>
-      value?.match(/[a-z0-9][a-z0-9.-]*[a-z0-9]/g) ?? []
+    const known = new Set(models.map((model) => model.rawId))
+    const named = [
+      ...known,
+      ...models.map(
+        (model) =>
+          (model.providerMetadata as { family?: string }).family ?? '\u0000',
+      ),
+    ]
+    const unreadable = (): never => {
+      throw new Error('meta: unreadable reasoning effort restriction')
+    }
+    const ids = (clause?: string) => {
+      if (clause === undefined) return undefined
+      const out = list(clause)
+      if (out.some((id) => !known.has(id))) unreadable()
+      return out
+    }
     const allows = (behavior: string, rawId: string) => {
       if (behavior.includes('Not supported')) return false
-      const only = /(?:^|\. )Supported by (.+?)(?:;|\.(?: |$))/.exec(
-        behavior,
-      )?.[1]
-      const except = /\bnot available with (.+?)(?:;|\.(?: |$))/.exec(
-        behavior,
-      )?.[1]
+      const only = ids(
+        /(?:^|\. )Supported by (.+?)(?:;|\.(?: |$))/.exec(behavior)?.[1],
+      )
+      const except = ids(
+        /\bnot available with (.+?)(?:;|\.(?: |$))/.exec(behavior)?.[1],
+      )
       if (
         !only &&
         !except &&
-        /\b(?:only|not available|supported)\b/i.test(behavior)
+        (/\b(?:only|not available|supported)\b/i.test(behavior) ||
+          named.some((name) => behavior.includes(name)))
       )
-        throw new Error('meta: unreadable reasoning effort restriction')
-      return (
-        (!only || ids(only).includes(rawId)) && !ids(except).includes(rawId)
-      )
+        unreadable()
+      return (!only || only.includes(rawId)) && !except?.includes(rawId)
     }
     return {
       models: models.map((model): ModelInfo => {
         const reasons = families.includes(
-          (model.providerMetadata as { family?: string }).family ?? '',
+          (
+            (model.providerMetadata as { family?: string }).family ?? ''
+          ).toLowerCase(),
         )
         const efforts = reasons
           ? levels

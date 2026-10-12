@@ -288,50 +288,148 @@ describe('Meta native docs', () => {
     ).toThrow('unreadable image price')
   })
   it('fails a models page whose chat tables it cannot read instead of dropping them', async () => {
-    serve({
-      [META_MODELS]: (docs[META_MODELS] ?? '').replaceAll(
-        'Model API (pay-as-you-go)',
-        'Model API',
-      ),
-    })
-    await expect(provider.listModels({})).rejects.toThrow(
-      'model page listed no chat models',
-    )
-  })
-  it('fails a two-column token price that names no mode for its model', () => {
-    const models = parseMetaModels(docs[META_MODELS] ?? '')
-    expect(() =>
-      parseMetaPricing(
-        (docs[META_PRICING] ?? '').replace(
-          ' in Contributor mode',
-          ' as variants',
+    const page = docs[META_MODELS] ?? ''
+    for (const [html, error] of [
+      [
+        page.replace(
+          '<th>Variant</th><th>Model API (pay-as-you-go)</th>',
+          '<th>Variant</th><th>Model API</th>',
         ),
-        models,
-        { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-12' },
-      ),
-    ).toThrow('token price mode unstated')
+        'model availability headers changed',
+      ],
+      [
+        page.replace('<th>Variant</th>', '<th>Edition</th>'),
+        'chat section listed no models',
+      ],
+      [
+        page
+          .replace('<th>Variant</th>', '<th>Edition</th>')
+          .replace('<th>Version</th>', '<th>Release</th>')
+          .replaceAll('-token context window', ' token window'),
+        'model page listed no chat models',
+      ],
+      [
+        page.replace('All take text, image', 'All accept text, image'),
+        'missing model modalities',
+      ],
+      [
+        page.replace(
+          'and have a 1,048,576-token context window',
+          'and have a 1,048,576-token context window (1.1: a 262,144-token context window)',
+        ),
+        'unreadable model context',
+      ],
+      [
+        page.replace('<td>Contributor mode</td>', '<td>Discounted mode</td>'),
+        'unreadable model availability',
+      ],
+    ] as const) {
+      serve({ [META_MODELS]: html })
+      await expect(provider.listModels({})).rejects.toThrow(error)
+    }
   })
-  it('fails a mode column marked not available for a model priced in it', () => {
+  it('reads every output modality the chat prose states', () => {
+    const models = parseMetaModels(
+      (docs[META_MODELS] ?? '').replace(
+        'returns text, has a',
+        'returns text and images, has a',
+      ),
+    )
+    expect(
+      models.find((m) => m.rawId === 'muse-wonder-1.0')?.modalities,
+    ).toEqual({
+      input: ['text', 'image', 'video', 'audio', 'pdf'],
+      output: ['text', 'images'],
+    })
+  })
+  it('fails token prices whose mode is unstated, ambiguous or contradicts the model tier', () => {
     const models = parseMetaModels(docs[META_MODELS] ?? '')
+    const page = docs[META_PRICING] ?? ''
+    for (const [html, error] of [
+      [
+        page.replace(' in Contributor mode', ' as variants'),
+        'token price mode unstated',
+      ],
+      [
+        page.replace(
+          ' in Contributor mode',
+          ' in Contributor mode or in Standard mode',
+        ),
+        'ambiguous token price mode',
+      ],
+      [
+        page.replace(' in Contributor mode', ' in Standard mode'),
+        'token price mode disagrees with model tier',
+      ],
+      [
+        page.replace(
+          'and <code>muse-spark-1.1</code> in Standard mode',
+          'and <code>muse-spark-1.1</code> in Standard mode; <code>muse-spark-1.1</code> in Standard mode',
+        ),
+        'duplicate model price',
+      ],
+      [page.replace('$0.10', 'Not available'), 'incomplete token pricing'],
+    ] as const)
+      expect(() =>
+        parseMetaPricing(html, models, {
+          url: META_PRICING,
+          hash: 'fixture',
+          extractedAt: '2026-10-12',
+        }),
+      ).toThrow(error)
+  })
+  it('fails a family price table it does not recognise instead of clearing the price', () => {
+    const models = parseMetaModels(docs[META_MODELS] ?? '')
+    const page = docs[META_PRICING] ?? ''
+    const wonder = page.indexOf('<p>Model: <code>muse-wonder-1.0</code>')
     expect(() =>
       parseMetaPricing(
-        (docs[META_PRICING] ?? '').replace('$0.10', 'Not available'),
+        page.slice(0, wonder) +
+          page
+            .slice(wonder)
+            .replace(
+              '<th>Standard mode (per 1M tokens)</th>',
+              '<th>Standard (per 1M tokens)</th>',
+            ),
         models,
         { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-12' },
       ),
-    ).toThrow('incomplete token pricing')
+    ).toThrow('unknown pricing table')
   })
   it('fails a reasoning effort restriction it cannot read', async () => {
+    const page = docs['https://dev.meta.ai/docs/reasoning'] ?? ''
+    for (const cell of [
+      'Standard mode only.',
+      'Supported by Muse Wonder and Muse Spark 1.3.',
+      'Requires <code>muse-wonder-1.0</code>.',
+      'Supported by <code>muse-wonder-1.0</code>; not available with Contributor-mode variants.',
+    ]) {
+      serve({
+        'https://dev.meta.ai/docs/reasoning': page.replace(
+          /Supported by <code>[\s\S]*?<\/td>/,
+          `${cell}</td>`,
+        ),
+      })
+      await expect(provider.listModels({})).rejects.toThrow(
+        'unreadable reasoning effort restriction',
+      )
+    }
+  })
+  it('leaves reasoning unset for a chat family the page does not say always reasons', async () => {
     serve({
-      [`https://dev.meta.ai/docs/reasoning`]: (
+      'https://dev.meta.ai/docs/reasoning': (
         docs['https://dev.meta.ai/docs/reasoning'] ?? ''
       ).replace(
-        /Supported by <code>[\s\S]*?<\/td>/,
-        'Standard mode only.</td>',
+        'which Muse Wonder and Muse Spark do not support',
+        'which Muse Spark does not support',
       ),
     })
-    await expect(provider.listModels({})).rejects.toThrow(
-      'unreadable reasoning effort restriction',
-    )
+    const { models } = await provider.listModels({})
+    expect(
+      models.find((m) => m.rawId === 'muse-wonder-1.0')?.reasoning,
+    ).toBeNull()
+    expect(
+      models.find((m) => m.rawId === 'muse-spark-1.1')?.reasoning,
+    ).toMatchObject({ mode: 'effort', mandatory: true })
   })
 })

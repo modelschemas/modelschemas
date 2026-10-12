@@ -69,8 +69,8 @@ const csv = (value: string) =>
       .toLowerCase()
       .replace(/^text (?:prompt|transcript)$/, 'text'),
   )
-const ID = /[a-z0-9][a-z0-9.-]*[a-z0-9]/g
-const list = (value: string) =>
+export const ID = /[a-z0-9][a-z0-9.-]*[a-z0-9]/g
+export const list = (value: string) =>
   value.split(/,\s*(?:and\s+)?|\s+and\s+/).map((x) => x.trim().toLowerCase())
 export function parseMetaModels(html: string): Array<ModelInfo> {
   const out: Array<ModelInfo> = []
@@ -94,16 +94,16 @@ export function parseMetaModels(html: string): Array<ModelInfo> {
             : 'reasoning',
       )
       .filter((flag, i, all) => all.indexOf(flag) === i)
+    const text = plain(section.body)
+    const chatRows = out.length
     for (const rows of tables(section.body)) {
       const head = rows[0] ?? []
       // Chat lines list their hosted IDs in an availability table and state
       // modalities and context once, in the section prose.
-      if (
-        ['Variant', 'Version'].includes(head[0] ?? '') &&
-        head[1] === 'Model API (pay-as-you-go)'
-      ) {
-        const text = plain(section.body)
-        const io = /\btakes? ([^.]+?) input, returns? ([a-z]+)\b/.exec(text)
+      if (['Variant', 'Version'].includes(head[0] ?? '')) {
+        if (head[1] !== 'Model API (pay-as-you-go)')
+          fail('model availability headers changed')
+        const io = /\btakes? ([^.]+?) input, returns? ([^,.]+)/.exec(text)
         const contexts = [
           ...new Set(
             [...text.matchAll(/\b([\d,]+)-token context window\b/g)].map(
@@ -208,6 +208,11 @@ export function parseMetaModels(html: string): Array<ModelInfo> {
         })
       }
     }
+    if (
+      /-token context window\b/.test(text) &&
+      !out.slice(chatRows).some((model) => model.activity === 'chat')
+    )
+      fail('chat section listed no models')
   }
   if (!out.length) fail('model table listed no models')
   // A layout change that hides the chat tables must not read as removals.
@@ -221,6 +226,12 @@ export function parseMetaPricing(
   source: RateCard['source'],
 ): Map<string, RateCard> {
   const cards = new Map<string, RateCard>()
+  const tiers = new Map(
+    models.map((model) => [
+      model.rawId,
+      (model.providerMetadata as { tier?: string } | undefined)?.tier,
+    ]),
+  )
   for (const section of sections(html, 3)) {
     const rows = tables(section.body)[0]
     if (
@@ -229,7 +240,6 @@ export function parseMetaPricing(
     ) {
       // "Models: a, b in Standard mode; c in Contributor mode." A section
       // that names no mode must have only one priced column.
-      const known = new Set(models.map((model) => model.rawId))
       const columns = new Map<string, number>()
       for (const clause of plain(section.body.split(/<table\b/)[0] ?? '').split(
         ';',
@@ -243,7 +253,7 @@ export function parseMetaPricing(
         ]
         if (modes.length > 1) fail('ambiguous token price mode')
         for (const id of clause.match(ID) ?? []) {
-          if (!known.has(id)) continue
+          if (!tiers.has(id)) continue
           if (columns.has(id)) fail('duplicate model price')
           columns.set(
             id,
@@ -257,7 +267,7 @@ export function parseMetaPricing(
         Input: 'input_tokens',
         Output: 'output_tokens',
       }
-      const rates: Array<Record<string, number>> = [{}, {}, {}]
+      const rates: Record<number, Record<string, number>> = { 1: {}, 2: {} }
       for (const row of rows.slice(1)) {
         const key = meters[row[0] ?? '']
         if (!key || row.length !== 3) fail('unreadable token price')
@@ -276,6 +286,9 @@ export function parseMetaPricing(
       for (const [id, stated] of columns) {
         const col = stated || (priced.length === 1 ? priced[0] : undefined)
         if (!col) fail('token price mode unstated')
+        const tier = tiers.get(id)
+        if (tier && col !== (tier === 'Contributor' ? 2 : 1))
+          fail('token price mode disagrees with model tier')
         const colRates = rates[col] ?? {}
         if (!('input_tokens' in colRates) || !('output_tokens' in colRates))
           fail('incomplete token pricing')
@@ -319,7 +332,8 @@ export function parseMetaPricing(
         const p = /flat \$(\d+(?:\.\d+)?) per generated image/.exec(text)
         if (!p) fail('unreadable image price')
         rates.generated_images = Number(p[1])
-      } else continue
+      } else if (rows?.[0]?.[0] === 'Usage') fail('unknown pricing table')
+      else continue
       const card = compileTokenCard(rates, [], source)
       if (!card) fail('uncompilable unit pricing')
       for (const model of matches) cards.set(model.rawId, card)
