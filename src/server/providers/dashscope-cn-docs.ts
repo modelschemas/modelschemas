@@ -286,6 +286,7 @@ export function cnPriceModels(doc: CnDoc): ModelInfo[] {
     if (!pricing) fail(`unrepresentable token quote ${id}`)
     const model = result.get(id)!
     model.pricing = pricing
+    delete model.absent
     model.factSources = {
       pricing: ownSource(doc, '华北2（北京） model pricing table'),
     }
