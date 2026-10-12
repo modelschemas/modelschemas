@@ -225,11 +225,17 @@ export function parseZaiTokenPrices(markdown: string): Map<string, TokenPrice> {
     const input = money(cells[1] ?? '')
     const output = money(cells[4] ?? '')
     if (input === null || output === null) continue
-    prices.set(name.toLowerCase(), {
-      input,
-      output,
-      cache: money(cells[2] ?? ''),
-    })
+    const cache = money(cells[2] ?? '')
+    const prior = prices.get(name.toLowerCase())
+    if (
+      prior &&
+      (prior.input !== input ||
+        prior.output !== output ||
+        prior.cache !== cache)
+    ) {
+      throw new Error(`zai: pricing page lists two prices for ${name}`)
+    }
+    prices.set(name.toLowerCase(), { input, output, cache })
   }
   return prices
 }
