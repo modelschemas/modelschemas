@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { usePostHog } from '@posthog/react'
 
 import { SiteFooter, SiteNav } from '#/components/site.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { posthogIntegrationLogger } from '#/lib/posthog-logger.ts'
 
 export const Route = createFileRoute('/account')({
   component: Account,
@@ -26,6 +28,7 @@ const EXPIRY_CHOICES: Array<[label: string, seconds: number | undefined]> = [
 
 function Account() {
   const router = useRouter()
+  const posthog = usePostHog()
   const { data: session, isPending } = authClient.useSession()
   const [keys, setKeys] = useState<Array<KeyRow>>([])
   const [name, setName] = useState('')
@@ -61,6 +64,16 @@ function Account() {
       return
     }
     setCreatedKey((data as { key: string }).key)
+    posthog.capture('api_key_created', {
+      expires_in_days:
+        expiresIn === undefined ? null : Math.round(expiresIn / 86_400),
+      name_provided: name.trim() !== '',
+    })
+    posthogIntegrationLogger.info(posthog, 'API key operation completed', {
+      action: 'create',
+      expiring: expiresIn !== undefined,
+      status: 'success',
+    })
     setName('')
     await refresh()
   }
@@ -72,7 +85,21 @@ function Account() {
       setError(deleteError.message ?? 'Could not revoke the key.')
       return
     }
+    posthog.capture('api_key_revoked', { key_id: keyId })
+    posthogIntegrationLogger.info(posthog, 'API key operation completed', {
+      action: 'revoke',
+      status: 'success',
+    })
     await refresh()
+  }
+
+  const signOut = async () => {
+    const { error: signOutError } = await authClient.signOut()
+    if (!signOutError) {
+      posthog.capture('user_logged_out')
+      posthog.reset()
+    }
+    await router.invalidate()
   }
 
   const inputClasses =
@@ -114,7 +141,7 @@ function Account() {
               type="button"
               className="press-link"
               onClick={() => {
-                void authClient.signOut().then(() => router.invalidate())
+                void signOut()
               }}
             >
               sign out

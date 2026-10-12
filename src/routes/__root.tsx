@@ -1,8 +1,13 @@
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { PostHogProvider } from '@posthog/react'
 
+import { PostHogIdentity } from '#/components/posthog-identity.tsx'
 import appCss from '../styles.css?url'
+
+const posthogToken = import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN
+const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST
 
 export const Route = createRootRoute({
   head: () => ({
@@ -39,24 +44,61 @@ export const Route = createRootRoute({
 })
 
 function RootDocument({ children }: { children: React.ReactNode }) {
+  if ((!posthogToken || !posthogHost) && import.meta.env.DEV) {
+    const missing = !posthogToken
+      ? 'VITE_PUBLIC_POSTHOG_PROJECT_TOKEN'
+      : 'VITE_PUBLIC_POSTHOG_HOST'
+    throw new Error(
+      `${missing} variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once ${missing} is configured`,
+    )
+  }
+
+  const content = (
+    <>
+      {children}
+      <TanStackDevtools
+        config={{
+          position: 'bottom-right',
+        }}
+        plugins={[
+          {
+            name: 'Tanstack Router',
+            render: <TanStackRouterDevtoolsPanel />,
+          },
+        ]}
+      />
+    </>
+  )
+
   return (
     <html lang="en">
       <head>
         <HeadContent />
       </head>
       <body>
-        {children}
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'Tanstack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
+        {posthogToken && posthogHost ? (
+          <PostHogProvider
+            apiKey={posthogToken}
+            options={{
+              api_host: posthogHost,
+              ui_host: posthogHost,
+              defaults: '2025-05-24',
+              capture_exceptions: true,
+              debug: import.meta.env.DEV,
+              logs: {
+                environment: import.meta.env.MODE,
+                serviceName: 'modelschemas-web',
+              },
+              tracing_headers:
+                typeof window !== 'undefined' ? [window.location.hostname] : [],
+            }}
+          >
+            <PostHogIdentity />
+            {content}
+          </PostHogProvider>
+        ) : (
+          content
+        )}
         <Scripts />
       </body>
     </html>

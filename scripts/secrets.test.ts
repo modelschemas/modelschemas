@@ -6,6 +6,7 @@ import {
   isRemoved,
   parseConfigFlag,
   parseEnvFile,
+  publicBuildEnv,
   withoutRemoved,
 } from './secrets.ts'
 
@@ -43,6 +44,27 @@ describe('remove list', () => {
     ).toEqual({
       ADMIN_KEY: 'x',
       MISTRAL_API_KEY: 'm',
+    })
+  })
+})
+
+describe('public build configuration', () => {
+  it('keeps public values on pull, excludes Vite variables from Worker push', () => {
+    const input = {
+      VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: 'phc-example',
+      VITE_PUBLIC_POSTHOG_HOST: 'https://us.i.posthog.com',
+      VITE_INTERNAL: 'not-public',
+      ADMIN_KEY: 'private',
+      POSTHOG_PROJECT_KEY: 'phc-example',
+    }
+    expect(withoutRemoved(input)).toEqual(input)
+    expect(withoutRemoved(input, PUSH_REMOVE_LIST)).toEqual({
+      ADMIN_KEY: 'private',
+      POSTHOG_PROJECT_KEY: 'phc-example',
+    })
+    expect(publicBuildEnv({ ...input, VITE_PUBLIC_EMPTY: '' })).toEqual({
+      VITE_PUBLIC_POSTHOG_PROJECT_TOKEN: 'phc-example',
+      VITE_PUBLIC_POSTHOG_HOST: 'https://us.i.posthog.com',
     })
   })
 })

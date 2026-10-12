@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 
 import { getDb } from '#/db/index.ts'
+import { captureServerEvent } from '#/lib/posthog-server.ts'
 import { jsonError } from '#/server/admin.ts'
 import { parseRegisterKeyBody, registerKeyAgent } from '#/server/agents-api.ts'
 import { getAuth } from '#/server/auth.ts'
@@ -29,6 +30,12 @@ export const Route = createFileRoute('/v1/agents/register-key')({
         if (!outcome.ok) {
           return jsonError(outcome.status, outcome.code, outcome.message)
         }
+        await captureServerEvent({
+          request,
+          distinctId: outcome.result.userId,
+          event: 'agent_registered',
+          properties: { supplied_email: body.email !== undefined },
+        })
         return Response.json(outcome.result, { status: 201 })
       },
     },

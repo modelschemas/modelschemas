@@ -189,6 +189,25 @@ bun run secrets:pull     # Doppler `dev` → .env.local (strips DOPPLER_*)
 `bun scripts/rederive.ts <provider>` (re-derive schema hashes from the
 upstream spec, no service needed).
 
+PostHog browser and API analytics use `VITE_PUBLIC_POSTHOG_PROJECT_TOKEN`
+and `VITE_PUBLIC_POSTHOG_HOST`. Store these in the relevant Doppler config
+and pull them into `.env.local` for development. These are public SDK
+configuration values, not personal API credentials. Keep personal API keys
+out of `VITE_PUBLIC_*` variables, which are included in the browser bundle.
+The existing `POSTHOG_PROJECT_KEY` Worker secret separately captures ingest
+signals.
+
+Vite reads the public variables at build time. Configure both variables in
+the Cloudflare Workers Builds environment before building production, or
+build locally with `bun run secrets:build` (defaults to Doppler `prd`;
+use `bun run secrets:build --config dev` for another config). This injects
+only `VITE_PUBLIC_*` values from Doppler into the build process without
+writing them to disk.
+`secrets:push` only supplies Worker runtime bindings; it does not configure
+the browser bundle, and skips `VITE_*` bindings. A build without these variables disables the new
+analytics integration in production; development reports missing
+configuration with an error.
+
 ## Production setup
 
 1. Create resources and put their IDs in `wrangler.jsonc`:
@@ -232,7 +251,8 @@ upstream spec, no service needed).
    It runs locally against your existing Doppler and wrangler logins, so no
    token goes near CI. Doppler is the source of truth: every name in the
    config is pushed except the remove list (`DOPPLER_*` context vars, and
-   `BETTER_AUTH_URL` which is already a wrangler `vars` binding).
+   `BETTER_AUTH_URL` which is already a wrangler `vars` binding, and
+   `VITE_*` build-time configuration).
    Secrets are written into a new Worker version rather
    than the live one (the live API refuses while an undeployed preview
    version exists); the next deploy inherits them. Nothing is ever deleted.
