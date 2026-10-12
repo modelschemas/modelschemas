@@ -103,9 +103,22 @@ describe('DashScope China native source parsing', () => {
       ['a', 'b', 'b'],
       ['a', 'c', ''],
     ])
-    expect(() =>
-      cnTable('<table><tr><td rowSpan={3}>a</td></tr></table>'),
-    ).toThrow('span extends')
+    expect(
+      cnTable(
+        '<table><tr><td>x</td><td rowSpan={5}>a</td></tr><tr><td>y</td></tr></table>',
+      ),
+    ).toEqual([
+      ['x', 'a'],
+      ['y', 'a'],
+    ])
+    expect(
+      cnTable(
+        '<table><tr><td>x</td><td rowSpan={4}>a</td><td>p</td></tr><tr><td>y</td><td>q</td></tr></table>',
+      ),
+    ).toEqual([
+      ['x', 'a', 'p'],
+      ['y', 'a', 'q'],
+    ])
     expect(() =>
       cnTable('<table><tr><td rowSpan={oops}>a</td></tr></table>'),
     ).toThrow('unreadable table span')
@@ -117,6 +130,15 @@ describe('DashScope China native source parsing', () => {
     expect(() => cnBeijingTabs('<Tab title="华北2（北京）">')).toThrow(
       'unclosed',
     )
+  })
+  it('clips a native rowSpan that runs past the last table row', () => {
+    const rows = cnPriceModels(doc('model-pricing-span-overflow'))
+    expect(rows.map((row) => row.rawId)).toEqual(['MiniMax-M2.5'])
+    const card = rateCardSchema.parse(rows[0]!.pricing)
+    expect(cardCurrency(card)).toBe('CNY')
+    expect(
+      price(card, {}, { input_tokens: 1000000, output_tokens: 1000000 }),
+    ).toBeCloseTo(10.5)
   })
   it('throws malformed recognized rates or units and never returns an empty success', () => {
     expect(() =>
