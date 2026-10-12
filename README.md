@@ -189,6 +189,22 @@ bun run secrets:pull     # Doppler `dev` → .env.local (strips DOPPLER_*)
 `bun scripts/rederive.ts <provider>` (re-derive schema hashes from the
 upstream spec, no service needed).
 
+PostHog browser and API analytics use `VITE_PUBLIC_POSTHOG_PROJECT_TOKEN`
+and `VITE_PUBLIC_POSTHOG_HOST`. Store these in the relevant Doppler config
+and pull them into `.env.local` for development. These are public SDK
+configuration values, not personal API credentials. Keep personal API keys
+out of `VITE_PUBLIC_*` variables, which are included in the browser bundle.
+The existing `POSTHOG_PROJECT_KEY` Worker secret separately captures ingest
+signals.
+
+Vite reads the public variables at build time. Configure both variables in
+the Cloudflare Workers Builds environment before building production, or
+build locally with the production Doppler config available to Vite.
+`secrets:push` only supplies Worker runtime bindings; it does not configure
+the browser bundle. A build without these variables disables the new
+analytics integration in production; development reports missing
+configuration with an error.
+
 ## Production setup
 
 1. Create resources and put their IDs in `wrangler.jsonc`:

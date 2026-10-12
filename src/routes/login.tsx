@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { usePostHog } from '@posthog/react'
 
 import { SiteFooter, SiteNav } from '#/components/site.tsx'
 import { authClient } from '#/lib/auth-client.ts'
+import { posthogIntegrationLogger } from '#/lib/posthog-logger.ts'
 
 export const Route = createFileRoute('/login')({
   component: Login,
@@ -10,6 +12,7 @@ export const Route = createFileRoute('/login')({
 
 function Login() {
   const router = useRouter()
+  const posthog = usePostHog()
   const { data: session, isPending } = authClient.useSession()
   const [email, setEmail] = useState('')
   const [otp, setOtp] = useState('')
@@ -30,6 +33,11 @@ function Login() {
       setError(sendError.message ?? 'Could not send the code.')
       return
     }
+    posthog.capture('otp_requested', { authentication_method: 'email_otp' })
+    posthogIntegrationLogger.info(posthog, 'authentication step completed', {
+      action: 'otp_requested',
+      status: 'success',
+    })
     setStep('otp')
   }
 
@@ -45,6 +53,29 @@ function Login() {
     if (signInError) {
       setError(signInError.message ?? 'Invalid code.')
       return
+    }
+    const { data: signedInSession } = await authClient.getSession()
+    if (signedInSession?.user.id) {
+      posthog.identify(signedInSession.user.id, {
+        email: signedInSession.user.email,
+        name: signedInSession.user.name,
+      })
+    }
+    posthog.capture('user_logged_in', {
+      authentication_method: 'email_otp',
+    })
+    posthogIntegrationLogger.info(posthog, 'authentication step completed', {
+      action: 'user_logged_in',
+      status: 'success',
+    })
+    await router.invalidate()
+  }
+
+  const signOut = async () => {
+    const { error: signOutError } = await authClient.signOut()
+    if (!signOutError) {
+      posthog.capture('user_logged_out')
+      posthog.reset()
     }
     await router.invalidate()
   }
@@ -80,7 +111,7 @@ function Login() {
               type="button"
               className={buttonClasses}
               onClick={() => {
-                void authClient.signOut().then(() => router.invalidate())
+                void signOut()
               }}
             >
               Sign out

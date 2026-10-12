@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { env } from 'cloudflare:workers'
 
 import { getDb } from '#/db/index.ts'
+import { captureServerEvent } from '#/lib/posthog-server.ts'
 import { jsonError } from '#/server/admin.ts'
 import { estimateCost, parseEstimateBody } from '#/server/estimate.ts'
 
@@ -27,6 +28,18 @@ export const Route = createFileRoute('/v1/estimate')({
         if (!outcome.ok) {
           return jsonError(outcome.status, outcome.code, outcome.message)
         }
+        await captureServerEvent({
+          request,
+          event: 'cost_estimated',
+          properties: {
+            currency: outcome.result.currency,
+            estimated_input_count: outcome.result.estimated.length,
+            has_request: body.request !== undefined,
+            has_usage: body.usage !== undefined,
+            model: body.model,
+            provider: body.provider,
+          },
+        })
         return Response.json(outcome.result)
       },
     },
