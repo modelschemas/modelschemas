@@ -111,6 +111,14 @@ describe('DashScope China native source parsing', () => {
       ['x', 'a'],
       ['y', 'a'],
     ])
+    expect(
+      cnTable(
+        '<table><tr><td>x</td><td rowSpan={4}>a</td><td>p</td></tr><tr><td>y</td><td>q</td></tr></table>',
+      ),
+    ).toEqual([
+      ['x', 'a', 'p'],
+      ['y', 'a', 'q'],
+    ])
     expect(() =>
       cnTable('<table><tr><td rowSpan={oops}>a</td></tr></table>'),
     ).toThrow('unreadable table span')
