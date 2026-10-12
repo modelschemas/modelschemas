@@ -259,9 +259,11 @@ describe('sambanova listModels docs', () => {
       return Promise.resolve(new Response(body, { status: 200 }))
     }) as typeof fetch
     try {
-      const { models } = await provider.listModels({
+      const { models, docsFailures } = await provider.listModels({
         SAMBANOVA_API_KEY: 'test',
       })
+      // A clean load still reports, so the poller clears an old outage.
+      expect(docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
       const gemma = models.find((model) => model.rawId === 'gemma-4-31B-it')
       const minimax = models.find((model) => model.rawId === 'MiniMax-M3')
       expect(gemma?.modalities).toEqual(GEMMA)
