@@ -1,5 +1,10 @@
-import { isCapabilityMap } from '#/lib/capabilities.ts'
 /** Model Studio's own model scopes; code samples never seed the catalog. */
+import { isCapabilityMap } from '#/lib/capabilities.ts'
+
+import {
+  DASHSCOPE_DOCS_INIT,
+  assertDashscopeMarkdown,
+} from './dashscope-model-limits.ts'
 import { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
@@ -116,18 +121,21 @@ export function parseDashscopeThinking(
   if (!replay.length) throw new Error('dashscope thinking: empty replay scope')
   return { models, replay }
 }
-export async function dashscopeThinking(kv?: KVNamespace) {
-  return cachedDocs(
-    kv,
-    `${DASHSCOPE_THINKING_URL}#model-thinking`,
-    async () => {
-      const markdown = await fetchText(DASHSCOPE_THINKING_URL)
-      return {
-        ...parseDashscopeThinking(markdown),
-        hash: await sha256Text(markdown),
-      }
-    },
-  )
+export async function dashscopeThinking(
+  kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
+) {
+  return cached(kv, `${DASHSCOPE_THINKING_URL}#model-thinking`, async () => {
+    const markdown = await fetchText(
+      DASHSCOPE_THINKING_URL,
+      DASHSCOPE_DOCS_INIT,
+    )
+    assertDashscopeMarkdown(markdown, 'dashscope thinking')
+    return {
+      ...parseDashscopeThinking(markdown),
+      hash: await sha256Text(markdown),
+    }
+  })
 }
 export function applyDashscopeThinking(
   model: ModelInfo,
