@@ -14,7 +14,9 @@
  *   argv (visible in `ps`), never echoed. They reach wrangler over stdin.
  * - Doppler is the source of truth. Everything in the config is pushed
  *   except the remove list (`DOPPLER_*` context vars, plus
- *   `BETTER_AUTH_URL` which is already a wrangler `vars` binding).
+ *   `BETTER_AUTH_URL` which is already a wrangler `vars` binding, and
+ *   `VITE_*` build-time variables). Use `bun run secrets:build` to build
+ *   with public configuration from Doppler.
  *   `DOPPLER_*` are not application secrets; pushing them is how the
  *   deployed Worker ended up with three junk bindings.
  * - Nothing is ever deleted. `wrangler secret bulk` can delete via null, but
@@ -73,6 +75,12 @@ const dropped = Object.keys(rawDoppler)
   .sort()
 if (dropped.length > 0) {
   console.log(`\n  remove list, skipped: ${dropped.join(', ')}`)
+}
+if (dropped.some((name) => name.startsWith('VITE_'))) {
+  console.log(
+    '  VITE_* values are build-time configuration, not Worker secrets.' +
+      '\n  Build with bun run secrets:build, or configure Workers Builds variables.',
+  )
 }
 
 const workerOnly = [...onWorker].filter((name) => !(name in payload)).sort()

@@ -17,13 +17,27 @@ export const REMOVE_LIST: ReadonlyArray<RegExp> = [/^DOPPLER_/]
 
 /**
  * Extra names push skips. `BETTER_AUTH_URL` is already a wrangler `vars`
- * binding; a secret of the same name is rejected. Pull still writes it —
+ * binding; a secret of the same name is rejected. `VITE_*` variables are
+ * consumed at build time, so pushing runtime bindings cannot configure them.
+ * Pull still writes these values —
  * local JWT audiences are origin-bound to `http://localhost:3100`.
  */
 export const PUSH_REMOVE_LIST: ReadonlyArray<RegExp> = [
   ...REMOVE_LIST,
   /^BETTER_AUTH_URL$/,
+  /^VITE_/,
 ]
+
+/** Only explicitly public Vite configuration belongs in a browser build. */
+export function publicBuildEnv(
+  secrets: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(secrets).filter(
+      ([name, value]) => name.startsWith('VITE_PUBLIC_') && value !== '',
+    ),
+  )
+}
 
 export function isRemoved(
   name: string,

@@ -22,6 +22,7 @@
     "secrets:check": "bun scripts/push-secrets.ts",
     "secrets:push": "bun scripts/push-secrets.ts --push",
     "secrets:pull": "bun scripts/pull-secrets.ts --write",
+    "secrets:build": "bun scripts/build-with-secrets.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",

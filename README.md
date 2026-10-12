@@ -199,9 +199,12 @@ signals.
 
 Vite reads the public variables at build time. Configure both variables in
 the Cloudflare Workers Builds environment before building production, or
-build locally with the production Doppler config available to Vite.
+build locally with `bun run secrets:build` (defaults to Doppler `prd`;
+use `bun run secrets:build --config dev` for another config). This injects
+only `VITE_PUBLIC_*` values from Doppler into the build process without
+writing them to disk.
 `secrets:push` only supplies Worker runtime bindings; it does not configure
-the browser bundle. A build without these variables disables the new
+the browser bundle, and skips `VITE_*` bindings. A build without these variables disables the new
 analytics integration in production; development reports missing
 configuration with an error.
 
@@ -248,7 +251,8 @@ configuration with an error.
    It runs locally against your existing Doppler and wrangler logins, so no
    token goes near CI. Doppler is the source of truth: every name in the
    config is pushed except the remove list (`DOPPLER_*` context vars, and
-   `BETTER_AUTH_URL` which is already a wrangler `vars` binding).
+   `BETTER_AUTH_URL` which is already a wrangler `vars` binding, and
+   `VITE_*` build-time configuration).
    Secrets are written into a new Worker version rather
    than the live one (the live API refuses while an undeployed preview
    version exists); the next deploy inherits them. Nothing is ever deleted.
