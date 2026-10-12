@@ -134,6 +134,7 @@ describe('DashScope China native source parsing', () => {
   it('clips a native rowSpan that runs past the last table row', () => {
     const rows = cnPriceModels(doc('model-pricing-span-overflow'))
     expect(rows.map((row) => row.rawId)).toEqual(['MiniMax-M2.5'])
+    expect(rows[0]!.absent).toBeUndefined()
     const card = rateCardSchema.parse(rows[0]!.pricing)
     expect(cardCurrency(card)).toBe('CNY')
     expect(
@@ -180,6 +181,9 @@ describe('DashScope China native source parsing', () => {
         .filter((row) => row.pricing === null)
         .every((row) => row.absent?.pricing === 'cleared'),
     ).toBe(true)
+    const priced = rows.filter((row) => row.pricing !== null)
+    expect(priced.length).toBeGreaterThan(0)
+    expect(priced.every((row) => row.absent?.pricing === undefined)).toBe(true)
   })
 })
 
