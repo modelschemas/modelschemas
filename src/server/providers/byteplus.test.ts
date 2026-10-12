@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
@@ -480,6 +481,43 @@ describe('byteplus pricing pages failing', () => {
         [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
       }),
     ).rejects.toThrow(/video\): parsed 0/)
+  })
+})
+
+/** The doc center's client-render shell on the first fetch, then `page`. */
+function shellThen(page: () => string): () => string {
+  const shell = readFileSync(
+    new URL('./fixtures/byteplus-doc-shell.html.txt', import.meta.url),
+    'utf8',
+  )
+  let served = false
+  return () => {
+    if (served) return page()
+    served = true
+    return shell
+  }
+}
+
+describe('byteplus doc center shell', () => {
+  it('refetches each pricing doc that first comes back as the shell', async () => {
+    const { models } = await listWith({
+      [BYTEPLUS_PRICING_URL]: shellThen(pricingFixtureHtml),
+      [BYTEPLUS_VIDEO_GUIDE_URL]: shellThen(guideFixtureHtml),
+      [BYTEPLUS_MODEL_LIST_URL]: shellThen(modelListFixtureHtml),
+    })
+    const priced = (rawId: string) =>
+      models.find((m) => m.rawId === rawId)?.pricing
+    expect(priced('seed-2-0-pro-260328')).toBeTruthy()
+    expect(priced('seedance-1-0-pro-250528')).toMatchObject({
+      inputs: {
+        completion_tokens: {
+          estimate: { source: { url: BYTEPLUS_VIDEO_GUIDE_URL } },
+        },
+      },
+    })
+    expect(priced('seedream-5-0-260128')).toMatchObject({
+      inputs: { generated_images: { bound: 'usage' } },
+    })
   })
 })
 
