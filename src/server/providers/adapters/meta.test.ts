@@ -396,6 +396,19 @@ describe('Meta native docs', () => {
       ),
     ).toThrow('unknown pricing table')
   })
+  it('fails when a pay-as-you-go chat ID gets no token price', () => {
+    const models = parseMetaModels(docs[META_MODELS] ?? '')
+    expect(() =>
+      parseMetaPricing(
+        (docs[META_PRICING] ?? '').replace(
+          /(<p>Model: <code>muse-wonder-1\.0<\/code>[\s\S]*?)<th>Usage<\/th>/,
+          '$1<th>Meter</th>',
+        ),
+        models,
+        { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-12' },
+      ),
+    ).toThrow('token-priced model has no price')
+  })
   it('fails a reasoning effort restriction it cannot read', async () => {
     const page = docs['https://dev.meta.ai/docs/reasoning'] ?? ''
     for (const cell of [

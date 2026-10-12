@@ -69,7 +69,7 @@ const csv = (value: string) =>
       .toLowerCase()
       .replace(/^text (?:prompt|transcript)$/, 'text'),
   )
-export const ID = /[a-z0-9][a-z0-9.-]*[a-z0-9]/g
+const ID = /[a-z0-9][a-z0-9.-]*[a-z0-9]/g
 export const list = (value: string) =>
   value.split(/,\s*(?:and\s+)?|\s+and\s+/).map((x) => x.trim().toLowerCase())
 export function parseMetaModels(html: string): Array<ModelInfo> {
@@ -340,6 +340,9 @@ export function parseMetaPricing(
     }
   }
   if (!cards.size) fail('pricing parsed no rates')
+  // Every pay-as-you-go chat ID is token priced; a missing card is a misread.
+  for (const [id, tier] of tiers)
+    if (tier && !cards.has(id)) fail('token-priced model has no price')
   return cards
 }
 
