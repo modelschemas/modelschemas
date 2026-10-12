@@ -7,6 +7,7 @@
 import { ingestFailedEvent, noteIngest } from '../ingest/ingest-signals.ts'
 import { emptySources } from './fact-sources.ts'
 import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
+import { fetchByteplusDoc } from './byteplus-docs.ts'
 import { fetchText, reasoningViolation, sha256Text } from './types.ts'
 import type { ModelFactSources, ModelInfo, ModelReasoning } from './types.ts'
 
@@ -501,13 +502,14 @@ async function loadReasoningMap(
   url: string,
   source: string,
   parse: (body: string) => Map<string, ModelReasoning>,
+  fetchBody: (url: string) => Promise<string> = fetchText,
 ): Promise<{
   byId: Record<string, ModelReasoning>
   hash: string
   url: string
 }> {
   return cachedDocs(kv, url, async () => {
-    const body = await fetchText(url)
+    const body = await fetchBody(url)
     const parsed = parse(body)
     assertParsed(parsed, source)
     return { byId: Object.fromEntries(parsed), hash: await sha256Text(body) }
@@ -566,6 +568,7 @@ export async function byteplusModelReasoning(kv?: KVNamespace) {
     BYTEPLUS_REASONING_URL,
     'byteplus reasoning page',
     parseByteplusReasoning,
+    fetchByteplusDoc,
   )
   return lookup(doc)
 }

@@ -34,7 +34,8 @@ import { errorMessage } from '#/server/errors.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import { parseByteplusServerTools } from './server-tools.ts'
 import { assertParsed, cachedDocs } from './model-facts.ts'
-import { fetchText, sha256Text } from './types.ts'
+import { fetchByteplusDoc } from './byteplus-docs.ts'
+import { sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
 export const BYTEPLUS_PRICING_URL =
@@ -1005,7 +1006,7 @@ async function seedanceGuide(kv?: KVNamespace): Promise<CachedGuide | null> {
       BYTEPLUS_VIDEO_GUIDE_URL,
       async () => {
         const content = pricingContent(
-          await fetchText(BYTEPLUS_VIDEO_GUIDE_URL),
+          await fetchByteplusDoc(BYTEPLUS_VIDEO_GUIDE_URL),
           label,
         )
         const parsed = parseSeedanceGeometry(JSON.parse(content) as ByteplusDoc)
@@ -1035,7 +1036,10 @@ async function seedanceGuide(kv?: KVNamespace): Promise<CachedGuide | null> {
 async function modelListContent(): Promise<string | null> {
   const label = 'byteplus model list'
   try {
-    return pricingContent(await fetchText(BYTEPLUS_MODEL_LIST_URL), label)
+    return pricingContent(
+      await fetchByteplusDoc(BYTEPLUS_MODEL_LIST_URL),
+      label,
+    )
   } catch (error) {
     console.warn(
       JSON.stringify({
@@ -1056,7 +1060,7 @@ export async function byteplusModelPricing(
     kv,
     BYTEPLUS_PRICING_URL,
     async () => {
-      const html = await fetchText(BYTEPLUS_PRICING_URL)
+      const html = await fetchByteplusDoc(BYTEPLUS_PRICING_URL)
       const content = pricingContent(html)
       const page = JSON.parse(content) as ByteplusDoc
       const parsed = parseByteplusPricing(page)
