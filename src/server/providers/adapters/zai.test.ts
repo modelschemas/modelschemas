@@ -7,6 +7,7 @@ import {
   parseZaiOutputCaps,
   parseZaiReasoning,
   parseZaiThinkingSwitch,
+  parseZaiTokenPrices,
   provider,
   ZAI_OPENAPI_URL,
   ZAI_OVERVIEW_URL,
@@ -603,6 +604,34 @@ describe('zai', () => {
 })
 
 describe('zai parsers fail closed', () => {
+  it('reads per-1M prices from the indented "Other Pricing" accordion', () => {
+    // Excerpt of https://docs.z.ai/guides/overview/pricing.md (2026-10-12).
+    const prices = parseZaiTokenPrices(`
+<AccordionGroup>
+  <Accordion title="Other Pricing">
+    ### Vision Models
+
+    Prices per 1M tokens.
+
+    | Model | Input | Cached Input | Cached Input Storage | Output |
+    | :- | :- | :- | :- | :- |
+    | GLM-OCR | \\$0.03 | \\\\ | \\\\ | \\$0.03 |
+
+    ### Image Generation Models
+
+    Prices per image.
+
+    | Model | Price |
+    | :- | :- |
+    | CogView-4 | \\$0.01 |
+  </Accordion>
+</AccordionGroup>
+`)
+    expect([...prices]).toEqual([
+      ['glm-ocr', { input: 0.03, output: 0.03, cache: null }],
+    ])
+  })
+
   it('reads each output cap with its own models', () => {
     expect(parseZaiOutputCaps(VISION_MAX_TOKENS)).toEqual([
       { names: ['glm-5.3-flash'], series: true, tokens: 128_000 },

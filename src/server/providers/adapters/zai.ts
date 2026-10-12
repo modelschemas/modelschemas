@@ -203,7 +203,9 @@ export function parseZaiTokenPrices(markdown: string): Map<string, TokenPrice> {
   }
   const prices = new Map<string, TokenPrice>()
   let inTokenTable = false
-  for (const line of markdown.split('\n')) {
+  for (const raw of markdown.split('\n')) {
+    // The "Other Pricing" tables sit indented inside an accordion.
+    const line = raw.trim()
     if (/per 1M tokens/i.test(line)) {
       inTokenTable = true
       continue
