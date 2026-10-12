@@ -69,12 +69,81 @@ const csv = (value: string) =>
       .toLowerCase()
       .replace(/^text (?:prompt|transcript)$/, 'text'),
   )
+const ID = /[a-z0-9][a-z0-9.-]*[a-z0-9]/g
+export const list = (value: string) =>
+  value.split(/,\s*(?:and\s+)?|\s+and\s+/).map((x) => x.trim().toLowerCase())
 export function parseMetaModels(html: string): Array<ModelInfo> {
   const out: Array<ModelInfo> = []
   const seen = new Set<string>()
-  for (const section of sections(html, 2))
+  const add = (model: ModelInfo) => {
+    if (seen.has(model.rawId)) fail('invalid or duplicate model row')
+    seen.add(model.rawId)
+    out.push(model)
+  }
+  for (const section of sections(html, 2)) {
+    const capabilities = [
+      ...section.body.matchAll(
+        /href="(\/docs\/(?:tool-calling|structured-output|reasoning))"/g,
+      ),
+    ]
+      .map((m) =>
+        m[1] === '/docs/tool-calling'
+          ? 'tools'
+          : m[1] === '/docs/structured-output'
+            ? 'structured_outputs'
+            : 'reasoning',
+      )
+      .filter((flag, i, all) => all.indexOf(flag) === i)
+    const text = plain(section.body)
+    const chatRows = out.length
     for (const rows of tables(section.body)) {
       const head = rows[0] ?? []
+      // Chat lines list their hosted IDs in an availability table and state
+      // modalities and context once, in the section prose.
+      if (['Variant', 'Version'].includes(head[0] ?? '')) {
+        if (head[1] !== 'Model API (pay-as-you-go)')
+          fail('model availability headers changed')
+        const io = /\btakes? ([^.]+?) input, returns? ([^,.]+)/.exec(text)
+        const contexts = [
+          ...new Set(
+            [...text.matchAll(/\b([\d,]+)-token context window\b/g)].map(
+              (m) => m[1] ?? '',
+            ),
+          ),
+        ]
+        const context = Number(contexts[0]?.replace(/,/g, ''))
+        if (!io?.[1] || !io[2]) fail('missing model modalities')
+        if (
+          contexts.length !== 1 ||
+          !Number.isSafeInteger(context) ||
+          context <= 0
+        )
+          fail('unreadable model context')
+        for (const row of rows.slice(1)) {
+          if (row.length !== head.length) fail('invalid or duplicate model row')
+          if (row[1] === 'Not available') continue
+          const id = /^(.+) \(([a-z0-9][a-z0-9.-]*)\)$/.exec(row[0] ?? '')
+          const tier =
+            /^(?:Available \()?(Standard|Contributor) mode(?: only\))?$/.exec(
+              row[1] ?? '',
+            )?.[1]
+          if (!id?.[1] || !id[2]) fail('invalid or duplicate model row')
+          if (!tier) fail('unreadable model availability')
+          add({
+            rawId: id[2],
+            displayName: id[1],
+            activity: 'chat',
+            modalities: { input: list(io[1]), output: list(io[2]) },
+            contextWindow: context,
+            maxOutput: null,
+            capabilities,
+            pricing: null,
+            reasoning: null,
+            providerMetadata: { family: section.name, tier },
+          })
+        }
+        continue
+      }
       if (head[0] !== 'Model ID') continue
       const inputCol = head.findIndex(
         (h) => h === 'Input modalities' || h === 'Input',
@@ -88,11 +157,9 @@ export function parseMetaModels(html: string): Array<ModelInfo> {
         if (
           row.length !== head.length ||
           !rawId ||
-          !/^[a-z0-9][a-z0-9.-]*$/.test(rawId) ||
-          seen.has(rawId)
+          !/^[a-z0-9][a-z0-9.-]*$/.test(rawId)
         )
           fail('invalid or duplicate model row')
-        seen.add(rawId)
         const input = row[inputCol]
         const output = row[outputCol]
         if (!input || !output) fail('missing model modalities')
@@ -117,26 +184,19 @@ export function parseMetaModels(html: string): Array<ModelInfo> {
             : section.name === 'Muse Voice Transcribe'
               ? 'audio'
               : null
-        out.push({
+        add({
           rawId,
-          displayName: head.includes('Family') ? (row[1] ?? null) : null,
+          // One-row tables sit under the heading that names their line.
+          displayName: head.includes('Family')
+            ? (row[1] ?? null)
+            : rows.length === 2
+              ? section.name
+              : null,
           activity,
           modalities: { input: csv(input), output: csv(output) },
           contextWindow: context,
           maxOutput: null,
-          capabilities: [
-            ...section.body.matchAll(
-              /href="(\/docs\/(?:tool-calling|structured-output|reasoning))"/g,
-            ),
-          ]
-            .map((m) =>
-              m[1] === '/docs/tool-calling'
-                ? 'tools'
-                : m[1] === '/docs/structured-output'
-                  ? 'structured_outputs'
-                  : 'reasoning',
-            )
-            .filter((flag, i, all) => all.indexOf(flag) === i),
+          capabilities,
           pricing: null,
           reasoning: null,
           providerMetadata: {
@@ -148,7 +208,16 @@ export function parseMetaModels(html: string): Array<ModelInfo> {
         })
       }
     }
+    if (
+      /-token context window\b/.test(text) &&
+      !out.slice(chatRows).some((model) => model.activity === 'chat')
+    )
+      fail('chat section listed no models')
+  }
   if (!out.length) fail('model table listed no models')
+  // A layout change that hides the chat tables must not read as removals.
+  if (!out.some((model) => model.activity === 'chat'))
+    fail('model page listed no chat models')
   return out
 }
 export function parseMetaPricing(
@@ -157,32 +226,74 @@ export function parseMetaPricing(
   source: RateCard['source'],
 ): Map<string, RateCard> {
   const cards = new Map<string, RateCard>()
+  const tiers = new Map(
+    models.map((model) => [
+      model.rawId,
+      (model.providerMetadata as { tier?: string } | undefined)?.tier,
+    ]),
+  )
   for (const section of sections(html, 3)) {
-    const sourceIds = [
-      ...section.body.matchAll(/<code\b[^>]*>([^<]+)<\/code>/g),
-    ]
-      .map((m) => plain(m[1] ?? ''))
-      .filter((id) => models.some((model) => model.rawId === id))
     const rows = tables(section.body)[0]
-    if (rows?.[0]?.join('|') === 'Usage|Price per 1M tokens') {
-      if (!sourceIds.length) fail('token pricing has no native model IDs')
-      const rates: Record<string, number> = {}
+    if (
+      rows?.[0]?.join('|') ===
+      'Usage|Standard mode (per 1M tokens)|Contributor mode (per 1M tokens)'
+    ) {
+      // "Models: a, b in Standard mode; c in Contributor mode." A section
+      // that names no mode must have only one priced column.
+      const columns = new Map<string, number>()
+      for (const clause of plain(section.body.split(/<table\b/)[0] ?? '').split(
+        ';',
+      )) {
+        const modes = [
+          ...new Set(
+            [...clause.matchAll(/\bin (Standard|Contributor) mode\b/g)].map(
+              (m) => m[1],
+            ),
+          ),
+        ]
+        if (modes.length > 1) fail('ambiguous token price mode')
+        for (const id of clause.match(ID) ?? []) {
+          if (!tiers.has(id)) continue
+          if (columns.has(id)) fail('duplicate model price')
+          columns.set(
+            id,
+            modes[0] === 'Contributor' ? 2 : modes[0] === 'Standard' ? 1 : 0,
+          )
+        }
+      }
+      if (!columns.size) fail('token pricing has no native model IDs')
       const meters: Record<string, string> = {
         'Cached input': 'cache_read_tokens',
         Input: 'input_tokens',
         Output: 'output_tokens',
       }
+      const rates: Record<number, Record<string, number>> = { 1: {}, 2: {} }
       for (const row of rows.slice(1)) {
         const key = meters[row[0] ?? '']
-        const price = /^\$(\d+(?:\.\d+)?)$/.exec(row[1] ?? '')
-        if (!key || !price || row.length !== 2) fail('unreadable token price')
-        rates[key] = Number(price[1]) / 1e6
+        if (!key || row.length !== 3) fail('unreadable token price')
+        for (const col of [1, 2]) {
+          const cell = row[col] ?? ''
+          if (cell === 'Not available') continue
+          const price = /^\$(\d+(?:\.\d+)?)$/.exec(cell)
+          if (!price) fail('unreadable token price')
+          const target = rates[col]
+          if (target) target[key] = Number(price[1]) / 1e6
+        }
       }
-      if (!('input_tokens' in rates) || !('output_tokens' in rates))
-        fail('incomplete token pricing')
-      for (const id of sourceIds) {
+      const priced = [1, 2].filter(
+        (col) => Object.keys(rates[col] ?? {}).length,
+      )
+      for (const [id, stated] of columns) {
+        const col = stated || (priced.length === 1 ? priced[0] : undefined)
+        if (!col) fail('token price mode unstated')
+        const tier = tiers.get(id)
+        if (tier && col !== (tier === 'Contributor' ? 2 : 1))
+          fail('token price mode disagrees with model tier')
+        const colRates = rates[col] ?? {}
+        if (!('input_tokens' in colRates) || !('output_tokens' in colRates))
+          fail('incomplete token pricing')
         if (cards.has(id)) fail('duplicate model price')
-        const card = compileTokenCard(rates, [], source)
+        const card = compileTokenCard(colRates, [], source)
         if (!card) fail('uncompilable token price')
         cards.set(id, card)
       }
@@ -201,6 +312,10 @@ export function parseMetaPricing(
             const p = /^\$(\d+(?:\.\d+)?) per hour$/.exec(value)
             if (!p) fail('unreadable audio price')
             rates.audio_seconds = Number(p[1]) / 3600
+          } else if (row[0] === 'Generated image') {
+            const p = /^\$(\d+(?:\.\d+)?) per image$/.exec(value)
+            if (!p) fail('unreadable image price')
+            rates.generated_images = Number(p[1])
           } else if (
             row[0] === 'Image segmentation' ||
             row[0] === 'Video segmentation'
@@ -217,13 +332,17 @@ export function parseMetaPricing(
         const p = /flat \$(\d+(?:\.\d+)?) per generated image/.exec(text)
         if (!p) fail('unreadable image price')
         rates.generated_images = Number(p[1])
-      } else continue
+      } else if (rows?.[0]?.[0] === 'Usage') fail('unknown pricing table')
+      else continue
       const card = compileTokenCard(rates, [], source)
       if (!card) fail('uncompilable unit pricing')
       for (const model of matches) cards.set(model.rawId, card)
     }
   }
   if (!cards.size) fail('pricing parsed no rates')
+  // Every pay-as-you-go chat ID is token priced; a missing card is a misread.
+  for (const [id, tier] of tiers)
+    if (tier && !cards.has(id)) fail('token-priced model has no price')
   return cards
 }
 

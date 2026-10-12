@@ -28,24 +28,72 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 describe('Meta native docs', () => {
-  it('refreshes all eight hosted IDs and their own tiers without a key', async () => {
+  it('refreshes all nine hosted IDs and their own modes without a key', async () => {
     const urls = serve()
     const { models, skipped } = await provider.listModels({})
     expect(skipped).toBeUndefined()
-    expect(models).toHaveLength(8)
+    expect(models.map((m) => m.rawId)).toEqual([
+      'muse-wonder-1.0',
+      'muse-spark-1.3',
+      'muse-spark-1.3-contributor',
+      'muse-spark-1.2',
+      'muse-spark-1.2-contributor',
+      'muse-spark-1.1',
+      'muse-image-1.0',
+      'muse-voice-transcribe-1.0',
+      'sam-3.1',
+    ])
     const spark = models.find((m) => m.rawId === 'muse-spark-1.3')
     const contributor = models.find(
       (m) => m.rawId === 'muse-spark-1.3-contributor',
     )
+    const wonder = models.find((m) => m.rawId === 'muse-wonder-1.0')
     expect(spark).toMatchObject({
+      displayName: 'Muse Spark 1.3',
+      activity: 'chat',
+      modalities: {
+        input: ['text', 'image', 'video', 'audio', 'pdf'],
+        output: ['text'],
+      },
       contextWindow: 1048576,
       maxOutput: null,
+      capabilities: ['tools', 'structured_outputs', 'reasoning'],
+      providerMetadata: { family: 'Muse Spark', tier: 'Standard' },
       reasoning: {
         mandatory: true,
         efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
       },
     })
+    expect(contributor?.providerMetadata).toEqual({
+      family: 'Muse Spark',
+      tier: 'Contributor',
+    })
     expect(contributor?.reasoning?.efforts).not.toContain('max')
+    expect(
+      models.find((m) => m.rawId === 'muse-spark-1.2')?.reasoning?.efforts,
+    ).not.toContain('max')
+    expect(wonder).toMatchObject({
+      displayName: 'Muse Wonder',
+      activity: 'chat',
+      contextWindow: 1048576,
+      providerMetadata: { family: 'Muse Wonder', tier: 'Standard' },
+      reasoning: {
+        mode: 'effort',
+        mandatory: true,
+        efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      },
+    })
+    expect(wonder?.pricing).toMatchObject({
+      tables: {
+        rate: {
+          base: {
+            input_tokens: 4 / 1e6,
+            output_tokens: 20 / 1e6,
+            cache_read_tokens: 0.2 / 1e6,
+          },
+        },
+      },
+    })
     expect(spark?.pricing).toMatchObject({
       tables: {
         rate: {
@@ -59,9 +107,27 @@ describe('Meta native docs', () => {
     })
     expect(contributor?.pricing).toMatchObject({
       tables: {
-        rate: { base: { input_tokens: 0.1 / 1e6, output_tokens: 0.2 / 1e6 } },
+        rate: {
+          base: {
+            input_tokens: 0.1 / 1e6,
+            output_tokens: 0.2 / 1e6,
+            cache_read_tokens: 0.002 / 1e6,
+          },
+        },
       },
     })
+    expect(models.find((m) => m.rawId === 'muse-spark-1.1')?.pricing).toEqual(
+      spark?.pricing,
+    )
+    expect(
+      models
+        .filter((m) => m.activity !== 'chat')
+        .map((m) => [m.rawId, m.displayName]),
+    ).toEqual([
+      ['muse-image-1.0', 'Muse Image'],
+      ['muse-voice-transcribe-1.0', 'Muse Voice Transcribe'],
+      ['sam-3.1', 'Segment Anything Model'],
+    ])
     expect(
       models.find((m) => m.rawId === 'muse-image-1.0')?.pricing,
     ).toMatchObject({ tables: { rate: { base: { generated_images: 0.01 } } } })
@@ -213,5 +279,170 @@ describe('Meta native docs', () => {
         { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-09' },
       ),
     ).toThrow('unreadable token price')
+    expect(() =>
+      parseMetaPricing(
+        (docs[META_PRICING] ?? '').replace('$0.01 per image', '$0.01'),
+        models,
+        { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-12' },
+      ),
+    ).toThrow('unreadable image price')
+  })
+  it('fails a models page whose chat tables it cannot read instead of dropping them', async () => {
+    const page = docs[META_MODELS] ?? ''
+    for (const [html, error] of [
+      [
+        page.replace(
+          '<th>Variant</th><th>Model API (pay-as-you-go)</th>',
+          '<th>Variant</th><th>Model API</th>',
+        ),
+        'model availability headers changed',
+      ],
+      [
+        page.replace('<th>Variant</th>', '<th>Edition</th>'),
+        'chat section listed no models',
+      ],
+      [
+        page
+          .replace('<th>Variant</th>', '<th>Edition</th>')
+          .replace('<th>Version</th>', '<th>Release</th>')
+          .replaceAll('-token context window', ' token window'),
+        'model page listed no chat models',
+      ],
+      [
+        page.replace('All take text, image', 'All accept text, image'),
+        'missing model modalities',
+      ],
+      [
+        page.replace(
+          'and have a 1,048,576-token context window',
+          'and have a 1,048,576-token context window (1.1: a 262,144-token context window)',
+        ),
+        'unreadable model context',
+      ],
+      [
+        page.replace('<td>Contributor mode</td>', '<td>Discounted mode</td>'),
+        'unreadable model availability',
+      ],
+    ] as const) {
+      serve({ [META_MODELS]: html })
+      await expect(provider.listModels({})).rejects.toThrow(error)
+    }
+  })
+  it('reads every output modality the chat prose states', () => {
+    const models = parseMetaModels(
+      (docs[META_MODELS] ?? '').replace(
+        'returns text, has a',
+        'returns text and images, has a',
+      ),
+    )
+    expect(
+      models.find((m) => m.rawId === 'muse-wonder-1.0')?.modalities,
+    ).toEqual({
+      input: ['text', 'image', 'video', 'audio', 'pdf'],
+      output: ['text', 'images'],
+    })
+  })
+  it('fails token prices whose mode is unstated, ambiguous or contradicts the model tier', () => {
+    const models = parseMetaModels(docs[META_MODELS] ?? '')
+    const page = docs[META_PRICING] ?? ''
+    for (const [html, error] of [
+      [
+        page.replace(' in Contributor mode', ' as variants'),
+        'token price mode unstated',
+      ],
+      [
+        page.replace(
+          ' in Contributor mode',
+          ' in Contributor mode or in Standard mode',
+        ),
+        'ambiguous token price mode',
+      ],
+      [
+        page.replace(' in Contributor mode', ' in Standard mode'),
+        'token price mode disagrees with model tier',
+      ],
+      [
+        page.replace(
+          'and <code>muse-spark-1.1</code> in Standard mode',
+          'and <code>muse-spark-1.1</code> in Standard mode; <code>muse-spark-1.1</code> in Standard mode',
+        ),
+        'duplicate model price',
+      ],
+      [page.replace('$0.10', 'Not available'), 'incomplete token pricing'],
+    ] as const)
+      expect(() =>
+        parseMetaPricing(html, models, {
+          url: META_PRICING,
+          hash: 'fixture',
+          extractedAt: '2026-10-12',
+        }),
+      ).toThrow(error)
+  })
+  it('fails a family price table it does not recognise instead of clearing the price', () => {
+    const models = parseMetaModels(docs[META_MODELS] ?? '')
+    const page = docs[META_PRICING] ?? ''
+    const wonder = page.indexOf('<p>Model: <code>muse-wonder-1.0</code>')
+    expect(() =>
+      parseMetaPricing(
+        page.slice(0, wonder) +
+          page
+            .slice(wonder)
+            .replace(
+              '<th>Standard mode (per 1M tokens)</th>',
+              '<th>Standard (per 1M tokens)</th>',
+            ),
+        models,
+        { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-12' },
+      ),
+    ).toThrow('unknown pricing table')
+  })
+  it('fails when a pay-as-you-go chat ID gets no token price', () => {
+    const models = parseMetaModels(docs[META_MODELS] ?? '')
+    expect(() =>
+      parseMetaPricing(
+        (docs[META_PRICING] ?? '').replace(
+          /(<p>Model: <code>muse-wonder-1\.0<\/code>[\s\S]*?)<th>Usage<\/th>/,
+          '$1<th>Meter</th>',
+        ),
+        models,
+        { url: META_PRICING, hash: 'fixture', extractedAt: '2026-10-12' },
+      ),
+    ).toThrow('token-priced model has no price')
+  })
+  it('fails a reasoning effort restriction it cannot read', async () => {
+    const page = docs['https://dev.meta.ai/docs/reasoning'] ?? ''
+    for (const cell of [
+      'Standard mode only.',
+      'Supported by Muse Wonder and Muse Spark 1.3.',
+      'Requires <code>muse-wonder-1.0</code>.',
+      'Supported by <code>muse-wonder-1.0</code>; not available with Contributor-mode variants.',
+    ]) {
+      serve({
+        'https://dev.meta.ai/docs/reasoning': page.replace(
+          /Supported by <code>[\s\S]*?<\/td>/,
+          `${cell}</td>`,
+        ),
+      })
+      await expect(provider.listModels({})).rejects.toThrow(
+        'unreadable reasoning effort restriction',
+      )
+    }
+  })
+  it('leaves reasoning unset for a chat family the page does not say always reasons', async () => {
+    serve({
+      'https://dev.meta.ai/docs/reasoning': (
+        docs['https://dev.meta.ai/docs/reasoning'] ?? ''
+      ).replace(
+        'which Muse Wonder and Muse Spark do not support',
+        'which Muse Spark does not support',
+      ),
+    })
+    const { models } = await provider.listModels({})
+    expect(
+      models.find((m) => m.rawId === 'muse-wonder-1.0')?.reasoning,
+    ).toBeNull()
+    expect(
+      models.find((m) => m.rawId === 'muse-spark-1.1')?.reasoning,
+    ).toMatchObject({ mode: 'effort', mandatory: true })
   })
 })
