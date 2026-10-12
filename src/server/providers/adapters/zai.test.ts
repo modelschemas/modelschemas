@@ -7,6 +7,7 @@ import {
   parseZaiOutputCaps,
   parseZaiReasoning,
   parseZaiThinkingSwitch,
+  parseZaiTokenPrices,
   provider,
   ZAI_OPENAPI_URL,
   ZAI_OVERVIEW_URL,
@@ -603,6 +604,59 @@ describe('zai', () => {
 })
 
 describe('zai parsers fail closed', () => {
+  it('reads per-1M prices from the indented "Other Pricing" accordion', () => {
+    // Excerpt of https://docs.z.ai/guides/overview/pricing.md (2026-10-12).
+    const prices = parseZaiTokenPrices(`
+<AccordionGroup>
+  <Accordion title="Other Pricing">
+    ### Vision Models
+
+    Prices per 1M tokens.
+
+    | Model | Input | Cached Input | Cached Input Storage | Output |
+    | :- | :- | :- | :- | :- |
+    | GLM-OCR | \\$0.03 | \\\\ | \\\\ | \\$0.03 |
+
+    ### Batch Models
+
+    | Model | Input | Cached Input | Cached Input Storage | Output |
+    | :- | :- | :- | :- | :- |
+    | Not-Per-1M | \\$9 | \\$1 | - | \\$9 |
+  </Accordion>
+</AccordionGroup>
+`)
+    expect([...prices]).toEqual([
+      ['glm-ocr', { input: 0.03, output: 0.03, cache: null }],
+    ])
+  })
+
+  it('throws when the pricing page lists two prices for one model', () => {
+    expect(() =>
+      parseZaiTokenPrices(`
+Prices per 1M tokens.
+
+| Model | Input | Cached Input | Cached Input Storage | Output |
+| GLM-4.5 | \\$0.6 | \\$0.11 | Limited-time Free | \\$2.2 |
+
+    ### Text Models
+
+    Prices per 1M tokens.
+
+    | Model | Input | Cached Input | Cached Input Storage | Output |
+    | GLM-4.5 | \\$0.5 | \\$0.11 | Limited-time Free | \\$2.2 |
+`),
+    ).toThrow('two prices for GLM-4.5')
+    expect(
+      parseZaiTokenPrices(`
+Prices per 1M tokens.
+
+| Model | Input | Cached Input | Cached Input Storage | Output |
+| GLM-4.5 | \\$0.6 | \\$0.11 | Limited-time Free | \\$2.2 |
+| GLM-4.5 | \\$0.6 | \\$0.11 | Limited-time Free | \\$2.2 |
+`).get('glm-4.5'),
+    ).toEqual({ input: 0.6, output: 2.2, cache: 0.11 })
+  })
+
   it('reads each output cap with its own models', () => {
     expect(parseZaiOutputCaps(VISION_MAX_TOKENS)).toEqual([
       { names: ['glm-5.3-flash'], series: true, tokens: 128_000 },
