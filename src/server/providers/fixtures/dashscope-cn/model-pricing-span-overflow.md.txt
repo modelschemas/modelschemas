@@ -1,0 +1,77 @@
+# 模型调用价格
+
+## 文本生成-第三方模型 <span id="774b4cf48dtbp" />
+
+### MiniMax <span id="b08cd557f4spf" />
+
+计费规则：按输入Token和输出Token计费。
+
+<Tabs>
+  <Tab title="华北2（北京）">
+    <table style={{ display: "table", tableLayout: "fixed", width: "100%", overflowWrap: "anywhere" }}>
+      <colgroup>
+        <col style={{ width: "20.04%" }} />
+
+        <col style={{ width: "20.04%" }} />
+
+        <col style={{ width: "20.04%" }} />
+
+        <col style={{ width: "20.04%" }} />
+
+        <col style={{ width: "19.84%" }} />
+      </colgroup>
+
+      <thead>
+        <tr>
+          <th style={{ verticalAlign: "top" }}>
+            <strong>模型 ID（Model ID）</strong>
+          </th>
+
+          <th style={{ verticalAlign: "top" }}>
+            <strong>模式</strong>
+          </th>
+
+          <th style={{ verticalAlign: "top" }}>
+            <strong>输入单价（每百万Token）</strong>
+          </th>
+
+          <th style={{ verticalAlign: "top" }}>
+            <strong>输出单价（每百万Token）</strong>
+
+            > <strong>思维链和回答</strong>
+          </th>
+
+          <th style={{ verticalAlign: "top" }}>
+            <strong>免费额度</strong>[（注）](/zh/model-studio/new-free-quota#977b13081ab56)
+
+            <sup>有效期：自开通百炼/模型发布/申请通过之日起90天内（以较晚者为准）</sup>
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <tr>
+          <td style={{ verticalAlign: "top" }}>
+            MiniMax-M2.5
+          </td>
+
+          <td style={{ verticalAlign: "top" }}>
+            仅思考模式
+          </td>
+
+          <td style={{ verticalAlign: "top" }}>
+            2.1元
+          </td>
+
+          <td style={{ verticalAlign: "top" }}>
+            8.4元
+          </td>
+
+          <td rowSpan={2} style={{ verticalAlign: "top" }}>
+            100万Token
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </Tab>
+</Tabs>

@@ -73,7 +73,7 @@ export function cnTable(table: string): string[][] {
     fill()
     if (values.length) grid.push(values)
   }
-  if (pending.size) fail('table span extends beyond rows')
+  // A rowSpan past the last row is clipped, as HTML renders it.
   return grid
 }
 function cellIds(cell: string): string[] {
