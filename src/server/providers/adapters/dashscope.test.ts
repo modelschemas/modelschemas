@@ -429,17 +429,20 @@ describe('dashscope listModels docs', () => {
   })
 
   it('keeps polling and the stored thinking facts when the thinking page is unreadable', async () => {
+    let thinkingHeaders: Headers | undefined
     const { result, calls } = await withStubbedFetch(
-      (url) => {
-        if (url === DASHSCOPE_THINKING_URL)
+      (url, init) => {
+        if (url === DASHSCOPE_THINKING_URL) {
+          thinkingHeaders = new Headers(init?.headers)
           return new Response(
             '<!DOCTYPE html><html><head><title>Model Studio</title></head><body></body></html>',
           )
+        }
         if (url === DASHSCOPE_COMPAT_URL) return new Response(COMPAT_PAGE)
         return new Response(
           JSON.stringify({
             output: {
-              total: 1,
+              total: 2,
               models: [
                 {
                   model: 'qwen-plus',
@@ -454,6 +457,16 @@ describe('dashscope listModels docs', () => {
                     max_output_tokens: 32768,
                   },
                 },
+                {
+                  model: 'text-embedding-v4',
+                  capabilities: ['TR'],
+                  features: [],
+                  inference_metadata: {
+                    request_modality: ['Text'],
+                    response_modality: [],
+                  },
+                  model_info: {},
+                },
               ],
             },
           }),
@@ -462,6 +475,8 @@ describe('dashscope listModels docs', () => {
       () => provider.listModels({ DASHSCOPE_API_KEY: 'test-key' }),
     )
     expect(calls.map((call) => call.url)).toContain(DASHSCOPE_COMPAT_URL)
+    expect(thinkingHeaders?.get('accept')).toMatch(/^text\/markdown/)
+    expect(thinkingHeaders?.get('user-agent')).toMatch(/^Mozilla\//)
     const model = result.models[0]
     expect(model?.rawId).toBe('qwen-plus')
     expect(model?.contextWindow).toBe(1000000)
@@ -470,6 +485,8 @@ describe('dashscope listModels docs', () => {
       reasoning: 'unavailable',
       requestMap: 'unavailable',
     })
+    expect(result.models[1]?.activity).toBe('embeddings')
+    expect(result.models[1]?.absent).toBeUndefined()
     expect(result.docsFailures?.failed).toBe(1)
     expect(result.docsFailures?.first[0]?.source).toBe(DASHSCOPE_THINKING_URL)
     expect(result.docsFailures?.first[0]?.error).toMatch(

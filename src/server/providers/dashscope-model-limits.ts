@@ -10,6 +10,19 @@ import { sha256Text } from './types.ts'
 
 const PAGE_ORIGIN = 'https://www.alibabacloud.com/help/en/model-studio'
 
+/**
+ * alibabacloud.com answered the Worker's bare fetch with an HTML page from
+ * 2026-10-07 (issue #256); workerd sends no User-Agent or Accept. These
+ * match a browser's fetch of the `.md` URL.
+ */
+export const DASHSCOPE_DOCS_INIT: RequestInit = {
+  headers: {
+    Accept: 'text/markdown,text/plain,*/*',
+    'User-Agent':
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  },
+}
+
 export interface DashscopeModelLimits {
   contextWindow: number | null
   maxOutput: number | null

@@ -1,6 +1,10 @@
-import { isCapabilityMap } from '#/lib/capabilities.ts'
 /** Model Studio's own model scopes; code samples never seed the catalog. */
-import { assertDashscopeMarkdown } from './dashscope-model-limits.ts'
+import { isCapabilityMap } from '#/lib/capabilities.ts'
+
+import {
+  DASHSCOPE_DOCS_INIT,
+  assertDashscopeMarkdown,
+} from './dashscope-model-limits.ts'
 import { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
@@ -122,7 +126,10 @@ export async function dashscopeThinking(
   cached: typeof cachedDocs = cachedDocs,
 ) {
   return cached(kv, `${DASHSCOPE_THINKING_URL}#model-thinking`, async () => {
-    const markdown = await fetchText(DASHSCOPE_THINKING_URL)
+    const markdown = await fetchText(
+      DASHSCOPE_THINKING_URL,
+      DASHSCOPE_DOCS_INIT,
+    )
     assertDashscopeMarkdown(markdown, 'dashscope thinking')
     return {
       ...parseDashscopeThinking(markdown),

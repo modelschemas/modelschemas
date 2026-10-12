@@ -18,6 +18,7 @@ import {
 } from '../dashscope-compat.ts'
 import type { DashscopeCompatFacts } from '../dashscope-compat.ts'
 import {
+  DASHSCOPE_DOCS_INIT as DOCS_INIT,
   dashscopeModelPageUrl,
   loadDashscopeModelLimits,
 } from '../dashscope-model-limits.ts'
@@ -52,19 +53,6 @@ const SPEC_SOURCE_URL =
   'https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope'
 const MODELS_URL = 'https://dashscope-intl.aliyuncs.com/api/v1/models'
 const SERVER_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'
-
-/**
- * alibabacloud.com answered the Worker's bare fetch with an HTML page from
- * 2026-10-07 (issue #256); workerd sends no User-Agent or Accept. These
- * match a browser's fetch of the `.md` URL.
- */
-const DOCS_INIT: RequestInit = {
-  headers: {
-    Accept: 'text/markdown,text/plain,*/*',
-    'User-Agent':
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-  },
-}
 
 const INCLUDE: ReadonlyArray<OpenAiCompatPath> = [
   '/chat/completions',
