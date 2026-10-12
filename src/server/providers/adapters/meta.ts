@@ -59,12 +59,14 @@ export const provider: ProviderConfig = {
     )
     if (!levels) throw new Error('meta: missing reasoning effort table')
     const text = plain(article(reasoning.html))
-    if (
-      !text.includes(
-        '"none" disables reasoning entirely, which Muse Spark does not support.',
-      )
-    )
-      throw new Error('meta: unreadable reasoning applicability')
+    // '"none" disables reasoning entirely, which Muse Wonder and Muse Spark
+    // do not support.' names the families whose reasoning cannot be off.
+    const applies =
+      /"none" disables reasoning entirely, which (.+?) (?:do|does) not support\./.exec(
+        text,
+      )?.[1]
+    if (!applies) throw new Error('meta: unreadable reasoning applicability')
+    const families = applies.split(/,\s*(?:and\s+)?|\s+and\s+/)
     if (
       levels
         .slice(1)
@@ -75,28 +77,43 @@ export const provider: ProviderConfig = {
     ) {
       throw new Error('meta: unreadable reasoning effort row')
     }
+    const ids = (value?: string): Array<string> =>
+      value?.match(/[a-z0-9][a-z0-9.-]*[a-z0-9]/g) ?? []
+    const allows = (behavior: string, rawId: string) => {
+      if (behavior.includes('Not supported')) return false
+      const only = /(?:^|\. )Supported by (.+?)(?:;|\.(?: |$))/.exec(
+        behavior,
+      )?.[1]
+      const except = /\bnot available with (.+?)(?:;|\.(?: |$))/.exec(
+        behavior,
+      )?.[1]
+      if (
+        !only &&
+        !except &&
+        /\b(?:only|not available|supported)\b/i.test(behavior)
+      )
+        throw new Error('meta: unreadable reasoning effort restriction')
+      return (
+        (!only || ids(only).includes(rawId)) && !ids(except).includes(rawId)
+      )
+    }
     return {
       models: models.map((model): ModelInfo => {
-        const spark =
-          (model.providerMetadata as { family?: string }).family ===
-          'Muse Spark'
-        const efforts = spark
+        const reasons = families.includes(
+          (model.providerMetadata as { family?: string }).family ?? '',
+        )
+        const efforts = reasons
           ? levels
               .slice(1)
-              .filter(
-                (row) =>
-                  !row[1]?.includes('Not supported') &&
-                  (!row[1]?.includes('Standard-tier') ||
-                    row[1].includes(model.rawId)),
-              )
+              .filter((row) => allows(row[1] ?? '', model.rawId))
               .map((row) => (row[0] ?? '').replace(/^"|"$/g, ''))
           : []
-        if (spark && !efforts.length)
+        if (reasons && !efforts.length)
           throw new Error('meta: no supported reasoning efforts')
         const facts = {
           ...model,
           pricing: cards.get(model.rawId) ?? null,
-          reasoning: spark
+          reasoning: reasons
             ? { mode: 'effort' as const, mandatory: true, efforts }
             : null,
         }
