@@ -41,8 +41,9 @@ function guideFixtureHtml(): string {
 }
 
 /** The thinking page: one effort list and one supported-models row. */
-function reasoningFixtureMarkdown(): string {
+function reasoningFixtureHtml(): string {
   return [
+    '<script>window._ROUTER_DATA = {"loaderData":{}}</script>',
     '## Adjust chain-of-thought length',
     '',
     '* `minimal`: Turns off reasoning and answers directly.',
@@ -78,7 +79,7 @@ function modelListFixtureHtml(): string {
 const DOC_FIXTURES: Record<string, () => string> = {
   [BYTEPLUS_PRICING_URL]: pricingFixtureHtml,
   [BYTEPLUS_VIDEO_GUIDE_URL]: guideFixtureHtml,
-  [BYTEPLUS_REASONING_URL]: reasoningFixtureMarkdown,
+  [BYTEPLUS_REASONING_URL]: reasoningFixtureHtml,
   [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
 }
 
