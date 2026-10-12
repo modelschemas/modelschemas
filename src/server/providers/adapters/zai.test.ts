@@ -646,6 +646,15 @@ Prices per 1M tokens.
     | GLM-4.5 | \\$0.5 | \\$0.11 | Limited-time Free | \\$2.2 |
 `),
     ).toThrow('two prices for GLM-4.5')
+    expect(
+      parseZaiTokenPrices(`
+Prices per 1M tokens.
+
+| Model | Input | Cached Input | Cached Input Storage | Output |
+| GLM-4.5 | \\$0.6 | \\$0.11 | Limited-time Free | \\$2.2 |
+| GLM-4.5 | \\$0.6 | \\$0.11 | Limited-time Free | \\$2.2 |
+`).get('glm-4.5'),
+    ).toEqual({ input: 0.6, output: 2.2, cache: 0.11 })
   })
 
   it('reads each output cap with its own models', () => {
