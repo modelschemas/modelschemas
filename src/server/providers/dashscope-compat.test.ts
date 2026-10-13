@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -78,6 +79,28 @@ describe('parseDashscopeCompat', () => {
     }
     expect(dashscopeCompatCovers('decision-model-preview', scope)).toBe(false)
     expect(dashscopeCompatCovers('qwen-audio-turbo', scope)).toBe(false)
+  })
+
+  it('reads the live page, whose cells carry MDX style attributes', async () => {
+    // compatibility-of-openai-with-dashscope.md, fetched 2026-10-13.
+    const live = readFileSync(
+      new URL(
+        './fixtures/dashscope/compatibility-of-openai-with-dashscope.md.txt',
+        import.meta.url,
+      ),
+      'utf8',
+    )
+    expect(live).toContain('<td style={{ verticalAlign: "top" }}>')
+    const facts = await parseDashscopeCompat(live)
+    expect(facts.flags).toEqual([
+      'top_p',
+      'temperature',
+      'max_tokens',
+      'seed',
+      'stop',
+    ])
+    expect(facts.requestMap.maxTokensField).toBe('max_tokens')
+    expect(facts.requestMap.developerRole).toBe(false)
   })
 
   it('throws when the request table is missing', async () => {

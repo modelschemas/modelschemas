@@ -1,0 +1,580 @@
+# OpenAI compatible - Chat
+
+> The Qwen models on Model Studio support OpenAI compatible interfaces. You can migrate your existing OpenAI code to Model Studio by changing only the API key, base URL, and model name.
+
+<meta property="og:title" content="OpenAI compatible - Chat" />
+
+## Compatibility information <span id="h2-compatibil-01" /> <span id="section-compatibil-01" />
+
+### BASE\_URL <span id="h3-base-url-01" /> <span id="section-base-url-01" />
+
+The BASE\_URL is the network endpoint for accessing the model service. When you use the OpenAI compatible interface with Model Studio, configure the BASE\_URL as follows.
+
+When you call via the OpenAI SDK or other OpenAI compatible SDKs, use the following BASE\_URL:
+
+```plaintext
+Singapore: https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+Virginia: https://{WorkspaceId}.us-east-1.maas.aliyuncs.com/compatible-mode/v1
+Beijing: https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+Hong Kong (China): https://{WorkspaceId}.cn-hongkong.maas.aliyuncs.com/compatible-mode/v1
+Japan (Tokyo): https://{WorkspaceId}.ap-northeast-1.maas.aliyuncs.com/compatible-mode/v1
+```
+
+When you call via HTTP, use the following full endpoint:
+
+```plaintext
+Singapore: POST https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Virginia: POST https://{WorkspaceId}.us-east-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Beijing: POST https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Hong Kong (China): POST https://{WorkspaceId}.cn-hongkong.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Japan (Tokyo): POST https://{WorkspaceId}.ap-northeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+```
+
+<Tip>
+  Model Studio has introduced workspace-specific domain names for the Beijing, Singapore, and Hong Kong (China) regions that provide better performance and higher stability. Migrate to the new domain names:
+
+  - <strong>Beijing region:</strong> Migrate from `https://dashscope.aliyuncs.com` to `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com`
+  - <strong>Singapore region:</strong> Migrate from `https://dashscope-intl.aliyuncs.com` to `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com`
+  - <strong>Hong Kong (China) region:</strong> Migrate from `https://cn-hongkong.dashscope.aliyuncs.com` to `https://{WorkspaceId}.cn-hongkong.maas.aliyuncs.com`
+
+  Replace `{WorkspaceId}` with your actual [workspace ID](/help/en/model-studio/obtain-the-app-id-and-workspace-id#d3eb3cd37b7fu).
+</Tip>
+
+> <strong>Troubleshoot failed calls</strong>: If a call through the OpenAI compatible interface fails with a 404, 401, 403, or connection error, check the following configurations:
+
+#### Cross-region calls <span id="h4-cross-region-01" /> <span id="section-cross-region-01" />
+
+A Model Studio API key is bound to the region in which it was created. When you call the base URL of a region, you must use an API key that was created in that same region. An API key from another region is rejected with an authentication error.
+
+This rule applies to every region that provides an endpoint, including China (Beijing), US (Virginia), Singapore, and Japan (Tokyo), as well as China (Hong Kong). Create the API key in the console of the region whose endpoint you call.
+
+For example, if you use an API key created in the China (Beijing) region to call the US (Virginia) endpoint, the request returns HTTP 401 with the error message `Incorrect API key provided` and the error code `invalid_api_key`. This error indicates that the API key and the endpoint belong to different regions, not that the API key is invalid or lacks permissions.
+
+### Supported models <span id="h3-supported-01" /> <span id="section-supported-01" />
+
+Supported models: Qwen large language models (commercial and open-source editions), Qwen-VL, Qwen-Coder, Qwen-Omni, Qwen-Math, DeepSeek, Kimi, GLM, MiniMax.
+
+> Qwen-Audio does not support the OpenAI compatible protocol. Use the DashScope protocol instead.
+
+## Call via OpenAI SDK <span id="h2-call-via-o-01" /> <span id="section-call-via-o-01" />
+
+### Prerequisites <span id="h3-prerequisi-01" /> <span id="section-prerequisi-01" />
+
+- Python is installed on your machine.
+- The latest version of the OpenAI SDK is installed.
+
+```bash
+# If the following command fails, replace pip with pip3
+pip install -U openai
+```
+
+- You have activated Model Studio and obtained an API key. For instructions, see Get API key.
+- (Recommended) Configure the API key as an environment variable to reduce the risk of key exposure. You can also configure it directly in code, <strong>but this increases the risk of exposure</strong>.
+- Select the model you want to use from the supported models list.
+
+### Usage <span id="h3-usage-01" /> <span id="section-usage-01" />
+
+The following examples show how to use the OpenAI SDK to access Qwen models on Model Studio.
+
+#### Non-streaming example <span id="h4-non-stream-01" /> <span id="section-non-stream-01" />
+
+```python
+from openai import OpenAI
+import os
+
+def get_response():
+    client = OpenAI(
+        # 各地域的API Key不同。获取API Key：https://www.alibabacloud.com/help/model-studio/get-api-key
+        api_key=os.getenv("DASHSCOPE_API_KEY"),  # 如果您没有配置环境变量，请用阿里云百炼API Key将本行替换为：api_key="sk-xxx"
+        # 以下为新加坡地域base_url，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+        base_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+    )
+    completion = client.chat.completions.create(
+        model="qwen3.8-max",  # 此处以qwen-plus为例，可按需更换模型名称。模型列表：https://www.alibabacloud.com/help/model-studio/getting-started/models
+        messages=[{'role': 'system', 'content': 'You are a helpful assistant.'},
+                  {'role': 'user', 'content': '你是谁？'}]
+        )
+    print(completion.model_dump_json())
+
+if __name__ == '__main__':
+    get_response()
+```
+
+The following output is returned:
+
+```json
+{
+    "id": "chatcmpl-xxx",
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null,
+            "message": {
+                "content": "我是来自阿里云的超大规模预训练模型，我叫千问。",
+                "role": "assistant",
+                "function_call": null,
+                "tool_calls": null
+            }
+        }
+    ],
+    "created": 1716430652,
+    "model": "qwen3.8-max",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "usage": {
+        "completion_tokens": 18,
+        "prompt_tokens": 22,
+        "total_tokens": 40
+    }
+}
+```
+
+#### Streaming example <span id="h4-streaming-01" /> <span id="section-streaming-01" />
+
+```python expandable
+from openai import OpenAI
+import os
+
+def get_response():
+    client = OpenAI(
+        # 各地域的API Key不同。获取API Key：https://www.alibabacloud.com/help/model-studio/get-api-key
+        # 如果您没有配置环境变量，请用阿里云百炼API Key将下行替换为：api_key="sk-xxx"
+        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        # 以下为新加坡地域base_url，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+        base_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+
+    )
+    completion = client.chat.completions.create(
+        model="qwen3.8-max",  # 此处以qwen-plus为例，可按需更换模型名称。模型列表：https://www.alibabacloud.com/help/model-studio/getting-started/models
+        messages=[{'role': 'system', 'content': 'You are a helpful assistant.'},
+                  {'role': 'user', 'content': '你是谁？'}],
+        stream=True,
+        # 通过以下设置，在流式输出的最后一行展示token使用信息
+        stream_options={"include_usage": True}
+        )
+    for chunk in completion:
+        print(chunk.model_dump_json())
+
+if __name__ == '__main__':
+    get_response()
+```
+
+The following output is returned:
+
+```json
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"","function_call":null,"role":"assistant","tool_calls":null},"finish_reason":null,"index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"我是","function_call":null,"role":null,"tool_calls":null},"finish_reason":null,"index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"来自","function_call":null,"role":null,"tool_calls":null},"finish_reason":null,"index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"阿里","function_call":null,"role":null,"tool_calls":null},"finish_reason":null,"index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"云的大规模语言模型","function_call":null,"role":null,"tool_calls":null},"finish_reason":null,"index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"，我叫千问。","function_call":null,"role":null,"tool_calls":null},"finish_reason":null,"index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[{"delta":{"content":"","function_call":null,"role":null,"tool_calls":null},"finish_reason":"stop","index":0,"logprobs":null}],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":null}
+{"id":"chatcmpl-xxx","choices":[],"created":1719286190,"model":"qwen3.8-max","object":"chat.completion.chunk","system_fingerprint":null,"usage":{"completion_tokens":16,"prompt_tokens":22,"total_tokens":38}}
+```
+
+#### Tool calling example <span id="h4-tool-calli-01" /> <span id="section-tool-calli-01" />
+
+The following example demonstrates tool calling (function call) through the OpenAI compatible interface, using a weather query tool and a time query tool. The example code supports multi-turn tool calling.
+
+```python expandable
+from openai import OpenAI
+from datetime import datetime
+import json
+import os
+
+client = OpenAI(
+    # 各地域的API Key不同。获取API Key：https://www.alibabacloud.com/help/model-studio/get-api-key
+    # 若没有配置环境变量，请用阿里云百炼API Key将下行替换为：api_key="sk-xxx",
+    api_key=os.getenv("DASHSCOPE_API_KEY"),
+    # 以下为新加坡地域base_url，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+    base_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+)
+
+# 定义工具列表，模型在选择使用哪个工具时会参考工具的name和description
+tools = [
+    # 工具1 获取当前时刻的时间
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_time",
+            "description": "当你想知道现在的时间时非常有用。",
+            # 因为获取当前时间无需输入参数，因此parameters为空字典
+            "parameters": {}
+        }
+    },
+    # 工具2 获取指定城市的天气
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather",
+            "description": "当你想查询指定城市的天气时非常有用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    # 查询天气时需要提供位置，因此参数设置为location
+                    "location": {
+                        "type": "string",
+                        "description": "城市或县区，比如北京市、杭州市、余杭区等。"
+                    }
+                }
+            },
+            "required": [
+                "location"
+            ]
+        }
+    }
+]
+
+# 模拟天气查询工具。返回结果示例："北京今天是雨天。"
+def get_current_weather(location):
+    return f"{location}今天是雨天。 "
+
+# 查询当前时间的工具。返回结果示例："当前时间：2024-04-15 17:15:18。"
+def get_current_time():
+    # 获取当前日期和时间
+    current_datetime = datetime.now()
+    # 格式化当前日期和时间
+    formatted_time = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
+    # 返回格式化后的当前时间
+    return f"当前时间：{formatted_time}。"
+
+# 封装模型响应函数
+def get_response(messages):
+    completion = client.chat.completions.create(
+        model="qwen3.8-max",  # 此处以qwen-plus为例，可按需更换模型名称。模型列表：https://www.alibabacloud.com/help/model-studio/getting-started/models
+        messages=messages,
+        tools=tools
+        )
+    return completion.model_dump()
+
+def call_with_messages():
+    print('\n')
+    messages = [
+            {
+                "content": input('请输入：'),  # 提问示例："现在几点了？" "一个小时后几点" "北京天气如何？"
+                "role": "user"
+            }
+    ]
+    print("-"*60)
+    # 模型的第一轮调用
+    i = 1
+    first_response = get_response(messages)
+    assistant_output = first_response['choices'][0]['message']
+    print(f"\n第{i}轮大模型输出信息：{first_response}\n")
+    if  assistant_output['content'] is None:
+        assistant_output['content'] = ""
+    messages.append(assistant_output)
+    # 如果不需要调用工具，则直接返回最终答案
+    if assistant_output['tool_calls'] == None:  # 如果模型判断无需调用工具，则将assistant的回复直接打印出来，无需进行模型的第二轮调用
+        print(f"无需调用工具，我可以直接回复：{assistant_output['content']}")
+        return
+    # 如果需要调用工具，则进行模型的多轮调用，直到模型判断无需调用工具
+    while assistant_output['tool_calls'] != None:
+        # 如果判断需要调用查询天气工具，则运行查询天气工具
+        if assistant_output['tool_calls'][0]['function']['name'] == 'get_current_weather':
+            tool_info = {"name": "get_current_weather", "role":"tool"}
+            # 提取位置参数信息
+            location = json.loads(assistant_output['tool_calls'][0]['function']['arguments'])['location']
+            tool_info['content'] = get_current_weather(location)
+        # 如果判断需要调用查询时间工具，则运行查询时间工具
+        elif assistant_output['tool_calls'][0]['function']['name'] == 'get_current_time':
+            tool_info = {"name": "get_current_time", "role":"tool"}
+            tool_info['content'] = get_current_time()
+        print(f"工具输出信息：{tool_info['content']}\n")
+        print("-"*60)
+        messages.append(tool_info)
+        assistant_output = get_response(messages)['choices'][0]['message']
+        if  assistant_output['content'] is None:
+            assistant_output['content'] = ""
+        messages.append(assistant_output)
+        i += 1
+        print(f"第{i}轮大模型输出信息：{assistant_output}\n")
+    print(f"最终答案：{assistant_output['content']}")
+
+if __name__ == '__main__':
+    call_with_messages()
+```
+
+### Request parameters <span id="h3-request-pa-01" /> <span id="section-request-pa-01" />
+
+The request parameters are aligned with the OpenAI interface. The following table describes the currently supported parameters:
+
+<table style={{ display: "table", tableLayout: "fixed", width: "100%", overflowWrap: "anywhere" }}><colgroup><col style={{ width: "25%" }} /><col style={{ width: "25%" }} /><col style={{ width: "25%" }} /><col style={{ width: "25%" }} /></colgroup><thead><tr><th style={{ verticalAlign: "top" }}><p><strong>Parameter</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Type</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Default</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Description</strong></p></th></tr></thead><tbody><tr><td style={{ verticalAlign: "top" }}><p>model</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>The model to use. For available models, see <a href="/help/en/model-studio/compatibility-of-openai-with-dashscope#h3-supported-01">Supported models</a>.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>messages</p></td><td style={{ verticalAlign: "top" }}><p><em>array</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>The conversation history between the user and the model. Each array element has the format <code>\{"role": role, "content": content}</code>. Valid roles: system, user, assistant. Only <code>messages\[0]</code> supports the system role. In general, user and assistant roles alternate, and the last element must have the user role.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>top\_p (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>float</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>The nucleus sampling probability threshold. For example, a value of 0.8 keeps only the smallest set of tokens whose cumulative probability is at least 0.8. Valid values: (0, 1.0). Higher values increase randomness; lower values increase determinism.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>temperature (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>float</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>Controls the randomness and diversity of model responses. Higher values flatten the probability distribution, selecting more low-probability tokens for more diverse output. Lower values sharpen the distribution, favoring high-probability tokens for more deterministic output. Valid values: \[0, 2). A value of 0 is not recommended.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>presence\_penalty (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>float</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>Controls repetition across the entire generated sequence. Higher values reduce repetition. Valid values: \[-2.0, 2.0].</p><div><p>Supported only on Qwen commercial models and open-source models qwen1.5 and later.</p></div></td></tr><tr><td style={{ verticalAlign: "top" }}><p>n (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>1</p></td><td style={{ verticalAlign: "top" }}><p>The number of responses to generate. Valid values: <code>1-4</code>. For scenarios that require multiple responses (such as creative writing or ad copy), set a larger n value. > A larger n value does not increase input token consumption but does increase output token consumption. > Currently supported only on qwen-plus. When the <code>tools</code> parameter is provided, n is fixed at 1.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>max\_tokens (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>The maximum number of tokens the model can generate. For example, if the model supports up to 2k output tokens, you can set this to 1k to prevent overly long responses. Different models have different output limits. See the model list for details.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>seed (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>-</p></td><td style={{ verticalAlign: "top" }}><p>The random seed for generation, used to control randomness of model output. Supports unsigned 64-bit integers.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>stream (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>boolean</em></p></td><td style={{ verticalAlign: "top" }}><p>False</p></td><td style={{ verticalAlign: "top" }}><p>Controls whether to use streaming output. When streaming is enabled, the interface returns a generator. Iterate over it to get results, where each output is the incremental sequence generated.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>stop (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>string or array</em></p></td><td style={{ verticalAlign: "top" }}><p>None</p></td><td style={{ verticalAlign: "top" }}><p>Controls precise stopping of content generation. Generation stops automatically when the model is about to produce the specified string or token\_id. Can be a string or array type. When string type: generation stops when the model is about to produce the specified stop word. When array type: array elements can be token\_ids, strings, or arrays of token\_ids. Generation stops when the generated token or its token\_id matches an element in stop.</p><div><p>When stop is array type, you cannot mix token\_ids and strings as elements.</p></div></td></tr><tr><td style={{ verticalAlign: "top" }}><p>tools (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>array</em></p></td><td style={{ verticalAlign: "top" }}><p>None</p></td><td style={{ verticalAlign: "top" }}><p>The tool library available for the model to call. During a function call flow, the model selects one tool from this library. Each tool has the following structure: <code>type</code> (string, currently only "function" is supported), <code>function</code> (object with keys: <code>name</code>, <code>description</code>, <code>parameters</code>). The <code>name</code> field is the function name (letters, numbers, underscores, and hyphens; max 64 characters). The <code>description</code> field describes when and how the model should call the function. The <code>parameters</code> field is a valid JSON Schema describing the function parameters. If empty, the function takes no input. The <code>type</code> field within parameters supports common JSON Schema types: <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, <code>array</code>, and <code>object</code>. When using <code>array</code> type, specify element types with <code>items</code>. Both the function call initiation turn and the tool result submission turn require the tools parameter. Currently supported models: qwen-plus and qwen-max.</p><div><p>The tools parameter cannot be used with stream=True simultaneously.</p></div></td></tr><tr><td style={{ verticalAlign: "top" }}><p>stream\_options (optional)</p></td><td style={{ verticalAlign: "top" }}><p><em>object</em></p></td><td style={{ verticalAlign: "top" }}><p>None</p></td><td style={{ verticalAlign: "top" }}><p>Configures whether to display token usage in streaming output. Only takes effect when stream is True. To count tokens in streaming mode, set <code>stream\_options=\{"include\_usage": True}</code>.</p></td></tr></tbody></table>
+
+### Response parameters <span id="h3-response-p-01" /> <span id="section-response-p-01" />
+
+<table style={{ display: "table", tableLayout: "fixed", width: "100%", overflowWrap: "anywhere" }}><colgroup><col style={{ width: "25%" }} /><col style={{ width: "25%" }} /><col style={{ width: "25%" }} /><col style={{ width: "25%" }} /></colgroup><thead><tr><th style={{ verticalAlign: "top" }}><p><strong>Parameter</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Type</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Description</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Notes</strong></p></th></tr></thead><tbody><tr><td style={{ verticalAlign: "top" }}><p>id</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>The system-generated ID for this request.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>model</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>The model name used for this request.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>system\_fingerprint</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>The configuration version used by the model runtime. Currently not supported; returns an empty string.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>choices</p></td><td style={{ verticalAlign: "top" }}><p><em>array</em></p></td><td style={{ verticalAlign: "top" }}><p>The details of the model-generated content.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>choices\[i].finish\_reason</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>The reason generation stopped. Values: null (still generating), stop (stopped due to a stop condition), length (stopped due to exceeding max length).</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>choices\[i].message</p></td><td style={{ verticalAlign: "top" }}><p><em>object</em></p></td><td style={{ verticalAlign: "top" }}><p>The message output by the model.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>choices\[i].message.role</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>The model role. Fixed value: assistant.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>choices\[i].message.content</p></td><td style={{ verticalAlign: "top" }}><p><em>string</em></p></td><td style={{ verticalAlign: "top" }}><p>The text generated by the model.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>choices\[i].index</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>The sequence number of the generated result. Default: 0.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>created</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>The timestamp (in seconds) of the generated result.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>usage</p></td><td style={{ verticalAlign: "top" }}><p><em>object</em></p></td><td style={{ verticalAlign: "top" }}><p>Metering information indicating the token consumption for this request.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>usage.prompt\_tokens</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>The token count of the user input text.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>usage.completion\_tokens</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>The token count of the model-generated response.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>usage.total\_tokens</p></td><td style={{ verticalAlign: "top" }}><p><em>integer</em></p></td><td style={{ verticalAlign: "top" }}><p>The sum of usage.prompt\_tokens and usage.completion\_tokens.</p></td><td style={{ verticalAlign: "top" }}><p>-</p></td></tr></tbody></table>
+
+## Call via langchain\_openai SDK <span id="h2-call-via-l-01" /> <span id="section-call-via-l-01" />
+
+### Prerequisites <span id="h3-prerequisi-02" /> <span id="section-prerequisi-02" />
+
+- Python is installed on your machine.
+- The langchain\_openai SDK is installed.
+
+```bash
+# If the following command fails, replace pip with pip3
+pip install -U langchain_openai
+```
+
+- You have activated Model Studio and obtained an API key. For instructions, see Get API key.
+- (Recommended) Configure the API key as an environment variable to reduce the risk of key exposure. You can also configure it directly in code, <strong>but this increases the risk of exposure</strong>.
+- Select the model you want to use from the supported models list.
+
+### Usage <span id="h3-usage-02" /> <span id="section-usage-02" />
+
+The following examples show how to use the langchain\_openai SDK to access Qwen models on Model Studio.
+
+#### Non-streaming output <span id="h4-non-stream-02" /> <span id="section-non-stream-02" />
+
+Non-streaming output uses the `invoke` method:
+
+```python
+from langchain_openai import ChatOpenAI
+import os
+
+def get_response():
+    llm = ChatOpenAI(
+        # 各地域的API Key不同。获取API Key：https://www.alibabacloud.com/help/model-studio/get-api-key
+        api_key=os.getenv("DASHSCOPE_API_KEY"),  # 如果您没有配置环境变量，请用阿里云百炼API Key将本行替换为：api_key="sk-xxx"
+        base_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", # 以下为新加坡地域base_url，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+        model="qwen3.8-max"  # 此处以qwen-plus为例，可按需更换模型名称。模型列表：https://www.alibabacloud.com/help/model-studio/getting-started/models
+        )
+    messages = [
+        {"role":"system","content":"You are a helpful assistant."},
+        {"role":"user","content":"你是谁？"}
+    ]
+    response = llm.invoke(messages)
+    print(response.json())
+
+if __name__ == "__main__":
+    get_response()
+```
+
+The following output is returned:
+
+```json
+{
+    "content": "我是来自阿里云的大规模语言模型，我叫千问。",
+    "additional_kwargs": {},
+    "response_metadata": {
+        "token_usage": {
+            "completion_tokens": 16,
+            "prompt_tokens": 22,
+            "total_tokens": 38
+        },
+        "model_name": "qwen-plus",
+        "system_fingerprint": "",
+        "finish_reason": "stop",
+        "logprobs": null
+    },
+    "type": "ai",
+    "name": null,
+    "id": "run-xxx",
+    "example": false,
+    "tool_calls": [],
+    "invalid_tool_calls": []
+}
+```
+
+#### Streaming output <span id="h4-streaming-02" /> <span id="section-streaming-02" />
+
+Streaming output uses the `stream` method. You do not need to configure a stream parameter separately.
+
+```python
+from langchain_openai import ChatOpenAI
+import os
+
+def get_response():
+    llm = ChatOpenAI(
+        # 各地域的API Key不同。获取API Key：https://www.alibabacloud.com/help/model-studio/get-api-key
+        api_key=os.getenv("DASHSCOPE_API_KEY"),  # 如果您没有配置环境变量，请用阿里云百炼API Key将本行替换为：api_key="sk-xxx"
+        base_url="https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",   # 以下为新加坡地域base_url，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+        model="qwen3.8-max",   # 此处以qwen-plus为例，可按需更换模型名称。模型列表：https://www.alibabacloud.com/help/model-studio/getting-started/models
+        stream_usage=True
+        )
+    messages = [
+        {"role":"system","content":"You are a helpful assistant."},
+        {"role":"user","content":"你是谁？"},
+    ]
+    response = llm.stream(messages)
+    for chunk in response:
+        print(chunk.model_dump_json())
+
+if __name__ == "__main__":
+    get_response()
+```
+
+The following output is returned:
+
+```json
+{"content": "", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "我是", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "来自", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "阿里", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "云", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "的大规模语言模型", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "，我叫通", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "义千问。", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "", "additional_kwargs": {}, "response_metadata": {"finish_reason": "stop"}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": null, "tool_call_chunks": []}
+{"content": "", "additional_kwargs": {}, "response_metadata": {}, "type": "AIMessageChunk", "name": null, "id": "run-xxx", "example": false, "tool_calls": [], "invalid_tool_calls": [], "usage_metadata": {"input_tokens": 22, "output_tokens": 16, "total_tokens": 38}, "tool_call_chunks": []}
+```
+
+For parameter configuration details, see [Request parameters](/help/en/model-studio/compatibility-of-openai-with-dashscope#h3-request-pa-01). Parameters are defined in the ChatOpenAI object.
+
+## Call via HTTP <span id="h2-call-via-h-01" /> <span id="section-call-via-h-01" />
+
+You can call Model Studio through HTTP requests and receive responses in the same structure as OpenAI HTTP responses.
+
+### Prerequisites <span id="h3-prerequisi-03" /> <span id="section-prerequisi-03" />
+
+- You have activated Model Studio and obtained an API key. For instructions, see Get API key.
+- (Recommended) Configure the API key as an environment variable to reduce the risk of key exposure. You can also configure it directly in code, <strong>but this increases the risk of exposure</strong>.
+
+### Endpoint <span id="h3-endpoint-01" /> <span id="section-endpoint-01" />
+
+```plaintext
+Singapore: POST https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Virginia: POST https://{WorkspaceId}.us-east-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Beijing: POST https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+Hong Kong (China): POST https://{WorkspaceId}.cn-hongkong.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+```
+
+### Request examples <span id="h3-request-ex-01" /> <span id="section-request-ex-01" />
+
+The following examples use `cURL` commands to call the API.
+
+<Note>
+  If you have not configured your API key as an environment variable, replace `$DASHSCOPE_API_KEY` with your actual API key.
+</Note>
+
+#### Non-streaming output <span id="h4-non-stream-03" /> <span id="section-non-stream-03" />
+
+```bash
+# 以下为新加坡地域URL，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+curl --location 'https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions' \
+--header "Authorization: Bearer $DASHSCOPE_API_KEY" \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "qwen3.8-max",
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "你是谁？"
+        }
+    ]
+}'
+```
+
+The following output is returned:
+
+```json
+{
+    "choices": [
+        {
+            "message": {
+                "role": "assistant",
+                "content": "我是来自阿里云的大规模语言模型，我叫千问。"
+            },
+            "finish_reason": "stop",
+            "index": 0,
+            "logprobs": null
+        }
+    ],
+    "object": "chat.completion",
+    "usage": {
+        "prompt_tokens": 11,
+        "completion_tokens": 16,
+        "total_tokens": 27
+    },
+    "created": 1715252778,
+    "system_fingerprint": "",
+    "model": "qwen3.8-max",
+    "id": "chatcmpl-xxx"
+}
+```
+
+#### Streaming output <span id="h4-streaming-03" /> <span id="section-streaming-03" />
+
+To use streaming output, set the `stream` parameter to `true` in the request body.
+
+```bash
+# 以下为新加坡地域URL，调用时请将{WorkspaceId}替换为真实的业务空间ID，各地域URL不同。
+curl --location 'https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions' \
+--header "Authorization: Bearer $DASHSCOPE_API_KEY" \
+--header 'Content-Type: application/json' \
+--data '{
+    "model": "qwen3.8-max",
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant."
+        },
+        {
+            "role": "user",
+            "content": "你是谁？"
+        }
+    ],
+    "stream":true
+}'
+```
+
+The following output is returned:
+
+```json
+data: {"choices":[{"delta":{"content":"","role":"assistant"},"index":0,"logprobs":null,"finish_reason":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: {"choices":[{"finish_reason":null,"delta":{"content":"我是"},"index":0,"logprobs":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: {"choices":[{"delta":{"content":"来自"},"finish_reason":null,"index":0,"logprobs":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: {"choices":[{"delta":{"content":"阿里"},"finish_reason":null,"index":0,"logprobs":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: {"choices":[{"delta":{"content":"云的大规模语言模型"},"finish_reason":null,"index":0,"logprobs":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: {"choices":[{"delta":{"content":"，我叫千问。"},"finish_reason":null,"index":0,"logprobs":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: {"choices":[{"delta":{"content":""},"finish_reason":"stop","index":0,"logprobs":null}],"object":"chat.completion.chunk","usage":null,"created":1715931028,"system_fingerprint":null,"model":"qwen3.8-max","id":"chatcmpl-3bb05cf5cd819fbca5f0b8d67a025022"}
+
+data: [DONE]
+```
+
+For parameter details, see [Request parameters](/help/en/model-studio/compatibility-of-openai-with-dashscope#h3-request-pa-01).
+
+### Error response <span id="h3-error-resp-01" /> <span id="section-error-resp-01" />
+
+When a request fails, the response includes `code` and `message` fields indicating the cause:
+
+```json
+{
+    "error": {
+        "message": "Incorrect API key provided. ",
+        "type": "invalid_request_error",
+        "param": null,
+        "code": "invalid_api_key"
+    }
+}
+```
+
+## Configure a third-party client <span id="h2-third-party-01" /> <span id="section-third-party-01" />
+
+You can call Model Studio models from any third-party client that supports the OpenAI compatible protocol. The following steps use the Zhipu client as an example:
+
+1. In the provider settings of the client, select <strong>Custom provider</strong>.
+2. <strong>Base URL</strong>: Enter the base URL that the OpenAI SDK uses for your region. For the base URL of each region, see [BASE\_URL](/help/en/model-studio/compatibility-of-openai-with-dashscope#h3-base-url-01). The base URL ends with `/compatible-mode/v1` and does not include `/chat/completions`. Because base URLs differ by region, use the one for the region of your API key.
+
+   For example, for the Singapore region, enter `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`. Replace `{WorkspaceId}` with your workspace ID, which you can find on the workspace details page in the Model Studio console. The legacy `https://dashscope.aliyuncs.com` domain remains available, but use the workspace-specific domain whenever possible.
+3. <strong>API Key</strong>: Enter the Model Studio API key for the region that the base URL points to. You can create and obtain an API key on the [API Key management page](https://modelstudio.console.alibabacloud.com/model/settings/api-key) of the Model Studio console.
+4. <strong>Model name</strong>: Enter the name of a large language model that supports the OpenAI compatible protocol. For the models that you can choose from, see [Supported models](/help/en/model-studio/compatibility-of-openai-with-dashscope#h3-supported-01). For example, `qwen3.7-plus`. This model name is an example only and does not indicate that the model provides a free quota.
+5. Save the configuration and start a conversation to verify that the third-party client can call the model.
+
+A call may return HTTP 400 with `error.message` set to `current user api does not support http call` and `error.type` set to `invalid_request_error`. This error means that the model you entered does not support HTTP calls through the OpenAI compatible interface. Replace it with a model from [Supported models](/help/en/model-studio/compatibility-of-openai-with-dashscope#h3-supported-01) and try again.
+
+## Error codes <span id="h2-error-code-01" /> <span id="section-error-code-01" />
+
+<table style={{ display: "table", tableLayout: "fixed", width: "100%", overflowWrap: "anywhere" }}><colgroup><col style={{ width: "50%" }} /><col style={{ width: "50%" }} /></colgroup><thead><tr><th style={{ verticalAlign: "top" }}><p><strong>Error code</strong></p></th><th style={{ verticalAlign: "top" }}><p><strong>Description</strong></p></th></tr></thead><tbody><tr><td style={{ verticalAlign: "top" }}><p>400 - Invalid Request Error</p></td><td style={{ verticalAlign: "top" }}><p>The request is invalid. See the error message for details.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>401 - Incorrect API key provided</p></td><td style={{ verticalAlign: "top" }}><p>The API key is incorrect.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>429 - Rate limit reached for requests</p></td><td style={{ verticalAlign: "top" }}><p>QPS or QPM limit exceeded.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>429 - You exceeded your current quota, please check your plan and billing details</p></td><td style={{ verticalAlign: "top" }}><p>Quota exceeded or account in arrears.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>500 - The server had an error while processing your request</p></td><td style={{ verticalAlign: "top" }}><p>Server error.</p></td></tr><tr><td style={{ verticalAlign: "top" }}><p>503 - The engine is currently overloaded, please try again later</p></td><td style={{ verticalAlign: "top" }}><p>Server overloaded. Retry later.</p></td></tr></tbody></table>
