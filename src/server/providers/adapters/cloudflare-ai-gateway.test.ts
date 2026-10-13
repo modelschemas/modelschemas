@@ -575,6 +575,25 @@ describe('cloudflare-ai-gateway', () => {
     expect(kimi.modalities).toBeUndefined()
   })
 
+  it('reads a PDF input modality as a file', () => {
+    const muse = parseCatalogModel(
+      {
+        ...FABLE,
+        model_id: 'meta/muse-spark-1.1',
+        metadata: {
+          'Context Window': '1,048,576 tokens',
+          'Input Modalities': 'Text, image, video, audio, PDF',
+          'Output Modalities': 'Text',
+        },
+      },
+      SOURCE,
+    )
+    expect(muse.modalities).toEqual({
+      input: ['text', 'image', 'video', 'audio', 'file'],
+      output: ['text'],
+    })
+  })
+
   it('does not store reasoning when metadata says no', () => {
     const parsed = parseCatalogModel(
       {

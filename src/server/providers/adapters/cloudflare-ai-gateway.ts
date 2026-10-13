@@ -84,7 +84,7 @@ const MODALITY_KEYS = [
   'Modalities',
 ] as const
 
-/** Catalog words for an input kind. `script` is a text script. */
+/** Catalog words for an input kind. `script` is a text script; a PDF is a file. */
 const MODALITY_WORDS: Record<string, string> = {
   text: 'text',
   image: 'image',
@@ -92,6 +92,7 @@ const MODALITY_WORDS: Record<string, string> = {
   audio: 'audio',
   video: 'video',
   script: 'text',
+  pdf: 'file',
 }
 
 const EFFORT_WORDS = new Set([
