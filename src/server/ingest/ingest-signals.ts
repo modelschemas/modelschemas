@@ -40,6 +40,10 @@ export type IngestEvent =
       event: 'parse_rows'
       properties: { source: string; rows: number }
     }
+  | {
+      event: 'update_storm'
+      properties: { providerId: string; updated: number; live: number }
+    }
 
 export interface PostHogBatch {
   api_key: string

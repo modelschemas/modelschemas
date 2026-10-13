@@ -20,6 +20,8 @@ export {
   validatePayload,
 } from './sdk.gen'
 export type {
+  Change,
+  ChangesPage,
   ChatRequestMap,
   ClientOptions,
   CompactPricing,

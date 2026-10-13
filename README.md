@@ -145,6 +145,17 @@ only: the row's price, limits, and other facts stay its own provider's.
 adapters fill them. A row's first `releasedAt` and first `providerMetadata`
 are written without a `model.updated` change; a later change emits one.
 
+A `model.updated` event is written only when a fact changed.
+`payload.changed` lists those field paths, for example `contextWindow` or
+`pricing.tables.rate.base.input_tokens`, and is never empty. A source hash,
+an extract time, the operand order of `+`, and the order of an input's
+`values` are not facts: a poll that only moves them writes no row and no
+event. The stored `source` then says when the price last changed.
+`model.added` and `model.removed` are unchanged. `GET /v1/status` adds
+`updateStorm` while one poll updated more than half of a provider's live
+rows (and at least 20). The updates are still written; the field only
+marks them, and the next quieter poll clears it.
+
 ## Examples
 
 Three TanStack Start apps in [`examples/`](./examples) exercise the
@@ -465,7 +476,12 @@ is token-auth only and is not used for releases.
      cleared. Either the adapter misreads a reshaped listing (fix it), or
      the prices really are gone (null the stale cards by hand in D1). The
      next poll that refuses nothing clears it.
-   - Both records are written and cleared only by a poll whose listing
+   - `updateStorm` on a `/v1/status` provider (an `updates` marker) → one
+     poll wrote `model.updated` for more than half of the live rows, and
+     at least 20. The events were written. A new kind of non-fact is the
+     usual cause; a real catalog-wide repricing looks the same. The next
+     poll under that line clears it.
+   - Those records are written and cleared only by a poll whose listing
      loads. While the listing itself fails (`lastPolledAt` stalls) they stay
      as last written, with an old `lastAt`.
    - `completeness.score` null for every provider and

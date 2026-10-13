@@ -17,7 +17,7 @@ import {
 import { isCapabilityMap } from '#/lib/capabilities.ts'
 import type { CapabilityMap } from '#/lib/capabilities.ts'
 import { errorMessage } from '#/server/errors.ts'
-import { stableStringify } from '#/server/kv.ts'
+import { changedFactPaths, modelUpdatedPayload } from './change-facts.ts'
 import { resolveSpecGrain } from '#/server/providers/connect.ts'
 import {
   emptySources,
@@ -48,7 +48,12 @@ import { providerRegistry } from '#/server/providers/index.ts'
 import { storedAliases } from '#/server/providers/provider-aliases.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { preserveAsyncApiFlag } from './asyncapi.ts'
-import { recordDocsFailing, recordPriceClearsRefused } from './docs-failing.ts'
+import {
+  recordDocsFailing,
+  recordPriceClearsRefused,
+  recordUpdateStorm,
+  updateStormOf,
+} from './docs-failing.ts'
 import type { DocsFailing } from './docs-failing.ts'
 import {
   captureIngestEvents,
@@ -916,12 +921,18 @@ export async function pollProviderModels(
     // before the column existed had nowhere to keep it.
     const firstMetadata =
       existing.providerMetadata === null && info.providerMetadata != null
-    const dirty =
-      stableStringify({
+    // Facts, not bytes: a source hash, an extract time, `+` operand order,
+    // and an input's `values` order are not a change. A first release date
+    // or listing object is written below with no event.
+    const changed = changedFactPaths(
+      {
         ...before,
         ...(firstRelease ? { releasedAt: info.releasedAt } : {}),
         ...(firstMetadata ? { providerMetadata: info.providerMetadata } : {}),
-      }) !== stableStringify(after)
+      },
+      after,
+    )
+    const dirty = changed.length > 0
 
     // Upstream reports a release date earlier than our observed firstSeenAt
     // → backdate in place. A silent correction (no model.updated event):
@@ -991,7 +1002,7 @@ export async function pollProviderModels(
       providerId: provider.id,
       subjectId: id,
       summary: `Model ${info.rawId} updated`,
-      payload: { before, after },
+      payload: modelUpdatedPayload(before, after, changed),
       createdAt: now,
     })
     outcome.updated++
@@ -1047,6 +1058,24 @@ export async function pollProviderModels(
       createdAt: now,
     })
     outcome.removed++
+  }
+
+  const live = existingRows.filter((row) => row.deprecatedAt === null).length
+  const storm = updateStormOf(outcome.updated, live)
+  await recordUpdateStorm(db, provider.id, storm, now)
+  if (storm) {
+    const error = `update storm: ${String(storm.updated)} of ${String(storm.live)} live rows`
+    console.error(
+      JSON.stringify({ job: 'models-poll', providerId: provider.id, error }),
+    )
+    noteIngest({
+      event: 'update_storm',
+      properties: {
+        providerId: provider.id,
+        updated: storm.updated,
+        live: storm.live,
+      },
+    })
   }
 
   await db

@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { compileTokenCard } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
+import { FIXTURE_CARDS } from '../../../packages/rate-card/src/fixtures/index.ts'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 
@@ -250,9 +253,11 @@ describe('pollProviderModels', () => {
     const payload = updatedChange?.payload as {
       before: { contextWindow: number }
       after: { contextWindow: number }
+      changed: Array<string>
     }
     expect(payload.before.contextWindow).toBe(200_000)
     expect(payload.after.contextWindow).toBe(500_000)
+    expect(payload.changed).toEqual(['contextWindow'])
 
     // Remove: haiku vanishes → deprecatedAt set + model.removed, once.
     const fourth = await pollProviderModels(
@@ -2534,4 +2539,256 @@ it('binds an opted-in native route with no schemas and derives no model facts', 
   expect(row.reasoning).toBeNull()
   expect(row.requestMap).toBeNull()
   expect(row.capabilities).toBeNull()
+})
+
+const STAMP = {
+  url: 'https://example.com/pricing',
+  hash: 'a'.repeat(64),
+  extractedAt: '2026-01-01T00:00:00.000Z',
+}
+
+function tokenCard(
+  rates: Record<string, number>,
+  stamp: RateCard['source'] = STAMP,
+): RateCard {
+  const card = compileTokenCard(rates, [], stamp)
+  if (!card) throw new Error('token card did not compile')
+  return card
+}
+
+/** Clock, hash, key order, `+` operands, and `values`, all moved. */
+function noisePricing(pricing: unknown): unknown {
+  const copy: unknown = structuredClone(pricing)
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item)
+      return
+    }
+    if (typeof node !== 'object' || node === null) return
+    const record = node as Record<string, unknown>
+    if (Array.isArray(record['+'])) record['+'].reverse()
+    if (Array.isArray(record.values)) record.values.reverse()
+    if (typeof record.source === 'object' && record.source !== null) {
+      const source = record.source as Record<string, unknown>
+      if (typeof source.hash === 'string') source.hash = 'b'.repeat(64)
+      if (typeof source.extractedAt === 'string') {
+        source.extractedAt = '2026-10-13T12:00:00.000Z'
+      }
+    }
+    for (const child of Object.values(record)) walk(child)
+  }
+  walk(copy)
+  const shuffle = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(shuffle)
+    if (typeof value !== 'object' || value === null) return value
+    const out: Record<string, unknown> = {}
+    for (const [key, child] of Object.entries(
+      value as Record<string, unknown>,
+    ).reverse()) {
+      out[key] = shuffle(child)
+    }
+    return out
+  }
+  return shuffle(copy)
+}
+
+describe('model.updated facts', () => {
+  it('writes nothing when only stamps and representation move', async () => {
+    const id = 'poll-fact-noise'
+    const deps = await freshDeps(id)
+    const pricing = tokenCard({
+      input_tokens: 3,
+      cache_read_tokens: 0.3,
+      output_tokens: 15,
+    })
+    pricing.inputs.resolution = {
+      param: 'resolution',
+      kind: 'enum',
+      values: ['720p', '1080p', '480p'],
+      default: '720p',
+    }
+    const ratio = {
+      param: 'ratio',
+      kind: 'enum' as const,
+      values: ['16:9', '1:1'],
+      default: '16:9',
+    }
+    const output = pricing.inputs.output_tokens
+    if (output?.kind === 'number') {
+      output.estimate = {
+        inputs: { ratio },
+        value: { var: 'ratio' },
+        source: {
+          url: 'https://example.com/estimate',
+          hash: 'c'.repeat(64),
+        },
+      }
+    }
+    const listed = {
+      rawId: 'priced',
+      displayName: 'Priced',
+      activity: 'chat' as const,
+      contextWindow: 8000,
+      pricing,
+    }
+    await pollProviderModels(deps, stubProvider(id, [listed]))
+    const stored = await storedRow(deps, id, 'priced')
+    const again = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...listed, pricing: noisePricing(pricing) }]),
+    )
+    expect(again).toMatchObject({ added: 0, updated: 0, removed: 0 })
+    const row = await storedRow(deps, id, 'priced')
+    expect(row.pricing).toEqual(stored.pricing)
+    expect(row.lastSeenAt).toBeGreaterThan(stored.lastSeenAt)
+    const updates = await deps.db
+      .select()
+      .from(changes)
+      .where(eq(changes.providerId, id))
+    expect(updates.filter((change) => change.type === 'model.updated')).toEqual(
+      [],
+    )
+  })
+
+  it('still writes a rate, a term, and expiresAt', async () => {
+    const id = 'poll-fact-real'
+    const deps = await freshDeps(id)
+    const pricing = tokenCard({ input_tokens: 3, output_tokens: 15 })
+    const listed = {
+      rawId: 'priced',
+      activity: 'chat' as const,
+      pricing,
+    }
+    await pollProviderModels(deps, stubProvider(id, [listed]))
+
+    const raised = tokenCard(
+      { input_tokens: 9, output_tokens: 15 },
+      { ...STAMP, hash: 'd'.repeat(64) },
+    )
+    const rate = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...listed, pricing: raised }]),
+    )
+    expect(rate.updated).toBe(1)
+    const written = async () =>
+      (
+        await deps.db.select().from(changes).where(eq(changes.providerId, id))
+      ).filter((change) => change.type === 'model.updated')
+    const rateChange = (await written()).at(-1)
+    const changed = (rateChange?.payload as { changed?: Array<string> }).changed
+    expect(changed?.length).toBeGreaterThan(0)
+    expect(changed).toContain('pricing.tables.rate.base.input_tokens')
+
+    const dated = structuredClone(raised)
+    dated.source = { ...dated.source, expiresAt: '2026-12-01T00:00:00.000Z' }
+    const expiry = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...listed, pricing: dated }]),
+    )
+    expect(expiry.updated).toBe(1)
+    const expiryChange = (await written()).at(-1)
+    expect(
+      (expiryChange?.payload as { changed: Array<string> }).changed,
+    ).toEqual(['pricing.source.expiresAt'])
+
+    const extra = tokenCard(
+      { input_tokens: 9, output_tokens: 15, cache_read_tokens: 1 },
+      { ...dated.source, hash: 'e'.repeat(64) },
+    )
+    extra.source = { ...extra.source, expiresAt: dated.source.expiresAt }
+    const added = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...listed, pricing: extra }]),
+    )
+    expect(added.updated).toBe(1)
+    const addedChange = (await written()).at(-1)
+    expect(
+      (addedChange?.payload as { changed: Array<string> }).changed.some(
+        (path) => path.includes('cache_read_tokens'),
+      ),
+    ).toBe(true)
+
+    const dropped = await pollProviderModels(
+      deps,
+      stubProvider(id, [{ ...listed, pricing: dated }]),
+    )
+    expect(dropped.updated).toBe(1)
+    const droppedChange = (await written()).at(-1)
+    expect(
+      (droppedChange?.payload as { changed: Array<string> }).changed.some(
+        (path) => path.includes('cache_read_tokens'),
+      ),
+    ).toBe(true)
+  })
+
+  it('treats every rate-card fixture as unchanged after the same noise', async () => {
+    const id = 'poll-fact-fixtures'
+    const deps = await freshDeps(id)
+    const list = Object.entries(FIXTURE_CARDS).map(([rawId, pricing]) => ({
+      rawId,
+      activity: 'video' as const,
+      pricing,
+    }))
+    const slugs = new Set(list.map((row) => modelDbId(id, row.rawId)))
+    expect(slugs.size).toBe(list.length)
+    await pollProviderModels(deps, stubProvider(id, list))
+    const before = await deps.db
+      .select({ id: models.id, pricing: models.pricing })
+      .from(models)
+      .where(eq(models.providerId, id))
+    const noised = list.map((row) => ({
+      ...row,
+      pricing: noisePricing(row.pricing) as RateCard,
+    }))
+    const second = await pollProviderModels(deps, stubProvider(id, noised))
+    expect(second).toMatchObject({ added: 0, updated: 0, removed: 0 })
+    const after = await deps.db
+      .select({ id: models.id, pricing: models.pricing })
+      .from(models)
+      .where(eq(models.providerId, id))
+    expect(after).toEqual(before)
+  })
+
+  it('marks an update storm and clears it on the next quiet poll', async () => {
+    const id = 'poll-update-storm'
+    const deps = await freshDeps(id)
+    const list = Array.from({ length: 21 }, (_, index) => ({
+      rawId: `row-${String(index)}`,
+      displayName: `Row ${String(index)}`,
+      activity: 'chat' as const,
+    }))
+    await pollProviderModels(deps, stubProvider(id, list))
+    const storm = await pollWithEvents(
+      deps,
+      stubProvider(
+        id,
+        list.map((row) => ({ ...row, displayName: `${row.displayName} next` })),
+      ),
+    )
+    expect(storm.outcome.updated).toBe(21)
+    expect(storm.events).toContainEqual({
+      event: 'update_storm',
+      properties: { providerId: id, updated: 21, live: 21 },
+    })
+    const marked = await deps.db.query.cacheMeta.findFirst({
+      where: eq(cacheMeta.key, `update-storm:${id}`),
+    })
+    expect(JSON.parse(marked?.lastError ?? '')).toMatchObject({
+      polls: 1,
+      updated: 21,
+      live: 21,
+    })
+    const quiet = await pollProviderModels(
+      deps,
+      stubProvider(
+        id,
+        list.map((row) => ({ ...row, displayName: `${row.displayName} next` })),
+      ),
+    )
+    expect(quiet.updated).toBe(0)
+    const cleared = await deps.db.query.cacheMeta.findFirst({
+      where: eq(cacheMeta.key, `update-storm:${id}`),
+    })
+    expect(cleared).toBeUndefined()
+  })
 })
