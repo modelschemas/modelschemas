@@ -1,17 +1,11 @@
 import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
-/** OpenCode Zen: live ids, first-party catalog facts, and documented routes/prices. */
-import { compileTokenCard } from '@modelschemas/rate-card'
-import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
-
-import type { Activity } from '#/db/schema.ts'
-
+/** OpenCode Zen: live ids, with routes and prices from OpenCode's models.dev catalog. */
 import {
-  cachedDocs,
-  markdownSection,
-  markdownTableRows,
-} from '../model-facts.ts'
-import { openCodeCatalog } from '../opencode-catalog.ts'
-import { fetchJson, fetchText, sha256Text } from '../types.ts'
+  loadOpenCodeCatalog,
+  OPENCODE_CATALOG_URL,
+  parseOpenCodeCatalog,
+} from '../opencode-catalog.ts'
+import { fetchJson } from '../types.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -20,206 +14,20 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
-export const OPENCODE_MODELS_URL = 'https://opencode.ai/zen/v1/models'
-
-/** Page readers see; the facts are parsed from its markdown twin. */
-export const OPENCODE_DOCS_URL = 'https://opencode.ai/docs/zen'
-
-export const OPENCODE_DOCS_MARKDOWN = `${OPENCODE_DOCS_URL}.md`
+export const OPENCODE_MODELS_URL = 'https://opencode.ai/inference/v1/models'
 
 const FETCH_TIMEOUT_MS = 30_000
-
-const ENDPOINT_HEADER = ['Model', 'Model ID', 'Endpoint', 'AI SDK Package']
-const PRICING_HEADER = [
-  'Model',
-  'Input',
-  'Output',
-  'Cached Read',
-  'Cached Write',
-]
-const PRICE_LEVERS = [
-  'input_tokens',
-  'output_tokens',
-  'cache_read_tokens',
-  'cache_write_tokens',
-]
-
-/** Routes that take a text-generation request. Any other route is unclassified. */
-const CHAT_ROUTES = new Set([
-  'v1/responses',
-  'v1/messages',
-  'v1/chat/completions',
-])
-
-interface Rates {
-  base: Record<string, number>
-  tiers: Array<TokenRateTier>
-}
-
-export interface ZenDocsModel {
-  displayName: string
-  activity: Activity | null
-  schemaEndpointId: string | null
-  /** Null when the Pricing table does not quote this model. */
-  rates: Rates | null
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function sameCells(row: Array<string> | undefined, header: Array<string>) {
-  return row?.length === header.length && row.every((c, i) => c === header[i])
-}
-
-/** `$1.25` → USD per token, `Free` → 0, `-` → null (not quoted), else undefined. */
-function rateCell(cell: string): number | null | undefined {
-  if (cell === '-') return null
-  if (cell === 'Free') return 0
-  const match = cell.match(/^(?:~~\$\d+(?:\.\d+)?~~ )?\$(\d+(?:\.\d+)?)$/)
-  return match?.[1] ? Number(match[1]) / 1e6 : undefined
-}
-
-/**
- * Pricing table → rates by model name. `Name (≤ 200K tokens)` is the base
- * row and `Name (> 200K tokens)` its tier. A name with a cell or a
- * qualifier pairing this does not recognise throws.
- */
-function parsePricing(markdown: string): Map<string, Rates | null> {
-  const section = markdownSection(markdown, 'Pricing').split('\n### ')[0] ?? ''
-  const rows = markdownTableRows(section)
-  if (
-    !section.includes('per 1M tokens') ||
-    !sameCells(rows[0], PRICING_HEADER)
-  ) {
-    throw new Error('opencode: docs Pricing table is not per-1M-token rates')
-  }
-  type Slot = { rates: Record<string, number>; at: number | null }
-  const slots = new Map<string, { base?: Slot; tier?: Slot; bad?: true }>()
-  for (const row of rows.slice(1)) {
-    const nameCell = row[0]?.replace(/ \(\d+(?:\.\d+)?% off\)$/, '')
-    const match = nameCell?.match(/^(.+?)(?: \((≤|>) (\d+)K tokens\))?$/)
-    const name = match?.[1]
-    if (!match || !name) continue
-    const entry = slots.get(name) ?? {}
-    slots.set(name, entry)
-    const rates: Record<string, number> = {}
-    const cells = row.slice(1).map(rateCell)
-    if (row.length !== PRICING_HEADER.length || cells.includes(undefined)) {
-      entry.bad = true
-      continue
-    }
-    cells.forEach((value, index) => {
-      const lever = PRICE_LEVERS[index]
-      if (lever && typeof value === 'number') rates[lever] = value
-    })
-    const slot = match[2] === '>' ? 'tier' : 'base'
-    if (entry[slot]) entry.bad = true
-    entry[slot] = { rates, at: match[3] ? Number(match[3]) * 1000 : null }
-  }
-  const out = new Map<string, Rates | null>()
-  for (const [name, { base, tier, bad }] of slots) {
-    // A tier row needs its `≤` base row at the same threshold, and back.
-    // It must also quote every rate the base does: the compiled tier fills
-    // a missing lever from the base, which would invent a tier price.
-    const unquoted =
-      base && tier && Object.keys(base.rates).some((k) => !(k in tier.rates))
-    if (bad || !base || unquoted || (tier?.at ?? null) !== base.at) {
-      throw new Error(`opencode: unreadable Pricing row or tier for ${name}`)
-    }
-    out.set(name, {
-      base: base.rates,
-      tiers:
-        tier?.at != null
-          ? // The page says only `(> 272K tokens)`, not what is counted. The
-            // card counts prompt tokens: input plus cache read and write.
-            [{ minPromptTokens: tier.at, rates: tier.rates }]
-          : [],
-    })
-  }
-  return out
-}
-
-export interface DocsEndpointRow {
-  id: string
-  displayName: string
-  activity: Activity | null
-  schemaEndpointId: string | null
-}
-
-/**
- * Rows of a docs page's Endpoints table. `tag` prefixes the errors and
- * every route cell must sit under `routeBase`. Shared with the OpenCode Go
- * page, whose table has the same shape.
- */
-export function parseDocsEndpoints(
-  markdown: string,
-  tag: string,
-  routeBase: string,
-): Array<DocsEndpointRow> {
-  // A 200 that is an HTML error page must not be read as the document.
-  if (/^\s*<(?:!doctype|html)/i.test(markdown)) {
-    throw new Error(`${tag}: docs page returned HTML, not markdown`)
-  }
-  const rows = markdownTableRows(markdownSection(markdown, 'Endpoints'))
-  if (!sameCells(rows[0], ENDPOINT_HEADER)) {
-    throw new Error(`${tag}: docs Endpoints table not found`)
-  }
-  const seen = new Set<string>()
-  return rows.slice(1).map((row) => {
-    const [name, id, endpointCell, packageCell] = row
-    const url = endpointCell?.match(/^`([^`\s]+)`$/)?.[1]
-    const endpoint = url?.startsWith(`${routeBase}v1/`)
-      ? url.slice(routeBase.length)
-      : undefined
-    if (row.length !== ENDPOINT_HEADER.length || !name || !id || !endpoint) {
-      throw new Error(`${tag}: unreadable Endpoints row: ${row.join(' | ')}`)
-    }
-    if (seen.has(id)) throw new Error(`${tag}: duplicate model id ${id}`)
-    seen.add(id)
-    return {
-      id,
-      displayName: name,
-      schemaEndpointId:
-        (endpoint === 'v1/messages' && packageCell === '`@ai-sdk/anthropic`') ||
-        (endpoint === 'v1/responses' && packageCell === '`@ai-sdk/openai`') ||
-        (endpoint === `v1/models/${id}` &&
-          packageCell === '`@ai-sdk/google`') ||
-        (endpoint === 'v1/chat/completions' &&
-          packageCell === '`@ai-sdk/openai-compatible`')
-          ? endpoint
-          : null,
-      // Gemini models are served at `v1/models/<id>`.
-      activity:
-        CHAT_ROUTES.has(endpoint) || endpoint === `v1/models/${id}`
-          ? 'chat'
-          : null,
-    }
-  })
-}
-
-/** Endpoints and Pricing tables of the Zen docs page, keyed by model id. */
-export function parseZenDocs(markdown: string): Record<string, ZenDocsModel> {
-  const rows = parseDocsEndpoints(
-    markdown,
-    'opencode',
-    'https://opencode.ai/zen/',
-  )
-  const prices = parsePricing(markdown)
-  const byId: Record<string, ZenDocsModel> = {}
-  let priced = 0
-  for (const { id, displayName, activity, schemaEndpointId } of rows) {
-    const rates = prices.get(displayName) ?? null
-    if (rates) priced += 1
-    byId[id] = { displayName, activity, schemaEndpointId, rates }
-  }
-  if (priced === 0) throw new Error('opencode: docs priced 0 model rows')
-  return byId
-}
-
-export function parseOpencodeModels(payload: unknown): Array<ModelInfo> {
+export function parseOpencodeModels(
+  payload: unknown,
+  tag = 'opencode',
+): Array<ModelInfo> {
   if (!isRecord(payload) || !Array.isArray(payload.data)) {
-    throw new Error('opencode: models payload has no data array')
+    throw new Error(`${tag}: models payload has no data array`)
   }
   const models: Array<ModelInfo> = []
   for (const row of payload.data) {
@@ -233,127 +41,73 @@ export function parseOpencodeModels(payload: unknown): Array<ModelInfo> {
     })
   }
   if (models.length === 0) {
-    throw new Error('opencode: models payload listed no ids')
+    throw new Error(`${tag}: models payload listed no ids`)
   }
   return models
 }
 
-/** Literal native Free quotes are a sourced zero, not an unknown rate sheet. */
-function zenPrice(rates: Rates, source: RateCard['source']): RateCard | null {
-  if (
-    rates.tiers.length === 0 &&
-    rates.base.input_tokens === 0 &&
-    rates.base.output_tokens === 0 &&
-    Object.values(rates.base).every((rate) => rate === 0)
-  ) {
+function withCatalog(
+  listed: Array<ModelInfo>,
+  catalog: Record<string, ModelInfo>,
+): Array<ModelInfo> {
+  return listed.map((model): ModelInfo => {
+    const facts = catalog[model.rawId]
+    if (!facts) return { ...model, absent: { releasedAt: 'cleared' } }
     return {
-      inputs: Object.fromEntries(
-        Object.keys(rates.base).map((lever) => [
-          lever,
-          {
-            param: lever,
-            bound: 'usage',
-            kind: 'number',
-            ...(!['input_tokens', 'output_tokens'].includes(lever)
-              ? { default: 0 }
-              : {}),
-          },
-        ]),
-      ),
-      tables: { rate: { base: rates.base } },
-      price: 0,
-      examples: [],
-      source,
+      ...model,
+      ...facts,
+      ...(facts.releasedAt == null
+        ? { absent: { releasedAt: 'cleared' } }
+        : {}),
     }
-  }
-  return compileTokenCard(rates.base, rates.tiers, source)
+  })
 }
 
 async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  const signal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  const payload = await fetchJson(OPENCODE_MODELS_URL, { signal: signal() })
-  const docs = await cachedDocs(kv, OPENCODE_DOCS_MARKDOWN, async () => {
-    const markdown = await fetchText(OPENCODE_DOCS_MARKDOWN, {
-      signal: signal(),
-    })
-    return {
-      byId: parseZenDocs(markdown),
-      hash: await sha256Text(markdown),
-      extractedAt: new Date().toISOString(),
-    }
-  })
-  const catalog = await openCodeCatalog('opencode', kv)
-  const source = {
-    url: OPENCODE_DOCS_URL,
-    hash: docs.hash,
-    extractedAt: docs.extractedAt,
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  const [payload, loaded] = await Promise.all([
+    fetchJson(OPENCODE_MODELS_URL, { signal }),
+    loadOpenCodeCatalog(kv),
+  ])
+  const catalog = parseOpenCodeCatalog(
+    loaded.payload,
+    'opencode',
+    loaded.hash,
+    loaded.extractedAt,
+  )
+  const models = withCatalog(parseOpencodeModels(payload), catalog)
+  if (!models.some((model) => model.pricing)) {
+    throw new Error('opencode: catalog priced 0 listed models')
   }
-  const models = parseOpencodeModels(payload).map((model): ModelInfo => {
-    const row = docs.byId[model.rawId]
-    const facts = catalog[model.rawId]
-    const enriched: ModelInfo = {
-      ...model,
-      ...facts,
-      ...(facts?.releasedAt == null
-        ? { absent: { releasedAt: 'cleared' } }
-        : {}),
-    }
-    if (!row) return enriched
-    const pricing = row.rates ? zenPrice(row.rates, source) : null
-    return {
-      ...enriched,
-      schemaEndpointId: row.schemaEndpointId,
-      displayName: row.displayName,
-      activity: row.activity,
-      pricing,
-      factSources: {
-        ...facts?.factSources,
-        ...(row.schemaEndpointId
-          ? {
-              schemaEndpointId: {
-                derivation: 'docs-derived',
-                sourceUrl: OPENCODE_DOCS_URL,
-                sourceHash: docs.hash,
-                path: 'Endpoints',
-              },
-            }
-          : {}),
-        ...(pricing
-          ? {
-              pricing: {
-                derivation: 'docs-derived',
-                sourceUrl: OPENCODE_DOCS_URL,
-                sourceHash: docs.hash,
-                path: 'Pricing',
-              },
-            }
-          : {}),
-      },
-    }
-  })
   return { models }
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const text = await fetchText(OPENCODE_DOCS_MARKDOWN, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  })
-  const rows = parseDocsEndpoints(text, 'opencode', 'https://opencode.ai/zen/')
-  return openCodeRouteSpec(rows, { url: OPENCODE_DOCS_MARKDOWN, text }, false)
+  const loaded = await loadOpenCodeCatalog()
+  const catalog = parseOpenCodeCatalog(
+    loaded.payload,
+    'opencode',
+    loaded.hash,
+    loaded.extractedAt,
+  )
+  return openCodeRouteSpec(
+    Object.values(catalog),
+    { url: OPENCODE_CATALOG_URL, hash: loaded.hash },
+    false,
+  )
 }
 
 // No `upstreamModelIdentity`, here or for OpenCode Go: OpenCode names no
-// maker. `owned_by` is `opencode` on every row, and the Endpoints table's
-// AI SDK package names the wire protocol: `@ai-sdk/anthropic` also serves
-// the Qwen and (on Go) MiniMax rows, `@ai-sdk/openai` the Grok and Muse
-// Spark rows.
+// maker. `owned_by` is `opencode` on every row, and the catalog's AI SDK
+// package names the wire protocol: `@ai-sdk/anthropic` also serves the Qwen
+// rows, `@ai-sdk/openai` the Grok and Muse Spark rows.
 export const provider: ProviderConfig = {
   id: 'opencode',
   displayName: 'OpenCode Zen',
-  specSourceUrl: OPENCODE_DOCS_URL,
+  specSourceUrl: OPENCODE_CATALOG_URL,
   modelsEndpoint: OPENCODE_MODELS_URL,
   defaultDerivation: 'docs-derived',
   bindSyncedRoutesOnly: true,

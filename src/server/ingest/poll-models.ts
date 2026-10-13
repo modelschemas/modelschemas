@@ -67,6 +67,7 @@ import {
   dropModelsDevSchemaVersions,
   isModelsDevRateCard,
   markModelsDevCatalogSettled,
+  modelsDevIsFirstParty,
   nullModelsDevRateCards,
   storedCardIsPrior,
 } from './retire-models-dev.ts'
@@ -782,7 +783,10 @@ export async function pollProviderModels(
     const existingPricing = existing?.pricing
     // A models.dev card is not a prior. A docs-extracted card, and any
     // other provider source, still is.
-    const hadStoredCard = storedCardIsPrior(existingPricing)
+    const ownCatalog = modelsDevIsFirstParty(provider.id)
+    const hadStoredCard =
+      storedCardIsPrior(existingPricing) ||
+      (ownCatalog && isModelsDevRateCard(existingPricing))
     const keepExtracted =
       raw.pricing == null &&
       pricingDerivation(existing?.factSources) === 'docs-extracted' &&
@@ -792,8 +796,10 @@ export async function pollProviderModels(
       refused && raw.absent?.pricing === 'cleared'
         ? 'unavailable'
         : raw.absent?.pricing
+    // A models.dev card is foreign everywhere except OpenCode, which
+    // publishes that file as its own catalog.
     const incomingPricing =
-      absentPricing || isModelsDevRateCard(enriched.pricing)
+      absentPricing || (!ownCatalog && isModelsDevRateCard(enriched.pricing))
         ? null
         : enriched.pricing
     const incomingNull = incomingPricing == null

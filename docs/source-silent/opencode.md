@@ -12,12 +12,16 @@ sourced zero prices, not source-silent exceptions. Go subscription-accounting
 rates remain distinct from billed token prices.
 
 The current chat score does not erase unknown activity on other live ids.
-Native live listing: https://opencode.ai/zen/v1/models;
-endpoint docs: https://opencode.ai/docs/zen; canonical own catalog:
-https://models.dev/api.json. Checked 2026-10-09. Among activity-null rows,
-no own catalog record was published for: `jev-1.13`, `jev-1.13-free`.
-Rows with catalog facts but no sourced chat activity mapping are:
-`claude-sonnet-4`, `muse-spark-1.2-contributor-free`.
+Native live listing: https://opencode.ai/inference/v1/models
+(the previous https://opencode.ai/zen/v1/models listing still answers the same ids).
+Routes and Zen prices are read from https://models.dev/api.json (`npm`, `cost`).
+Console page: https://opencode.ai/v2/docs/console/models/. The per-row checks
+below cited https://opencode.ai/docs/zen, removed upstream on 2026-10-12.
+Checked 2026-10-13. Among activity-null rows,
+no own catalog record was published for: `jev-1.13`, `jev-1.13-free`,
+`claude-opus-5-5-backup`.
+`mistral-large-4` is in the catalog but `@ai-sdk/mistral` is not one of the
+four package routes, so its activity stays null.
 Jev rows are documented System One decisions rather than chat generation; the
 current activity enum does not represent that task, so their activity is null.
 

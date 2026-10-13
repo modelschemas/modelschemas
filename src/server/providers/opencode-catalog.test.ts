@@ -5,9 +5,14 @@ import {
 } from './opencode-catalog.ts'
 
 // Synthetic fixtures exercise catalog fields, never production model data.
+const EXTRACTED = '2026-10-13T00:00:00.000Z'
+const HASH = 'a'.repeat(64)
+
 function payload(extra: Record<string, unknown> = {}) {
   return {
     opencode: {
+      npm: '@ai-sdk/openai-compatible',
+      api: 'https://opencode.ai/inference/v1',
       models: {
         synthetic: {
           id: 'synthetic',
@@ -82,7 +87,11 @@ describe('OpenCode native catalog', () => {
   })
   it('leaves missing facts null rather than borrowing another provider', () => {
     const data = {
-      opencode: { models: { synthetic: { id: 'synthetic' } } },
+      opencode: {
+        npm: '@ai-sdk/openai-compatible',
+        api: 'https://opencode.ai/inference/v1',
+        models: { synthetic: { id: 'synthetic' } },
+      },
       unrelated: { models: payload().opencode.models },
     }
     expect(parseOpenCodeCatalog(data, 'opencode', 'h').synthetic).toMatchObject(
@@ -153,4 +162,165 @@ it.each([
   expect(() =>
     parseOpenCodeCatalog(payload(fields), 'opencode', 'hash'),
   ).toThrow(/unreadable/)
+})
+
+it('derives the route from the package, and Zen prices from cost', () => {
+  const model = parseOpenCodeCatalog(
+    payload({
+      name: 'Synthetic',
+      provider: { npm: '@ai-sdk/anthropic' },
+      cost: {
+        input: 4,
+        output: 20,
+        cache_read: 0.2,
+        cache_write: 5,
+        tiers: [
+          {
+            input: 8,
+            output: 30,
+            cache_read: 0.4,
+            cache_write: 10,
+            tier: { type: 'context', size: 272000 },
+          },
+        ],
+        context_over_200k: {
+          input: 8,
+          output: 30,
+          cache_read: 0.4,
+          cache_write: 10,
+        },
+      },
+    }),
+    'opencode',
+    HASH,
+    EXTRACTED,
+  ).synthetic
+  expect(model).toMatchObject({
+    displayName: 'Synthetic',
+    activity: 'chat',
+    schemaEndpointId: 'inference/v1/messages',
+    factSources: {
+      schemaEndpointId: {
+        derivation: 'listing',
+        sourceUrl: OPENCODE_CATALOG_URL,
+        path: 'opencode.models.synthetic.provider.npm',
+      },
+      pricing: {
+        derivation: 'listing',
+        sourceUrl: OPENCODE_CATALOG_URL,
+        path: 'opencode.models.synthetic.cost',
+      },
+    },
+  })
+  expect(
+    (
+      model?.pricing as {
+        tables: { rate: Record<string, Record<string, number>> }
+      }
+    ).tables.rate,
+  ).toEqual({
+    base: {
+      input_tokens: 4 / 1e6,
+      output_tokens: 20 / 1e6,
+      cache_read_tokens: 0.2 / 1e6,
+      cache_write_tokens: 5 / 1e6,
+    },
+    '272000': {
+      input_tokens: 8 / 1e6,
+      output_tokens: 30 / 1e6,
+      cache_read_tokens: 0.4 / 1e6,
+      cache_write_tokens: 10 / 1e6,
+    },
+  })
+})
+
+it('uses the provider package when the model states none, and keeps an explicit zero', () => {
+  const model = parseOpenCodeCatalog(
+    payload({ cost: { input: 0, output: 0, cache_read: 0 } }),
+    'opencode',
+    HASH,
+    EXTRACTED,
+  ).synthetic
+  expect(model?.schemaEndpointId).toBe('inference/v1/chat/completions')
+  expect(model?.factSources?.schemaEndpointId?.path).toBe('opencode.npm')
+  expect(model?.pricing).toMatchObject({ price: 0 })
+})
+
+it('leaves an unmapped package without a route', () => {
+  const model = parseOpenCodeCatalog(
+    payload({
+      provider: { npm: '@ai-sdk/mistral' },
+      cost: { input: 1, output: 2 },
+    }),
+    'opencode',
+    HASH,
+    EXTRACTED,
+  ).synthetic
+  expect(model?.schemaEndpointId).toBeUndefined()
+  expect(model?.activity).toBeUndefined()
+  expect(model?.pricing).toBeTruthy()
+})
+
+it('does not compile a Go price from cost', () => {
+  const data = {
+    'opencode-go': {
+      npm: '@ai-sdk/openai-compatible',
+      api: 'https://opencode.ai/inference/go/v1',
+      models: {
+        synthetic: {
+          id: 'synthetic',
+          provider: { npm: '@ai-sdk/openai' },
+          cost: { input: 1, output: 2, cache_read: 0.1 },
+        },
+      },
+    },
+  }
+  const model = parseOpenCodeCatalog(data, 'opencode-go', HASH).synthetic
+  expect(model).toMatchObject({
+    schemaEndpointId: 'v1/responses',
+    activity: 'chat',
+    factSources: {
+      schemaEndpointId: { path: 'opencode-go.models.synthetic.provider.npm' },
+    },
+  })
+  expect(model?.pricing).toBeUndefined()
+})
+
+it.each([
+  { cost: { input: 1 } },
+  { cost: { input: -1, output: 1 } },
+  {
+    cost: {
+      input: 1,
+      output: 2,
+      cache_read: 0.1,
+      tiers: [{ input: 3, output: 4, tier: { type: 'context', size: 1000 } }],
+    },
+  },
+  {
+    cost: {
+      input: 1,
+      output: 2,
+      tiers: [{ input: 3, output: 4, tier: { type: 'context', size: 1000 } }],
+      context_over_200k: { input: 9, output: 9 },
+    },
+  },
+  {
+    cost: {
+      input: 1,
+      output: 2,
+      tiers: [{ input: 3, output: 4, tier: { size: 1000 } }],
+    },
+  },
+  {
+    cost: {
+      input: 1,
+      output: 2,
+      tiers: [{ input: 3, output: 4, tier: { type: 'requests', size: 1000 } }],
+    },
+  },
+])('rejects an unreadable Zen cost %j', (fields) => {
+  expect(() =>
+    parseOpenCodeCatalog(payload(fields), 'opencode', HASH, EXTRACTED),
+  ).toThrow(/opencode: /)
 })
