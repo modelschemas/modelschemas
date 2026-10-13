@@ -167,7 +167,8 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // scoped guide enrichments and stricter normative-prose checks.
 // v30: DashScope China priced rows no longer carry absent.pricing 'cleared'.
 // A v29 entry would keep dropping every CNY card for six hours.
-const DOCS_CACHE_VERSION = 'v30'
+// v31: the Gemini pricing entry gained `named`; a v30 entry has none.
+const DOCS_CACHE_VERSION = 'v31'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
