@@ -181,7 +181,7 @@ describe('opencode', () => {
     expect(byId.unlisted).toEqual({
       rawId: 'unlisted',
       releasedAt: null,
-      absent: { releasedAt: 'cleared' },
+      absent: { releasedAt: 'cleared', pricing: 'cleared' },
       pricing: null,
     })
     expect(provider.bindSyncedRoutesOnly).toBe(true)

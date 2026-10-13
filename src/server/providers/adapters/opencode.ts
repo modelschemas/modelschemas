@@ -52,7 +52,11 @@ function withCatalog(
 ): Array<ModelInfo> {
   return listed.map((model): ModelInfo => {
     const facts = catalog[model.rawId]
-    if (!facts) return { ...model, absent: { releasedAt: 'cleared' } }
+    // The catalog is the only price source: an id it has no record of has
+    // no stated price, so a card kept from the removed docs page is cleared.
+    if (!facts) {
+      return { ...model, absent: { releasedAt: 'cleared', pricing: 'cleared' } }
+    }
     return {
       ...model,
       ...facts,
