@@ -1,6 +1,7 @@
 /**
  * OpenAI-compatible chat parameters from Model Studio's own markdown.
- * The page is one HTML table inside the doc. A zero-row parse throws.
+ * The page is one HTML table inside the doc; its cells may carry MDX
+ * attributes (`<td style={{ ... }}>`). A zero-row parse throws.
  * A parameter whose description limits it to some models is not stamped
  * on every chat row.
  */
@@ -132,10 +133,10 @@ function requestSection(markdown: string): string {
 
 function parameters(section: string): Array<CompatParam> {
   const params: Array<CompatParam> = []
-  for (const row of section.matchAll(/<tr>([\s\S]*?)<\/tr>/g)) {
+  for (const row of section.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)) {
     const rowHtml = row[1]
     if (!rowHtml) continue
-    const cells = [...rowHtml.matchAll(/<td>([\s\S]*?)<\/td>/g)].flatMap(
+    const cells = [...rowHtml.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].flatMap(
       (cell) => {
         const html = cell[1]
         return html == null ? [] : [cellText(html)]
