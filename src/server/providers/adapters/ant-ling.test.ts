@@ -5,6 +5,7 @@ import { cardCurrency, price } from '@modelschemas/rate-card'
 import { classifyAndBundle } from '../../ingest/sync.ts'
 import fixtures from '../fixtures/ant-ling-docs.json'
 import sourceFailure from '../fixtures/ant-ling-native-source-failure.json'
+import seriesThinking from '../fixtures/ant-ling-openai-series-thinking.json'
 import {
   ANT_OPENAI,
   ANT_PRICE,
@@ -116,6 +117,76 @@ it('keeps scoped native reasoning bodies and unknown max_tokens null', async () 
   expect(
     models.find((m) => m.rawId === 'Ling-3.0-flash-VL')?.modalities,
   ).toEqual({ input: ['text', 'image', 'video'], output: ['text'] })
+})
+it('binds the thinking toggle to every id in the series the page names', async () => {
+  serve({ [ANT_OPENAI]: seriesThinking.html })
+  const { models } = await provider.listModels(nativeEnv)
+  const toggle = {
+    on: { thinking: { type: 'enabled' } },
+    off: { thinking: { type: 'disabled' } },
+    levels: null,
+  }
+  for (const id of [
+    'Ling-3.1-flash',
+    'Ling-3.0-flash-VL',
+    'Ling-3.0-flash',
+    'Ling-3.0-tiny',
+  ]) {
+    const row = models.find((m) => m.rawId === id)
+    expect(row?.reasoning).toEqual({ mode: 'toggle', mandatory: false })
+    expect(row?.requestMap?.thinking).toEqual(toggle)
+  }
+  for (const id of ['Ling-2.6-1T', 'Ling-2.6-flash', 'AntAngelMed']) {
+    const row = models.find((m) => m.rawId === id)
+    expect(row?.reasoning).toBeNull()
+    expect(row?.requestMap?.thinking).toBeNull()
+  }
+  expect(models.find((m) => m.rawId === 'Ring-2.6-1T')?.reasoning).toEqual({
+    mode: 'effort',
+    mandatory: null,
+    efforts: ['high', 'xhigh'],
+  })
+})
+it('fails thinking scopes it cannot read as stated support', async () => {
+  const sentence = 'Supported by 3.0 series models and 3.1 series models.'
+  const cases: Array<[string, RegExp]> = [
+    [
+      seriesThinking.html.replace(
+        sentence,
+        'Supported by 3.0 series models and 4.0 series models.',
+      ),
+      /no native model in the 4\.0 series/,
+    ],
+    [
+      seriesThinking.html.replace(sentence, `Not s${sentence.slice(1)}`),
+      /unreadable thinking applicability/,
+    ],
+    [
+      seriesThinking.html.replace(
+        sentence,
+        `${sentence} Not supported by Ling-3.0-tiny.`,
+      ),
+      /unreadable thinking applicability/,
+    ],
+    [
+      seriesThinking.html.replace(
+        '3.0 series models and 3.1 series models enable reasoning',
+        '3.0 series models enable reasoning',
+      ),
+      /thinking\.type names other models than thinking/,
+    ],
+    [
+      seriesThinking.html.replaceAll(
+        '3.0 series models and 3.1 series models',
+        '2.6 series models',
+      ),
+      /a model has both native reasoning controls/,
+    ],
+  ]
+  for (const [html, error] of cases) {
+    serve({ [ANT_OPENAI]: html })
+    await expect(provider.listModels(nativeEnv)).rejects.toThrow(error)
+  }
 })
 it('derives native parameter tables and nested constraints without borrowing a schema', async () => {
   serve()

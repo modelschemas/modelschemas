@@ -272,22 +272,56 @@ export function nativeRequest(html: string): Schema {
   }
   return schema
 }
-export function applicability(html: string, field: string): string {
+/**
+ * What a field's description scopes it to: one named id ("Only takes effect
+ * for Ring-2.6-1T"), or every model option in each named version series
+ * when that is the description's last sentence ("Supported by 3.0 series
+ * models and 3.1 series models.").
+ */
+function scope(html: string, field: string) {
   const block = nativeFields(html).get(field)
   if (!block) fail(`missing ${field} applicability`)
   const t = text(block)
   const id = t.match(/Only (?:takes effect|effective) for ([\w.-]+)/i)?.[1]
-  if (!id) fail(`unreadable ${field} applicability`)
-  return id.replace(/\.$/, '')
+  if (id) {
+    const only = id.replace(/\.$/, '')
+    return { named: [only], ids: [only] }
+  }
+  const series = t.match(
+    /(?:^|\.\s)Supported by (\d+(?:\.\d+)* series models(?:(?:,| and|, and) \d+(?:\.\d+)* series models)*)\.$/,
+  )?.[1]
+  if (!series) fail(`unreadable ${field} applicability`)
+  const offered = nativeModelIds(html)
+  const named = [...series.matchAll(/\d+(?:\.\d+)* series models/g)].map(
+    (m) => m[0],
+  )
+  const ids = named.flatMap((name) => {
+    const version = name.split(' ')[0] ?? ''
+    const members = offered.filter((rawId) =>
+      rawId.split('-').includes(version),
+    )
+    if (!members.length) fail(`no native model in the ${version} series`)
+    return members
+  })
+  return { named, ids }
+}
+export function applicability(html: string, field: string): Array<string> {
+  return scope(html, field).ids
 }
 export function controls(html: string) {
   const fields = nativeFields(html)
   const effort = fields.get('reasoning.effort')
   const toggle = fields.get('thinking.type')
   if (!effort || !toggle) fail('missing native reasoning controls')
+  const effortIds = applicability(html, 'reasoning')
+  const thinking = scope(html, 'thinking')
+  if (!thinking.named.every((name) => text(toggle).includes(name)))
+    fail('thinking.type names other models than thinking')
+  if (thinking.ids.some((id) => effortIds.includes(id)))
+    fail('a model has both native reasoning controls')
   return {
-    effortId: applicability(html, 'reasoning'),
-    toggleId: applicability(html, 'thinking'),
+    effortIds,
+    toggleIds: thinking.ids,
     efforts: options(effort),
     effortDefault:
       effort.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null,

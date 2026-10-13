@@ -176,7 +176,8 @@ export const provider: ProviderConfig = {
       !control.efforts.includes(control.effortDefault)
     )
       throw new Error('ant-ling: unreadable native control values')
-    if (!text(article(effort.html)).includes(control.effortId))
+    const effortText = text(article(effort.html))
+    if (!control.effortIds.every((id) => effortText.includes(id)))
       throw new Error('ant-ling: effort source model disagreement')
     const map: ChatRequestMap = {
       thinking: null,
@@ -193,8 +194,8 @@ export const provider: ProviderConfig = {
     return {
       models: antModelRows(api.html, pricing.html, contexts).map(
         (model): ModelInfo => {
-          const hasEffort = model.rawId === control.effortId
-          const hasToggle = model.rawId === control.toggleId
+          const hasEffort = control.effortIds.includes(model.rawId)
+          const hasToggle = control.toggleIds.includes(model.rawId)
           const reasoning = hasEffort
             ? {
                 mode: 'effort' as const,
@@ -271,7 +272,7 @@ export const provider: ProviderConfig = {
                       : 'paid',
                   }
                 : {}),
-              ...(model.rawId === control.effortId
+              ...(control.effortIds.includes(model.rawId)
                 ? { nativeReasoningModelSource: ANT_RING }
                 : {}),
             },
