@@ -147,16 +147,46 @@ it('binds the thinking toggle to every id in the series the page names', async (
     efforts: ['high', 'xhigh'],
   })
 })
-it('fails a series the native model options do not list', async () => {
-  serve({
-    [ANT_OPENAI]: seriesThinking.html.replace(
-      'Supported by 3.0 series models and 3.1 series models.',
-      'Supported by 3.0 series models and 4.0 series models.',
-    ),
-  })
-  await expect(provider.listModels(nativeEnv)).rejects.toThrow(
-    /no native model in the 4\.0 series/,
-  )
+it('fails thinking scopes it cannot read as stated support', async () => {
+  const sentence = 'Supported by 3.0 series models and 3.1 series models.'
+  const cases: Array<[string, RegExp]> = [
+    [
+      seriesThinking.html.replace(
+        sentence,
+        'Supported by 3.0 series models and 4.0 series models.',
+      ),
+      /no native model in the 4\.0 series/,
+    ],
+    [
+      seriesThinking.html.replace(sentence, `Not s${sentence.slice(1)}`),
+      /unreadable thinking applicability/,
+    ],
+    [
+      seriesThinking.html.replace(
+        sentence,
+        `${sentence} Not supported by Ling-3.0-tiny.`,
+      ),
+      /unreadable thinking applicability/,
+    ],
+    [
+      seriesThinking.html.replace(
+        '3.0 series models and 3.1 series models enable reasoning',
+        '3.0 series models enable reasoning',
+      ),
+      /thinking\.type names other models than thinking/,
+    ],
+    [
+      seriesThinking.html.replaceAll(
+        '3.0 series models and 3.1 series models',
+        '2.6 series models',
+      ),
+      /a model has both native reasoning controls/,
+    ],
+  ]
+  for (const [html, error] of cases) {
+    serve({ [ANT_OPENAI]: html })
+    await expect(provider.listModels(nativeEnv)).rejects.toThrow(error)
+  }
 })
 it('derives native parameter tables and nested constraints without borrowing a schema', async () => {
   serve()
