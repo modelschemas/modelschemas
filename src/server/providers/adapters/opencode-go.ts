@@ -1,10 +1,11 @@
 import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
-/** OpenCode Go: live ids, native catalog facts and documented routes; subscription prices stay null. */
-import type { Activity } from '#/db/schema.ts'
-
-import { openCodeCatalog } from '../opencode-catalog.ts'
-import { cachedDocs } from '../model-facts.ts'
-import { fetchJson, fetchText } from '../types.ts'
+/** OpenCode Go: live ids and catalog routes. Subscription prices stay null. */
+import {
+  loadOpenCodeCatalog,
+  OPENCODE_CATALOG_URL,
+  parseOpenCodeCatalog,
+} from '../opencode-catalog.ts'
+import { fetchJson } from '../types.ts'
 import type {
   ListModelsResult,
   ModelInfo,
@@ -12,129 +13,68 @@ import type {
   ProviderSecrets,
   SpecFetchResult,
 } from '../types.ts'
-import { parseDocsEndpoints } from './opencode.ts'
+import { parseOpencodeModels } from './opencode.ts'
 
+/** Documented base. models.dev also serves `/inference/go/v1`; the console page still says `/zen/go/v1`. */
 export const OPENCODE_GO_MODELS_URL = 'https://opencode.ai/zen/go/v1/models'
 
-/** Page readers see; the facts are parsed from its markdown twin. */
-export const OPENCODE_GO_DOCS_URL = 'https://opencode.ai/docs/go'
-
-export const OPENCODE_GO_DOCS_MARKDOWN = `${OPENCODE_GO_DOCS_URL}.md`
-
 const FETCH_TIMEOUT_MS = 30_000
-
-export interface GoDocsModel {
-  displayName: string
-  activity: Activity | null
-  schemaEndpointId: string | null
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** Endpoints table of the Go docs page, keyed by model id. */
-export function parseGoDocs(markdown: string): Record<string, GoDocsModel> {
-  const byId: Record<string, GoDocsModel> = {}
-  let chat = 0
-  for (const {
-    id,
-    displayName,
-    activity,
-    schemaEndpointId,
-  } of parseDocsEndpoints(
-    markdown,
-    'opencode-go',
-    'https://opencode.ai/zen/go/',
-  )) {
-    if (activity === 'chat') chat += 1
-    byId[id] = { displayName, activity, schemaEndpointId }
-  }
-  if (chat === 0) throw new Error('opencode-go: docs classified 0 model rows')
-  return byId
-}
-
-export function parseOpencodeGoModels(payload: unknown): Array<ModelInfo> {
-  if (!isRecord(payload) || !Array.isArray(payload.data)) {
-    throw new Error('opencode-go: models payload has no data array')
-  }
-  const models: Array<ModelInfo> = []
-  for (const row of payload.data) {
-    if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
-      continue
-    }
-    models.push({
-      rawId: row.id,
-      releasedAt: null,
-      pricing: null,
-    })
-  }
-  if (models.length === 0) {
-    throw new Error('opencode-go: models payload listed no ids')
-  }
-  return models
-}
 
 async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  const signal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS)
-  const payload = await fetchJson(OPENCODE_GO_MODELS_URL, { signal: signal() })
-  const byId = await cachedDocs(kv, OPENCODE_GO_DOCS_MARKDOWN, async () =>
-    parseGoDocs(
-      await fetchText(OPENCODE_GO_DOCS_MARKDOWN, { signal: signal() }),
-    ),
+  const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  const [payload, loaded] = await Promise.all([
+    fetchJson(OPENCODE_GO_MODELS_URL, { signal }),
+    loadOpenCodeCatalog(kv),
+  ])
+  const catalog = parseOpenCodeCatalog(
+    loaded.payload,
+    'opencode-go',
+    loaded.hash,
+    loaded.extractedAt,
   )
-  const catalog = await openCodeCatalog('opencode-go', kv)
-  const models = parseOpencodeGoModels(payload).map((model): ModelInfo => {
-    const row = byId[model.rawId]
-    const facts = catalog[model.rawId]
-    const enriched: ModelInfo = {
-      ...model,
-      ...facts,
-      ...(facts?.releasedAt == null
-        ? { absent: { releasedAt: 'cleared' } }
-        : {}),
-    }
-    return row
-      ? {
-          ...enriched,
-          ...row,
-          factSources: {
-            ...enriched.factSources,
-            ...(row.schemaEndpointId
-              ? {
-                  schemaEndpointId: {
-                    derivation: 'docs-derived',
-                    sourceUrl: OPENCODE_GO_DOCS_URL,
-                    path: 'Endpoints',
-                  },
-                }
-              : {}),
-          },
-        }
-      : enriched
-  })
+  const models = parseOpencodeModels(payload, 'opencode-go').map(
+    (model): ModelInfo => {
+      const facts = catalog[model.rawId]
+      if (!facts) return { ...model, absent: { releasedAt: 'cleared' } }
+      return {
+        ...model,
+        ...facts,
+        // models.dev `cost` is left unread: it is not a confirmed billed price.
+        pricing: null,
+        ...(facts.releasedAt == null
+          ? { absent: { releasedAt: 'cleared' } }
+          : {}),
+      }
+    },
+  )
+  if (!models.some((model) => model.activity === 'chat')) {
+    throw new Error('opencode-go: catalog classified 0 listed models')
+  }
   return { models }
 }
 
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const text = await fetchText(OPENCODE_GO_DOCS_MARKDOWN, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  })
-  const rows = parseDocsEndpoints(
-    text,
+  const loaded = await loadOpenCodeCatalog()
+  const catalog = parseOpenCodeCatalog(
+    loaded.payload,
     'opencode-go',
-    'https://opencode.ai/zen/go/',
+    loaded.hash,
+    loaded.extractedAt,
   )
-  return openCodeRouteSpec(rows, { url: OPENCODE_GO_DOCS_MARKDOWN, text }, true)
+  return openCodeRouteSpec(
+    Object.values(catalog),
+    { url: OPENCODE_CATALOG_URL, hash: loaded.hash },
+    true,
+  )
 }
 
 export const provider: ProviderConfig = {
   id: 'opencode-go',
   displayName: 'OpenCode Go',
-  specSourceUrl: OPENCODE_GO_DOCS_URL,
+  specSourceUrl: OPENCODE_CATALOG_URL,
   modelsEndpoint: OPENCODE_GO_MODELS_URL,
   defaultDerivation: 'docs-derived',
   bindSyncedRoutesOnly: true,

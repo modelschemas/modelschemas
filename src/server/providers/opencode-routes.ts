@@ -8,13 +8,20 @@ const SOURCE_ROOT =
   'https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/console/app/src/routes/zen/'
 
 interface RouteRow {
-  schemaEndpointId: string | null
-  activity: string | null
+  schemaEndpointId?: string | null
+  activity?: string | null
+}
+
+/** Public path → handler file under `routes/zen`. Zen ids are `inference/v1/...`; the source tree is still `v1`. */
+function sourceFile(schemaEndpointId: string, go: boolean): string {
+  const local = schemaEndpointId.replace(/^\//, '').replace(/^inference\//, '')
+  const file = /^v1\/models\/.+/.test(local) ? 'v1/models/[model]' : local
+  return `${go ? 'go/' : ''}${file}`
 }
 
 export async function openCodeRouteSpec(
   rows: Array<RouteRow>,
-  docs: { url: string; text: string },
+  docs: { url: string; text?: string; hash?: string },
   go: boolean,
 ): Promise<SpecFetchResult> {
   const paths: NonNullable<OpenApiDocument['paths']> = {}
@@ -22,10 +29,7 @@ export async function openCodeRouteSpec(
   for (const row of rows) {
     if (!row.schemaEndpointId || row.activity !== 'chat') continue
     const path = `/${row.schemaEndpointId.replace(/^\//, '')}`
-    const file = path.startsWith('/v1/models/')
-      ? 'v1/models/[model]'
-      : path.slice(1)
-    const url = `${SOURCE_ROOT}${go ? 'go/' : ''}${file}.ts`
+    const url = `${SOURCE_ROOT}${sourceFile(row.schemaEndpointId, go)}.ts`
     let native = code.get(url)
     if (!native) {
       const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
@@ -46,10 +50,13 @@ export async function openCodeRouteSpec(
     }
   }
   if (Object.keys(paths).length === 0)
-    throw new Error('opencode: docs name no verified chat routes')
+    throw new Error('opencode: catalog names no verified chat routes')
+  const hash =
+    docs.hash ?? (docs.text !== undefined ? await sha256Text(docs.text) : null)
+  if (!hash) throw new Error('opencode: route spec has no catalog source')
   return {
     specs: [{ openapi: '3.1.0', paths }],
-    sources: [{ url: docs.url, hash: await sha256Text(docs.text) }],
+    sources: [{ url: docs.url, hash }],
     outputStrategy: 'post-200',
   }
 }

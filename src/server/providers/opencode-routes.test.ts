@@ -11,22 +11,33 @@ it('sources POST methods and emits only native paths, with no schema bodies', as
   )
   const result = await openCodeRouteSpec(
     [
-      { schemaEndpointId: 'v1/messages', activity: 'chat' },
-      { schemaEndpointId: 'v1/responses', activity: 'chat' },
+      { schemaEndpointId: 'inference/v1/messages', activity: 'chat' },
+      { schemaEndpointId: 'inference/v1/responses', activity: 'chat' },
+      { schemaEndpointId: 'inference/v1/models/gemini', activity: 'chat' },
       { schemaEndpointId: null, activity: null },
     ],
-    { url: 'https://opencode.ai/docs/zen.md', text: 'docs fixture' },
+    { url: 'https://models.dev/api.json', text: 'catalog fixture' },
     false,
   )
   expect(Object.keys(result.specs[0]?.paths ?? {})).toEqual([
-    '/v1/messages',
-    '/v1/responses',
+    '/inference/v1/messages',
+    '/inference/v1/responses',
+    '/inference/v1/models/gemini',
   ])
-  const operation = result.specs[0]?.paths?.['/v1/messages']?.post ?? {}
+  const operation =
+    result.specs[0]?.paths?.['/inference/v1/messages']?.post ?? {}
   expect(operation).not.toHaveProperty('requestBody')
   expect(operation.responses).toEqual({})
-  expect(classifyOpenCodeRoute('/v1/messages', operation)).toBe('chat')
-  expect(classifyOpenCodeRoute('/v1/messages', {})).toBeNull()
+  expect(classifyOpenCodeRoute('/inference/v1/messages', operation)).toBe(
+    'chat',
+  )
+  expect(classifyOpenCodeRoute('/inference/v1/messages', {})).toBeNull()
+  const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.map(
+    (call) => String(call[0]),
+  )
+  expect(calls.some((url) => url.endsWith('/zen/v1/models/[model].ts'))).toBe(
+    true,
+  )
   const source = operation['x-modelschemas-method-source'] as {
     url: string
     hash: string

@@ -1324,6 +1324,38 @@ describe('pollProviderModels', () => {
       source: { url: 'https://developers.openai.com/api/docs/pricing' },
     })
   })
+
+  it('keeps an OpenCode card read from its own models.dev catalog', async () => {
+    const id = 'opencode'
+    const deps = await freshDeps(id)
+    const fixture = FIXTURE_CARDS['openai/gpt-4o']!
+    const card = {
+      ...fixture,
+      source: { ...fixture.source, url: MODELS_DEV_API_URL },
+    }
+    const listed = stubProvider(id, [
+      {
+        rawId: 'opus',
+        pricing: card,
+        factSources: {
+          pricing: {
+            derivation: 'listing',
+            sourceUrl: MODELS_DEV_API_URL,
+            path: 'opencode.models.opus.cost',
+          },
+        },
+      },
+    ])
+    expect(await pollProviderModels(deps, listed)).toMatchObject({ added: 1 })
+    const row = await deps.db.query.models.findFirst({
+      where: eq(models.id, modelDbId(id, 'opus')),
+    })
+    expect(row?.pricing).toMatchObject({ source: { url: MODELS_DEV_API_URL } })
+    expect(
+      (row?.factSources as { pricing?: { sourceUrl?: string } }).pricing
+        ?.sourceUrl,
+    ).toBe(MODELS_DEV_API_URL)
+  })
 })
 
 describe('models.dev residue on skip (issue #197)', () => {

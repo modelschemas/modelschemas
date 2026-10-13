@@ -19,6 +19,14 @@ import { parseStoredRateCard } from '#/server/rate-card.ts'
 
 export const MODELS_DEV_API_URL = 'https://models.dev/api.json'
 
+/**
+ * OpenCode publishes its own catalog at models.dev. Issue #197 drops that
+ * URL for every other provider. It does not apply here.
+ */
+export function modelsDevIsFirstParty(providerId: string): boolean {
+  return providerId === 'opencode' || providerId === 'opencode-go'
+}
+
 const SETTLED_PREFIX = 'models-dev-settled:'
 
 function settledKey(providerId: string): string {
@@ -65,6 +73,7 @@ export async function dropModelsDevSchemaVersions(
   db: Db,
   providerId: string,
 ): Promise<void> {
+  if (modelsDevIsFirstParty(providerId)) return
   const rows = await db
     .select({ id: schemaVersions.id })
     .from(schemaVersions)
@@ -89,6 +98,7 @@ export async function nullModelsDevRateCards(
   db: Db,
   providerId: string,
 ): Promise<void> {
+  if (modelsDevIsFirstParty(providerId)) return
   await db
     .update(models)
     .set({

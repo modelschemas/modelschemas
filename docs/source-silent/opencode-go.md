@@ -12,12 +12,15 @@ sourced zero prices, not source-silent exceptions. Go subscription-accounting
 rates remain distinct from billed token prices.
 
 The current chat score does not erase unknown activity on other live ids.
-Native live listing: https://opencode.ai/go/v1/models;
-endpoint docs: https://opencode.ai/docs/go; canonical own catalog:
-https://models.dev/api.json. Checked 2026-10-09. Among activity-null rows,
+Native live listing: https://opencode.ai/zen/go/v1/models.
+models.dev also publishes https://opencode.ai/inference/go/v1, which serves
+the same ids; the console page https://opencode.ai/v2/docs/console/go/ still
+documents `/zen/go/v1`, so endpoint ids stay on that base. Go `cost` in
+https://models.dev/api.json is not stored: it is not confirmed as a billed
+token price. The per-row checks below cited https://opencode.ai/docs/go,
+removed upstream on 2026-10-12. Checked 2026-10-09. Among activity-null rows,
 no own catalog record was published for: `minimax-m2.5`, `kimi-k2.5`, `glm-5.1`, `glm-5`, `deepseek-flash`, `qwen3.5-plus`, `mimo-v2-pro`, `mimo-v2-omni`, `hy3-preview`, `omen-alpha`.
-Rows with catalog facts but no sourced chat activity mapping are:
-`qwen3.7-max`, `qwen3.6-plus`, `grok-4.5`.
+Catalogued rows take their chat route from the model's package, or the provider package when the model states none.
 The ten live ids absent from the public catalog remain activity-null. There is
 no documented credential-gated source that supplies their missing model facts;
 credentials are not substituted for the unavailable public evidence.

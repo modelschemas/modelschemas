@@ -1,4 +1,7 @@
 /** OpenCode owns models.dev. Only its two providers may read these facts. */
+import { compileTokenCard } from '@modelschemas/rate-card'
+import type { RateCard, TokenRateTier } from '@modelschemas/rate-card'
+
 import { cachedDocs } from './model-facts.ts'
 import type { ChatRequestMap } from './request-map.ts'
 import { fetchText, sha256Text } from './types.ts'
@@ -11,6 +14,30 @@ import type {
 
 export const OPENCODE_CATALOG_URL = 'https://models.dev/api.json'
 type OpenCodeProvider = 'opencode' | 'opencode-go'
+
+/** Path under the provider's `/v1` base. A package this map does not name has no route. */
+const PACKAGE_SUFFIX: Record<string, (id: string) => string> = {
+  '@ai-sdk/anthropic': () => 'messages',
+  '@ai-sdk/openai': () => 'responses',
+  '@ai-sdk/google': (id) => `models/${id}`,
+  '@ai-sdk/openai-compatible': () => 'chat/completions',
+}
+
+const COST_LEVERS: Record<string, string> = {
+  input: 'input_tokens',
+  output: 'output_tokens',
+  cache_read: 'cache_read_tokens',
+  cache_write: 'cache_write_tokens',
+  reasoning: 'reasoning_tokens',
+  input_audio: 'audio_tokens',
+  output_audio: 'audio_output_tokens',
+}
+
+export interface OpenCodeCatalogLoad {
+  payload: unknown
+  hash: string
+  extractedAt: string
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -54,20 +81,182 @@ function reasoning(value: unknown): ModelReasoning | null {
   return toggle ? { mode: 'toggle', mandatory: false } : null
 }
 
+/** USD per million tokens → USD per token. Throws on a shape a card must not invent. */
+function perToken(
+  cost: Record<string, unknown>,
+  id: string,
+  allowTier: boolean,
+): Record<string, number> {
+  const rates: Record<string, number> = {}
+  for (const [key, value] of Object.entries(cost)) {
+    if (allowTier && key === 'tier') continue
+    const lever = COST_LEVERS[key]
+    if (!lever) throw new Error(`opencode: unreadable cost.${key} for ${id}`)
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      throw new Error(`opencode: unreadable cost.${key} for ${id}`)
+    }
+    rates[lever] = value / 1e6
+  }
+  if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
+    throw new Error(`opencode: cost for ${id} omits input or output`)
+  }
+  return rates
+}
+
+function sameRates(a: Record<string, number>, b: Record<string, number>) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  for (const key of keys) if (a[key] !== b[key]) return false
+  return true
+}
+
+/**
+ * Zen `cost`, including context `tiers`. `context_over_200k` is a copy of
+ * one tier's rates (its name is not the threshold when the tier size is
+ * 272K); a copy that matches no tier is unreadable. All-zero quotes are a
+ * sourced free card. Go does not call this: its `cost` is not a billed price.
+ */
+export function compileOpenCodeCost(
+  cost: unknown,
+  id: string,
+  source: RateCard['source'],
+): RateCard {
+  if (!record(cost)) throw new Error(`opencode: unreadable cost for ${id}`)
+  const { tiers: rawTiers, context_over_200k: legacy, ...baseCost } = cost
+  const base = perToken(baseCost, id, false)
+  const tiers: Array<TokenRateTier> = []
+  if (rawTiers !== undefined) {
+    if (!Array.isArray(rawTiers)) {
+      throw new Error(`opencode: unreadable cost.tiers for ${id}`)
+    }
+    const seen = new Set<number>()
+    for (const tier of rawTiers) {
+      if (!record(tier) || !record(tier.tier)) {
+        throw new Error(`opencode: unreadable cost tier for ${id}`)
+      }
+      if (tier.tier.type !== undefined && tier.tier.type !== 'context') {
+        throw new Error(`opencode: unreadable cost tier for ${id}`)
+      }
+      const size = tier.tier.size
+      if (
+        typeof size !== 'number' ||
+        !Number.isSafeInteger(size) ||
+        size <= 0
+      ) {
+        throw new Error(`opencode: unreadable cost tier for ${id}`)
+      }
+      if (seen.has(size)) {
+        throw new Error(`opencode: duplicate cost tier for ${id}`)
+      }
+      seen.add(size)
+      const rates = perToken(tier, id, true)
+      if (Object.keys(base).some((lever) => !(lever in rates))) {
+        throw new Error(`opencode: cost tier for ${id} omits a base rate`)
+      }
+      tiers.push({ minPromptTokens: size, rates })
+    }
+  }
+  if (legacy !== undefined) {
+    if (!record(legacy)) {
+      throw new Error(`opencode: unreadable context_over_200k for ${id}`)
+    }
+    const rates = perToken(legacy, id, false)
+    const copied = tiers.some((tier) => sameRates(tier.rates, rates))
+    if (!copied) {
+      throw new Error(
+        `opencode: context_over_200k disagrees with cost tiers for ${id}`,
+      )
+    }
+  }
+  if (
+    Object.values(base).every((rate) => rate === 0) &&
+    tiers.every((tier) => Object.values(tier.rates).every((rate) => rate === 0))
+  ) {
+    if (tiers.length > 0) {
+      throw new Error(`opencode: zero base rate with a tier for ${id}`)
+    }
+    return {
+      inputs: Object.fromEntries(
+        Object.keys(base).map((lever) => [
+          lever,
+          {
+            param: lever,
+            bound: 'usage',
+            kind: 'number',
+            ...(!['input_tokens', 'output_tokens'].includes(lever)
+              ? { default: 0 }
+              : {}),
+          },
+        ]),
+      ),
+      tables: { rate: { base } },
+      price: 0,
+      examples: [],
+      source,
+    }
+  }
+  if (Object.values(base).every((rate) => rate === 0) && tiers.length > 0) {
+    throw new Error(`opencode: zero base rate with a priced tier for ${id}`)
+  }
+  const audio = ['audio_tokens', 'audio_output_tokens'].filter(
+    (lever) => lever in base || tiers.some((tier) => lever in tier.rates),
+  )
+  const card = compileTokenCard(
+    base,
+    tiers,
+    source,
+    audio.length > 0 ? { extraPromptLevers: audio } : undefined,
+  )
+  if (!card) throw new Error(`opencode: unreadable cost for ${id}`)
+  return card
+}
+
+/** Path under the host. Zen follows models.dev `api`; Go stays on the documented `/zen/go/v1` ids. */
+function schemaEndpointId(
+  provider: OpenCodeProvider,
+  apiPath: string | null,
+  npm: string,
+  id: string,
+): string | null {
+  const suffix = PACKAGE_SUFFIX[npm]?.(id) ?? null
+  if (!suffix) return null
+  if (id.includes('/'))
+    throw new Error(`${provider}: unreadable model id ${id}`)
+  // Go's console page still publishes https://opencode.ai/zen/go/v1, and that
+  // host serves the same listing as models.dev's /inference/go/v1. Keep the
+  // ids already stored (`v1/...`) until the documented base is the one to move.
+  return provider === 'opencode' ? `${apiPath}/${suffix}` : `v1/${suffix}`
+}
+
 export function parseOpenCodeCatalog(
   payload: unknown,
   provider: OpenCodeProvider,
   hash: string,
+  extractedAt?: string,
 ): Record<string, ModelInfo> {
-  if (
-    !record(payload) ||
-    !record(payload[provider]) ||
-    !record(payload[provider].models)
-  ) {
+  if (!record(payload) || !record(payload[provider])) {
     throw new Error(`${provider}: models.dev has no provider models object`)
   }
+  const block = payload[provider]
+  const models = block.models
+  if (!record(models)) {
+    throw new Error(`${provider}: models.dev has no provider models object`)
+  }
+  if (typeof block.npm !== 'string' || block.npm.length === 0) {
+    throw new Error(`${provider}: models.dev provider npm is missing`)
+  }
+  let apiPath: string | null = null
+  if (provider === 'opencode') {
+    if (typeof block.api !== 'string') {
+      throw new Error('opencode: models.dev api is missing')
+    }
+    const url = new URL(block.api)
+    apiPath = url.pathname.replace(/^\//, '').replace(/\/$/, '')
+    if (url.origin !== 'https://opencode.ai' || apiPath.length === 0) {
+      throw new Error('opencode: models.dev api is not an opencode.ai path')
+    }
+  }
   const out: Record<string, ModelInfo> = {}
-  for (const [id, row] of Object.entries(payload[provider].models)) {
+  for (const [id, row] of Object.entries(models)) {
     if (!record(row) || row.id !== id)
       throw new Error(`${provider}: unreadable catalog model ${id}`)
     const source = (path: string): FactSource => ({
@@ -89,6 +278,57 @@ export function parseOpenCodeCatalog(
       reasoning: reasoning(row.reasoning_options),
       requestMap: null,
       providerMetadata: row,
+    }
+    if (row.name !== undefined) {
+      if (typeof row.name !== 'string' || row.name.length === 0) {
+        throw new Error(`${provider}: unreadable name for ${id}`)
+      }
+      model.displayName = row.name
+    }
+    let modelNpm: string | null = null
+    if (row.provider !== undefined) {
+      if (!record(row.provider)) {
+        throw new Error(`${provider}: unreadable provider for ${id}`)
+      }
+      if (row.provider.npm !== undefined) {
+        if (
+          typeof row.provider.npm !== 'string' ||
+          row.provider.npm.length === 0
+        ) {
+          throw new Error(`${provider}: unreadable provider.npm for ${id}`)
+        }
+        modelNpm = row.provider.npm
+      }
+    }
+    const npm = modelNpm ?? block.npm
+    const endpoint = schemaEndpointId(provider, apiPath, npm, id)
+    if (endpoint) {
+      model.schemaEndpointId = endpoint
+      model.activity = 'chat'
+      factSources.schemaEndpointId = {
+        derivation: 'listing',
+        sourceUrl: OPENCODE_CATALOG_URL,
+        sourceHash: hash,
+        // The route is the package's path, not an endpoint stated on the model.
+        path: modelNpm
+          ? `${provider}.models.${id}.provider.npm`
+          : `${provider}.npm`,
+      }
+    }
+    if (provider === 'opencode' && row.cost !== undefined) {
+      if (!extractedAt)
+        throw new Error('opencode: catalog extractedAt is missing')
+      model.pricing = compileOpenCodeCost(row.cost, id, {
+        url: OPENCODE_CATALOG_URL,
+        hash,
+        extractedAt,
+      })
+      factSources.pricing = {
+        derivation: 'listing',
+        sourceUrl: OPENCODE_CATALOG_URL,
+        sourceHash: hash,
+        path: `${provider}.models.${id}.cost`,
+      }
     }
     if (row.release_date !== undefined) {
       if (
@@ -211,18 +451,32 @@ export function parseOpenCodeCatalog(
   return out
 }
 
-export async function openCodeCatalog(
-  provider: OpenCodeProvider,
+export async function loadOpenCodeCatalog(
   kv?: KVNamespace,
-): Promise<Record<string, ModelInfo>> {
-  const catalog = await cachedDocs(kv, OPENCODE_CATALOG_URL, async () => {
+): Promise<OpenCodeCatalogLoad> {
+  // A v31 entry is `{payload, hash}` with no `extractedAt`. Reading it
+  // throws on every Zen price until the TTL. This key misses that entry.
+  return cachedDocs(kv, `${OPENCODE_CATALOG_URL}#extracted-at`, async () => {
     const text = await fetchText(OPENCODE_CATALOG_URL, {
       signal: AbortSignal.timeout(30_000),
     })
     return {
       payload: JSON.parse(text) as unknown,
       hash: await sha256Text(text),
+      extractedAt: new Date().toISOString(),
     }
   })
-  return parseOpenCodeCatalog(catalog.payload, provider, catalog.hash)
+}
+
+export async function openCodeCatalog(
+  provider: OpenCodeProvider,
+  kv?: KVNamespace,
+): Promise<Record<string, ModelInfo>> {
+  const catalog = await loadOpenCodeCatalog(kv)
+  return parseOpenCodeCatalog(
+    catalog.payload,
+    provider,
+    catalog.hash,
+    catalog.extractedAt,
+  )
 }

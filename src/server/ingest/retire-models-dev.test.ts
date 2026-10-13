@@ -5,6 +5,7 @@ import { GPT_4O } from '../../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import {
   MODELS_DEV_API_URL,
   isModelsDevRateCard,
+  modelsDevIsFirstParty,
   storedCardIsPrior,
 } from './retire-models-dev.ts'
 
@@ -18,5 +19,11 @@ describe('storedCardIsPrior', () => {
     expect(isModelsDevRateCard(dev)).toBe(true)
     expect(storedCardIsPrior(dev)).toBe(false)
     expect(storedCardIsPrior(null)).toBe(false)
+  })
+
+  it('treats models.dev as OpenCode’s own catalog and nobody else’s', () => {
+    expect(modelsDevIsFirstParty('opencode')).toBe(true)
+    expect(modelsDevIsFirstParty('opencode-go')).toBe(true)
+    expect(modelsDevIsFirstParty('openai')).toBe(false)
   })
 })
