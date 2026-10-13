@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
 import { parseAnthropicPricing } from './anthropic-pricing.ts'
 import { ANTHROPIC_PRICING_PAGE } from './fixtures/anthropic-pricing.ts'
-import { parseGeminiPricing } from './gemini-pricing.ts'
+import { geminiModelPricing, parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
 import {
   grokImageCard,
@@ -1233,6 +1233,28 @@ describe('gemini pricing page', () => {
     const unknownModality = `<tr><td>Input price</td><td>Not available</td><td>$1.00 (hologram)</td></tr>`
     for (const rows of [perImage, perSong, unknownModality]) {
       expect(parseGeminiPricing(section('m', rows), NOW).size).toBe(0)
+    }
+  })
+
+  it('clears the price of an id no section names, and only that', async () => {
+    const tokens = `<tr><td>Input price</td><td>Free</td><td>$0.75</td></tr>
+       <tr><td>Output price</td><td>Free</td><td>$3.75</td></tr>`
+    const perSong = `<tr><td>Lyria 3.5 (Full Song)</td><td>Not available</td><td>$0.08 per song</td></tr>`
+    const page =
+      section('gemini-3.6-flash', tokens) + section('lyria-3.5', perSong)
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(page)))
+    try {
+      const pricing = await geminiModelPricing()
+      expect(pricing('gemini-3.6-flash').pricing).toBeTruthy()
+      expect(pricing('gemini-3.6-flash').absent).toBeUndefined()
+      // Deprecated and routed to 3.6: the page has no section for it.
+      expect(pricing('gemini-3.5-flash')).toEqual({
+        absent: { pricing: 'cleared' },
+      })
+      // Named but refused by the parser: the stored card is kept.
+      expect(pricing('lyria-3.5')).toEqual({})
+    } finally {
+      vi.unstubAllGlobals()
     }
   })
 })

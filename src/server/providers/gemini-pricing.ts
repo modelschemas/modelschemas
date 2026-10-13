@@ -384,19 +384,34 @@ export interface GeminiRates {
   unit?: UnitCardSpec
 }
 
+const SECTION = '<div class="models-section">'
+
+/** The heading group's `<em>` lists every id the section prices. */
+function headingIds(chunk: string): Array<string> {
+  return [
+    ...chunk
+      .slice(0, chunk.indexOf('</em>'))
+      .matchAll(/<code[^>]*>([a-z0-9][a-z0-9.-]+)<\/code>/g),
+  ].map(([, value = '']) => value)
+}
+
+/**
+ * Every id a section heading names, including sections `parseGeminiPricing`
+ * refuses. A listed id missing from this is one the page no longer prices
+ * (issue #300: deprecated ids routed to a successor), not a parser miss.
+ */
+export function geminiNamedIds(html: string): Array<string> {
+  return [...new Set(html.split(SECTION).slice(1).flatMap(headingIds))]
+}
+
 /** Model id → per-token rates parsed from its Standard table. */
 export function parseGeminiPricing(
   html: string,
   now: number = Date.now(),
 ): Map<string, GeminiRates> {
   const out = new Map<string, GeminiRates>()
-  for (const chunk of html.split('<div class="models-section">').slice(1)) {
-    // The heading group's `<em>` lists every id the section prices.
-    const ids = [
-      ...chunk
-        .slice(0, chunk.indexOf('</em>'))
-        .matchAll(/<code[^>]*>([a-z0-9][a-z0-9.-]+)<\/code>/g),
-    ].map(([, value = '']) => value)
+  for (const chunk of html.split(SECTION).slice(1)) {
+    const ids = headingIds(chunk)
     // The first table of the chunk is the model's own. Its `</table>` can
     // fall outside the chunk (the last section on the page ends mid-table),
     // so `</tbody>` closes it too — but one of them must be there, or a
@@ -465,9 +480,13 @@ export function parseGeminiPricing(
   return out
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
+type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'absent'>
 
-/** Card lookup by model id; ids the page does not price get nothing. */
+/**
+ * Card lookup by model id. An id no section names is `cleared`: the page
+ * visibly does not price it. An id a section names but the parser refuses
+ * gets nothing, so its stored card is kept and `pricing_lost` is logged.
+ */
 export async function geminiModelPricing(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => PricedFacts> {
@@ -477,6 +496,7 @@ export async function geminiModelPricing(
     assertParsed(parsed, 'gemini pricing page')
     return {
       rates: Object.fromEntries(parsed),
+      named: geminiNamedIds(html),
       hash: await sha256Text(html),
       extractedAt: new Date().toISOString(),
     }
@@ -496,8 +516,13 @@ export async function geminiModelPricing(
   }
   return (rawId) => {
     // `gemini-2.5-flash-preview-09-2025` is priced by its family row.
-    const pricing = card(rawId) ?? card(rawId.replace(/-preview.*$/, ''))
-    if (!pricing) return {}
+    const family = rawId.replace(/-preview.*$/, '')
+    const pricing = card(rawId) ?? card(family)
+    if (!pricing) {
+      return doc.named.includes(rawId) || doc.named.includes(family)
+        ? {}
+        : { absent: { pricing: 'cleared' } }
+    }
     return {
       pricing,
       factSources: tagDocsFacts({ pricing }, GEMINI_PRICING_URL, doc.hash),

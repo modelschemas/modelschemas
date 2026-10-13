@@ -377,7 +377,9 @@ async function listModels(
           ...feat.factSources,
           ...(requestMap ? { requestMap: wire.source } : {}),
         },
-        ...(feat.absent ? { absent: feat.absent } : {}),
+        ...(priced.absent || feat.absent
+          ? { absent: { ...priced.absent, ...feat.absent } }
+          : {}),
       }
     }),
   }
