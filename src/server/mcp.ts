@@ -132,7 +132,7 @@ export const TOOLS: Array<ToolDefinition> = [
   {
     name: 'recent_changes',
     description:
-      'Changelog feed of model/schema/endpoint changes (cursor-paginated, newest first).',
+      'Changelog feed of model/schema/endpoint changes (cursor-paginated, newest first). A model.updated payload includes changed: the fact paths that differ. A source hash, an extract time, and operand or values order are not changes.',
     inputSchema: {
       type: 'object',
       properties: {

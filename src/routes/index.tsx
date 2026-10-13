@@ -303,6 +303,12 @@ function Landing() {
                           text={`price clears refused since ${since(p.priceClearsRefused)}: ${p.priceClearsRefused.refused} of ${p.priceClearsRefused.priced} stored prices kept`}
                         />
                       )}
+                      {p.updateStorm && (
+                        <Marker
+                          label="updates"
+                          text={`update storm since ${since(p.updateStorm)}: ${p.updateStorm.updated} of ${p.updateStorm.live} live rows updated in one poll`}
+                        />
+                      )}
                     </td>
                     <td className="num" data-label="models">
                       {fmt.format(p.counts.models)}

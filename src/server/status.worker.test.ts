@@ -155,7 +155,13 @@ describe('getServiceStatus', () => {
 
   it('carries docs-failing and refused-clears records, and only those', async () => {
     const db = getDb(env)
-    const ids = ['rec-none', 'rec-docs', 'rec-corrupt', 'rec-clears']
+    const ids = [
+      'rec-none',
+      'rec-docs',
+      'rec-corrupt',
+      'rec-clears',
+      'rec-storm',
+    ]
     await db.insert(providers).values(
       ids.map((id) => ({
         id,
@@ -179,6 +185,13 @@ describe('getServiceStatus', () => {
       refused: 6,
       priced: 8,
     }
+    const updateStorm = {
+      since: NOW - 60,
+      polls: 1,
+      lastAt: NOW,
+      updated: 21,
+      live: 30,
+    }
     const row = (key: string, lastError: string | null) => ({
       key,
       fetchedAt: NOW,
@@ -191,6 +204,7 @@ describe('getServiceStatus', () => {
         'price-clears-refused:rec-clears',
         JSON.stringify(priceClearsRefused),
       ),
+      row('update-storm:rec-storm', JSON.stringify(updateStorm)),
       // Not JSON, JSON of the wrong shape, and no body at all.
       row('docs-failing:rec-corrupt', '{not json'),
       row('price-clears-refused:rec-corrupt', '"a string"'),
@@ -200,17 +214,21 @@ describe('getServiceStatus', () => {
     ])
 
     const status = await getServiceStatus(db, NOW)
-    const [none, docs, corrupt, clears] = ids.map((id) =>
+    const [none, docs, corrupt, clears, storm] = ids.map((id) =>
       status.providers.find((p) => p.id === id),
     )
     expect(docs?.docsFailing).toEqual(docsFailing)
     expect(docs).not.toHaveProperty('priceClearsRefused')
+    expect(docs).not.toHaveProperty('updateStorm')
     expect(clears?.priceClearsRefused).toEqual(priceClearsRefused)
     expect(clears).not.toHaveProperty('docsFailing')
+    expect(storm?.updateStorm).toEqual(updateStorm)
+    expect(storm).not.toHaveProperty('docsFailing')
     for (const healthy of [none, corrupt]) {
       expect(healthy).toMatchObject({ status: 'active' })
       expect(healthy).not.toHaveProperty('docsFailing')
       expect(healthy).not.toHaveProperty('priceClearsRefused')
+      expect(healthy).not.toHaveProperty('updateStorm')
     }
     // Neither record moves `status`.
     expect(docs?.status).toBe('active')

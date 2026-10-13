@@ -58,6 +58,31 @@ export type ServiceStatus = {
       error: string
     }
     /**
+     * Present only while the latest poll wrote model.updated for more than half of the live rows, and at least 20. The updates are written; this only marks a catalog-wide rewrite. Does not change status. The next poll under that line clears it.
+     */
+    updateStorm?: {
+      /**
+       * Epoch seconds of the first storming poll.
+       */
+      since: number
+      /**
+       * Consecutive storming polls.
+       */
+      polls: number
+      /**
+       * Epoch seconds of the latest storming poll.
+       */
+      lastAt: number
+      /**
+       * model.updated rows written by the latest poll.
+       */
+      updated: number
+      /**
+       * Live rows, not deprecated, at the start of that poll.
+       */
+      live: number
+    }
+    /**
      * Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.
      */
     priceClearsRefused?: {
@@ -132,6 +157,48 @@ export type ServiceStatus = {
       schemas?: number
     }
   }>
+}
+
+export type Change = {
+  id: string
+  type:
+    | 'model.added'
+    | 'model.removed'
+    | 'model.updated'
+    | 'schema.added'
+    | 'schema.updated'
+    | 'endpoint.added'
+    | 'endpoint.removed'
+  providerId: string
+  subjectId: string
+  summary: string
+  /**
+   * model.updated carries before, after, and changed. changed is the fact paths that differ and is never empty. A source hash, an extract time, the operand order of +, and the order of an input values list are not facts, so they do not appear here and do not produce an event. Schema events carry kind, contentHash, and previousHash instead.
+   */
+  payload?: {
+    before?: unknown
+    after?: unknown
+    /**
+     * Fact paths that differ, present on model.updated. For example contextWindow or pricing.tables.rate.base.input_tokens.
+     */
+    changed?: Array<string>
+    kind?: 'input' | 'output'
+    contentHash?: string
+    previousHash?: string | null
+  }
+  /**
+   * Unix epoch seconds.
+   */
+  createdAt: number
+}
+
+export type ChangesPage = {
+  count: number
+  changes: Array<Change>
+  nextCursor: string | null
+  _links?: {
+    [key: string]: unknown
+  }
 }
 
 export type ValidateRequest = {
@@ -862,9 +929,7 @@ export type ListChangesResponses = {
   /**
    * Changes page with next cursor.
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: ChangesPage
 }
 
 export type ListChangesResponse =

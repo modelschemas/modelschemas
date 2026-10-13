@@ -19,13 +19,13 @@ import { markdownSection } from '#/server/providers/model-facts.ts'
 import { requestSchemaPropertyNames } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
 import { sha256Text } from '#/server/providers/types.ts'
-import { stableStringify } from '#/server/kv.ts'
 import {
   cardRequestParamsOk,
   parseStoredRateCard,
   storeListedPricing,
 } from '#/server/rate-card.ts'
 import type { RateCardRefuse } from '#/server/rate-card.ts'
+import { changedFactPaths, modelUpdatedPayload } from './change-facts.ts'
 import {
   captureIngestEvents,
   ingestFailedEvent,
@@ -554,23 +554,26 @@ async function writePricing(args: {
       fetchedAt: args.now,
     },
   }
-  const before = args.candidate.pricing
-  const changed = stableStringify(before) !== stableStringify(args.card)
+  const before = { pricing: args.candidate.pricing }
+  const after = { pricing: args.card }
+  const changed = changedFactPaths(before, after)
   await args.db
     .update(models)
     .set({
-      pricing: args.card,
+      // A stamp or an operand reorder is not a new card. The stored source
+      // stays the read on which the price last changed.
+      ...(changed.length > 0 ? { pricing: args.card } : {}),
       factSources: nextSources,
     })
     .where(eq(models.id, args.candidate.id))
-  if (!changed) return false
+  if (changed.length === 0) return false
   await args.db.insert(changes).values({
     id: crypto.randomUUID(),
     type: 'model.updated',
     providerId: args.providerId,
     subjectId: args.candidate.id,
     summary: `Model ${args.candidate.rawId} updated`,
-    payload: { before: { pricing: before }, after: { pricing: args.card } },
+    payload: modelUpdatedPayload(before, after, changed),
     createdAt: args.now,
   })
   return true

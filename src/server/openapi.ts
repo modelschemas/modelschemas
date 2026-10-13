@@ -446,7 +446,11 @@ export const openApiDocument = {
         responses: {
           '200': {
             description: 'Changes page with next cursor.',
-            content: { 'application/json': { schema: { type: 'object' } } },
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ChangesPage' },
+              },
+            },
           },
         },
       },
@@ -584,6 +588,36 @@ export const openApiDocument = {
                     },
                   },
                 },
+                updateStorm: {
+                  type: 'object',
+                  description:
+                    'Present only while the latest poll wrote model.updated for more than half of the live rows, and at least 20. The updates are written; this only marks a catalog-wide rewrite. Does not change status. The next poll under that line clears it.',
+                  required: ['since', 'polls', 'lastAt', 'updated', 'live'],
+                  properties: {
+                    since: {
+                      type: 'integer',
+                      description: 'Epoch seconds of the first storming poll.',
+                    },
+                    polls: {
+                      type: 'integer',
+                      description: 'Consecutive storming polls.',
+                    },
+                    lastAt: {
+                      type: 'integer',
+                      description: 'Epoch seconds of the latest storming poll.',
+                    },
+                    updated: {
+                      type: 'integer',
+                      description:
+                        'model.updated rows written by the latest poll.',
+                    },
+                    live: {
+                      type: 'integer',
+                      description:
+                        'Live rows, not deprecated, at the start of that poll.',
+                    },
+                  },
+                },
                 priceClearsRefused: {
                   type: 'object',
                   description:
@@ -679,6 +713,60 @@ export const openApiDocument = {
               },
             },
           },
+        },
+      },
+      Change: {
+        type: 'object',
+        required: [
+          'id',
+          'type',
+          'providerId',
+          'subjectId',
+          'summary',
+          'createdAt',
+        ],
+        properties: {
+          id: { type: 'string' },
+          type: { type: 'string', enum: changeTypeEnum },
+          providerId: { type: 'string' },
+          subjectId: { type: 'string' },
+          summary: { type: 'string' },
+          payload: {
+            type: 'object',
+            description:
+              'model.updated carries before, after, and changed. changed is the fact paths that differ and is never empty. A source hash, an extract time, the operand order of +, and the order of an input values list are not facts, so they do not appear here and do not produce an event. Schema events carry kind, contentHash, and previousHash instead.',
+            properties: {
+              before: {},
+              after: {},
+              changed: {
+                type: 'array',
+                minItems: 1,
+                items: { type: 'string' },
+                description:
+                  'Fact paths that differ, present on model.updated. For example contextWindow or pricing.tables.rate.base.input_tokens.',
+              },
+              kind: { type: 'string', enum: ['input', 'output'] },
+              contentHash: { type: 'string' },
+              previousHash: { type: ['string', 'null'] },
+            },
+          },
+          createdAt: {
+            type: 'integer',
+            description: 'Unix epoch seconds.',
+          },
+        },
+      },
+      ChangesPage: {
+        type: 'object',
+        required: ['count', 'changes', 'nextCursor'],
+        properties: {
+          count: { type: 'integer' },
+          changes: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Change' },
+          },
+          nextCursor: { type: ['string', 'null'] },
+          _links: { type: 'object' },
         },
       },
       ValidateRequest: {

@@ -3,6 +3,7 @@ import { eq, sql } from 'drizzle-orm'
 import type { Db } from '#/db/index.ts'
 import { changes, models } from '#/db/schema.ts'
 import { stableStringify } from '#/server/kv.ts'
+import { changedFactPaths, modelUpdatedPayload } from './change-facts.ts'
 import type { UpstreamModelIdentity } from '#/server/providers/types.ts'
 
 export interface UpstreamIdentityWrite {
@@ -120,10 +121,14 @@ export async function reconcileSameAs(db: Db, now: number): Promise<void> {
           providerId: row.provider_id,
           subjectId: row.id,
           summary: 'Upstream model link updated',
-          payload: {
-            before: { sameAsModelId: row.before },
-            after: { sameAsModelId: row.after },
-          },
+          payload: modelUpdatedPayload(
+            { sameAsModelId: row.before },
+            { sameAsModelId: row.after },
+            changedFactPaths(
+              { sameAsModelId: row.before },
+              { sameAsModelId: row.after },
+            ),
+          ),
           createdAt: now,
         })),
       ),

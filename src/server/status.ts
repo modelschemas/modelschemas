@@ -15,6 +15,7 @@ import { readIngestRecords } from '#/server/ingest/docs-failing.ts'
 import type {
   DocsFailing,
   PriceClearsRefused,
+  UpdateStorm,
 } from '#/server/ingest/docs-failing.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import { servePricing } from '#/server/rate-card.ts'
@@ -61,6 +62,12 @@ export interface ProviderStatus {
    * Does not change `status`.
    */
   priceClearsRefused?: PriceClearsRefused
+  /**
+   * Present while the latest poll wrote `model.updated` for more than half
+   * of the live rows, and at least 20. The updates are written; this only
+   * marks a catalog-wide rewrite. Does not change `status`.
+   */
+  updateStorm?: UpdateStorm
   completeness: Completeness
   /** Model tallies count live rows: what `GET /v1/models` lists by default. */
   counts: {
@@ -271,7 +278,7 @@ export async function getServiceStatus(
     schemaCounts,
   ] = await Promise.all([
     db.select().from(providers),
-    // One statement for every provider's docs-failing / refused-clears row.
+    // One statement for every provider's docs-failing, refused-clears, and update-storm row.
     readIngestRecords(db),
     readCompleteness(db),
     // One pass yields every model tally. Deprecated rows are counted apart:

@@ -13,7 +13,10 @@
  *
  * A refused mass price clear (`refusesPriceClears`) keeps the same kind of
  * row, `price-clears-refused:<providerId>`, holding a `PriceClearsRefused`.
- * `GET /v1/status` serves both (`readIngestRecords`).
+ * An update storm (`update-storm:<providerId>`) holds an `UpdateStorm`
+ * when one poll writes `model.updated` for more than half of the live
+ * rows, and at least 20. The updates are still written; the row only
+ * marks them. `GET /v1/status` serves all three (`readIngestRecords`).
  */
 import { eq, like, or } from 'drizzle-orm'
 
@@ -47,14 +50,48 @@ export interface PriceClearsRefused {
   priced: number
 }
 
-/** Both records of one provider, as `GET /v1/status` serves them. */
+/**
+ * One poll updated more than half of the provider's live rows, and at
+ * least 20. The events are written. The next poll under that line deletes
+ * the row.
+ */
+export interface UpdateStorm {
+  /** Epoch seconds of the first poll in this unbroken run of storms. */
+  since: number
+  /** Consecutive storming polls, this one included. */
+  polls: number
+  lastAt: number
+  /** `model.updated` rows written by the latest poll. */
+  updated: number
+  /** Live rows (not deprecated) at the start of that poll. */
+  live: number
+}
+
+/** The three records of one provider, as `GET /v1/status` serves them. */
 export interface IngestRecords {
   docsFailing?: DocsFailing
   priceClearsRefused?: PriceClearsRefused
+  updateStorm?: UpdateStorm
 }
 
 const DOCS = 'docs-failing:'
 const CLEARS = 'price-clears-refused:'
+const STORM = 'update-storm:'
+
+/** More than half of the live rows, and at least this many updates. */
+const STORM_MIN = 20
+
+/**
+ * A poll that rewrites most of a catalog. Null under the line, including
+ * a provider with fewer than 20 live rows.
+ */
+export function updateStormOf(
+  updated: number,
+  live: number,
+): { updated: number; live: number } | null {
+  if (updated < STORM_MIN || updated * 2 <= live) return null
+  return { updated, live }
+}
 
 /** An upstream error can quote a whole HTML page. */
 const ERROR_MAX = 500
@@ -92,7 +129,11 @@ export async function readIngestRecords(
     .select({ key: cacheMeta.key, lastError: cacheMeta.lastError })
     .from(cacheMeta)
     .where(
-      or(like(cacheMeta.key, `${DOCS}%`), like(cacheMeta.key, `${CLEARS}%`)),
+      or(
+        like(cacheMeta.key, `${DOCS}%`),
+        like(cacheMeta.key, `${CLEARS}%`),
+        like(cacheMeta.key, `${STORM}%`),
+      ),
     )
   const byProvider = new Map<string, IngestRecords>()
   const entry = (providerId: string) => {
@@ -104,10 +145,15 @@ export async function readIngestRecords(
     if (row.key.startsWith(DOCS)) {
       const record = parse<DocsFailing>(row.lastError, 'sources')
       if (record) entry(row.key.slice(DOCS.length)).docsFailing = record
-    } else {
+    } else if (row.key.startsWith(CLEARS)) {
       const record = parse<PriceClearsRefused>(row.lastError)
       if (record) {
         entry(row.key.slice(CLEARS.length)).priceClearsRefused = record
+      }
+    } else if (row.key.startsWith(STORM)) {
+      const record = parse<UpdateStorm>(row.lastError)
+      if (record && typeof record.updated === 'number') {
+        entry(row.key.slice(STORM.length)).updateStorm = record
       }
     }
   }
@@ -211,4 +257,56 @@ export async function recordDocsFailing(
       set: { fetchedAt: record.since, lastError },
     })
   return record
+}
+
+/**
+ * Write or extend the provider's update-storm record, or delete it when
+ * this poll stayed under the line. The record describes the poll; it must
+ * never be what fails it, so a failed write is logged and swallowed.
+ */
+export async function recordUpdateStorm(
+  db: Db,
+  providerId: string,
+  storm: { updated: number; live: number } | null,
+  now: number,
+): Promise<void> {
+  const rowKey = `${STORM}${providerId}`
+  try {
+    if (!storm) {
+      await db.delete(cacheMeta).where(eq(cacheMeta.key, rowKey))
+      return
+    }
+    const row = await db.query.cacheMeta.findFirst({
+      where: eq(cacheMeta.key, rowKey),
+    })
+    const prior = parse<UpdateStorm>(row?.lastError)
+    const record: UpdateStorm = {
+      since: prior?.since ?? now,
+      polls: (prior?.polls ?? 0) + 1,
+      lastAt: now,
+      updated: storm.updated,
+      live: storm.live,
+    }
+    const lastError = JSON.stringify(record)
+    await db
+      .insert(cacheMeta)
+      .values({
+        key: rowKey,
+        fetchedAt: record.since,
+        staleTime: 0,
+        lastError,
+      })
+      .onConflictDoUpdate({
+        target: cacheMeta.key,
+        set: { fetchedAt: record.since, lastError },
+      })
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        job: 'models-poll',
+        providerId,
+        error: `update-storm record not written: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    )
+  }
 }

@@ -25,8 +25,9 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
   is converted, so compare only like with like); \`?pricing=1\` returns
   the full card. \`/v1/status\` counts live \`priced\` models per provider
   and scores \`completeness\` (the share of chat facts filled; \`score\` is
-  null with no chat models). A provider there carries \`docsFailing\` or
-  \`priceClearsRefused\` while its stored docs facts or prices may be stale.
+  null with no chat models). A provider there carries \`docsFailing\`,
+  \`priceClearsRefused\`, or \`updateStorm\` while its stored docs facts or
+  prices may be stale, or one poll rewrote most of its live rows.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as \`{endpointId}\`: it aliases onto that
