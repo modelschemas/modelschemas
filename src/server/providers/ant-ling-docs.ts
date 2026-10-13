@@ -272,13 +272,28 @@ export function nativeRequest(html: string): Schema {
   }
   return schema
 }
-export function applicability(html: string, field: string): string {
+/**
+ * The native ids a field applies to: one named id ("Only takes effect for
+ * Ring-2.6-1T"), or every model option in each named version series
+ * ("Supported by 3.0 series models and 3.1 series models").
+ */
+export function applicability(html: string, field: string): Array<string> {
   const block = nativeFields(html).get(field)
   if (!block) fail(`missing ${field} applicability`)
   const t = text(block)
   const id = t.match(/Only (?:takes effect|effective) for ([\w.-]+)/i)?.[1]
-  if (!id) fail(`unreadable ${field} applicability`)
-  return id.replace(/\.$/, '')
+  if (id) return [id.replace(/\.$/, '')]
+  const series = t.match(
+    /Supported by (\d+(?:\.\d+)* series models(?:(?:,| and|, and) \d+(?:\.\d+)* series models)*)\./i,
+  )?.[1]
+  if (!series) fail(`unreadable ${field} applicability`)
+  const ids = nativeModelIds(html)
+  return [...series.matchAll(/(\d+(?:\.\d+)*) series models/g)].flatMap((m) => {
+    const version = m[1] ?? ''
+    const members = ids.filter((rawId) => rawId.split('-').includes(version))
+    if (!members.length) fail(`no native model in the ${version} series`)
+    return members
+  })
 }
 export function controls(html: string) {
   const fields = nativeFields(html)
@@ -286,8 +301,8 @@ export function controls(html: string) {
   const toggle = fields.get('thinking.type')
   if (!effort || !toggle) fail('missing native reasoning controls')
   return {
-    effortId: applicability(html, 'reasoning'),
-    toggleId: applicability(html, 'thinking'),
+    effortIds: applicability(html, 'reasoning'),
+    toggleIds: applicability(html, 'thinking'),
     efforts: options(effort),
     effortDefault:
       effort.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null,
