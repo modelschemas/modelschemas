@@ -305,6 +305,20 @@ it.each([
       context_over_200k: { input: 9, output: 9 },
     },
   },
+  {
+    cost: {
+      input: 1,
+      output: 2,
+      tiers: [{ input: 3, output: 4, tier: { size: 1000 } }],
+    },
+  },
+  {
+    cost: {
+      input: 1,
+      output: 2,
+      tiers: [{ input: 3, output: 4, tier: { type: 'requests', size: 1000 } }],
+    },
+  },
 ])('rejects an unreadable Zen cost %j', (fields) => {
   expect(() =>
     parseOpenCodeCatalog(payload(fields), 'opencode', HASH, EXTRACTED),

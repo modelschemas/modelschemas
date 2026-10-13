@@ -133,7 +133,7 @@ export function compileOpenCodeCost(
       if (!record(tier) || !record(tier.tier)) {
         throw new Error(`opencode: unreadable cost tier for ${id}`)
       }
-      if (tier.tier.type !== undefined && tier.tier.type !== 'context') {
+      if (tier.tier.type !== 'context') {
         throw new Error(`opencode: unreadable cost tier for ${id}`)
       }
       const size = tier.tier.size
