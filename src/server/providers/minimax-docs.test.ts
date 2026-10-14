@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
+  MINIMAX_CN_PRICING_OVERVIEW_PAGE,
   MINIMAX_CN_PRICING_PAGE,
   MINIMAX_CN_SDK_PAGE,
   MINIMAX_MAX_COMPLETION_TOKENS,
+  MINIMAX_PRICING_OVERVIEW_PAGE,
   MINIMAX_PRICING_PAGE,
   MINIMAX_SDK_PAGE,
 } from './fixtures/minimax-docs.ts'
@@ -242,6 +244,71 @@ describe('minimax-cn pricing', () => {
   })
 })
 
+describe.each([
+  {
+    platform: MINIMAX,
+    page: MINIMAX_PRICING_PAGE,
+    overview: MINIMAX_PRICING_OVERVIEW_PAGE,
+    next: '## Audio',
+    table: [
+      '| Model | Input | Output |',
+      '| :- | :- | :- |',
+      '| **MiniMax-M4** | \\$0.1 / M tokens | \\$0.5 / M tokens |',
+    ],
+  },
+  {
+    platform: MINIMAX_CN,
+    page: MINIMAX_CN_PRICING_PAGE,
+    overview: MINIMAX_CN_PRICING_OVERVIEW_PAGE,
+    next: '## 语音',
+    table: [
+      '| **模型** | **输入价格**<br /> 元/百万 tokens | **输出价格**<br /> 元/百万 tokens |',
+      '| :- | :-: | :-: |',
+      '| **MiniMax-M4** | 0.7 | 3.5 |',
+    ],
+  },
+])(
+  '$platform.label pricing overview page',
+  ({ platform, page, overview, next, table }) => {
+    it('reads the LLM section nested in an indented <section>', () => {
+      const prices = parseMinimaxPricing(overview, platform)
+      expect(prices.size).toBe(8)
+      expect(prices).toEqual(parseMinimaxPricing(page, platform))
+    })
+
+    it('still refuses a sub-heading inside the nested section', () => {
+      const headed = overview.replace(
+        '    <Accordion title=',
+        '    ### Batch\n\n    <Accordion title=',
+      )
+      expect(headed).not.toBe(overview)
+      expect(parseMinimaxPricing(headed, platform).size).toBe(0)
+    })
+
+    it('refuses an HTML sub-heading inside the nested section', () => {
+      const headed = overview.replace(
+        '    <Accordion title=',
+        '    <h3 id="batch">Batch</h3>\n\n    <Accordion title=',
+      )
+      expect(headed).not.toBe(overview)
+      expect(parseMinimaxPricing(headed, platform).size).toBe(0)
+    })
+
+    it('stops at the closing </section> when the next heading is HTML', () => {
+      const html = overview.replace(next, '<h2>Audio</h2>')
+      expect(html).not.toBe(overview)
+      const tail = [
+        '<section id="models/text-batch">',
+        ...table,
+        '</section>',
+      ].join('\n')
+      const prices = parseMinimaxPricing(`${html}\n${tail}`, platform)
+      expect(prices.has('MiniMax-M4')).toBe(false)
+      expect(prices).toEqual(parseMinimaxPricing(page, platform))
+    })
+  },
+)
+
 /**
  * Page shapes that once stored a wrong number with no throw. Each must
  * leave the model unpriced (or the page empty) on both platforms.
@@ -332,6 +399,27 @@ describe.each([
   it('prices nothing under a sub-heading it cannot attribute', () => {
     expect(edit(c.header, `### Batch\n\n${c.header}`, false).size).toBe(0)
   })
+
+  it.each([
+    ['a nested </section>', '<section>', '</section>'],
+    ['an indented ## heading', '  ## Notes', ''],
+  ])(
+    'prices nothing when %s cuts a foreign accordion open',
+    (_name, before, after) => {
+      const legacy = `<Accordion title="${c.platform.legacyAccordion}">`
+      const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow]
+      const foreign = [
+        '<Accordion title="Batch">',
+        before,
+        ...batch,
+        after,
+        '</Accordion>',
+        '',
+        legacy,
+      ].join('\n')
+      expect(edit(legacy, foreign, false).size).toBe(0)
+    },
+  )
 
   it('refuses a model a second table prices again', () => {
     const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow].join(
