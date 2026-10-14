@@ -357,6 +357,12 @@ describe.each([
   },
 ])('$name pricing refuses what it cannot attribute', (c) => {
   const parse = (page: string) => parseMinimaxPricing(page, c.platform)
+  /** A price table for a model the published page does not list. */
+  const unlistedTable = [
+    c.header,
+    '| :- | :- | :- | :- | :- |',
+    c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+  ]
   const edit = (from: string, to: string, all = true) => {
     const page = all ? c.page.replaceAll(from, to) : c.page.replace(from, to)
     expect(page).not.toBe(c.page)
@@ -432,13 +438,7 @@ describe.each([
   it.each(['**Batch API**', '  **Batch API**:'])(
     'prices nothing under a bold sub-heading %j',
     (bold) => {
-      const batch = [
-        bold,
-        '',
-        c.header,
-        '| :- | :- | :- | :- | :- |',
-        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
-      ].join('\n')
+      const batch = [bold, '', ...unlistedTable].join('\n')
       expect(edit(c.row, `${c.row}\n\n${batch}`, false).size).toBe(0)
     },
   )
@@ -456,15 +456,8 @@ describe.each([
   it.each(['Note', 'Info', 'Callout'])(
     'prices nothing when a <%s> holds a price row',
     (tag) => {
-      const batch = [
-        `<${tag}>`,
-        c.header,
-        '| :- | :- | :- | :- | :- |',
-        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
-        `</${tag}>`,
-      ].join('\n')
+      const batch = [`<${tag}>`, ...unlistedTable, `</${tag}>`].join('\n')
       expect(edit(c.row, `${c.row}\n\n${batch}`, false).size).toBe(0)
-      // A callout the section cut leaves open is read to the section's end.
       expect(edit(c.row, `${c.row}\n\n<${tag}>`, false).size).toBe(0)
     },
   )
@@ -520,9 +513,7 @@ describe.each([
       const nested = [
         legacy,
         '<Accordion title="Batch">',
-        c.header,
-        '| :- | :- | :- | :- | :- |',
-        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+        ...unlistedTable,
         '</Accordion>',
       ].join('\n')
       expect(edit(legacy, nested).size).toBe(0)
@@ -539,9 +530,7 @@ describe.each([
     it('prices nothing when an unknown accordion holds a price table', () => {
       const batch = [
         '<Accordion title="Batch">',
-        c.header,
-        '| :- | :- | :- | :- | :- |',
-        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+        ...unlistedTable,
         '</Accordion>',
         '',
         legacy,

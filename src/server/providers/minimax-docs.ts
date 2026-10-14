@@ -413,7 +413,6 @@ export function parseMinimaxPricing(
       return ''
     },
   )
-  // A callout the section cut left open runs to the end of the section.
   for (const [, , body = ''] of section.matchAll(CALLOUT)) {
     if (markdownTableRows(body).some(priceRow)) return out
   }
