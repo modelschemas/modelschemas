@@ -7,7 +7,6 @@ import { timeAgo } from '#/lib/time.ts'
 import { EXAMPLES } from '#/lib/examples.ts'
 
 import {
-  CHANGE_STYLES,
   ChangeSummary,
   CodePanel,
   SectionHead,
@@ -41,7 +40,9 @@ const getDashboardData = createServerFn({ method: 'GET' }).handler(
     const db = getDb(env)
     const [status, changesOutcome] = await Promise.all([
       getServiceStatus(db),
-      listChanges(db, { limit: 8 }),
+      // Updates are mostly router prices moving poll to poll; additions
+      // are what a visitor wants to see first.
+      listChanges(db, { type: 'model.added', limit: 8 }),
     ])
     return {
       status,
@@ -361,16 +362,16 @@ function Landing() {
 
         <section>
           <SectionHead
-            title="Recent changes"
+            title="New models"
             aside={
-              <a className="press-link" href="/changes">
-                GET /v1/changes →
+              <a className="press-link" href="/changes?type=model.added">
+                all new models →
               </a>
             }
           />
           {changes.length === 0 ? (
             <p className="font-mono text-sm text-ink-faint">
-              no changes yet — the next cron poll will populate this feed.
+              no new models yet — the next cron poll will populate this list.
             </p>
           ) : (
             <>
@@ -381,11 +382,6 @@ function Landing() {
                       <tr key={change.id}>
                         <td className="font-mono text-xs whitespace-nowrap text-ink-faint">
                           {timeAgo(change.createdAt)}
-                        </td>
-                        <td
-                          className={`font-mono text-xs whitespace-nowrap ${CHANGE_STYLES[change.type] ?? 'text-ink-soft'}`}
-                        >
-                          {change.type}
                         </td>
                         <td className="max-w-[38em] truncate">
                           <ChangeSummary change={change} />
@@ -399,7 +395,10 @@ function Landing() {
                 </table>
               </div>
               <p className="mt-2.5 font-mono text-xs text-ink-faint">
-                Subscribe with a webhook to get these pushed —{' '}
+                <a className="press-link" href="/changes">
+                  every change: GET /v1/changes
+                </a>{' '}
+                · subscribe with a webhook to get these pushed —{' '}
                 <a className="press-link" href="/docs">
                   POST /v1/subscriptions
                 </a>
