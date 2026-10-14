@@ -13,12 +13,24 @@ import {
   ViewToggle,
 } from '#/components/site.tsx'
 import type { ResourceView } from '#/components/site.tsx'
+import { changeDiffs } from '#/lib/change-diff.ts'
+import type { ChangeDiff } from '#/lib/change-diff.ts'
 import { timeAgo } from '#/lib/time.ts'
+import type { ChangeType } from '#/db/schema.ts'
 
 interface ChangesSearch {
   cursor?: string
   provider?: string
+  type?: ChangeType
 }
+
+/** Filter links above the table; `undefined` is every type. */
+const TYPE_FILTERS: Array<[string, ChangeType | undefined]> = [
+  ['all', undefined],
+  ['new models', 'model.added'],
+  ['removed models', 'model.removed'],
+  ['updated models', 'model.updated'],
+]
 
 interface ChangeRow {
   id: string
@@ -27,7 +39,12 @@ interface ChangeRow {
   subjectId: string
   summary: string
   createdAt: number
+  /** What a `model.updated` changed; the raw payload stays on the API. */
+  diffs: Array<ChangeDiff>
 }
+
+/** Diffs shown per row before the rest collapse into a count. */
+const SHOWN_DIFFS = 4
 
 interface ChangesData {
   count: number
@@ -53,6 +70,7 @@ const getChanges = createServerFn({ method: 'GET' })
         subjectId: c.subjectId,
         summary: c.summary,
         createdAt: c.createdAt,
+        diffs: changeDiffs(c.payload),
       })),
     }
   })
@@ -67,6 +85,7 @@ export const Route = createFileRoute('/changes')({
       typeof search.provider === 'string' && search.provider !== ''
         ? search.provider
         : undefined,
+    type: TYPE_FILTERS.find(([, type]) => type === search.type)?.[1],
   }),
   loaderDeps: ({ search }) => search,
   loader: ({ deps }) => getChanges({ data: deps }),
@@ -80,18 +99,33 @@ function Changes() {
 
   const params = new URLSearchParams()
   if (search.provider) params.set('provider', search.provider)
+  if (search.type) params.set('type', search.type)
   if (search.cursor) params.set('cursor', search.cursor)
   const qs = params.toString() === '' ? '' : `?${params.toString()}`
   const apiPath = `/v1/changes${qs}`
   const jsonBody = JSON.stringify(
-    { count: data.count, changes: data.changes, nextCursor: data.nextCursor },
+    {
+      count: data.count,
+      changes: data.changes.map(({ diffs: _diffs, ...change }) => change),
+      nextCursor: data.nextCursor,
+    },
     null,
     2,
   )
 
   const olderParams = new URLSearchParams()
   if (search.provider) olderParams.set('provider', search.provider)
+  if (search.type) olderParams.set('type', search.type)
   if (data.nextCursor) olderParams.set('cursor', data.nextCursor)
+
+  /** A filter link keeps the provider and starts again at the newest page. */
+  const typeHref = (type: ChangeType | undefined) => {
+    const filter = new URLSearchParams()
+    if (search.provider) filter.set('provider', search.provider)
+    if (type) filter.set('type', type)
+    const query = filter.toString()
+    return query === '' ? '/changes' : `/changes?${query}`
+  }
 
   return (
     <div className="min-h-screen text-ink">
@@ -114,6 +148,20 @@ function Changes() {
             ['page size', '50'],
           ]}
         />
+
+        <div className="mb-2.5 flex flex-wrap gap-4 font-mono text-xs">
+          {TYPE_FILTERS.map(([label, type]) =>
+            type === search.type ? (
+              <span key={label} className="text-ink">
+                {label}
+              </span>
+            ) : (
+              <a key={label} className="press-link" href={typeHref(type)}>
+                {label}
+              </a>
+            ),
+          )}
+        </div>
 
         {view === 'json' ? (
           <JsonPane
@@ -142,8 +190,9 @@ function Changes() {
                   {data.changes.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="text-ink-faint">
-                        no changes yet — the next cron poll will populate this
-                        feed.
+                        {search.type || search.provider
+                          ? 'no changes match this filter.'
+                          : 'no changes yet — the next cron poll will populate this feed.'}
                       </td>
                     </tr>
                   ) : (
@@ -157,8 +206,30 @@ function Changes() {
                         >
                           {change.type}
                         </td>
-                        <td className="max-w-[38em] truncate">
-                          <ChangeSummary change={change} />
+                        <td className="max-w-[38em]">
+                          <div className="truncate">
+                            <ChangeSummary change={change} />
+                          </div>
+                          {change.diffs.slice(0, SHOWN_DIFFS).map((diff) => (
+                            <div
+                              key={diff.path}
+                              className="truncate font-mono text-xs text-ink-faint"
+                            >
+                              {diff.path}{' '}
+                              <span className="text-tok-red">
+                                {diff.before}
+                              </span>
+                              {' → '}
+                              <span className="text-tok-green">
+                                {diff.after}
+                              </span>
+                            </div>
+                          ))}
+                          {change.diffs.length > SHOWN_DIFFS ? (
+                            <div className="font-mono text-xs text-ink-faint">
+                              +{change.diffs.length - SHOWN_DIFFS} more
+                            </div>
+                          ) : null}
                         </td>
                         <td className="font-mono text-xs text-ink-faint max-sm:hidden">
                           <a
