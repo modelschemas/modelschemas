@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
+  MINIMAX_CN_PRICING_OVERVIEW_PAGE,
   MINIMAX_CN_PRICING_PAGE,
   MINIMAX_CN_SDK_PAGE,
   MINIMAX_MAX_COMPLETION_TOKENS,
+  MINIMAX_PRICING_OVERVIEW_PAGE,
   MINIMAX_PRICING_PAGE,
   MINIMAX_SDK_PAGE,
 } from './fixtures/minimax-docs.ts'
@@ -239,6 +241,34 @@ describe('minimax-cn pricing', () => {
     const page = MINIMAX_CN_PRICING_PAGE.replaceAll(from, to)
     expect(page).not.toBe(MINIMAX_CN_PRICING_PAGE)
     expect(cn(page).has('MiniMax-M2.7')).toBe(false)
+  })
+})
+
+describe.each([
+  {
+    platform: MINIMAX,
+    page: MINIMAX_PRICING_PAGE,
+    overview: MINIMAX_PRICING_OVERVIEW_PAGE,
+  },
+  {
+    platform: MINIMAX_CN,
+    page: MINIMAX_CN_PRICING_PAGE,
+    overview: MINIMAX_CN_PRICING_OVERVIEW_PAGE,
+  },
+])('$platform.label pricing overview page', ({ platform, page, overview }) => {
+  it('reads the LLM section nested in an indented <section>', () => {
+    const prices = parseMinimaxPricing(overview, platform)
+    expect(prices.size).toBe(8)
+    expect(prices).toEqual(parseMinimaxPricing(page, platform))
+  })
+
+  it('still refuses a sub-heading inside the nested section', () => {
+    const headed = overview.replace(
+      '    <Accordion title=',
+      '    ### Batch\n\n    <Accordion title=',
+    )
+    expect(headed).not.toBe(overview)
+    expect(parseMinimaxPricing(headed, platform).size).toBe(0)
   })
 })
 

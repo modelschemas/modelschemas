@@ -359,17 +359,18 @@ export function parseMinimaxPricing(
   markdown: string,
   platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  const tabbed = markdownSection(markdown, platform.priceSection)
-    .replace(
-      new RegExp(
-        `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
-        'g',
-      ),
-      '',
-    )
+  // The page nests each `## ` section, indented, in a `<section>` element.
+  const dedented = markdown
     .split('\n')
     .map((line) => line.trim())
     .join('\n')
+  const tabbed = markdownSection(dedented, platform.priceSection).replace(
+    new RegExp(
+      `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
+      'g',
+    ),
+    '',
+  )
   const out = new Map<string, MinimaxRates>()
   // A tab the strip did not recognise, or a sub-heading, may hold another
   // tier's table under the same headers.
