@@ -386,14 +386,13 @@ describe.each([
     expect(edit(c.priority, mutate(c.priority)).size).toBe(0)
   })
 
-  it('refuses the model when tabs become headings and both tiers show', () => {
-    const page = c.page
-      .replace(/<Tab title="[^"]*">/g, '**tier**')
-      .replaceAll('</Tab>', '')
-    expect(page).not.toBe(c.page)
-    const prices = parse(page)
+  it('refuses the model when tabs become labels and both tiers show', () => {
+    const untabbed = (label: string) =>
+      c.page.replace(/<Tab title="[^"]*">/g, label).replaceAll('</Tab>', '')
+    const prices = parse(untabbed('tier'))
     expect(prices.has('MiniMax-M3')).toBe(false)
     expect(prices.size).toBe(7)
+    expect(parse(untabbed('**tier**')).size).toBe(0)
   })
 
   it('prices nothing under a sub-heading it cannot attribute', () => {
@@ -425,10 +424,50 @@ describe.each([
     const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow].join(
       '\n',
     )
-    const prices = edit(c.row, `${c.row}\n\n**Batch**\n\n${batch}`, false)
+    const prices = edit(c.row, `${c.row}\n\n${batch}`, false)
     expect(prices.has('MiniMax-M2.7')).toBe(false)
     expect(prices.size).toBe(7)
   })
+
+  it.each(['**Batch API**', '  **Batch API**:'])(
+    'prices nothing under a bold sub-heading %j',
+    (bold) => {
+      const batch = [
+        bold,
+        '',
+        c.header,
+        '| :- | :- | :- | :- | :- |',
+        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+      ].join('\n')
+      expect(edit(c.row, `${c.row}\n\n${batch}`, false).size).toBe(0)
+    },
+  )
+
+  it('prices nothing when a standard tab nests in the priority tab', () => {
+    const nested = [
+      c.priority,
+      `<Tab title="${c.platform.standardTab}">`,
+      'Same as standard.',
+      '</Tab>',
+    ].join('\n')
+    expect(edit(c.priority, nested, false).size).toBe(0)
+  })
+
+  it.each(['Note', 'Info', 'Callout'])(
+    'prices nothing when a <%s> holds a price row',
+    (tag) => {
+      const batch = [
+        `<${tag}>`,
+        c.header,
+        '| :- | :- | :- | :- | :- |',
+        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+        `</${tag}>`,
+      ].join('\n')
+      expect(edit(c.row, `${c.row}\n\n${batch}`, false).size).toBe(0)
+      // A callout the section cut leaves open is read to the section's end.
+      expect(edit(c.row, `${c.row}\n\n<${tag}>`, false).size).toBe(0)
+    },
+  )
 
   it('refuses a model whose tier threshold repeats', () => {
     const tierRow = c.page.split('\n').find((line) => line.includes(c.tier))
@@ -475,6 +514,22 @@ describe.each([
           legacy.replace('<Accordion ', '<Accordion icon="clock" '),
         ),
       )
+    })
+
+    it('prices nothing when an accordion nests in the legacy accordion', () => {
+      const nested = [
+        legacy,
+        '<Accordion title="Batch">',
+        c.header,
+        '| :- | :- | :- | :- | :- |',
+        c.batchRow.replace('MiniMax-M2.7', 'MiniMax-B1'),
+        '</Accordion>',
+      ].join('\n')
+      expect(edit(legacy, nested).size).toBe(0)
+    })
+
+    it('prices nothing when an </Accordion> has no opening', () => {
+      expect(edit(c.row, `${c.row}\n</Accordion>`, false).size).toBe(0)
     })
 
     it('prices nothing when the legacy accordion is retitled', () => {

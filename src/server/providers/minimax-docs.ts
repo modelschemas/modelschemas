@@ -25,7 +25,7 @@ import type { ModelReasoning } from './types.ts'
 
 const DOCS = 'https://platform.minimax.io/docs'
 export const MINIMAX_SDK_URL = `${DOCS}/api-reference/text-anthropic-api.md`
-export const MINIMAX_PRICING_URL = `${DOCS}/guides/pricing-paygo.md`
+export const MINIMAX_PRICING_URL = `${DOCS}/pricing/overview.md`
 export const MINIMAX_CHAT_SPEC_URL = `${DOCS}/api-reference/text/api/openapi-chat-openai.json`
 export const MINIMAX_MESSAGES_SPEC_URL = `${DOCS}/api-reference/text/api/openapi-chat-anthropic.json`
 
@@ -124,7 +124,7 @@ export const MINIMAX_CN: MinimaxPlatform = {
   hosts: ['platform.minimaxi.com', 'platform.minimax.cn'],
   sdkUrl: `${DOCS_CN}/api-reference/text-anthropic-api.md`,
   chatSpecUrl: `${DOCS_CN}/api-reference/text/api/openapi-chat-openai.json`,
-  pricingUrl: `${DOCS_CN}/guides/pricing-paygo.md`,
+  pricingUrl: `${DOCS_CN}/pricing/overview.md`,
   currency: 'CNY',
   priceSection: '语言模型',
   standardTab: '标准',
@@ -339,6 +339,10 @@ function perMillion(cell: string, price: RegExp): number | null {
 /** A price row's first cell: the bold id, then any bound or badge. */
 const MODEL_CELL = /^\*\*([A-Za-z0-9][\w.-]*)\*\*(.*)$/
 
+/** A Mintlify callout: group 2 is its body, to the close or the end. */
+const CALLOUT =
+  /<(Note|Info|Tip|Warning|Check|Danger|Callout)\b[^>]*>([\s\S]*?)(?:<\/\1>|$)/g
+
 export interface MinimaxRates {
   base: Record<string, number>
   tiers: Array<TokenRateTier>
@@ -350,8 +354,10 @@ export interface MinimaxRates {
  * Rates are per token, in the platform's currency.
  *
  * What it cannot attribute it refuses. Nothing is priced when a `<Tab`
- * other than the standard one survives, or the section holds a heading
- * of its own, markdown or `<h1>`–`<h6>`. A model gets no price when a
+ * other than the standard one survives, a tab or accordion nests another,
+ * a price row sits in a callout (`<Note>`, `<Info>`, …), or the section
+ * holds a heading of its own: markdown, `<h1>`–`<h6>`, or a line that is
+ * bold text alone (`**Batch API**`). A model gets no price when a
  * row of its has text beside the id that is not a bound or the permanent
  * badge, a price cell that does not read, a second base row, or a
  * repeated tier threshold.
@@ -377,17 +383,23 @@ export function parseMinimaxPricing(
     )
   const out = new Map<string, MinimaxRates>()
   // A tab the strip did not recognise, or a sub-heading, may hold another
-  // tier's table under the same headers.
+  // tier's table under the same headers. A tab nested in a dropped one
+  // ends the strip early and leaves a `</Tab>` with no standard opening.
   const standard = `<Tab title="${platform.standardTab}">`
+  const content = tabbed.slice(tabbed.indexOf('\n'))
   if (
     /<Tab(?!s>)/.test(tabbed.replaceAll(standard, '')) ||
-    /^#{1,6} /m.test(tabbed.slice(tabbed.indexOf('\n'))) ||
+    tabbed.split(standard).length !== tabbed.split('</Tab>').length ||
+    /^#{1,6} /m.test(content) ||
+    /^\*\*[^*\n]+\*\*:?$/m.test(content) ||
     /<h[1-6]\b/i.test(tabbed)
   ) {
     return out
   }
-  // So may an accordion that is not the legacy models. One with no price
-  // row (a FAQ) is dropped; one with a price row cannot be attributed.
+  // So may an accordion that is not the legacy models, or a callout. One
+  // with no price row (a FAQ, a note) is dropped; one with a price row
+  // cannot be attributed. A nested accordion ends the match early, so the
+  // outer body holds the inner opening and its own `</Accordion>` is left.
   const priceRow = (cells: Array<string>) =>
     cells[0] === platform.modelHeader || MODEL_CELL.test(cells[0] ?? '')
   const foreign: Array<string> = []
@@ -395,17 +407,22 @@ export function parseMinimaxPricing(
     /<Accordion\b([^>]*)>([\s\S]*?)<\/Accordion>/g,
     (whole, attributes: string, body: string) => {
       const title = /\btitle="([^"]*)"/.exec(attributes)?.[1]
+      if (/<Accordion\b/.test(body)) foreign.push(whole)
       if (title === platform.legacyAccordion) return whole
       if (markdownTableRows(body).some(priceRow)) foreign.push(whole)
       return ''
     },
   )
+  // A callout the section cut left open runs to the end of the section.
+  for (const [, , body = ''] of section.matchAll(CALLOUT)) {
+    if (markdownTableRows(body).some(priceRow)) return out
+  }
   // An accordion the section cut left open was never checked at all.
   const unclosed = section.replace(
     /<Accordion\b[^>]*>[\s\S]*?<\/Accordion>/g,
     '',
   )
-  if (foreign.length > 0 || /<Accordion\b/.test(unclosed)) return out
+  if (foreign.length > 0 || /<\/?Accordion\b/.test(unclosed)) return out
   const refused = new Set<string>()
   const based = new Set<string>()
   /** A base row's `≤ N` bound; the first tier must start at the same N. */
