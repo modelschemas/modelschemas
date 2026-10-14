@@ -333,7 +333,12 @@ export const MINIMAX_CN_PRICING_PAGE = [
   '## 语音',
 ].join('\n')
 
-/** platform.minimax.io/docs/pricing/overview.md (2026-10-14) through the first table after the LLM section. Each `## ` section sits indented in a `<section>`. */
+/**
+ * platform.minimax.io/docs/pricing/overview.md (2026-10-14): the title, the
+ * opening `<div>`, then the LLM section through the first table of Audio.
+ * The navigation block between them is left out. Each `## ` section sits
+ * indented in a `<section>`.
+ */
 export const MINIMAX_PRICING_OVERVIEW_PAGE = [
   '# Pricing Overview',
   '',
@@ -396,7 +401,11 @@ export const MINIMAX_PRICING_OVERVIEW_PAGE = [
   '    | Speech Recognition | Speech-to-Text | Audio-to-text transcription with streaming, speaker diarization, and subtitle (srt/vtt) export. | \\$0.38 / hour |',
 ].join('\n')
 
-/** platform.minimaxi.com/docs/pricing/overview.md (2026-10-14) through the first table after the LLM section. Each `## ` section sits indented in a `<section>`. */
+/**
+ * platform.minimax.cn/docs/pricing/overview.md (2026-10-14), the redirect
+ * target of platform.minimaxi.com: cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
+ * through the first table of `## 语音`. Prices are yuan.
+ */
 export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
   '# 定价概览',
   '',

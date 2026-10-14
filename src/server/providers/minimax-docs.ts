@@ -1,8 +1,8 @@
 /**
  * MiniMax chat facts from platform.minimax.io. The Anthropic SDK page has
  * the context-window, thinking, and content-type tables. The chat spec
- * states the output cap. The pay-as-you-go page has the token prices, USD
- * per 1M tokens. A parse that finds no rows throws.
+ * states the output cap. The pricing overview page has the token prices,
+ * USD per 1M tokens. A parse that finds no rows throws.
  *
  * The China platform (platform.minimaxi.com) publishes the same pages in
  * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan
@@ -351,33 +351,38 @@ export interface MinimaxRates {
  *
  * What it cannot attribute it refuses. Nothing is priced when a `<Tab`
  * other than the standard one survives, or the section holds a heading
- * of its own. A model gets no price when a row of its has text beside the
- * id that is not a bound or the permanent badge, a price cell that does
- * not read, a second base row, or a repeated tier threshold.
+ * of its own, markdown or `<h1>`–`<h6>`. A model gets no price when a
+ * row of its has text beside the id that is not a bound or the permanent
+ * badge, a price cell that does not read, a second base row, or a
+ * repeated tier threshold.
  */
 export function parseMinimaxPricing(
   markdown: string,
   platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  // The page nests each `## ` section, indented, in a `<section>` element.
+  // The page nests each `## ` section, indented, in a `<section>` element,
+  // which closes the section even when the next heading is not `## `.
   const dedented = markdown
     .split('\n')
     .map((line) => line.trim())
     .join('\n')
-  const tabbed = markdownSection(dedented, platform.priceSection).replace(
-    new RegExp(
-      `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
-      'g',
-    ),
-    '',
-  )
+  const tabbed = markdownSection(dedented, platform.priceSection)
+    .replace(/<\/section>[\s\S]*/, '')
+    .replace(
+      new RegExp(
+        `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
+        'g',
+      ),
+      '',
+    )
   const out = new Map<string, MinimaxRates>()
   // A tab the strip did not recognise, or a sub-heading, may hold another
   // tier's table under the same headers.
   const standard = `<Tab title="${platform.standardTab}">`
   if (
     /<Tab(?!s>)/.test(tabbed.replaceAll(standard, '')) ||
-    /^#{1,6} /m.test(tabbed.slice(tabbed.indexOf('\n')))
+    /^#{1,6} /m.test(tabbed.slice(tabbed.indexOf('\n'))) ||
+    /<h[1-6]\b/i.test(tabbed)
   ) {
     return out
   }
