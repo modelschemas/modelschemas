@@ -367,7 +367,7 @@ export function parseMinimaxPricing(
     .map((line) => line.trim())
     .join('\n')
   const tabbed = markdownSection(dedented, platform.priceSection)
-    .replace(/<\/section>[\s\S]*/, '')
+    .replace(/<\/section>[\s\S]*/i, '')
     .replace(
       new RegExp(
         `<Tab title="(?!${platform.standardTab}")[^"]*">[\\s\\S]*?</Tab>`,
@@ -400,7 +400,12 @@ export function parseMinimaxPricing(
       return ''
     },
   )
-  if (foreign.length > 0) return out
+  // An accordion the section cut left open was never checked at all.
+  const unclosed = section.replace(
+    /<Accordion\b[^>]*>[\s\S]*?<\/Accordion>/g,
+    '',
+  )
+  if (foreign.length > 0 || /<Accordion\b/.test(unclosed)) return out
   const refused = new Set<string>()
   const based = new Set<string>()
   /** A base row's `≤ N` bound; the first tier must start at the same N. */

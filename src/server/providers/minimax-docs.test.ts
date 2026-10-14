@@ -400,6 +400,27 @@ describe.each([
     expect(edit(c.header, `### Batch\n\n${c.header}`, false).size).toBe(0)
   })
 
+  it.each([
+    ['a nested </section>', '<section>', '</section>'],
+    ['an indented ## heading', '  ## Notes', ''],
+  ])(
+    'prices nothing when %s cuts a foreign accordion open',
+    (_name, before, after) => {
+      const legacy = `<Accordion title="${c.platform.legacyAccordion}">`
+      const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow]
+      const foreign = [
+        '<Accordion title="Batch">',
+        before,
+        ...batch,
+        after,
+        '</Accordion>',
+        '',
+        legacy,
+      ].join('\n')
+      expect(edit(legacy, foreign, false).size).toBe(0)
+    },
+  )
+
   it('refuses a model a second table prices again', () => {
     const batch = [c.header, '| :- | :- | :- | :- | :- |', c.batchRow].join(
       '\n',
