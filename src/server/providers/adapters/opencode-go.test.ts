@@ -131,7 +131,8 @@ describe('opencode-go', () => {
   it('binds no route to a Gemini row, which the Go tree does not serve', async () => {
     // Handler files under routes/zen/go/v1 on anomalyco/opencode `dev`
     // (2026-10-15). There is no models/[model].ts, and
-    // /zen/go/v1/models/{id} answers 404.
+    // /zen/go/v1/models/{id} answers 404. Unlike stubFetch, any other source
+    // file 404s here.
     const goRoutes = ['chat/completions', 'messages', 'responses'].map(
       (file) =>
         `https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/console/app/src/routes/zen/go/v1/${file}.ts`,
