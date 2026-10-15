@@ -294,7 +294,7 @@ export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
  * `gpt-chat-latest` version before Azure publishes its meters. A model with
  * no meter at all, or with an undated one, is not this.
  */
-export function azureVersionUnmetered(
+function azureVersionUnmetered(
   meters: Array<AzureMeter>,
   rawId: string,
   version: string | null,
