@@ -486,29 +486,19 @@ function parsedReasoning(
   }
   // Identical schemas do not negate an exact catalog's unqualified control.
   const thinkingType = adaptiveThinking(schema, rawId)
-  const adaptive = thinkingType === 'adaptive'
   const adaptiveDeclaration = metaString(metadata, 'Adaptive Thinking', rawId)
-  const ownedAdaptive =
-    adaptive &&
-    (adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on')
+  const declaredAdaptive =
+    adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on'
   // The file's own Adaptive Thinking row names Anthropic's `thinking.type`
   // when its request format is the Messages API, even with no `thinking`
   // in the schema.
-  if (
+  const declaredOnly =
     thinkingType === null &&
     anthropicMessages &&
-    fields.length === 0 &&
-    (adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on')
-  ) {
-    return {
-      reasoning: {
-        mode: 'adaptive',
-        mandatory: adaptiveDeclaration === 'Always on' ? true : null,
-      },
-      wire: null,
-      path: 'metadata.Adaptive Thinking',
-    }
-  }
+    declaredAdaptive &&
+    fields.length === 0
+  const adaptive = thinkingType === 'adaptive' || declaredOnly
+  const ownedAdaptive = adaptive && declaredAdaptive
   const ownedResponses =
     nativeReasoningTag &&
     metaString(metadata, 'API', rawId) === 'Responses' &&
@@ -521,8 +511,7 @@ function parsedReasoning(
   )
     return null
   if (adaptive) {
-    const alwaysOn =
-      metaString(metadata, 'Adaptive Thinking', rawId) === 'Always on'
+    const alwaysOn = adaptiveDeclaration === 'Always on'
     const effort = fields.filter(
       (field) => field.wire === 'output_config.effort',
     )
@@ -535,7 +524,9 @@ function parsedReasoning(
       return {
         reasoning: { mode: 'adaptive', mandatory: alwaysOn ? true : null },
         wire: null,
-        path: 'schema.input.properties.thinking.type',
+        path: declaredOnly
+          ? 'metadata.Adaptive Thinking'
+          : 'schema.input.properties.thinking.type',
       }
     }
     return {

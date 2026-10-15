@@ -332,7 +332,7 @@ async function listModels(
       Array.isArray(m.reasoning.supported_efforts) &&
       m.reasoning.supported_efforts.includes('high'),
   )
-  const gateway =
+  const gatewayLoad =
     needsToggle ||
     needsEffortWire ||
     body.data.some(
@@ -340,7 +340,7 @@ async function listModels(
         m.reasoning?.supported_efforts === null &&
         typeof m.reasoning.mandatory === 'boolean',
     )
-      ? await cachedDocs(
+      ? cachedDocs(
           kv,
           `${OPENROUTER_REASONING_URL}#${needsToggle ? 'gateway-efforts-and-toggle-wire-v1' : 'gateway-efforts-wire-v1'}`,
           async () => {
@@ -358,31 +358,26 @@ async function listModels(
       : null
   const run = docsRun()
   const listed = new Set(body.data.map((m) => openRouterAdaptiveGuide(m.id)))
-  const adaptive = new Map(
-    await Promise.all(
-      OPENROUTER_ADAPTIVE_GUIDES.filter((guide) => listed.has(guide)).map(
-        async (guide) =>
-          [
-            guide,
-            await tryDocs(run, guide.url, (cached) =>
-              cached(kv, `${guide.url}#adaptive-v1`, async () => {
-                const text = await fetchText(guide.url, {
-                  signal: AbortSignal.timeout(30_000),
-                })
-                assertOpenRouterAdaptive(text, guide.states)
-                return { hash: await sha256Text(text) }
-              }),
-            ),
-          ] as const,
-      ),
+  const adaptiveLoad = Promise.all(
+    OPENROUTER_ADAPTIVE_GUIDES.filter((guide) => listed.has(guide)).map(
+      async (guide) =>
+        [
+          guide,
+          await tryDocs(run, guide.url, (cached) =>
+            cached(kv, `${guide.url}#adaptive-v1`, async () => {
+              const text = await fetchText(guide.url, {
+                signal: AbortSignal.timeout(30_000),
+              })
+              assertOpenRouterAdaptive(text, guide)
+              return { hash: await sha256Text(text) }
+            }),
+          ),
+        ] as const,
     ),
   )
-  const ownThinking = (m: NonNullable<OpenRouterModelList['data']>[number]) => {
-    const reason = openRouterReasoning(
-      m,
-      gateway?.efforts,
-      gateway?.toggle !== undefined,
-    )
+  const [gateway, guides] = await Promise.all([gatewayLoad, adaptiveLoad])
+  const adaptive = new Map(guides)
+  const ownThinking = (reason: ModelReasoning | null) => {
     if (reason?.mode === 'toggle') return gateway?.toggle ?? null
     const high = reason?.efforts?.find((e) => e === 'high')
     if (reason?.mode === 'effort' && high && gateway?.effortWire)
@@ -424,6 +419,13 @@ async function listModels(
         gateway?.toggle !== undefined,
       )
       const adapted = adaptiveReasoning(m, listedReasoning)
+      const thinking = ownThinking(listedReasoning)
+      const gatewayDoc =
+        gateway &&
+        (m.reasoning?.supported_efforts === null || thinking !== null) &&
+        typeof m.reasoning?.mandatory === 'boolean'
+          ? gateway
+          : null
       return {
         rawId: m.id,
         displayName: m.name ?? null,
@@ -442,10 +444,10 @@ async function listModels(
         requestMap: null,
         reasoning: adapted?.reasoning ?? listedReasoning,
         ...(adapted && !adapted.source ? unavailable('reasoning') : {}),
-        ...(ownThinking(m)
+        ...(thinking
           ? {
               requestMap: {
-                thinking: ownThinking(m),
+                thinking,
                 maxTokensField: null,
                 developerRole: null,
                 replayReasoningContent: null,
@@ -458,18 +460,16 @@ async function listModels(
               },
             }
           : {}),
-        ...(gateway &&
-        (m.reasoning?.supported_efforts === null || ownThinking(m) !== null) &&
-        typeof m.reasoning?.mandatory === 'boolean'
+        ...(gatewayDoc || adapted?.source
           ? {
               factSources: {
-                ...(ownThinking(m)
+                ...(gatewayDoc && thinking
                   ? {
                       requestMapFields: {
                         thinking: {
                           derivation: 'docs-derived' as const,
                           sourceUrl: OPENROUTER_REASONING_URL,
-                          sourceHash: gateway.hash,
+                          sourceHash: gatewayDoc.hash,
                           path: 'native accepted effort values or nonmandatory toggle; normative universal normalized reasoning effort/enabled fields',
                         },
                       },
@@ -478,9 +478,9 @@ async function listModels(
                 reasoning: adapted?.source ?? {
                   derivation: 'docs-derived' as const,
                   sourceUrl: OPENROUTER_REASONING_URL,
-                  sourceHash: gateway.hash,
+                  sourceHash: gatewayDoc?.hash,
                   path:
-                    m.reasoning.supported_efforts === null
+                    m.reasoning?.supported_efforts === null
                       ? 'supported_efforts:null; normative gateway effort bullets; listing mandatory'
                       : listedReasoning?.mode === 'toggle'
                         ? 'native mandatory:false; Messages API normalized reasoning.enabled accepted on every reasoning model; explicit disables prose'
@@ -488,9 +488,7 @@ async function listModels(
                 },
               },
             }
-          : adapted?.source
-            ? { factSources: { reasoning: adapted.source } }
-            : {}),
+          : {}),
       }
     }),
   }

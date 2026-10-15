@@ -1,10 +1,13 @@
 import type { ThinkingRequest } from './request-map.ts'
 
+const stripFences = (markdown: string) =>
+  markdown.replace(/```[\s\S]*?```/g, '')
+
 /** Gateway effort names come from normative provider documentation, never examples. */
 export const OPENROUTER_REASONING_URL =
   'https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.md'
 export function openRouterGatewayEfforts(markdown: string): Array<string> {
-  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const prose = stripFences(markdown)
   if (!/When `null`, all gateway effort values are accepted/.test(prose))
     throw new Error('openrouter: native null-efforts contract missing')
   if (
@@ -25,7 +28,7 @@ export function openRouterGatewayEfforts(markdown: string): Array<string> {
 
 /** Messages compatibility is explicitly normalized for every reasoning model. */
 export function openRouterGatewayToggle(markdown: string): ThinkingRequest {
-  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const prose = stripFences(markdown)
   const section = prose
     .split(/^## Reasoning with the Anthropic Messages API\s*$/m)[1]
     ?.split(/^#{1,2} /m)[0]
@@ -67,7 +70,7 @@ export function openRouterGatewayEffortWire(markdown: string): {
   outer: string
   field: string
 } {
-  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  const prose = stripFences(markdown)
   const section = prose
     .split(/^## Reasoning with the Anthropic Messages API\s*$/m)[1]
     ?.split(/^#{1,2} /m)[0]
@@ -142,9 +145,8 @@ export function openRouterAdaptiveGuide(rawId: string) {
 /** Throws unless the guide prose still states adaptive thinking. */
 export function assertOpenRouterAdaptive(
   markdown: string,
-  states: RegExp,
+  guide: { states: RegExp },
 ): void {
-  const prose = markdown.replace(/```[\s\S]*?```/g, '')
-  if (!states.test(prose))
+  if (!guide.states.test(stripFences(markdown)))
     throw new Error('openrouter: adaptive thinking statement missing')
 }
