@@ -206,8 +206,7 @@ const FLAGS: Record<
   reasoningUnknown: {
     silencedBy: 'reasoning',
     match: (row) =>
-      row.reasoning == null &&
-      supportedFlags(row.capabilities).includes('reasoning'),
+      FACTS.reasoning.need?.(row) === true && !FACTS.reasoning.have(row),
   },
   // The catalog reads `[]` as unknown; an unknown list is stored as null.
   outputModalitiesEmpty: {
@@ -257,18 +256,16 @@ export function buildReport(
     const chat = group.filter((row) => row.activity === 'chat')
     const silent = FACT_KEYS.filter((key) => ledger.get(provider)?.has(key))
     const modelSilent: Partial<Record<FactKey, number>> = {}
+    const modelLedgered = (row: ModelRow, key: FactKey) =>
+      row.rawId !== undefined &&
+      ledger.get(modelLedgerScope(provider, row.rawId))?.has(key)
     const facts = Object.fromEntries(
       FACT_KEYS.map((key) => {
         const { need, have } = FACTS[key]
         const needed = need ? chat.filter(need) : chat
         const scoped = silent.includes(key)
           ? 0
-          : needed.filter(
-              (row) =>
-                !have(row) &&
-                row.rawId !== undefined &&
-                ledger.get(modelLedgerScope(provider, row.rawId))?.has(key),
-            ).length
+          : needed.filter((row) => !have(row) && modelLedgered(row, key)).length
         if (scoped > 0) modelSilent[key] = scoped
         return [key, { have: needed.filter(have).length, need: needed.length }]
       }),
@@ -279,11 +276,7 @@ export function buildReport(
         const { silencedBy, match } = FLAGS[key]
         const isSilent = (row: ModelRow) =>
           silencedBy !== undefined &&
-          (silent.includes(silencedBy) ||
-            (row.rawId !== undefined &&
-              ledger
-                .get(modelLedgerScope(provider, row.rawId))
-                ?.has(silencedBy) === true))
+          (silent.includes(silencedBy) || modelLedgered(row, silencedBy))
         return [
           key,
           chat
