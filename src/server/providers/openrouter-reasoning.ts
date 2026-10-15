@@ -85,3 +85,66 @@ export function openRouterGatewayEffortWire(markdown: string): {
     throw new Error('openrouter: native effort wire fields missing')
   return { outer: row[1], field: row[2] }
 }
+
+const OPENROUTER_MIGRATIONS =
+  'https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/'
+
+// ponytail: hand-written from OpenRouter's Claude migration guides on
+// 2026-10-15. Each guide names its models in prose; the sentence below is
+// re-checked on every fetch. Add a row when OpenRouter publishes a guide
+// for a new Claude model.
+export const OPENROUTER_ADAPTIVE_GUIDES: ReadonlyArray<{
+  url: string
+  ids: ReadonlyArray<string>
+  states: RegExp
+}> = [
+  {
+    url: `${OPENROUTER_MIGRATIONS}claude-4-6.md`,
+    ids: ['anthropic/claude-opus-4.6', 'anthropic/claude-sonnet-4.6'],
+    states:
+      /^For Claude 4\.6 Opus and 4\.6 Sonnet, OpenRouter now uses adaptive thinking \(`thinking\.type: 'adaptive'`\) by default/m,
+  },
+  {
+    url: `${OPENROUTER_MIGRATIONS}claude-4-7.md`,
+    ids: ['anthropic/claude-opus-4.7'],
+    states: /^Claude 4\.7 Opus supports only adaptive thinking\./m,
+  },
+  {
+    url: `${OPENROUTER_MIGRATIONS}sonnet-5.md`,
+    ids: ['anthropic/claude-sonnet-5'],
+    states: /^Claude 5 Sonnet supports only adaptive thinking\./m,
+  },
+  {
+    url: `${OPENROUTER_MIGRATIONS}opus-5.md`,
+    ids: ['anthropic/claude-opus-5'],
+    states: /^Like Sonnet 5, Opus 5 supports only adaptive thinking/m,
+  },
+  {
+    url: `${OPENROUTER_MIGRATIONS}claude-5-5.md`,
+    ids: [
+      'anthropic/claude-opus-5.5',
+      'anthropic/claude-sonnet-5.5',
+      'anthropic/claude-haiku-5.5',
+    ],
+    states:
+      /^All three models share these changes:\s*1\. \*\*Adaptive thinking runs by default\.\*\*/m,
+  },
+]
+
+/** The guide for an OpenRouter id; a `:variant` suffix serves the same model. */
+export function openRouterAdaptiveGuide(rawId: string) {
+  const base = rawId.split(':')[0]
+  return OPENROUTER_ADAPTIVE_GUIDES.find((guide) =>
+    guide.ids.some((id) => id === base),
+  )
+}
+
+/** Throws unless the guide prose still states adaptive thinking. */
+export function assertOpenRouterAdaptive(
+  markdown: string,
+  states: RegExp,
+): void {
+  const prose = markdown.replace(/```[\s\S]*?```/g, '')
+  if (!states.test(prose))
+    throw new Error('openrouter: adaptive thinking statement missing')
+}

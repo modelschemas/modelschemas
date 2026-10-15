@@ -11,8 +11,17 @@ import {
   openrouterGenerationEndpointId,
   openrouterModelActivity,
 } from './model-meta.ts'
-import { cachedDocs } from './model-facts.ts'
 import {
+  cachedDocs,
+  docsReport,
+  docsRun,
+  tryDocs,
+  unavailable,
+} from './model-facts.ts'
+import {
+  assertOpenRouterAdaptive,
+  OPENROUTER_ADAPTIVE_GUIDES,
+  openRouterAdaptiveGuide,
   openRouterGatewayEfforts,
   openRouterGatewayToggle,
   openRouterGatewayEffortWire,
@@ -23,6 +32,7 @@ import { namespacedUpstreamIdentity } from './upstream-model.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
+  ModelReasoning,
   OpenApiDocument,
   OpenApiOperation,
   ProviderConfig,
@@ -346,6 +356,27 @@ async function listModels(
           },
         )
       : null
+  const run = docsRun()
+  const listed = new Set(body.data.map((m) => openRouterAdaptiveGuide(m.id)))
+  const adaptive = new Map(
+    await Promise.all(
+      OPENROUTER_ADAPTIVE_GUIDES.filter((guide) => listed.has(guide)).map(
+        async (guide) =>
+          [
+            guide,
+            await tryDocs(run, guide.url, (cached) =>
+              cached(kv, `${guide.url}#adaptive-v1`, async () => {
+                const text = await fetchText(guide.url, {
+                  signal: AbortSignal.timeout(30_000),
+                })
+                assertOpenRouterAdaptive(text, guide.states)
+                return { hash: await sha256Text(text) }
+              }),
+            ),
+          ] as const,
+      ),
+    ),
+  )
   const ownThinking = (m: NonNullable<OpenRouterModelList['data']>[number]) => {
     const reason = openRouterReasoning(
       m,
@@ -364,80 +395,104 @@ async function listModels(
       }
     return null
   }
-  return {
-    models: body.data.map((m) => ({
-      rawId: m.id,
-      displayName: m.name ?? null,
-      activity: openrouterModelActivity(m.architecture?.output_modalities),
-      releasedAt: m.created ?? null,
-      contextWindow: m.context_length ?? null,
-      maxOutput: m.top_provider?.max_completion_tokens ?? null,
-      pricing: m.pricing,
-      modalities: m.architecture
+  // The guide states the mode; the listing states mandatory and efforts.
+  const adaptiveReasoning = (
+    m: NonNullable<OpenRouterModelList['data']>[number],
+    reasoning: ModelReasoning | null,
+  ) => {
+    const guide = openRouterAdaptiveGuide(m.id)
+    if (!guide || reasoning?.mode !== 'effort') return null
+    const doc = adaptive.get(guide)
+    return {
+      reasoning: { ...reasoning, mode: 'adaptive' as const },
+      source: doc
         ? {
-            input: m.architecture.input_modalities,
-            output: m.architecture.output_modalities,
+            derivation: 'docs-derived' as const,
+            sourceUrl: guide.url,
+            sourceHash: doc.hash,
+            path: 'adaptive thinking statement; listing reasoning.mandatory and supported_efforts',
           }
-        : undefined,
-      capabilities: openrouterCapabilities(m),
-      requestMap: null,
-      reasoning: openRouterReasoning(
+        : null,
+    }
+  }
+  return {
+    ...(run.failed || run.skipped ? { docsFailures: docsReport(run) } : {}),
+    models: body.data.map((m) => {
+      const listedReasoning = openRouterReasoning(
         m,
         gateway?.efforts,
         gateway?.toggle !== undefined,
-      ),
-      ...(ownThinking(m)
-        ? {
-            requestMap: {
-              thinking: ownThinking(m),
-              maxTokensField: null,
-              developerRole: null,
-              replayReasoningContent: null,
-              store: null,
-              strictTools: null,
-              sessionAffinity: null,
-              cacheControl: null,
-              toolStream: null,
-              reasoningEffort: null,
-            },
-          }
-        : {}),
-      ...(gateway &&
-      (m.reasoning?.supported_efforts === null || ownThinking(m) !== null) &&
-      typeof m.reasoning?.mandatory === 'boolean'
-        ? {
-            factSources: {
-              ...(ownThinking(m)
-                ? {
-                    requestMapFields: {
-                      thinking: {
-                        derivation: 'docs-derived' as const,
-                        sourceUrl: OPENROUTER_REASONING_URL,
-                        sourceHash: gateway.hash,
-                        path: 'native accepted effort values or nonmandatory toggle; normative universal normalized reasoning effort/enabled fields',
-                      },
-                    },
-                  }
-                : {}),
-              reasoning: {
-                derivation: 'docs-derived' as const,
-                sourceUrl: OPENROUTER_REASONING_URL,
-                sourceHash: gateway.hash,
-                path:
-                  m.reasoning.supported_efforts === null
-                    ? 'supported_efforts:null; normative gateway effort bullets; listing mandatory'
-                    : openRouterReasoning(
-                          m,
-                          gateway.efforts,
-                          gateway.toggle !== undefined,
-                        )?.mode === 'toggle'
-                      ? 'native mandatory:false; Messages API normalized reasoning.enabled accepted on every reasoning model; explicit disables prose'
-                      : 'native per-model accepted efforts and mandatory metadata; universal normalized reasoning.effort field',
+      )
+      const adapted = adaptiveReasoning(m, listedReasoning)
+      return {
+        rawId: m.id,
+        displayName: m.name ?? null,
+        activity: openrouterModelActivity(m.architecture?.output_modalities),
+        releasedAt: m.created ?? null,
+        contextWindow: m.context_length ?? null,
+        maxOutput: m.top_provider?.max_completion_tokens ?? null,
+        pricing: m.pricing,
+        modalities: m.architecture
+          ? {
+              input: m.architecture.input_modalities,
+              output: m.architecture.output_modalities,
+            }
+          : undefined,
+        capabilities: openrouterCapabilities(m),
+        requestMap: null,
+        reasoning: adapted?.reasoning ?? listedReasoning,
+        ...(adapted && !adapted.source ? unavailable('reasoning') : {}),
+        ...(ownThinking(m)
+          ? {
+              requestMap: {
+                thinking: ownThinking(m),
+                maxTokensField: null,
+                developerRole: null,
+                replayReasoningContent: null,
+                store: null,
+                strictTools: null,
+                sessionAffinity: null,
+                cacheControl: null,
+                toolStream: null,
+                reasoningEffort: null,
               },
-            },
-          }
-        : {}),
-    })),
+            }
+          : {}),
+        ...(gateway &&
+        (m.reasoning?.supported_efforts === null || ownThinking(m) !== null) &&
+        typeof m.reasoning?.mandatory === 'boolean'
+          ? {
+              factSources: {
+                ...(ownThinking(m)
+                  ? {
+                      requestMapFields: {
+                        thinking: {
+                          derivation: 'docs-derived' as const,
+                          sourceUrl: OPENROUTER_REASONING_URL,
+                          sourceHash: gateway.hash,
+                          path: 'native accepted effort values or nonmandatory toggle; normative universal normalized reasoning effort/enabled fields',
+                        },
+                      },
+                    }
+                  : {}),
+                reasoning: adapted?.source ?? {
+                  derivation: 'docs-derived' as const,
+                  sourceUrl: OPENROUTER_REASONING_URL,
+                  sourceHash: gateway.hash,
+                  path:
+                    m.reasoning.supported_efforts === null
+                      ? 'supported_efforts:null; normative gateway effort bullets; listing mandatory'
+                      : listedReasoning?.mode === 'toggle'
+                        ? 'native mandatory:false; Messages API normalized reasoning.enabled accepted on every reasoning model; explicit disables prose'
+                        : 'native per-model accepted efforts and mandatory metadata; universal normalized reasoning.effort field',
+                },
+              },
+            }
+          : adapted?.source
+            ? { factSources: { reasoning: adapted.source } }
+            : {}),
+      }
+    }),
   }
 }
 

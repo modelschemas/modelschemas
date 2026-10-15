@@ -138,6 +138,54 @@ describe('cloudflare-ai-gateway', () => {
     expect(parseCatalogModel(FABLE, SOURCE).capabilities).toEqual(['reasoning'])
   })
 
+  it('reads adaptive thinking from the Adaptive Thinking row of a Messages API file', () => {
+    const messages = { ...FABLE, request_formats: ['anthropic-messages'] }
+    const parsed = parseCatalogModel(messages, SOURCE)
+    expect(parsed.reasoning).toEqual({ mode: 'adaptive', mandatory: null })
+    expect(parsed.requestMap?.thinking).toBeNull()
+    expect(parsed.factSources?.capabilities?.reasoning).toMatchObject({
+      path: 'metadata.Adaptive Thinking',
+    })
+    expect(
+      parseCatalogModel(
+        { ...messages, metadata: { 'Adaptive Thinking': 'Always on' } },
+        SOURCE,
+      ).reasoning,
+    ).toEqual({ mode: 'adaptive', mandatory: true })
+    expect(
+      parseCatalogModel(
+        { ...messages, metadata: { 'Extended Thinking': 'Yes' } },
+        SOURCE,
+      ).reasoning,
+    ).toBeUndefined()
+    expect(
+      parseCatalogModel(
+        { ...FABLE, request_formats: ['openai-chat-completions'] },
+        SOURCE,
+      ).reasoning,
+    ).toBeUndefined()
+    expect(
+      parseCatalogModel(
+        {
+          ...messages,
+          schema: {
+            input: {
+              type: 'object',
+              properties: {
+                ...FABLE.schema.input.properties,
+                thinking: {
+                  type: 'object',
+                  properties: { type: { const: 'enabled' } },
+                },
+              },
+            },
+          },
+        },
+        SOURCE,
+      ).reasoning,
+    ).toBeUndefined()
+  })
+
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
     expect(
       parseCatalogModel(

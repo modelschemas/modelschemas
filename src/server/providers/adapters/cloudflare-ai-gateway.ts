@@ -413,8 +413,14 @@ function thinkingTypeIsAdaptive(node: unknown): boolean | null {
   return false
 }
 
-/** True when every `thinking.type` this schema publishes is exactly `adaptive`. */
-function adaptiveThinking(schema: unknown, rawId: string): boolean {
+/**
+ * `adaptive` when every `thinking.type` this schema publishes is exactly
+ * `adaptive`, `other` when another type is published, null when none is.
+ */
+function adaptiveThinking(
+  schema: unknown,
+  rawId: string,
+): 'adaptive' | 'other' | null {
   const kinds: Array<'adaptive' | 'other'> = []
   const visit = (node: unknown, key: string | null, depth: number) => {
     if (!isRecord(node)) return
@@ -436,7 +442,8 @@ function adaptiveThinking(schema: unknown, rawId: string): boolean {
     }
   }
   visit(schema, null, 0)
-  return kinds.includes('adaptive') && !kinds.includes('other')
+  if (kinds.includes('other')) return 'other'
+  return kinds.length > 0 ? 'adaptive' : null
 }
 
 function effortReasoning(field: EffortField): ModelReasoning {
@@ -453,6 +460,7 @@ function parsedReasoning(
   rawId: string,
   schemaShared: boolean,
   nativeReasoningTag: boolean,
+  anthropicMessages: boolean,
 ): ParsedReasoning | null {
   const stated = metaString(metadata, 'Reasoning', rawId)
   if (stated === 'No') return null
@@ -477,11 +485,30 @@ function parsedReasoning(
     }
   }
   // Identical schemas do not negate an exact catalog's unqualified control.
-  const adaptive = adaptiveThinking(schema, rawId)
+  const thinkingType = adaptiveThinking(schema, rawId)
+  const adaptive = thinkingType === 'adaptive'
   const adaptiveDeclaration = metaString(metadata, 'Adaptive Thinking', rawId)
   const ownedAdaptive =
     adaptive &&
     (adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on')
+  // The file's own Adaptive Thinking row names Anthropic's `thinking.type`
+  // when its request format is the Messages API, even with no `thinking`
+  // in the schema.
+  if (
+    thinkingType === null &&
+    anthropicMessages &&
+    fields.length === 0 &&
+    (adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on')
+  ) {
+    return {
+      reasoning: {
+        mode: 'adaptive',
+        mandatory: adaptiveDeclaration === 'Always on' ? true : null,
+      },
+      wire: null,
+      path: 'metadata.Adaptive Thinking',
+    }
+  }
   const ownedResponses =
     nativeReasoningTag &&
     metaString(metadata, 'API', rawId) === 'Responses' &&
@@ -734,6 +761,9 @@ export function parseCatalogModel(
     rawId,
     schemaShared,
     tags.includes('Reasoning'),
+    stringList(model.request_formats, rawId, 'request_formats').includes(
+      'anthropic-messages',
+    ),
   )
   const requestMap = gatewayRequestMap(
     activity,
