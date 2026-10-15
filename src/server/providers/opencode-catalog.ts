@@ -210,7 +210,7 @@ export function compileOpenCodeCost(
   return card
 }
 
-/** Path under the host. Zen follows models.dev `api`; Go stays on the documented `/zen/go/v1` ids. */
+/** Path under the host. Zen follows models.dev `api`; Go stays on the `/zen/go/v1` ids, which route no Gemini path. */
 function schemaEndpointId(
   provider: OpenCodeProvider,
   apiPath: string | null,
@@ -219,6 +219,8 @@ function schemaEndpointId(
 ): string | null {
   const suffix = PACKAGE_SUFFIX[npm]?.(id) ?? null
   if (!suffix) return null
+  // routes/zen/go/v1 has no models/[model].ts: /zen/go/v1/models/{id} is a 404.
+  if (provider === 'opencode-go' && npm === '@ai-sdk/google') return null
   if (id.includes('/'))
     throw new Error(`${provider}: unreadable model id ${id}`)
   // Go's console page still publishes https://opencode.ai/zen/go/v1, and that
@@ -314,6 +316,8 @@ export function parseOpenCodeCatalog(
           ? `${provider}.models.${id}.provider.npm`
           : `${provider}.npm`,
       }
+    } else if (PACKAGE_SUFFIX[npm]) {
+      model.activity = 'chat'
     }
     if (provider === 'opencode' && row.cost !== undefined) {
       if (!extractedAt)
