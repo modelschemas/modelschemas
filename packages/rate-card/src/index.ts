@@ -11,6 +11,7 @@ export {
   RateCardError,
   bindInputs,
   cardCurrency,
+  cardParams,
   cardPrice,
   price,
   priceDetailed,

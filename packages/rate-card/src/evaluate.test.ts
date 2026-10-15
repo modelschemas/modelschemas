@@ -3,6 +3,7 @@ import {
   RateCardError,
   bindInputs,
   cardCurrency,
+  cardParams,
   cardPrice,
   price,
   priceDetailed,
@@ -12,6 +13,7 @@ import { z } from 'zod'
 
 import { CORE_OPS, rateCardSchema } from './rate-card.schema.ts'
 import type { Expr, RateCard } from './rate-card.schema.ts'
+import { compileTokenCard } from './token-card.ts'
 
 const source = {
   url: 'https://example.test/llms.txt',
@@ -221,6 +223,8 @@ describe('refusals', () => {
       currency: 'USD',
       usd: 0,
       estimated: [],
+      defaulted: [],
+      ignored: [],
     })
     const cny = rateCardSchema.parse({
       ...free,
@@ -230,6 +234,8 @@ describe('refusals', () => {
       amount: 0,
       currency: 'CNY',
       estimated: [],
+      defaulted: [],
+      ignored: [],
     })
     expect(price(cny)).toBe(0)
   })
@@ -255,6 +261,8 @@ describe('refusals', () => {
       amount: 8,
       currency: 'CNY',
       estimated: [],
+      defaulted: ['x', 'y'],
+      ignored: [],
     })
     // The wrapper changes the label, never the amount.
     expect(price(parsed)).toBe(price(cardFor(doubleX)))
@@ -472,12 +480,26 @@ describe('estimate', () => {
     expect(rateCardSchema.parse(card)).toEqual(card)
     expect(
       priceDetailed(card, { resolution: '480p' }, { tokens: 500 }),
-    ).toEqual({ amount: 0.5, currency: 'USD', usd: 0.5, estimated: [] })
+    ).toEqual({
+      amount: 0.5,
+      currency: 'USD',
+      usd: 0.5,
+      estimated: [],
+      defaulted: [],
+      ignored: [],
+    })
   })
 
   it('labels an estimated input and binds its own inputs only then', () => {
     expect(priceDetailed(card, { resolution: '480p', seconds: 2 }, {})).toEqual(
-      { amount: 2, currency: 'USD', usd: 2, estimated: ['tokens'] },
+      {
+        amount: 2,
+        currency: 'USD',
+        usd: 2,
+        estimated: ['tokens'],
+        defaulted: [],
+        ignored: [],
+      },
     )
     expect(() => priceDetailed(card, { resolution: '480p' }, {})).toThrow(
       /tokens \(tokens\): not supplied, and cannot be estimated.*seconds.*required/,
@@ -523,5 +545,106 @@ describe('estimate', () => {
       },
     }
     expect(rateCardSchema.safeParse(shadowing).success).toBe(false)
+  })
+})
+
+describe('unread keys and defaults', () => {
+  // Anthropic-style rates: $3 in, $15 out, $0.30 cache read per 1M.
+  const card = compileTokenCard(
+    {
+      input_tokens: 3 / 1e6,
+      output_tokens: 15 / 1e6,
+      cache_read_tokens: 0.3 / 1e6,
+    },
+    [],
+    source,
+  )
+  if (!card) throw new Error('did not compile')
+
+  it("refuses Anthropic's native cache_read_input_tokens instead of pricing it at 0", () => {
+    expect(() =>
+      priceDetailed(
+        card,
+        {},
+        {
+          input_tokens: 12_000,
+          output_tokens: 800,
+          cache_read_input_tokens: 4000,
+        },
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'unknown-usage-key',
+        message: 'usage.cache_read_input_tokens: not read by this card',
+      }),
+    )
+  })
+
+  it("prices the card's own cache_read_tokens with nothing defaulted", () => {
+    const result = priceDetailed(
+      card,
+      {},
+      { input_tokens: 12_000, output_tokens: 800, cache_read_tokens: 4000 },
+    )
+    // 12000 × 3/M + 800 × 15/M + 4000 × 0.3/M
+    expect(result.amount).toBeCloseTo(0.0492, 9)
+    expect(result).toMatchObject({ estimated: [], defaulted: [], ignored: [] })
+  })
+
+  it('names a usage-bound default it applied', () => {
+    expect(
+      priceDetailed(card, {}, { input_tokens: 12_000, output_tokens: 800 }),
+    ).toMatchObject({ amount: 0.048, defaulted: ['cache_read_tokens'] })
+  })
+
+  it('says a request field sent in usage belongs on request', () => {
+    expect(() => priceDetailed(cardFor({ var: 'x' }), {}, { x: 3 })).toThrow(
+      /usage\.x: not read by this card \(x: pass on request/,
+    )
+  })
+
+  it('lists request keys the card does not read as ignored', () => {
+    const result = priceDetailed(cardFor({ '*': [{ var: 'x' }, 2] }), {
+      x: 3,
+      prompt: 'a cat',
+      seed: 7,
+    })
+    expect(result).toMatchObject({
+      amount: 6,
+      defaulted: ['y'],
+      ignored: ['prompt', 'seed'],
+    })
+  })
+
+  it('leaves price() lenient for flat example bags', () => {
+    expect(
+      price(
+        card,
+        { model: 'm' },
+        { input_tokens: 1, output_tokens: 0, model: 'm' },
+      ),
+    ).toBeCloseTo(3 / 1e6, 12)
+  })
+
+  it('reads estimate inputs as card params', () => {
+    const estimated = rateCardSchema.parse({
+      ...cardFor({ var: 'tokens' }),
+      inputs: {
+        tokens: {
+          param: 'tokens',
+          bound: 'usage',
+          kind: 'number',
+          estimate: {
+            inputs: { seconds: { param: 'seconds', kind: 'number' } },
+            value: { var: 'seconds' },
+            source,
+          },
+        },
+      },
+    })
+    expect(cardParams(estimated)).toEqual({
+      request: ['seconds'],
+      usage: ['tokens'],
+    })
   })
 })

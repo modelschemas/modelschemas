@@ -398,7 +398,7 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'The amount for this call and its currency, the card source, and which inputs (if any) were estimated.',
+              'The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored.',
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/EstimateResult' },
@@ -1112,7 +1112,14 @@ export const openApiDocument = {
       },
       EstimateResult: {
         type: 'object',
-        required: ['amount', 'currency', 'cardSource', 'estimated'],
+        required: [
+          'amount',
+          'currency',
+          'cardSource',
+          'estimated',
+          'defaulted',
+          'ignored',
+        ],
         properties: {
           amount: {
             type: 'number',
@@ -1135,6 +1142,18 @@ export const openApiDocument = {
             items: { type: 'string' },
             description:
               'Params the caller omitted that the card estimated by its published method. Empty: amount is the price as billed for the supplied request and usage.',
+          },
+          defaulted: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              "Params the caller omitted that took the card's default (an omitted list counts as empty). Supply them when the default does not match the call, such as cache_read_tokens on a call that read the cache.",
+          },
+          ignored: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Request keys the card does not read. They do not change amount. A usage key the card does not read is a 422 unknown_usage_key instead, because a dropped usage count gives a wrong price.',
           },
         },
       },

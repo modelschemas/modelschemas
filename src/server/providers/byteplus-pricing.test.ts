@@ -586,6 +586,13 @@ describe('byteplus tutorial notes and columns', () => {
     // Billed tokens price a 1.0 draft: its rate does not split on resolution.
     expect(
       priceDetailed(card, { draft: true }, { completion_tokens: 1e6 }),
-    ).toEqual({ amount: 2.5, currency: 'USD', usd: 2.5, estimated: [] })
+    ).toEqual({
+      amount: 2.5,
+      currency: 'USD',
+      usd: 2.5,
+      estimated: [],
+      defaulted: ['service_tier'],
+      ignored: [],
+    })
   })
 })

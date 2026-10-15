@@ -25,6 +25,7 @@ export type RateCardErrorCode =
   | 'not-comparable'
   | 'bad-result'
   | 'estimate-unavailable'
+  | 'unknown-usage-key'
 
 export class RateCardError extends Error {
   constructor(
@@ -361,6 +362,17 @@ export interface PriceResult {
    * default), so `amount` is the price as billed.
    */
   estimated: string[]
+  /**
+   * Params of inputs the caller omitted that took the card's `default` (an
+   * omitted count input counts as an empty list). The card assumes these
+   * values; it did not get them.
+   */
+  defaulted: string[]
+  /**
+   * Request keys the card does not read. Request-bound cards get full
+   * request bodies, so these do not change the price.
+   */
+  ignored: string[]
 }
 
 /** Read each input's param from the request or usage object by bound. */
@@ -374,26 +386,75 @@ function collect(inputs: RateCard['inputs'], request: Vars, usage: Vars): Vars {
 }
 
 /**
+ * The request and usage keys a card reads, its estimate inputs included,
+ * in card order.
+ */
+export function cardParams(card: Pick<RateCard, 'inputs'>): {
+  request: string[]
+  usage: string[]
+} {
+  const request = new Set<string>()
+  const usage = new Set<string>()
+  const add = (input: RateCardEstimate['inputs'][string]) =>
+    (input.bound === 'usage' ? usage : request).add(input.param)
+  for (const input of Object.values(card.inputs)) {
+    add(input)
+    if (input.kind === 'number' && input.estimate) {
+      Object.values(input.estimate.inputs).forEach(add)
+    }
+  }
+  return { request: [...request], usage: [...usage] }
+}
+
+/**
  * `price`, but an omitted input that carries an `estimate` is estimated
  * by it and named in `estimated`. An estimate that cannot be made for this
  * request throws `estimate-unavailable` naming the input to pass instead.
+ * A usage key the card does not read throws `unknown-usage-key`, because a
+ * dropped usage count is a wrong price. A request key the card does not
+ * read is named in `ignored`.
  */
 export function priceDetailed(
   card: RateCard,
   request: Vars = {},
   usage: Vars = {},
 ): PriceResult {
-  return evaluate(card, request, usage, true)
+  const params = cardParams(card)
+  const unknown = Object.keys(usage).filter(
+    (key) => !params.usage.includes(key),
+  )
+  if (unknown.length > 0) {
+    const misplaced = unknown.filter((key) => params.request.includes(key))
+    throw new RateCardError(
+      'unknown-usage-key',
+      `${unknown.map((key) => `usage.${key}`).join(', ')}: not read by this card` +
+        (misplaced.length > 0
+          ? ` (${misplaced.join(', ')}: pass on request, not usage)`
+          : ''),
+    )
+  }
+  return {
+    ...evaluate(card, request, usage, true),
+    ignored: Object.keys(request).filter(
+      (key) => !params.request.includes(key),
+    ),
+  }
 }
+
+const takesDefault = (input: RateCard['inputs'][string], given: Vars) =>
+  input.kind === 'count'
+    ? given[input.param] === undefined
+    : given[input.param] == null && input.default !== undefined
 
 function evaluate(
   card: RateCard,
   request: Vars,
   usage: Vars,
   estimates: boolean,
-): PriceResult {
+): Omit<PriceResult, 'ignored'> {
   const given = collect(card.inputs, request, usage)
   const estimated: string[] = []
+  const defaulted: string[] = []
   const direct: RateCard['inputs'] = {}
   const pending: Array<[string, string, RateCardEstimate]> = []
   for (const [name, input] of Object.entries(card.inputs)) {
@@ -407,6 +468,7 @@ function evaluate(
       estimated.push(input.param)
     } else {
       direct[name] = input
+      if (takesDefault(input, given)) defaulted.push(input.param)
     }
   }
   const vars = bindInputs({ inputs: direct }, given)
@@ -449,6 +511,7 @@ function evaluate(
     currency,
     ...(currency === 'USD' && { usd: amount }),
     estimated,
+    defaulted,
   }
 }
 

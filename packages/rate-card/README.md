@@ -43,10 +43,18 @@ const tokenCard = compileOpenRouterPricing(model.pricing, {
 A number input may carry an `estimate`: the source's published way to
 derive it when the caller omits it (Seedance `completion_tokens` from
 resolution × ratio × duration), with its own `inputs` and `source`.
-`priceDetailed` returns `{ amount, currency, usd?, estimated }`;
+`priceDetailed` returns `{ amount, currency, usd?, estimated, defaulted, ignored }`;
 `estimated` lists the params that were filled that way, so an estimate is never mistaken for the billed
 price. Supplying the real value skips the estimate and its inputs. `price`
 never estimates: it throws `required` for the omitted input instead.
+
+`defaulted` lists omitted params that took the card's `default` (an
+omitted count input is an empty list). `ignored` lists request keys the
+card does not read: request-bound cards get full request bodies, so extra
+fields are normal there. A usage key the card does not read is not normal:
+`priceDetailed` throws `unknown-usage-key`, because a dropped usage count
+is a wrong price. `cardParams(card)` lists the request and usage keys a
+card reads. `price` does not check keys.
 
 ## Currency
 
