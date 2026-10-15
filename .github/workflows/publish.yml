@@ -50,10 +50,19 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Pack public packages
+      # Builds packages that ship JS (rate-card: dist/ JS + .d.ts for edge
+      # runtimes) and refuses a tarball missing a file its manifest names.
+      - name: Build and pack public packages
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: bun scripts/npm-pack.ts --pack-dir dist/npm
+
+      - name: List tarball contents
+        run: |
+          for tgz in dist/npm/*.tgz; do
+            echo "== $tgz"
+            tar -tzf "$tgz"
+          done
 
       - uses: actions/upload-artifact@v4
         with:

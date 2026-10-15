@@ -11,8 +11,9 @@ import {
 } from './evaluate.ts'
 import { z } from 'zod'
 
-import { CORE_OPS, rateCardSchema } from './rate-card.schema.ts'
-import type { Expr, RateCard } from './rate-card.schema.ts'
+import { CORE_OPS } from './card.ts'
+import { rateCardSchema } from './rate-card.schema.ts'
+import type { Expr, RateCard } from './card.ts'
 import { compileTokenCard } from './token-card.ts'
 
 const source = {

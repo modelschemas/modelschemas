@@ -16,7 +16,7 @@
  * vocabulary passes through unchanged.
  */
 import { RateCardError, cardParams, isRecord } from './evaluate.ts'
-import type { RateCard } from './rate-card.schema.ts'
+import type { RateCard } from './card.ts'
 
 type Vars = Record<string, unknown>
 

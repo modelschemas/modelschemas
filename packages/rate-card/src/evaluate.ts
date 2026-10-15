@@ -1,12 +1,12 @@
 /**
  * Deterministic rate-card evaluator. ~100 lines of JSONLogic over
- * the closed vocabulary in `rate-card.schema.ts` — smaller than json-logic-js,
+ * the closed vocabulary in `card.ts` — smaller than json-logic-js,
  * no `eval`, and it refuses instead of coercing: an unknown op, an unbound
  * input, a missing table key or a non-numeric operand throws, and so does a
  * price that is not a finite positive number. A refusal is an honest
  * "unknown"; a made-up number is a wrong price.
  */
-import { CORE_OPS, currencyWrapper } from './rate-card.schema.ts'
+import { CORE_OPS, currencyWrapper } from './card.ts'
 import type {
   CoreOp,
   Expr,
@@ -14,7 +14,7 @@ import type {
   RateCardEstimate,
   RateCardExample,
   Table,
-} from './rate-card.schema.ts'
+} from './card.ts'
 
 export type RateCardErrorCode =
   | 'unknown-op'

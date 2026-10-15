@@ -1,4 +1,4 @@
-import type { Expr, RateCard, RateCardExample } from '../rate-card.schema.ts'
+import type { Expr, RateCard, RateCardExample } from '../card.ts'
 
 /**
  * https://docs.byteplus.com/en/docs/ModelArk/1544106 (Model pricing), read

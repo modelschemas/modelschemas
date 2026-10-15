@@ -9,7 +9,7 @@
  * priced from the request alone; one the request cannot state (how long the
  * uploaded audio is) is usage-bound and supplied by the caller.
  */
-import type { Expr, RateCard, Table } from './rate-card.schema.ts'
+import type { Expr, RateCard, Table } from './card.ts'
 
 export interface UnitQuantity {
   param: string

@@ -1,4 +1,4 @@
-import type { RateCard } from '../rate-card.schema.ts'
+import type { RateCard } from '../card.ts'
 
 /**
  * https://fal.ai/models/minimax/h3-max/image-to-video/llms.txt and the

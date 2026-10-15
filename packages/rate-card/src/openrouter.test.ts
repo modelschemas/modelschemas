@@ -4,7 +4,7 @@ import { GPT_4O } from './fixtures/gpt-4o.ts'
 import { NANO_BANANA_2 } from './fixtures/nano-banana-2.ts'
 import { compileOpenRouterPricing } from './openrouter.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
-import type { RateCard } from './rate-card.schema.ts'
+import type { RateCard } from './card.ts'
 
 const source = GPT_4O.source
 

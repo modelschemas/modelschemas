@@ -7,11 +7,46 @@ examples attached. The evaluator refuses instead of coercing: an unknown op,
 unbound input, missing table key, non-numeric operand or non-positive price
 throws `RateCardError`. A refusal is an honest unknown.
 
-> Ships as TypeScript source; no Cloudflare / Node-specific imports.
+> Ships as ES2022 JS with .d.ts; no Cloudflare, Node or DOM imports.
 
 ```bash
 bun add @modelschemas/rate-card
 ```
+
+## Evaluate a card
+
+`@modelschemas/rate-card/evaluator` has no dependencies, so it runs on
+edge runtimes. Fetch a card from `GET /v1/models/{provider}/{id}`
+(`pricing`) and price each call where it happens:
+
+```ts
+import { evaluateCard } from '@modelschemas/rate-card/evaluator'
+
+const { amount, currency, estimated } = evaluateCard(model.pricing, {
+  request, // the request body, for request-bound levers
+  usage: response.usage, // card levers or the provider's own usage object
+})
+```
+
+`evaluateCard` returns what `POST /v1/estimate` returns for the same card
+and inputs. One fixture suite runs each case through both and requires
+the same result. It throws `RateCardError` instead of returning a number
+it cannot stand behind.
+
+## Versions
+
+The package's MAJOR.MINOR version is the version of the card language
+it reads, `RATE_CARD_LANGUAGE`. A change to what a card can say bumps
+it. A fix that reads the same cards is a patch.
+
+| Language | Adds                                            |
+| -------- | ----------------------------------------------- |
+| `0.1`    | Core ops, `lookup`, input estimates. USD only.  |
+| `0.2`    | The `{ currency: [code, expr] }` price wrapper. |
+
+The package root also exports `rateCardSchema` (zod) and the listing
+compilers. `zod` is an optional peer dependency: install it to import
+the root.
 
 ```ts
 import {
@@ -107,7 +142,7 @@ currencies.
 `currency` is not a core op, on purpose. **0.1.0 cannot read a non-USD
 card: `rateCardSchema` rejects it and `price()` throws `unknown-op`.**
 That is the intended failure: an evaluator that knows no currencies
-refuses a yuan price instead of returning it as dollars. Upgrade to read
+refuses a yuan price instead of returning it as dollars. 0.2.0 reads
 these cards. USD cards are unchanged and read the same in every version.
 
 Token counts on compiled OpenRouter cards are disjoint: `input_tokens`

@@ -1,8 +1,12 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 
-import { compileTokenCard } from '@modelschemas/rate-card'
+import { compileTokenCard, evaluateCard } from '@modelschemas/rate-card'
 
+import {
+  ESTIMATE_CASES,
+  settle,
+} from '../../packages/rate-card/src/fixtures/estimate-cases.ts'
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
@@ -383,4 +387,66 @@ describe('estimateCost', () => {
     })
     expect(draft).toMatchObject({ ok: false, code: 'unbound_input' })
   })
+})
+
+// The shared cases (packages/rate-card/src/fixtures/estimate-cases.ts) run
+// the route's path: JSON body → parseEstimateBody → estimateCost → JSON.
+// Each must equal what the package's evaluateCard returns.
+describe('POST /v1/estimate conformance with evaluateCard', () => {
+  beforeAll(async () => {
+    await db.insert(providers).values({
+      id: 'conformance',
+      displayName: 'Conformance',
+      specSourceUrl: 'https://example.com/c.json',
+    })
+    await db.insert(models).values(
+      ESTIMATE_CASES.map((c, i) => ({
+        id: `conformance-case-${i}`,
+        providerId: 'conformance',
+        rawId: `case-${i}`,
+        activity: 'chat' as const,
+        pricing: c.card,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      })),
+    )
+  })
+
+  it.each(ESTIMATE_CASES.map((c, i) => [c.name, c, i] as const))(
+    '%s',
+    async (_, c, i) => {
+      const body = parseEstimateBody(
+        JSON.parse(
+          JSON.stringify({
+            provider: 'conformance',
+            model: `case-${i}`,
+            request: c.request,
+            usage: c.usage,
+          }),
+        ),
+      )
+      if (!body) throw new Error('body did not parse')
+      const outcome = await estimateCost(db, body)
+      const pkg = settle(() =>
+        evaluateCard(c.card, { request: c.request, usage: c.usage }),
+      )
+      if ('error' in c.expected) {
+        expect(outcome).toMatchObject({
+          ok: false,
+          status: 422,
+          code: c.expected.apiError,
+        })
+        expect(pkg).toEqual({ error: c.expected.error })
+        return
+      }
+      if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`)
+      const { amount, currency, estimated } = JSON.parse(
+        JSON.stringify(outcome.result),
+      ) as typeof outcome.result
+      expect({ amount, currency, estimated }).toEqual(
+        evaluateCard(c.card, { request: c.request, usage: c.usage }),
+      )
+      expect(pkg).toEqual(c.expected)
+    },
+  )
 })

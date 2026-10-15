@@ -1,4 +1,4 @@
-import type { RateCard } from '../rate-card.schema.ts'
+import type { RateCard } from '../card.ts'
 
 /**
  * https://docs.byteplus.com/en/docs/ModelArk/1544106 (Model pricing),

@@ -4,43 +4,15 @@
  * usage the caller supplies).
  *
  * A card is JSONLogic (a published spec LLMs already know; pure data, no code
- * execution, Workers-safe) over a closed vocabulary: the core ops below plus
+ * execution, Workers-safe) over a closed vocabulary: the core ops in `card.ts` plus
  * `lookup` (named tables) and `ceil` / `floor`. `examples` are the source
  * page's own worked examples; `verifyExamples` must reproduce every one or
  * the card is rejected.
  */
 import { z } from 'zod'
 
-export const CORE_OPS = [
-  'var',
-  'missing',
-  '+',
-  '-',
-  '*',
-  '/',
-  'max',
-  'min',
-  'if',
-  '==',
-  '!=',
-  '<',
-  '<=',
-  '>',
-  '>=',
-  'and',
-  'or',
-  'ceil',
-  'floor',
-] as const
-
-export type CoreOp = (typeof CORE_OPS)[number]
-
-export type Expr =
-  | number
-  | string
-  | boolean
-  | { lookup: { table: string; keys: Expr[]; default?: Expr } }
-  | { [op in CoreOp]?: Expr | Expr[] }
+import { CORE_OPS, currencyWrapper } from './card.ts'
+import type { Expr, Table } from './card.ts'
 
 const exprSchema: z.ZodType<Expr> = z.lazy(() =>
   z.union([
@@ -64,9 +36,6 @@ const exprSchema: z.ZodType<Expr> = z.lazy(() =>
       .refine((ops) => Object.keys(ops).length === 1, 'one op per node'),
   ]),
 )
-
-/** Nested numeric lookup: `tables.rate['720p'].video` → number. */
-export type Table = { [key: string]: number | Table }
 
 const tableSchema: z.ZodType<Table> = z.lazy(() =>
   z.record(z.string(), z.union([z.number(), tableSchema])),
@@ -149,23 +118,13 @@ function inputKinds<TNumber extends z.ZodRawShape>(numberExtra: TNumber) {
 
 const plainInputSchema = inputKinds({})
 
-/**
- * A source-published way to estimate a number the caller did not supply
- * (`completion_tokens` from resolution × ratio × duration). Used only when
- * the input is absent; the result then names the input as estimated, never
- * as a billed price. `inputs` bind only on that path, so a caller who
- * supplies the real number is not asked for them. `value` also reads the
- * card's own bound inputs; estimate input names may not repeat them, and
- * an input with an estimate has no `default` (which would silently win).
- */
+/** See `RateCardEstimate` in `card.ts`. */
 const estimateSchema = z.object({
   inputs: z.record(z.string(), plainInputSchema),
   value: exprSchema,
   /** The text the estimate method was read from. */
   source: sourceRefSchema,
 })
-
-export type RateCardEstimate = z.infer<typeof estimateSchema>
 
 const inputSchema = inputKinds({ estimate: estimateSchema.optional() })
 
@@ -181,55 +140,13 @@ const rateCardExampleSchema = z.object({
   quote: z.string().min(1),
 })
 
-export type RateCardExample = z.infer<typeof rateCardExampleSchema>
-
-/**
- * JSONLogic yielding the amount for one request: USD, or, wrapped as
- * `{ currency: ['CNY', expr] }`, the ISO-4217 currency named. The wrapper
- * is the only place a card states a currency, so a USD card is exactly
- * what it was before cards had one.
- *
- * `currency` is deliberately not a core op. An evaluator that predates it
- * (0.1.0, or a rolled-back service) fails to parse the card and throws
- * `unknown-op` on its price, so it refuses a yuan amount instead of
- * reporting it as dollars. Amounts in different currencies are never
- * added, compared or converted.
- */
+/** See `RateCardPrice` in `card.ts`. */
 const priceSchema = z.union([
   z
     .strictObject({ currency: z.tuple([z.string(), exprSchema]) })
     .refine((price) => currencyWrapper(price) !== 'malformed'),
   exprSchema,
 ])
-
-/**
- * The one rule for a price's currency wrapper, shared by the schema and
- * the evaluator: `null` for a bare (USD) price, the code and inner
- * expression for `{ currency: ['CNY', expr] }`, `'malformed'` for anything
- * else carrying a `currency` key. The code is three capitals and never
- * `USD`: USD is said only by having no wrapper, so a USD card can never
- * become one that 0.1.0 refuses.
- */
-export function currencyWrapper(
-  price: unknown,
-): { currency: string; expr: unknown } | null | 'malformed' {
-  if (typeof price !== 'object' || price === null || !('currency' in price)) {
-    return null
-  }
-  const pair = price.currency
-  if (
-    Object.keys(price).length !== 1 ||
-    !Array.isArray(pair) ||
-    pair.length !== 2 ||
-    typeof pair[0] !== 'string' ||
-    !/^[A-Z]{3}$/.test(pair[0]) ||
-    pair[0] === 'USD' ||
-    pair[1] == null
-  ) {
-    return 'malformed'
-  }
-  return { currency: pair[0], expr: pair[1] }
-}
 
 export const rateCardSchema = z.object({
   /**
@@ -272,5 +189,3 @@ export const rateCardSchema = z.object({
     expiresAt: z.iso.datetime().optional(),
   }),
 })
-
-export type RateCard = z.infer<typeof rateCardSchema>
