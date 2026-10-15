@@ -128,6 +128,62 @@ describe('opencode-go', () => {
     expect(urls).toContain(OPENCODE_CATALOG_URL)
   })
 
+  it('binds no route to a Gemini row, which the Go tree does not serve', async () => {
+    // Handler files under routes/zen/go/v1 on anomalyco/opencode `dev`
+    // (2026-10-15). There is no models/[model].ts, and
+    // /zen/go/v1/models/{id} answers 404. Unlike stubFetch, any other source
+    // file 404s here.
+    const goRoutes = ['chat/completions', 'messages', 'responses'].map(
+      (file) =>
+        `https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/console/app/src/routes/zen/go/v1/${file}.ts`,
+    )
+    const catalog = {
+      'opencode-go': {
+        ...CATALOG['opencode-go'],
+        models: {
+          ...CATALOG['opencode-go'].models,
+          gemini: {
+            id: 'gemini',
+            name: 'Gemini',
+            provider: { npm: '@ai-sdk/google' },
+          },
+        },
+      },
+    }
+    globalThis.fetch = ((url: string) => {
+      if (String(url) === OPENCODE_GO_MODELS_URL) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              object: 'list',
+              data: [{ id: 'gemini', object: 'model', owned_by: 'opencode' }],
+            }),
+          ),
+        )
+      }
+      if (String(url) === OPENCODE_CATALOG_URL) {
+        return Promise.resolve(new Response(JSON.stringify(catalog)))
+      }
+      if (goRoutes.includes(String(url))) {
+        return Promise.resolve(
+          new Response('export function POST(input: APIEvent) {}'),
+        )
+      }
+      return Promise.resolve(new Response('404: Not Found', { status: 404 }))
+    }) as typeof fetch
+
+    const spec = await provider.fetchSpec({})
+    expect(Object.keys(spec.specs[0]?.paths ?? {}).sort()).toEqual([
+      '/v1/chat/completions',
+      '/v1/messages',
+      '/v1/responses',
+    ])
+    const [gemini] = (await provider.listModels({})).models
+    expect(gemini).toMatchObject({ rawId: 'gemini', activity: 'chat' })
+    expect(gemini?.schemaEndpointId).toBeUndefined()
+    expect(gemini?.factSources?.schemaEndpointId).toBeUndefined()
+  })
+
   it('throws when the catalog classifies no listed row', async () => {
     stubFetch()
     const fetchCatalog = globalThis.fetch
