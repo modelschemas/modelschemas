@@ -56,7 +56,7 @@ export interface AzureModelRow {
   activity: Activity | null
   contextWindow: number | null
   maxOutput: number | null
-  modalities: { input: Array<string>; output: Array<string> } | null
+  modalities: { input: Array<string>; output: Array<string> | null } | null
   capabilities: Array<string>
   chatCompletions: boolean
   responses: boolean
@@ -72,7 +72,7 @@ export interface AzureModelRow {
 /** One model's column in the reasoning article's feature matrix. */
 export interface AzureFeatureColumn {
   capabilities: Array<string>
-  modalities: { input: Array<string>; output: Array<string> } | null
+  modalities: { input: Array<string>; output: Array<string> | null } | null
   chatCompletions: boolean | null
   responses: boolean | null
   /** The reasoning-effort cell is ✅. */
@@ -93,7 +93,7 @@ function plain(cell: string): string {
 function descriptionModalities(text: string): AzureModelRow['modalities'] {
   const output = /text output|text only|text out\b|input\/output/i.test(text)
     ? ['text']
-    : []
+    : null
   if (
     /text and image (?:processing|input)|input\*\*: text\/image|image \(input\)/i.test(
       text,
@@ -190,7 +190,7 @@ export function parseAzureModels(markdown: string): Map<string, AzureModelRow> {
       const trailing = idCell.replace(/`[^`]+`|\^\d+\^|\([^)]*\)/g, ' ')
       const described = descriptionModalities(description)
       const vision = /\bwith vision\b/i.test(trailing)
-        ? { input: ['text', 'image'], output: [] }
+        ? { input: ['text', 'image'], output: null }
         : null
       for (const match of idCell.matchAll(
         /`([^`]+)`(?:\^\d+\^)?\s*(?:\(([^)]*)\))?/g,
@@ -358,12 +358,12 @@ export function parseAzureFeatureMatrix(
       } else if (/^image input/i.test(label)) {
         column.modalities = {
           input: yes ? ['text', 'image'] : ['text'],
-          output: column.modalities?.output ?? [],
+          output: column.modalities?.output ?? null,
         }
       } else if (/^input modalities/i.test(label)) {
         column.modalities = {
           input: modalityWords(cell),
-          output: column.modalities?.output ?? [],
+          output: column.modalities?.output ?? null,
         }
       } else if (/^output modalities/i.test(label)) {
         column.modalities = {
@@ -721,9 +721,9 @@ export function azureModelInfo(
   // image-input row and no output row.
   const fromMatrix = (column?.modalities?.input.length ?? 0) > 0
   const input = fromMatrix ? column?.modalities?.input : row.modalities?.input
-  const output = column?.modalities?.output.length
+  const output = column?.modalities?.output?.length
     ? column.modalities.output
-    : (row.modalities?.output ?? [])
+    : (row.modalities?.output ?? null)
   const modalities = input ? { input, output } : null
   const chatCompletions = column?.chatCompletions ?? row.chatCompletions
   const responses = column?.responses ?? row.responses
