@@ -8,9 +8,9 @@
  * description) and input modalities (user message content parts). Context
  * windows come from the overview page's model tables, reasoning efforts
  * from the Deep Thinking page. A model with no effort list is a toggle:
- * the request's `thinking.type` switch, whose description names the models
- * that cannot turn it off. Each parser throws on a shape it does not know
- * rather than guess.
+ * the request's `thinking.type` switch. The switch's description names the
+ * models that cannot turn thinking off, effort models included. Each parser
+ * throws on a shape it does not know rather than guess.
  *
  * The chat body is a `oneOf` of a text and a vision request, split by
  * `model` enum with no discriminator, and several properties say in prose
@@ -378,9 +378,10 @@ export function zaiSupportedBy(
 /**
  * The "In the API request" bullets under `reasoning_effort` on the Deep
  * Thinking page: "For <models>, only | the supported options are <values>."
- * The page and the spec both speak of these names as series. `mandatory`
- * here is inferred from the list (no `none` reads as true), which predates
- * the stated-only rule on `ModelReasoning`.
+ * The page and the spec both speak of these names as series. A line is the
+ * named models' own list, so a `none` in it states that thinking turns off.
+ * A list with no `none` states nothing: `mandatory` is null here, and the
+ * `thinking.type` switch says which models cannot turn thinking off.
  */
 export function parseZaiReasoning(markdown: string): Array<ReasoningRow> {
   const block = markdown.match(
@@ -407,7 +408,7 @@ export function parseZaiReasoning(markdown: string): Array<ReasoningRow> {
       series: true,
       reasoning: {
         mode: 'effort',
-        mandatory: !efforts.includes('none'),
+        mandatory: efforts.includes('none') ? false : null,
         efforts,
       },
     })
@@ -728,32 +729,39 @@ export function parseZaiModels(
       : null
     const fact = facts.get(rawId)
     const contextWindow = windows.get(rawId) ?? null
-    const effort = namedBy(rawId, reasonings)?.reasoning ?? null
+    const listed = namedBy(rawId, reasonings)?.reasoning ?? null
     // The thinking page names series. Cite the request variant instead when
     // its own enum is the same list, as it is for `glm-5.3-flashx`.
     const specEfforts =
-      effort?.efforts !== undefined &&
-      [...effort.efforts].sort().join() ===
+      listed?.efforts !== undefined &&
+      [...listed.efforts].sort().join() ===
         [...(fact?.efforts ?? [])].sort().join()
     // No effort list for the model means no `reasoning_effort` flag either.
     const capabilities = fact?.capabilities
       ? Object.fromEntries(
           Object.entries(fact.capabilities).filter(
-            ([flag]) => flag !== 'reasoning_effort' || effort !== null,
+            ([flag]) => flag !== 'reasoning_effort' || listed !== null,
           ),
         )
       : null
+    // The request variant is shared, so its `disabled` states nothing; the
+    // `thinking.type` description says which models may not send it.
+    const locked = () =>
+      namedBy(rawId, [parseZaiThinkingSwitch(fact?.thinkingType)]) !== null
+    let effort = listed
+    if (listed && fact?.thinkingType !== undefined && locked()) {
+      if (listed.mandatory === false) {
+        throw new Error(
+          `zai: ${rawId} lists a none effort but cannot disable thinking`,
+        )
+      }
+      effort = { ...listed, mandatory: true }
+    }
     // No effort list, and `thinking` covers the model: the switch is all
-    // there is. The request variant is shared, so its `disabled` states
-    // nothing; the description says which models may send it.
+    // there is.
     const toggle: ModelReasoning | null =
       effort === null && capabilities && 'reasoning' in capabilities
-        ? {
-            mode: 'toggle',
-            mandatory:
-              namedBy(rawId, [parseZaiThinkingSwitch(fact?.thinkingType)]) !==
-              null,
-          }
+        ? { mode: 'toggle', mandatory: locked() }
         : null
     const reasoning = effort ?? toggle
     const factSources: ModelFactSources = {
