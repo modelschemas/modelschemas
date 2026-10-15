@@ -249,14 +249,23 @@ const isNumeric = (v: unknown): v is number | string =>
   (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
 
 /**
- * Bind every input from `vars` by param name, with defaults. Never applies
- * an `estimate`: a number input with one but no value throws `required`
- * here (see `priceDetailed`).
+ * Bind every input from `vars` by param name, with defaults; the param of
+ * each input that took one is appended to `defaulted`. Never applies an
+ * `estimate`: a number input with one but no value throws `required` here
+ * (see `priceDetailed`).
  */
-export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
+export function bindInputs(
+  card: Pick<RateCard, 'inputs'>,
+  params: Vars,
+  defaulted: string[] = [],
+): Vars {
   const vars: Vars = {}
   for (const [name, input] of Object.entries(card.inputs)) {
     const raw = params[input.param]
+    const orDefault = (fallback: unknown) => {
+      if (raw == null && fallback !== undefined) defaulted.push(input.param)
+      return raw ?? fallback
+    }
     const bad = (why: string, value?: unknown) =>
       new RateCardError(
         'bad-input',
@@ -264,12 +273,14 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
       )
     switch (input.kind) {
       case 'count':
-        if (raw === undefined) vars[name] = 0
-        else if (Array.isArray(raw)) vars[name] = raw.length
+        if (raw === undefined) {
+          vars[name] = 0
+          defaulted.push(input.param)
+        } else if (Array.isArray(raw)) vars[name] = raw.length
         else throw bad('expected a list, got', raw)
         break
       case 'number': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (value === undefined) throw bad('required')
         // Enum-typed durations arrive as strings ("5").
         if (!isNumeric(value)) throw bad('not a number:', value)
@@ -277,7 +288,7 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
         break
       }
       case 'boolean': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (value === undefined) throw bad('required')
         if (typeof value !== 'boolean')
           throw bad('expected a boolean, got', value)
@@ -285,7 +296,7 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
         break
       }
       case 'enum': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (value === undefined) throw bad('required')
         if (typeof value !== 'string' || !input.values.includes(value)) {
           throw bad(`not one of ${input.values.join('|')}:`, value)
@@ -294,7 +305,7 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
         break
       }
       case 'dimensions': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (
           isRecord(value) &&
           isNumeric(value.width) &&
@@ -424,13 +435,13 @@ export function priceDetailed(
     (key) => !params.usage.includes(key),
   )
   if (unknown.length > 0) {
-    const misplaced = unknown.filter((key) => params.request.includes(key))
+    const reads = [
+      ...params.request.map((param) => `request.${param}`),
+      ...params.usage.map((param) => `usage.${param}`),
+    ]
     throw new RateCardError(
       'unknown-usage-key',
-      `${unknown.map((key) => `usage.${key}`).join(', ')}: not read by this card` +
-        (misplaced.length > 0
-          ? ` (${misplaced.join(', ')}: pass on request, not usage)`
-          : ''),
+      `${unknown.map((key) => `usage.${key}`).join(', ')}: not read by this card; it reads ${reads.join(', ') || 'no inputs'}`,
     )
   }
   return {
@@ -440,11 +451,6 @@ export function priceDetailed(
     ),
   }
 }
-
-const takesDefault = (input: RateCard['inputs'][string], given: Vars) =>
-  input.kind === 'count'
-    ? given[input.param] === undefined
-    : given[input.param] == null && input.default !== undefined
 
 function evaluate(
   card: RateCard,
@@ -468,10 +474,9 @@ function evaluate(
       estimated.push(input.param)
     } else {
       direct[name] = input
-      if (takesDefault(input, given)) defaulted.push(input.param)
     }
   }
-  const vars = bindInputs({ inputs: direct }, given)
+  const vars = bindInputs({ inputs: direct }, given, defaulted)
   for (const [name, param, estimate] of pending) {
     try {
       const own = bindInputs(estimate, collect(estimate.inputs, request, usage))

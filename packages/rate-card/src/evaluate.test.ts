@@ -575,7 +575,8 @@ describe('unread keys and defaults', () => {
     ).toThrow(
       expect.objectContaining({
         code: 'unknown-usage-key',
-        message: 'usage.cache_read_input_tokens: not read by this card',
+        message:
+          'usage.cache_read_input_tokens: not read by this card; it reads usage.input_tokens, usage.output_tokens, usage.cache_read_tokens',
       }),
     )
   })
@@ -597,9 +598,9 @@ describe('unread keys and defaults', () => {
     ).toMatchObject({ amount: 0.048, defaulted: ['cache_read_tokens'] })
   })
 
-  it('says a request field sent in usage belongs on request', () => {
+  it('lists a request field sent in usage as a request key', () => {
     expect(() => priceDetailed(cardFor({ var: 'x' }), {}, { x: 3 })).toThrow(
-      /usage\.x: not read by this card \(x: pass on request/,
+      /usage\.x: not read by this card; it reads request\.x, request\.y$/,
     )
   })
 

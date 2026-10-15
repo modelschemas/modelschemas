@@ -157,6 +157,7 @@ describe('estimateCost', () => {
     const outcome = await estimateCost(db, {
       provider: 'est-openai',
       model: 'gpt-4o',
+      request: { model: 'gpt-4o', messages: [], max_tokens: 400 },
       usage: { input_tokens: 1200, output_tokens: 400 },
     })
     expect(outcome).toEqual({
@@ -168,7 +169,7 @@ describe('estimateCost', () => {
         cardSource: GPT_4O.source,
         estimated: [],
         defaulted: ['cache_read_tokens'],
-        ignored: [],
+        ignored: ['model', 'messages', 'max_tokens'],
       },
     })
   })
@@ -210,29 +211,11 @@ describe('estimateCost', () => {
     })
     if (!outcome.ok) {
       expect(outcome.message).toContain(
-        'usage.cache_read_input_tokens: not read by this card. The card reads',
+        'usage.cache_read_input_tokens: not read by this card; it reads',
       )
       expect(outcome.message).toContain('usage.cache_read_tokens')
       expect(outcome.message).toContain('usage.input_tokens')
     }
-  })
-
-  it('names defaulted usage and ignored request keys', async () => {
-    const outcome = await estimateCost(db, {
-      provider: 'est-openai',
-      model: 'gpt-4o',
-      request: { model: 'gpt-4o', messages: [], max_tokens: 400 },
-      usage: { input_tokens: 1200, output_tokens: 400 },
-    })
-    expect(outcome).toMatchObject({
-      ok: true,
-      result: {
-        amount: 0.007,
-        estimated: [],
-        defaulted: ['cache_read_tokens'],
-        ignored: ['model', 'messages', 'max_tokens'],
-      },
-    })
   })
 
   it('returns 404 unknown_model when the model is missing', async () => {

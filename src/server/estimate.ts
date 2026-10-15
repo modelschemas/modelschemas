@@ -5,11 +5,7 @@
  * `defaulted` any input that took the card's default, and `ignored` any
  * request key the card does not read.
  */
-import {
-  cardParams,
-  priceDetailed,
-  RateCardError,
-} from '@modelschemas/rate-card'
+import { priceDetailed, RateCardError } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Db } from '#/db/index.ts'
@@ -93,19 +89,6 @@ function mapRateCardError(
         `Pass it on the estimate body. See GET /v1/models/${body.provider}/${body.model}.`,
     }
   }
-  if (error.code === 'unknown-usage-key') {
-    const params = cardParams(card)
-    const reads = [
-      ...params.request.map((param) => `request.${param}`),
-      ...params.usage.map((param) => `usage.${param}`),
-    ]
-    return {
-      code: 'unknown_usage_key',
-      message:
-        `${error.message}. The card reads ${reads.join(', ') || 'no inputs'}. ` +
-        `Rename or remove the key. See GET /v1/models/${body.provider}/${body.model}.`,
-    }
-  }
   return {
     code: error.code.replaceAll('-', '_'),
     message:
@@ -137,21 +120,8 @@ export async function estimateCost(
     }
   }
   try {
-    const { estimated, defaulted, ignored, ...amount } = priceDetailed(
-      card,
-      body.request ?? {},
-      body.usage ?? {},
-    )
-    return {
-      ok: true,
-      result: {
-        ...amount,
-        cardSource: card.source,
-        estimated,
-        defaulted,
-        ignored,
-      },
-    }
+    const result = priceDetailed(card, body.request ?? {}, body.usage ?? {})
+    return { ok: true, result: { ...result, cardSource: card.source } }
   } catch (error) {
     if (error instanceof RateCardError) {
       const mapped = mapRateCardError(error, card, body)
