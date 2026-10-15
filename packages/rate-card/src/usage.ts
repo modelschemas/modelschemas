@@ -14,7 +14,7 @@
  * which is how the source bills them. A usage object in the card's own
  * vocabulary passes through unchanged.
  */
-import { RateCardError, cardParams } from './evaluate.ts'
+import { RateCardError, cardParams, isRecord } from './evaluate.ts'
 import type { RateCard } from './rate-card.schema.ts'
 
 type Vars = Record<string, unknown>
@@ -68,7 +68,7 @@ const FORMAT_KEYS: Record<NativeFormat, readonly string[]> = {
   ],
 }
 
-const FORMATS = Object.keys(FORMAT_KEYS) as NativeFormat[]
+const FORMATS = Object.keys(FORMAT_KEYS) as [NativeFormat, ...NativeFormat[]]
 
 /**
  * Keys that do not mark a native format: card levers that a native format
@@ -94,9 +94,6 @@ const ALWAYS_SPLIT = new Set([
   'cache_write_1h_tokens',
 ])
 
-const isRecord = (v: unknown): v is Vars =>
-  typeof v === 'object' && v !== null && !Array.isArray(v)
-
 /**
  * The format of a usage object: `card` when it has no key that only a
  * provider's usage object has. A key the card reads is a card lever (the
@@ -107,18 +104,20 @@ export function usageFormat(
   card: Pick<RateCard, 'inputs'>,
   usage: Vars,
 ): UsageFormat {
-  const reads = cardParams(card).usage
   const keys = Object.keys(usage)
-  if (!keys.some((key) => NATIVE.has(key) && !reads.includes(key))) {
-    return 'card'
+  const marked = keys.filter((key) => NATIVE.has(key))
+  if (marked.length === 0) return 'card'
+  const reads = cardParams(card).usage
+  if (marked.every((key) => reads.includes(key))) return 'card'
+  let closest: NativeFormat = FORMATS[0]
+  let foreign = keys
+  for (const format of FORMATS) {
+    const outside = keys.filter((key) => !FORMAT_KEYS[format].includes(key))
+    if (outside.length < foreign.length) {
+      closest = format
+      foreign = outside
+    }
   }
-  const outside = (format: NativeFormat) =>
-    keys.filter((key) => !FORMAT_KEYS[format].includes(key))
-  const [closest] = [...FORMATS].sort(
-    (a, b) => outside(a).length - outside(b).length,
-  )
-  if (closest === undefined) return 'card'
-  const foreign = outside(closest)
   if (foreign.length > 0) {
     throw new RateCardError(
       'mixed-usage',
@@ -140,9 +139,16 @@ function count(value: unknown, path: string): number {
   return value
 }
 
-/** A nested details object; a key this reader does not know throws. */
-function details(value: unknown, path: string, known: string[]): Vars {
-  if (value == null) return {}
+/**
+ * A count reader over a nested details object. A key this reader does not
+ * know throws.
+ */
+function details(
+  value: unknown,
+  path: string,
+  known: string[],
+): (key: string) => number {
+  if (value == null) return () => 0
   if (!isRecord(value)) {
     throw new RateCardError(
       'bad-input',
@@ -156,11 +162,12 @@ function details(value: unknown, path: string, known: string[]): Vars {
       `${unknown.map((key) => `usage.${path}.${key}`).join(', ')}: not read by the usage normalizer`,
     )
   }
-  return value
+  return (key) => count(value[key], `${path}.${key}`)
 }
 
-const MODALITIES = { AUDIO: 'audio', IMAGE: 'image', VIDEO: 'video' } as const
-type Modality = (typeof MODALITIES)[keyof typeof MODALITIES]
+type Modality = 'audio' | 'image' | 'video'
+
+const MODALITIES: Modality[] = ['audio', 'image', 'video']
 
 /** Gemini `[{ modality, tokenCount }]` → tokens per priced modality. */
 function byModality(value: unknown, path: string): Record<Modality, number> {
@@ -173,12 +180,11 @@ function byModality(value: unknown, path: string): Record<Modality, number> {
     )
   }
   value.forEach((entry: unknown, i) => {
-    const row = details(entry, `${path}[${i}]`, ['modality', 'tokenCount'])
-    const modality =
-      typeof row.modality === 'string'
-        ? MODALITIES[row.modality as keyof typeof MODALITIES]
-        : undefined
-    if (modality) out[modality] += count(row.tokenCount, `${path}[${i}]`)
+    const tokens = details(entry, `${path}[${i}]`, ['modality', 'tokenCount'])
+    const modality = MODALITIES.find(
+      (m) => isRecord(entry) && entry.modality === m.toUpperCase(),
+    )
+    if (modality) out[modality] += tokens('tokenCount')
   })
   return out
 }
@@ -191,7 +197,7 @@ function apportion(
   reads: Set<string>,
   base: string,
   total: number,
-  parts: Array<[string, number]>,
+  parts: Array<[lever: string, n: number]>,
 ): Record<string, number> {
   const out: Record<string, number> = {}
   let rest = total
@@ -200,7 +206,7 @@ function apportion(
       throw new RateCardError('bad-input', `usage: ${lever} is negative (${n})`)
     }
     if (n > 0 && (ALWAYS_SPLIT.has(lever) || reads.has(lever))) {
-      out[lever] = (out[lever] ?? 0) + n
+      out[lever] = n
       rest -= n
     }
   }
@@ -232,26 +238,13 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
         reads,
         'input_tokens',
         count(usage.input_tokens, 'input_tokens'),
-        [
-          [
-            'cache_read_tokens',
-            count(input.cached_tokens, 'input_tokens_details.cached_tokens'),
-          ],
-        ],
+        [['cache_read_tokens', input('cached_tokens')]],
       ),
       ...apportion(
         reads,
         'output_tokens',
         count(usage.output_tokens, 'output_tokens'),
-        [
-          [
-            'reasoning_tokens',
-            count(
-              output.reasoning_tokens,
-              'output_tokens_details.reasoning_tokens',
-            ),
-          ],
-        ],
+        [['reasoning_tokens', output('reasoning_tokens')]],
       ),
     }
   },
@@ -279,14 +272,8 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
         'input_tokens',
         count(usage.prompt_tokens, 'prompt_tokens'),
         [
-          [
-            'cache_read_tokens',
-            count(prompt.cached_tokens, 'prompt_tokens_details.cached_tokens'),
-          ],
-          [
-            'audio_tokens',
-            count(prompt.audio_tokens, 'prompt_tokens_details.audio_tokens'),
-          ],
+          ['cache_read_tokens', prompt('cached_tokens')],
+          ['audio_tokens', prompt('audio_tokens')],
         ],
       ),
       ...apportion(
@@ -294,20 +281,8 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
         'output_tokens',
         count(usage.completion_tokens, 'completion_tokens'),
         [
-          [
-            'reasoning_tokens',
-            count(
-              completion.reasoning_tokens,
-              'completion_tokens_details.reasoning_tokens',
-            ),
-          ],
-          [
-            'audio_output_tokens',
-            count(
-              completion.audio_tokens,
-              'completion_tokens_details.audio_tokens',
-            ),
-          ],
+          ['reasoning_tokens', completion('reasoning_tokens')],
+          ['audio_output_tokens', completion('audio_tokens')],
         ],
       ),
     }
@@ -334,20 +309,9 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
         reads,
         'cache_write_tokens',
         count(usage.cache_creation_input_tokens, 'cache_creation_input_tokens'),
-        [
-          [
-            'cache_write_1h_tokens',
-            count(
-              creation.ephemeral_1h_input_tokens,
-              'cache_creation.ephemeral_1h_input_tokens',
-            ),
-          ],
-        ],
+        [['cache_write_1h_tokens', creation('ephemeral_1h_input_tokens')]],
       ),
-      web_searches: count(
-        tools.web_search_requests,
-        'server_tool_use.web_search_requests',
-      ),
+      web_searches: tools('web_search_requests'),
     }
   },
   // promptTokenCount includes cachedContentTokenCount; thoughtsTokenCount
@@ -371,20 +335,19 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
         `usage: cachedContentTokenCount ${cached} is more than promptTokenCount`,
       )
     }
-    const modalities = Object.values(MODALITIES)
     return {
       ...apportion(
         reads,
         'input_tokens',
         uncached +
           count(usage.toolUsePromptTokenCount, 'toolUsePromptTokenCount'),
-        modalities.map((m) => [`${m}_tokens`, prompt[m] - cache[m]]),
+        MODALITIES.map((m) => [`${m}_tokens`, prompt[m] - cache[m]]),
       ),
       ...apportion(
         reads,
         'cache_read_tokens',
         cached,
-        modalities.map((m) => [`${m}_cache_tokens`, cache[m]]),
+        MODALITIES.map((m) => [`${m}_cache_tokens`, cache[m]]),
       ),
       ...apportion(
         reads,
@@ -392,7 +355,7 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
         count(usage.candidatesTokenCount, 'candidatesTokenCount') + thoughts,
         [
           ['reasoning_tokens', thoughts],
-          ...modalities.map((m): [string, number] => [
+          ...MODALITIES.map((m): [string, number] => [
             `${m}_output_tokens`,
             output[m],
           ]),

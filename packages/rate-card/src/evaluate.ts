@@ -77,7 +77,7 @@ export function cardCurrency(card: Pick<RateCard, 'price'>): string {
   return cardPrice(card).currency
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
 const isCoreOp = (op: string): op is CoreOp =>
