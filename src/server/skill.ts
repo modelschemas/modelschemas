@@ -57,7 +57,11 @@ availability and schema questions.
    billed price). \`defaulted\` names omitted inputs that took the card's
    default; \`ignored\` names request keys the card does not read. Missing
    levers → 422; a usage key the card does not read → 422
-   \`unknown_usage_key\`; no card → 404 \`unknown_pricing\`. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.
+   \`unknown_usage_key\`; no card → 404 \`unknown_pricing\`. \`usage\` is
+   the provider's own usage object (OpenAI Responses or Chat, Anthropic,
+   Gemini \`usageMetadata\`) or card levers whose counts do not overlap
+   (\`input_tokens\` excludes \`cache_read_tokens\`), never both → 422
+   \`mixed_usage\`. "Estimate usage" below maps each native field. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.
 6. **Stay current.** Poll \`GET /v1/changes?since=<epoch>\` (cursor-paginated)
    or subscribe: \`POST /v1/subscriptions\` (authed) delivers HMAC-signed
    webhooks for model/schema changes.

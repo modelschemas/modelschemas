@@ -49,6 +49,23 @@ beforeAll(async () => {
       lastSeenAt: NOW,
     },
     {
+      id: 'est-openai-gpt-5',
+      providerId: 'est-openai',
+      rawId: 'gpt-5',
+      activity: 'chat',
+      pricing: compileTokenCard(
+        {
+          input_tokens: 1.25 / 1e6,
+          cache_read_tokens: 0.125 / 1e6,
+          output_tokens: 10 / 1e6,
+        },
+        [],
+        GPT_4O.source,
+      ),
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    },
+    {
       id: 'est-openai-free',
       providerId: 'est-openai',
       rawId: 'free',
@@ -153,6 +170,76 @@ describe('estimateCost', () => {
     },
   )
 
+  it.each([
+    [
+      'Responses',
+      {
+        input_tokens: 12_000,
+        input_tokens_details: { cached_tokens: 4000 },
+        output_tokens: 800,
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 12_800,
+      },
+    ],
+    [
+      'Chat',
+      {
+        prompt_tokens: 12_000,
+        prompt_tokens_details: { cached_tokens: 4000, audio_tokens: 0 },
+        completion_tokens: 800,
+        total_tokens: 12_800,
+      },
+    ],
+  ])(
+    'prices native OpenAI %s usage with cached tokens counted once',
+    async (_, usage) => {
+      const outcome = await estimateCost(db, {
+        provider: 'est-openai',
+        model: 'gpt-5',
+        usage,
+      })
+      // 8000 × 1.25/M + 4000 × 0.125/M + 800 × 10/M, not 0.0235.
+      expect(outcome).toMatchObject({ ok: true, result: { defaulted: [] } })
+      if (outcome.ok) expect(outcome.result.amount).toBeCloseTo(0.0185, 10)
+    },
+  )
+
+  it.each([
+    ['claude-opus-5-5', 0.2],
+    ['claude-fable-5-1', 0.25],
+  ])('prices native Anthropic cache reads for %s', async (model, usd) => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-anthropic',
+      model,
+      usage: {
+        input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 1_000_000,
+        output_tokens: 0,
+        service_tier: 'standard',
+      },
+    })
+    expect(outcome).toMatchObject({ ok: true, result: { usd } })
+  })
+
+  it('returns 422 mixed_usage for native fields beside card levers', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-openai',
+      model: 'gpt-5',
+      usage: {
+        input_tokens: 12_000,
+        input_tokens_details: { cached_tokens: 4000 },
+        output_tokens: 800,
+        cache_read_tokens: 4000,
+      },
+    })
+    expect(outcome).toMatchObject({
+      ok: false,
+      status: 422,
+      code: 'mixed_usage',
+    })
+  })
+
   it('prices a stored token card', async () => {
     const outcome = await estimateCost(db, {
       provider: 'est-openai',
@@ -201,7 +288,7 @@ describe('estimateCost', () => {
       usage: {
         input_tokens: 12_000,
         output_tokens: 800,
-        cache_read_input_tokens: 4000,
+        cache_hits: 4000,
       },
     })
     expect(outcome).toMatchObject({
@@ -211,7 +298,7 @@ describe('estimateCost', () => {
     })
     if (!outcome.ok) {
       expect(outcome.message).toContain(
-        'usage.cache_read_input_tokens: not read by this card; it reads',
+        'usage.cache_hits: not read by this card; it reads',
       )
       expect(outcome.message).toContain('usage.cache_read_tokens')
       expect(outcome.message).toContain('usage.input_tokens')

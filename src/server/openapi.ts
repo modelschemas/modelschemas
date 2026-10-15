@@ -1106,8 +1106,16 @@ export const openApiDocument = {
         properties: {
           provider: { type: 'string' },
           model: { type: 'string' },
-          request: { type: 'object' },
-          usage: { type: 'object' },
+          request: {
+            type: 'object',
+            description:
+              'The provider request body. Request-bound levers read it; result.ignored names the keys the card does not read.',
+          },
+          usage: {
+            type: 'object',
+            description:
+              "The provider's own usage object as returned (OpenAI Responses or Chat Completions usage, Anthropic usage, Gemini usageMetadata), or card levers. Native usage is mapped to card levers: OpenAI cached_tokens and Gemini cachedContentTokenCount move from input_tokens to cache_read_tokens; Anthropic cache_read_input_tokens and cache_creation_input_tokens become cache_read_tokens and cache_write_tokens (1-hour writes: cache_write_1h_tokens). Card lever counts do not overlap: input_tokens excludes the cache levers, and a count in reasoning_tokens, audio_tokens or image_tokens is not also in input_tokens or output_tokens. The model's pricing.inputs lists the levers its card reads. A payload that mixes native fields and card levers gets 422 mixed_usage; a usage key the card does not read gets 422 unknown_usage_key.",
+          },
         },
       },
       EstimateResult: {

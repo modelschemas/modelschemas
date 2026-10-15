@@ -56,6 +56,27 @@ fields are normal there. A usage key the card does not read is not normal:
 is a wrong price. `cardParams(card)` lists the request and usage keys a
 card reads. `price` does not check keys.
 
+## Native usage
+
+`normalizeUsage(card, usage)` maps a provider's own usage object, as the
+API returned it, to the card's usage levers:
+
+```ts
+const usage = normalizeUsage(card, response.usage) // OpenAI, Anthropic
+const amount = priceDetailed(card, request, usage).amount
+```
+
+It reads OpenAI Responses and Chat Completions `usage`, Anthropic `usage`,
+and Gemini `usageMetadata`. OpenAI `cached_tokens` and Gemini
+`cachedContentTokenCount` move out of the prompt total into
+`cache_read_tokens`, because card levers do not overlap. Anthropic cache
+counts become `cache_read_tokens`, `cache_write_tokens` and
+`cache_write_1h_tokens`. Reasoning, audio, image and video counts move to
+their own lever only when the card reads it. A usage object in card
+levers passes through unchanged. A payload that mixes native fields and
+card levers throws `mixed-usage`. `usageFormat(card, usage)` names the
+format it read.
+
 ## Currency
 
 A card is in one currency. A USD card's `price` is a bare expression,

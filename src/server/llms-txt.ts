@@ -55,7 +55,7 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
 7. POST /v1/validate {"provider","endpointId","payload"} — check a payload.
 8. POST /v1/estimate {"provider","model","request"?,"usage"?} — {amount,
    currency} for a call from the stored rate card. Missing levers → 422;
-   no card → 404 unknown_pricing.
+   no card → 404 unknown_pricing. See "Estimate usage" below.
 9. GET /v1/changes?since=<unix epoch> — what changed.
 
 ## TypeScript types
@@ -105,6 +105,40 @@ Send If-None-Match to get 304s.
 GET /openapi.json — OpenAPI 3.1 for this service; every operation has an
 operationId. GET /skill — installable agent skill (SKILL.md) teaching this
 full workflow.
+
+## Estimate usage
+
+\`usage\` on POST /v1/estimate takes one of two shapes. A payload that
+mixes them gets 422 mixed_usage.
+
+- The provider's own usage object, as the API returned it: OpenAI
+  Responses or Chat Completions \`usage\`, Anthropic \`usage\`, or Gemini
+  \`usageMetadata\`. The service maps it to card levers.
+- Card levers. Their counts do not overlap: \`input_tokens\` excludes the
+  tokens in \`cache_read_tokens\`, \`cache_write_tokens\` (5-minute writes)
+  and \`cache_write_1h_tokens\`. A card can also read \`reasoning_tokens\`,
+  \`audio_tokens\`, \`image_tokens\` or \`web_searches\`; a count in one of
+  these is not also in \`input_tokens\` or \`output_tokens\`. The model's
+  \`pricing.inputs\` (GET /v1/models/{provider}/{id}) lists the levers its
+  card reads.
+
+| Native field | Card lever |
+| --- | --- |
+| OpenAI \`input_tokens\` or \`prompt_tokens\` | \`input_tokens\`, less cached tokens |
+| OpenAI \`*_details.cached_tokens\` | \`cache_read_tokens\` |
+| OpenAI \`output_tokens\` or \`completion_tokens\` | \`output_tokens\` |
+| Anthropic \`input_tokens\` | \`input_tokens\` (already excludes cache) |
+| Anthropic \`cache_read_input_tokens\` | \`cache_read_tokens\` |
+| Anthropic \`cache_creation_input_tokens\` | \`cache_write_tokens\`; 1-hour writes go to \`cache_write_1h_tokens\` |
+| Gemini \`promptTokenCount\` | \`input_tokens\`, less \`cachedContentTokenCount\` |
+| Gemini \`cachedContentTokenCount\` | \`cache_read_tokens\` |
+| Gemini \`candidatesTokenCount\` + \`thoughtsTokenCount\` | \`output_tokens\` |
+
+Reasoning, audio, image and video counts move to their own lever only
+when the card reads that lever. Otherwise they stay in the total, because
+the source bills them at that rate. Example: gpt-5 usage
+\`{"input_tokens":12000,"input_tokens_details":{"cached_tokens":4000},"output_tokens":800}\`
+prices 8000 input, 4000 cached and 800 output tokens.
 
 ## Errors
 

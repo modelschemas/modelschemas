@@ -1,11 +1,17 @@
 /**
  * POST /v1/estimate — evaluate a stored rate card against a request/usage
- * pair. Thin wrapper around `priceDetailed` from @modelschemas/rate-card;
+ * pair. Thin wrapper around `normalizeUsage` and `priceDetailed` from
+ * @modelschemas/rate-card, so `usage` is card levers or the provider's own
+ * usage object;
  * `estimated` names any input filled by the card's published estimate,
  * `defaulted` any input that took the card's default, and `ignored` any
  * request key the card does not read.
  */
-import { priceDetailed, RateCardError } from '@modelschemas/rate-card'
+import {
+  normalizeUsage,
+  priceDetailed,
+  RateCardError,
+} from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Db } from '#/db/index.ts'
@@ -120,7 +126,11 @@ export async function estimateCost(
     }
   }
   try {
-    const result = priceDetailed(card, body.request ?? {}, body.usage ?? {})
+    const result = priceDetailed(
+      card,
+      body.request ?? {},
+      normalizeUsage(card, body.usage ?? {}),
+    )
     return { ok: true, result: { ...result, cardSource: card.source } }
   } catch (error) {
     if (error instanceof RateCardError) {

@@ -26,6 +26,7 @@ export type RateCardErrorCode =
   | 'bad-result'
   | 'estimate-unavailable'
   | 'unknown-usage-key'
+  | 'mixed-usage'
 
 export class RateCardError extends Error {
   constructor(
