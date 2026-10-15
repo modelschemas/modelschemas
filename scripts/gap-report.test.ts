@@ -182,6 +182,105 @@ describe('gap report scoring', () => {
     expect(unstated.score).toBe(1)
   })
 
+  it('flags no shape on a complete row', () => {
+    expect(provider('full').flags).toEqual({
+      mandatoryUnknown: [],
+      reasoningUnknown: [],
+      outputModalitiesEmpty: [],
+      mandatoryWithNone: [],
+    })
+  })
+
+  it('flags the shapes the catalog cannot read, apart from the score', () => {
+    const flagged = provider(
+      'full',
+      buildReport([
+        {
+          ...complete,
+          rawId: 'unstated',
+          reasoning: { mode: 'effort', mandatory: null, efforts: ['low'] },
+        },
+        {
+          ...complete,
+          rawId: 'adaptive-unstated',
+          reasoning: { mode: 'adaptive', mandatory: null },
+        },
+        { ...complete, rawId: 'no-mode', reasoning: null },
+        {
+          ...complete,
+          rawId: 'not-reasoning',
+          capabilities: { reasoning: false },
+          reasoning: null,
+        },
+        {
+          ...complete,
+          rawId: 'no-output',
+          modalities: { input: ['text'], output: [] },
+        },
+        {
+          ...complete,
+          rawId: 'unknown-output',
+          modalities: { input: ['text'], output: null },
+        },
+        {
+          ...complete,
+          rawId: 'forced-none',
+          reasoning: {
+            mode: 'effort',
+            mandatory: true,
+            efforts: ['none', 'high'],
+          },
+        },
+        {
+          ...complete,
+          rawId: 'image',
+          activity: 'image',
+          modalities: { output: [] },
+        },
+      ]),
+    )
+    expect(flagged.flags).toEqual({
+      mandatoryUnknown: ['unstated'],
+      reasoningUnknown: ['no-mode'],
+      outputModalitiesEmpty: ['no-output'],
+      mandatoryWithNone: ['forced-none'],
+    })
+    expect(flagged.facts.efforts).toEqual({ have: 4, need: 5 })
+    expect(formatTable({ generatedAt: '', providers: [flagged] })).toContain(
+      'mandatoryWithNone',
+    )
+  })
+
+  it('clears reasoningUnknown only for a reasoning ledger entry', () => {
+    const hostRows: Array<ModelRow> = [
+      { ...complete, provider: 'host', rawId: 'a', reasoning: null },
+      {
+        ...complete,
+        provider: 'host',
+        rawId: 'b',
+        reasoning: null,
+        modalities: { input: ['text'], output: [] },
+      },
+      { ...complete, provider: 'host', rawId: 'c', reasoning: null },
+    ]
+    const scoped = provider(
+      'host',
+      buildReport(
+        hostRows,
+        parseLedger(
+          '- host/a: reasoning — own docs silent\n- host/b: modalities — own docs silent',
+        ),
+      ),
+    )
+    expect(scoped.flags.reasoningUnknown).toEqual(['b', 'c'])
+    expect(scoped.flags.outputModalitiesEmpty).toEqual(['b'])
+    const wide = provider(
+      'host',
+      buildReport(hostRows, parseLedger('- host: reasoning — not published')),
+    )
+    expect(wide.flags.reasoningUnknown).toEqual([])
+  })
+
   it('picks the providers below target', () => {
     expect(failing(report, 1)).toEqual(['borrowed'])
     expect(failing(report, 1, ['full', 'images', 'absent'])).toEqual([
