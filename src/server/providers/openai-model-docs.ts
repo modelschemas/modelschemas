@@ -761,11 +761,12 @@ export async function openaiModelFacts(
   const guideGaps: OpenAiDocsFacts['absent'] = {}
   if (guides && (!guides[0] || !guides[1])) guideGaps.reasoning = 'unavailable'
   if (guides && !guides[2]) guideGaps.capabilities = 'unavailable'
-  const withGuideGaps = (rawId: string, facts: OpenAiDocsFacts) =>
-    Object.keys(guideGaps).length > 0 && gpt5GuideSelects(rawId)
+  return (rawId) => {
+    const facts = docsFacts(rawId)
+    return Object.keys(guideGaps).length > 0 && gpt5GuideSelects(rawId)
       ? { ...facts, absent: { ...facts.absent, ...guideGaps } }
       : facts
-  return (rawId) => withGuideGaps(rawId, docsFacts(rawId))
+  }
   function docsFacts(rawId: string): OpenAiDocsFacts {
     const exact = byId.get(rawId)
     let facts: OpenAiDocsFacts
