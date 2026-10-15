@@ -188,6 +188,11 @@ describe('parsePerplexityModelsPage', () => {
       'is an open-weight reasoning model with reasoning off by default.',
     ],
     [
+      'a "with" clause on whether thinking can be skipped',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model with a mandatory chain-of-thought.',
+    ],
+    [
       'a card that goes on with a clause other than "with"',
       'is an open-weight reasoning model.',
       'is an open-weight reasoning model for agents.',
