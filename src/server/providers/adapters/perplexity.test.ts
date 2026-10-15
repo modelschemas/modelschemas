@@ -178,6 +178,16 @@ describe('parsePerplexityModelsPage', () => {
       'is an open-weight reasoning model. It replaces our older reasoning models.',
     ],
     [
+      'a second card sentence on thinking',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model. You cannot turn its thinking off.',
+    ],
+    [
+      'a "with" clause on reasoning',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model with reasoning off by default.',
+    ],
+    [
       'a card that goes on with a clause other than "with"',
       'is an open-weight reasoning model.',
       'is an open-weight reasoning model for agents.',

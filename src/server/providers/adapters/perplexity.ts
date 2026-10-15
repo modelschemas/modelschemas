@@ -77,9 +77,10 @@ function dedent(text: string): string {
  *   or `off` says reasoning can be turned off; any other list leaves
  *   `mandatory` null.
  * - A card sentence that ends "… reasoning model(s)." or "… reasoning model
- *   with …." gives `reasoning` to every row of its tab, and only when it
- *   names as many models as the tab lists. The card's other sentences are
- *   not read; a second sentence on reasoning models throws.
+ *   with …" gives `reasoning` to every row of its tab, and only when it
+ *   names as many models as the tab lists. The card's other sentences and
+ *   the "with" clause are not read, so either one speaking of reasoning or
+ *   thinking throws.
  *
  * Any other wording of either statement throws, as does an effort sentence
  * outside the tabs or a second one for the same model. So does tab prose
@@ -106,12 +107,12 @@ export function parsePerplexityModelsPage(markdown: string): {
 
     const card = /<Card title="[^"]*">\n([^]*?)\n<\/Card>/.exec(tab)?.[1] ?? ''
     if (/reasoning models?\b/i.test(card)) {
-      const said = card
-        .split(/(?<=\.)\s+/)
-        .filter((sentence) => /reasoning models?\b/i.test(sentence))
+      const parts = card.split(/(?<=\.)\s+/)
+      const said = parts.filter((s) => /reasoning models?\b/i.test(s))
+      const rest = parts.filter((s) => !said.includes(s))
       const subject =
-        said.length === 1
-          ? (/^(.+?) (?:—|is) .*\breasoning models?(?: with [^.]*)?\.$/.exec(
+        said.length === 1 && !rest.some((s) => /reason|think/i.test(s))
+          ? (/^(.+?) (?:—|is) .*\breasoning models?(?: with (?![^.]*(?:reason|think))[^.]*)?\.$/.exec(
               said[0] ?? '',
             )?.[1] ?? '')
           : ''
