@@ -57,13 +57,6 @@ jobs:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: bun scripts/npm-pack.ts --pack-dir dist/npm
 
-      - name: List tarball contents
-        run: |
-          for tgz in dist/npm/*.tgz; do
-            echo "== $tgz"
-            tar -tzf "$tgz"
-          done
-
       - uses: actions/upload-artifact@v4
         with:
           name: npm-tarballs

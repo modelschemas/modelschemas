@@ -5,6 +5,7 @@
  * schema and the listing compilers.
  */
 import { priceDetailed } from './evaluate.ts'
+import type { PriceResult } from './evaluate.ts'
 import type { RateCard } from './card.ts'
 import { normalizeUsage } from './usage.ts'
 
@@ -38,17 +39,10 @@ export type {
 export { normalizeUsage, usageFormat } from './usage.ts'
 export type { UsageFormat } from './usage.ts'
 
-export interface CardEvaluation {
-  /** The price, in `currency`. Never converted. */
-  amount: number
-  /** ISO-4217 code `amount` is in. */
-  currency: string
-  /**
-   * Params the caller omitted that the card's published `estimate` filled.
-   * Empty means `amount` is the price as billed.
-   */
-  estimated: string[]
-}
+export type CardEvaluation = Pick<
+  PriceResult,
+  'amount' | 'currency' | 'estimated'
+>
 
 /**
  * What `POST /v1/estimate` returns for the same card and inputs. `usage`

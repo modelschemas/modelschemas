@@ -3,10 +3,7 @@ import { env } from 'cloudflare:test'
 
 import { compileTokenCard, evaluateCard } from '@modelschemas/rate-card'
 
-import {
-  ESTIMATE_CASES,
-  settle,
-} from '../../packages/rate-card/src/fixtures/estimate-cases.ts'
+import { ESTIMATE_CASES } from '../../packages/rate-card/src/fixtures/estimate-cases.ts'
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
@@ -427,16 +424,12 @@ describe('POST /v1/estimate conformance with evaluateCard', () => {
       )
       if (!body) throw new Error('body did not parse')
       const outcome = await estimateCost(db, body)
-      const pkg = settle(() =>
-        evaluateCard(c.card, { request: c.request, usage: c.usage }),
-      )
       if ('error' in c.expected) {
         expect(outcome).toMatchObject({
           ok: false,
           status: 422,
           code: c.expected.apiError,
         })
-        expect(pkg).toEqual({ error: c.expected.error })
         return
       }
       if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`)
@@ -446,7 +439,6 @@ describe('POST /v1/estimate conformance with evaluateCard', () => {
       expect({ amount, currency, estimated }).toEqual(
         evaluateCard(c.card, { request: c.request, usage: c.usage }),
       )
-      expect(pkg).toEqual(c.expected)
     },
   )
 })

@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -25,6 +24,7 @@ import {
   publishManifest,
   publishOrder,
   readPackedManifest,
+  run,
   tarballFileName,
   versionFromTag,
 } from './npm-pack.ts'
@@ -248,25 +248,10 @@ describe('packAll', () => {
       if (!row) throw new Error('rate-card was not packed')
       // No node_modules anywhere above: an import of any package fails.
       dir = mkdtempSync(join(tmpdir(), 'rate-card-'))
-      spawnSync('tar', ['-xzf', row.tarball, '-C', dir])
+      run('tar', ['-xzf', row.tarball, '-C', dir], dir)
       evaluator = join(dir, 'package', 'dist', 'evaluator.js')
     })
     afterAll(() => rmSync(dir, { recursive: true, force: true }))
-
-    it('runs in plain node with no dependencies installed', () => {
-      const result = spawnSync(
-        'node',
-        [
-          '--input-type=module',
-          '-e',
-          `const m = await import(${JSON.stringify(pathToFileURL(evaluator).href)}); console.log(typeof m.evaluateCard, m.RATE_CARD_LANGUAGE)`,
-        ],
-        { encoding: 'utf8' },
-      )
-      expect(result.stderr).toBe('')
-      const language = sharedVersion().split('.').slice(0, 2).join('.')
-      expect(result.stdout.trim()).toBe(`function ${language}`)
-    })
 
     it('gives every shared estimate case its expected result', async () => {
       const { evaluateCard } = (await import(

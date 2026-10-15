@@ -153,23 +153,15 @@ export function assertPublishableManifest(
 }
 
 export function readPackedManifest(tarball: string): unknown {
-  const result = spawnSync('tar', ['-xOf', tarball, 'package/package.json'], {
-    encoding: 'utf8',
-  })
-  if (result.status !== 0) {
-    throw new Error(
-      `tar -xOf ${tarball} package/package.json failed: ${result.stderr}`,
-    )
-  }
-  return JSON.parse(result.stdout) as unknown
+  return JSON.parse(
+    run('tar', ['-xOf', tarball, 'package/package.json'], process.cwd()),
+  ) as unknown
 }
 
 export function packedEntryNames(tarball: string): Array<string> {
-  const result = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
-  if (result.status !== 0) {
-    throw new Error(`tar -tzf ${tarball} failed: ${result.stderr}`)
-  }
-  return result.stdout.split('\n').filter((line) => line.length > 0)
+  return run('tar', ['-tzf', tarball], process.cwd())
+    .split('\n')
+    .filter((line) => line.length > 0)
 }
 
 /** Absolute dest so `bun pm pack` (cwd = package dir) writes where we look. */
@@ -233,7 +225,7 @@ export function assertShipsEntryPoints(
   }
 }
 
-function run(command: string, args: Array<string>, cwd: string): string {
+export function run(command: string, args: Array<string>, cwd: string): string {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8' })
   if (result.status !== 0) {
     throw new Error(

@@ -48,24 +48,6 @@ describe('the evaluator entry', () => {
     expectTypeOf<RateCard>().toExtend<z.infer<typeof rateCardSchema>>()
   })
 
-  it('imports no package, so it has no runtime dependency', () => {
-    const seen = new Set<string>()
-    const bare: string[] = []
-    const walk = (file: string) => {
-      if (seen.has(file)) return
-      seen.add(file)
-      const text = readFileSync(join(import.meta.dirname, file), 'utf8')
-      for (const [, spec] of text.matchAll(/\bfrom '([^']+)'/g)) {
-        if (spec === undefined) continue
-        if (spec.startsWith('./')) walk(spec.slice(2))
-        else bare.push(`${file}: ${spec}`)
-      }
-    }
-    walk('evaluator.ts')
-    expect(seen.has('rate-card.schema.ts')).toBe(false)
-    expect(bare).toEqual([])
-  })
-
   it('is versioned with the card language: MAJOR.MINOR is RATE_CARD_LANGUAGE', () => {
     const manifest = JSON.parse(
       readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'),

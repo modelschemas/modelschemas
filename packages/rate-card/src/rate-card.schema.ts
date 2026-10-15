@@ -149,10 +149,7 @@ const priceSchema = z.union([
 ])
 
 export const rateCardSchema = z.object({
-  /**
-   * Not a field. A card that states its currency here instead of wrapping
-   * `price` is refused, never read as USD.
-   */
+  /** See `RateCard` in `card.ts`. */
   currency: z.never().optional(),
   inputs: z.record(z.string(), inputSchema).superRefine((inputs, ctx) => {
     for (const [name, input] of Object.entries(inputs)) {
