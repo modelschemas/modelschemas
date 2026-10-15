@@ -18,16 +18,27 @@ import {
   NO_FACTS,
   assertParsed,
   cachedDocs,
+  docsRun,
   mapConcurrent,
   markdownSection,
   markdownTableRows,
   parseDay,
   tokenCount,
+  tryDocs,
   undatedId,
 } from './model-facts.ts'
-import type { ModelFacts } from './model-facts.ts'
+import type { DocsRun, ModelFacts } from './model-facts.ts'
+import {
+  OPENAI_GPT51_GUIDE_URL,
+  OPENAI_GPT52_GUIDE_URL,
+  OPENAI_GPT5_GUIDE_URL,
+  loadGuide,
+  parseGpt51NoneGuide,
+  parseGpt52SamplingGuide,
+  parseGpt5FamilyGuide,
+} from './openai-gpt5-guides.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { ModelReasoning } from './types.ts'
+import type { FactSource, ModelInfo, ModelReasoning } from './types.ts'
 
 export const OPENAI_MODELS_INDEX_URL =
   'https://developers.openai.com/api/docs/models.md'
@@ -455,7 +466,8 @@ const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 /**
  * Effort levels from the page's prose: "Reasoning.effort supports: none
  * (default), low, …" or "defaults to (and only supports) `reasoning.effort:
- * high`". Reasoning is optional only when `none` is accepted. Without a
+ * high`". Reasoning is optional only when `none` is accepted; "only
+ * supports" one other level states it cannot be turned off. Without a
  * native control declaration, its mode stays unknown; capability is separate.
  */
 export function parseReasoningEffort(markdown: string): ModelReasoning | null {
@@ -491,7 +503,8 @@ export function parseReasoningEffort(markdown: string): ModelReasoning | null {
     mode: 'effort',
     mandatory: efforts.includes('none')
       ? false
-      : /(?:reasoning|thinking)\s+(?:is\s+)?(?:cannot be disabled|always on|cannot be turned off)/i.test(
+      : only !== undefined ||
+          /(?:reasoning|thinking)\s+(?:is\s+)?(?:cannot be disabled|always on|cannot be turned off)/i.test(
             prose,
           )
         ? true
@@ -518,14 +531,24 @@ export function pageSlugFor(rawId: string, slugs: Set<string>): string | null {
   return null
 }
 
+/** Ids the GPT-5 guides can speak for: `gpt-5` and undotted `gpt-5-*`. */
+function gpt5GuideSelects(rawId: string): boolean {
+  return /^gpt-5(?:-[a-z][a-z0-9-]*)?$/.test(undatedId(rawId))
+}
+
+type OpenAiDocsFacts = ModelFacts &
+  Pick<ModelInfo, 'unsupportedCapabilities' | 'absent'>
+
 /**
  * Facts for the listed ids. Pages are fetched once per slug and memoised;
  * a page's snapshot list also seeds ids the index alone couldn't resolve.
+ * A GPT-5 guide that fails marks its rows' facts `unavailable` in `run`.
  */
 export async function openaiModelFacts(
   rawIds: Array<string>,
   kv?: KVNamespace,
-): Promise<(rawId: string) => ModelFacts> {
+  run: DocsRun = docsRun(),
+): Promise<(rawId: string) => OpenAiDocsFacts> {
   const slugs = new Set(
     await cachedDocs(kv, OPENAI_MODELS_INDEX_URL, async () => {
       const parsed = [
@@ -574,7 +597,7 @@ export async function openaiModelFacts(
   // A model's own page takes precedence over another alias page that names
   // it as a default snapshot. Listing order must not erase native controls.
   const primaryIds = new Set(pages.map((loaded) => loaded.page.ids[0]))
-  const byId = new Map<string, ModelFacts>()
+  const byId = new Map<string, OpenAiDocsFacts>()
   for (const loaded of pages) {
     const url = OPENAI_MODEL_PAGE(loaded.slug)
     const withPricing: ModelFacts = {
@@ -637,10 +660,115 @@ export async function openaiModelFacts(
       })
     }
   }
+  const guides = rawIds.some(gpt5GuideSelects)
+    ? await Promise.all([
+        tryDocs(run, OPENAI_GPT5_GUIDE_URL, (cached) =>
+          loadGuide(cached, kv, OPENAI_GPT5_GUIDE_URL, parseGpt5FamilyGuide),
+        ),
+        tryDocs(run, OPENAI_GPT51_GUIDE_URL, (cached) =>
+          loadGuide(cached, kv, OPENAI_GPT51_GUIDE_URL, parseGpt51NoneGuide),
+        ),
+        tryDocs(run, OPENAI_GPT52_GUIDE_URL, (cached) =>
+          loadGuide(
+            cached,
+            kv,
+            OPENAI_GPT52_GUIDE_URL,
+            parseGpt52SamplingGuide,
+          ),
+        ),
+      ])
+    : null
+  if (guides) {
+    const [family, none, sampling] = guides
+    const guideSource = (url: string, hash: string, path: string) =>
+      ({
+        derivation: 'docs-derived',
+        sourceUrl: url,
+        sourceHash: hash,
+        path,
+      }) satisfies FactSource
+    for (const [id, own] of byId) {
+      const flags: unknown = own.capabilities
+      if (!Array.isArray(flags) || !flags.includes('reasoning')) continue
+      const named = (ids: Array<string>) =>
+        ids.includes(id) || ids.includes(undatedId(id))
+      let facts: OpenAiDocsFacts = own
+      if (family && named(family.parsed.rawIds) && !own.reasoning?.efforts) {
+        facts = {
+          ...facts,
+          reasoning: {
+            mode: 'effort',
+            mandatory: null,
+            efforts: family.parsed.efforts,
+          },
+          factSources: {
+            ...facts.factSources,
+            reasoning: guideSource(
+              OPENAI_GPT5_GUIDE_URL,
+              family.hash,
+              'Model, API, and feature updates',
+            ),
+          },
+        }
+      }
+      const reasoning = facts.reasoning
+      if (
+        family &&
+        none &&
+        named(family.parsed.rawIds) &&
+        !family.parsed.efforts.includes('none') &&
+        reasoning?.mandatory === null &&
+        reasoning.efforts?.join() === family.parsed.efforts.join() &&
+        reasoning.efforts[0] === none.parsed
+      ) {
+        facts = {
+          ...facts,
+          reasoning: { ...reasoning, mandatory: true },
+          factSources: {
+            ...facts.factSources,
+            reasoning: guideSource(
+              OPENAI_GPT51_GUIDE_URL,
+              none.hash,
+              'Using the "none" reasoning mode for improved efficiency',
+            ),
+          },
+        }
+      }
+      if (sampling && named(sampling.parsed.rawIds)) {
+        const source = guideSource(
+          OPENAI_GPT52_GUIDE_URL,
+          sampling.hash,
+          'GPT-5.2 parameter compatibility',
+        )
+        facts = {
+          ...facts,
+          unsupportedCapabilities: sampling.parsed.flags,
+          factSources: {
+            ...facts.factSources,
+            capabilities: {
+              ...facts.factSources?.capabilities,
+              ...Object.fromEntries(
+                sampling.parsed.flags.map((flag) => [flag, source]),
+              ),
+            },
+          },
+        }
+      }
+      byId.set(id, facts)
+    }
+  }
   if (needed.length > 0) assertParsed(byId, 'openai model pages')
-  return (rawId) => {
+  const guideGaps: OpenAiDocsFacts['absent'] = {}
+  if (guides && (!guides[0] || !guides[1])) guideGaps.reasoning = 'unavailable'
+  if (guides && !guides[2]) guideGaps.capabilities = 'unavailable'
+  const withGuideGaps = (rawId: string, facts: OpenAiDocsFacts) =>
+    Object.keys(guideGaps).length > 0 && gpt5GuideSelects(rawId)
+      ? { ...facts, absent: { ...facts.absent, ...guideGaps } }
+      : facts
+  return (rawId) => withGuideGaps(rawId, docsFacts(rawId))
+  function docsFacts(rawId: string): OpenAiDocsFacts {
     const exact = byId.get(rawId)
-    let facts: ModelFacts
+    let facts: OpenAiDocsFacts
     if (exact) {
       facts = exact
     } else {

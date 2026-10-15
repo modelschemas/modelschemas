@@ -28,6 +28,22 @@ does not stamp reasoning_content replay on its rows.
   configurable reasoning effort list.
 - https://developers.openai.com/api/docs/models/gpt-6-luna.md — explicit none
   support makes reasoning optional.
+- https://developers.openai.com/api/docs/models/gpt-5-pro.md — "defaults to (and
+  only supports) `reasoning.effort: high`": the one accepted level is not off, so
+  mandatory is true.
+- https://developers.openai.com/api/docs/guides/latest-model/gpt-5.md — the GPT-5
+  family ids and their effort list, for gpt-5-mini and gpt-5-nano, whose pages
+  state no levels.
+- https://developers.openai.com/api/docs/guides/latest-model/gpt-5.1.md — `none` is
+  new in GPT-5.1, and GPT-5's `minimal` still uses reasoning tokens. With the
+  family list above (lowest level `minimal`, no `none`), this states the family
+  cannot turn reasoning off: mandatory is true.
+- https://developers.openai.com/api/docs/guides/latest-model/gpt-5.2.md — requests
+  to the named older GPT-5 ids that carry `temperature` or `top_p` raise an error:
+  both flags are `false` on those rows.
+
+A guide that fails or does not parse is a `tryDocs` failure: the GPT-5 rows keep
+their stored reasoning or capabilities (`unavailable`) for that poll.
 
 Parse only normative prose; fenced examples do not establish effort allowlists.
 Individual model-page fetch and parse failures now error instead of returning
