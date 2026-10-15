@@ -96,6 +96,27 @@ describe('parsePerplexityModelsPage', () => {
     ])
   })
 
+  it('reads a reasoning-model card that goes on to state other facts', () => {
+    // The NVIDIA tab as served on 2026-10-15.
+    const nvidia = MODELS_DOC.replace(
+      /^ {6}Nemotron 3 Ultra[^]*?(?= {2}<\/Tab>)/m,
+      [
+        '      Nemotron 3.5 Super is a reasoning model with a 1,048,576-token context window and up to 131,072 output tokens. It accepts text input only.',
+        '    </Card>',
+        '',
+        ...HEADER,
+        '    | `perplexity/nemotron-3.5-super-120b-a12b` | 0.20 | 0.50 | 0.04 | — | — |',
+        '',
+      ].join('\n'),
+    )
+    expect(nvidia).not.toBe(MODELS_DOC)
+    const page = parsePerplexityModelsPage(nvidia)
+    expect(page.flags.get('perplexity/nemotron-3.5-super-120b-a12b')).toEqual([
+      'reasoning',
+    ])
+    expect(page.flags.has('perplexity/nemotron-3-ultra-550b-a55b')).toBe(false)
+  })
+
   it('leaves the effort flag off when no tab states an effort', () => {
     const silent = MODELS_DOC.replace(/ {4}<Info>[^]*?<\/Info>\n/, '')
     const page = parsePerplexityModelsPage(silent)
@@ -150,6 +171,36 @@ describe('parsePerplexityModelsPage', () => {
       'a reworded card',
       'is an open-weight reasoning model.',
       'ranks among open reasoning models, in our tests.',
+    ],
+    [
+      'a card with a second sentence on reasoning models',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model. It replaces our older reasoning models.',
+    ],
+    [
+      'a second card sentence on thinking',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model. You cannot turn its thinking off.',
+    ],
+    [
+      'a "with" clause on reasoning',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model with reasoning off by default.',
+    ],
+    [
+      'a "with" clause on whether thinking can be skipped',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model with a mandatory chain-of-thought.',
+    ],
+    [
+      'a "with" clause in another shape',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model with a chain-of-thought you cannot skip.',
+    ],
+    [
+      'a card that goes on with a clause other than "with"',
+      'is an open-weight reasoning model.',
+      'is an open-weight reasoning model for agents.',
     ],
   ])('throws on %s', (_case, from, to) => {
     const mutated = MODELS_DOC.replace(from, to)
