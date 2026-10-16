@@ -81,6 +81,8 @@ function codingEfforts(doc: CodingDoc, locale: CodingLocale) {
       .map((clause) => clause.trim())
       .filter(Boolean)
     const mapping = new Map<string, string>()
+    // Each input is an alias. The levels it maps to are the model's efforts:
+    // a `none` that maps to `low` does not turn thinking off.
     const efforts = new Set<string>()
     let mandatory: boolean | null = null
     for (const clause of clauses) {
@@ -104,7 +106,7 @@ function codingEfforts(doc: CodingDoc, locale: CodingLocale) {
         if (mapping.has(value) && mapping.get(value) !== target)
           failure('conflicting effort mapping')
         mapping.set(value, target)
-        efforts.add(value)
+        efforts.add(target)
         if (stops && (value === 'none' || value === 'minimal'))
           mandatory = false
       }

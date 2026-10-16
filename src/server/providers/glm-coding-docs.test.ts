@@ -37,7 +37,7 @@ describe('native GLM Coding sources', () => {
         expect(row.reasoning).toEqual({
           mode: 'effort',
           mandatory: true,
-          efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+          efforts: ['low', 'high', 'max'],
         })
         expect(row.requestMap?.thinking).toEqual({
           on: { reasoning_effort: 'high' },
@@ -158,6 +158,7 @@ it('does not infer forced thinking merely from a remapped none value or claim a 
   }
   const rows = parseGlmCodingModels({ ...d, thinking }, 'en')
   expect(rows.every((row) => row.reasoning?.mandatory === null)).toBe(true)
+  expect(rows[0]?.reasoning?.efforts).toEqual(['low', 'high', 'max'])
   expect(rows.every((row) => row.exactCapabilities === undefined)).toBe(true)
   expect(rows[0]?.requestMap?.thinking?.levels?.minimal).toBe('low')
   expect(rows[0]?.requestMap?.thinking?.off).toBeNull()
