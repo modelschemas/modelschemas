@@ -224,7 +224,10 @@ export interface UpstreamModelIdentity {
  *
  * `efforts`: the accepted effort values as published, an off value such as
  * `none` included. Never present on `toggle`. A `none` effort turns thinking
- * off, so `reasoningViolation` refuses it with `mandatory: true`.
+ * off, so `reasoningViolation` refuses it with `mandatory: true`. When the
+ * source maps accepted inputs onto fewer levels (GLM Coding Plan: `none` and
+ * `minimal` run as `low`), the list holds the levels the model runs at, and
+ * `requestMap.thinking.levels` keeps the input-to-level map.
  *
  * No object is stored when the source names no request field for the model:
  * a catalog flag alone, thinking picked by a model-id suffix or a prompt
