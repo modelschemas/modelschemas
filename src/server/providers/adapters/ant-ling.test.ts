@@ -224,6 +224,13 @@ it('fails a reasoning_effort it cannot scope or whose default is no option', asy
     ],
     [
       reasoningEffort.html.replace(
+        description,
+        'Controls how much reasoning depth Ring-2.6-1T-mini applies when responding.',
+      ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
         overviewDefault,
         '$1<code class="nextra-code" dir="ltr">xhigh</code>',
       ),
@@ -249,6 +256,17 @@ it('fails a reasoning_effort it cannot scope or whose default is no option', asy
       /two native effort fields/,
     ],
   ]
+  const search = reasoningEffort.html
+    .replace(
+      /(<code class="nextra-code" dir="ltr">enable_search<\/code><\/td>(?:<td[^>]*>[\s\S]*?<\/td>){2}<td[^>]*>)<code class="nextra-code" dir="ltr">false<\/code>/,
+      '$1<code class="nextra-code" dir="ltr">auto</code>',
+    )
+    .replace(
+      'Whether to allow the model to use web search.</li>',
+      'Whether to allow the model to use web search.</li><li><strong>Options</strong>:<ul><li><code>auto</code></li></ul></li>',
+    )
+  expect(search).not.toBe(reasoningEffort.html)
+  expect(() => nativeRequest(search)).toThrow('unknown parameter default')
   for (const [html, error] of cases) {
     expect(html).not.toBe(reasoningEffort.html)
     serve({ [ANT_OPENAI]: html })

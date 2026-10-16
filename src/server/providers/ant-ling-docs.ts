@@ -307,7 +307,8 @@ function scope(html: string, field: string) {
     listed &&
     (stated
       ? stated !== listed
-      : /series models/i.test(t) || !t.includes(listed))
+      : /series models/i.test(t) ||
+        !t.split(/\s+/).some((word) => word.replace(/[.,;:]$/, '') === listed))
   )
     fail(`conflicting ${field} applicability`)
   const id = stated ?? listed
