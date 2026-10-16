@@ -300,14 +300,28 @@ describe('normalizeUsage', () => {
     expect(() =>
       normalizeUsage(GPT_5, { prompt_tokens: '10', completion_tokens: 1 }),
     ).toThrow(expect.objectContaining({ code: 'bad-input' }))
-    const unknown = () =>
-      normalizeUsage(GPT_5, {
-        prompt_tokens: 10,
-        prompt_tokens_details: { image_tokens: 4 },
-      })
-    expect(unknown).toThrow(
-      expect.objectContaining({ code: 'unknown-usage-key' }),
-    )
-    expect(unknown).toThrow('usage.prompt_tokens_details.image_tokens')
+  })
+
+  it('keeps Chat image tokens in the prompt total unless the card prices them', () => {
+    const usage = {
+      prompt_tokens: 10,
+      prompt_tokens_details: { image_tokens: 4, text_tokens: 6 },
+      completion_tokens: 1,
+    }
+    // text_tokens is already inside prompt_tokens, so it is not subtracted.
+    expect(normalizeUsage(GPT_5, usage)).toEqual({
+      input_tokens: 10,
+      output_tokens: 1,
+    })
+    const priced = card({
+      input_tokens: 1e-6,
+      image_tokens: 2e-6,
+      output_tokens: 1e-6,
+    })
+    expect(normalizeUsage(priced, usage)).toEqual({
+      input_tokens: 6,
+      image_tokens: 4,
+      output_tokens: 1,
+    })
   })
 })

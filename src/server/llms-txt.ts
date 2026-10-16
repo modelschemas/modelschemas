@@ -127,6 +127,8 @@ mixes them gets 422 mixed_usage.
 | OpenAI \`input_tokens\` or \`prompt_tokens\` | \`input_tokens\`, less cached tokens and cache writes |
 | OpenAI \`*_details.cached_tokens\` | \`cache_read_tokens\` |
 | OpenAI \`*_details.cache_write_tokens\` | \`cache_write_tokens\` |
+| OpenAI \`prompt_tokens_details.image_tokens\` | \`image_tokens\` when the card reads it; otherwise it stays in \`input_tokens\` |
+| OpenAI \`prompt_tokens_details.text_tokens\` | not subtracted; it is already inside \`prompt_tokens\` |
 | OpenAI \`output_tokens\` or \`completion_tokens\` | \`output_tokens\` |
 | Anthropic \`input_tokens\` | \`input_tokens\` (already excludes cache) |
 | Anthropic \`cache_read_input_tokens\` | \`cache_read_tokens\` |

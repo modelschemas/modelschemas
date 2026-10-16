@@ -265,13 +265,21 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
       ),
     }
   },
-  // prompt_tokens includes cached and audio tokens; completion_tokens
-  // includes reasoning, audio and both prediction counts.
+  // prompt_tokens includes cached, audio and image tokens. text_tokens
+  // is the remainder already inside that total, so it is accepted and
+  // not subtracted. completion_tokens includes reasoning, audio and both
+  // prediction counts.
   'openai-chat': (usage, reads) => {
     const prompt = details(
       usage.prompt_tokens_details,
       'prompt_tokens_details',
-      ['cached_tokens', 'cache_write_tokens', 'audio_tokens'],
+      [
+        'cached_tokens',
+        'cache_write_tokens',
+        'audio_tokens',
+        'image_tokens',
+        'text_tokens',
+      ],
     )
     const completion = details(
       usage.completion_tokens_details,
@@ -292,6 +300,7 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
           ['cache_read_tokens', prompt('cached_tokens')],
           ['cache_write_tokens', prompt('cache_write_tokens')],
           ['audio_tokens', prompt('audio_tokens')],
+          ['image_tokens', prompt('image_tokens')],
         ],
       ),
       ...apportion(
