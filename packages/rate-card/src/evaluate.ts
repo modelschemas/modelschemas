@@ -479,7 +479,11 @@ function evaluate(
   const vars = bindInputs({ inputs: direct }, given, defaulted)
   for (const [name, param, estimate] of pending) {
     try {
-      const own = bindInputs(estimate, collect(estimate.inputs, request, usage))
+      const own = bindInputs(
+        estimate,
+        collect(estimate.inputs, request, usage),
+        defaulted,
+      )
       const value = evalExpr(estimate.value, { ...vars, ...own }, card.tables)
       if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
         throw new RateCardError(

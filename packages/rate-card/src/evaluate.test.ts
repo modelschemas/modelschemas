@@ -648,4 +648,34 @@ describe('unread keys and defaults', () => {
       usage: ['tokens'],
     })
   })
+
+  it('names a default an estimate input took', () => {
+    const estimated = rateCardSchema.parse({
+      ...cardFor({ var: 'tokens' }),
+      inputs: {
+        tokens: {
+          param: 'tokens',
+          bound: 'usage',
+          kind: 'number',
+          estimate: {
+            inputs: {
+              seconds: { param: 'seconds', kind: 'number', default: 0 },
+            },
+            value: { '+': [{ var: 'seconds' }, 1] },
+            source,
+          },
+        },
+      },
+    })
+    expect(priceDetailed(estimated, {}, {})).toMatchObject({
+      amount: 1,
+      estimated: ['tokens'],
+      defaulted: ['seconds'],
+    })
+    expect(priceDetailed(estimated, { seconds: 4 }, {})).toMatchObject({
+      amount: 5,
+      estimated: ['tokens'],
+      defaulted: [],
+    })
+  })
 })
