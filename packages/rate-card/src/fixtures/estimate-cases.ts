@@ -3,8 +3,9 @@
  * `evaluateCard` in the package (`evaluator.test.ts`), through the built
  * package as it ships to npm (`scripts/npm-pack.test.ts`), and through
  * `POST /v1/estimate` (`src/server/estimate.worker.test.ts`). All three
- * must give `expected`. Add a case here when the evaluator or the route
- * changes what it returns.
+ * must give `expected` (`amount`, `currency`, `estimated`). The route
+ * also returns `usd`, `cardSource`, `defaulted`, and `ignored`. Add a
+ * case here when the evaluator or the route changes what it returns.
  */
 import type { RateCard } from '../card.ts'
 import type { RateCardErrorCode } from '../evaluate.ts'

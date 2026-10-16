@@ -28,10 +28,11 @@ const { amount, currency, estimated } = evaluateCard(model.pricing, {
 })
 ```
 
-`evaluateCard` returns what `POST /v1/estimate` returns for the same card
-and inputs. One fixture suite runs each case through both and requires
-the same result. It throws `RateCardError` instead of returning a number
-it cannot stand behind.
+`evaluateCard` returns `{ amount, currency, estimated }`. `POST /v1/estimate`
+returns those plus `usd` on a USD card, `cardSource`, `defaulted`, and
+`ignored`. One fixture suite runs each case through both and requires the
+same amount, currency, and `estimated`. It throws `RateCardError` instead
+of returning a number it cannot stand behind.
 
 ## Versions
 

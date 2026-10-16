@@ -388,7 +388,7 @@ describe('estimateCost', () => {
 
 // The shared cases (packages/rate-card/src/fixtures/estimate-cases.ts) run
 // the route's path: JSON body → parseEstimateBody → estimateCost → JSON.
-// Each must equal what the package's evaluateCard returns.
+// Each must match evaluateCard on amount, currency, and estimated.
 describe('POST /v1/estimate conformance with evaluateCard', () => {
   beforeAll(async () => {
     await db.insert(providers).values({

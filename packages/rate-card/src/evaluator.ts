@@ -45,7 +45,9 @@ export type CardEvaluation = Pick<
 >
 
 /**
- * What `POST /v1/estimate` returns for the same card and inputs. `usage`
+ * `{ amount, currency, estimated }` for the card and inputs
+ * `POST /v1/estimate` prices. The route also returns `usd` (USD cards),
+ * `cardSource`, `defaulted`, and `ignored`. `usage`
  * is card levers or the provider's own usage object (`normalizeUsage`).
  * Throws `RateCardError` rather than return a number it cannot stand
  * behind.
