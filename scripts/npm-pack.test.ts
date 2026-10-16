@@ -1,20 +1,34 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import type { CardEvaluation } from '../packages/rate-card/src/evaluator.ts'
+import type { RateCard } from '../packages/rate-card/src/card.ts'
+import {
+  ESTIMATE_CASES,
+  packageExpected,
+  settle,
+} from '../packages/rate-card/src/fixtures/estimate-cases.ts'
 import {
   assertPublishableManifest,
+  assertShipsEntryPoints,
   assertVersionsMatchTag,
   listPublicPackages,
   main,
+  manifestEntryPoints,
   packAll,
   packedEntryNames,
+  publishManifest,
   publishOrder,
   readPackedManifest,
+  run,
   tarballFileName,
   versionFromTag,
 } from './npm-pack.ts'
+import type { PublicPackage } from './npm-pack.ts'
 
 const EXPECTED_NAMES = [
   '@modelschemas/client',
@@ -145,41 +159,118 @@ describe('assertPublishableManifest', () => {
   })
 })
 
+describe('publishManifest / assertShipsEntryPoints', () => {
+  it('lifts publishConfig entry points and keeps npm config there', () => {
+    expect(
+      publishManifest({
+        name: 'x',
+        main: './src/index.ts',
+        publishConfig: { access: 'public', main: './dist/index.js' },
+      }),
+    ).toEqual({
+      name: 'x',
+      main: './dist/index.js',
+      publishConfig: { access: 'public' },
+    })
+    expect(
+      publishManifest({ name: 'x', publishConfig: { access: 'public' } }),
+    ).toBeUndefined()
+  })
+
+  it('refuses a tarball missing a file its manifest points at', () => {
+    const manifest = {
+      main: './dist/index.js',
+      exports: { '.': { types: './dist/index.d.ts' } },
+    }
+    expect(manifestEntryPoints(manifest)).toEqual([
+      'dist/index.d.ts',
+      'dist/index.js',
+    ])
+    expect(() =>
+      assertShipsEntryPoints(manifest, ['package/dist/index.js'], 'x.tgz'),
+    ).toThrow(/x.tgz: does not ship dist\/index.d.ts/)
+  })
+})
+
 describe('packAll', () => {
+  const dest = join('dist', 'npm-pack-test')
+  const abs = resolve(dest)
+  let packed: Array<{ pkg: PublicPackage; tarball: string }> = []
+
+  beforeAll(() => {
+    packed = packAll(publishOrder(listPublicPackages()), dest)
+  }, 120_000)
+  afterAll(() => rmSync(abs, { recursive: true, force: true }))
+
   it('rewrites workspace protocol, omits tests, and resolves relative dest from cwd', () => {
-    const dest = join('dist', 'npm-pack-test')
-    const abs = resolve(dest)
-    try {
-      const packed = packAll(publishOrder(listPublicPackages()), dest)
-      expect(packed.map((row) => row.pkg.name)).toEqual(
-        publishOrder(listPublicPackages()).map((pkg) => pkg.name),
-      )
-      const version = sharedVersion()
-      for (const { pkg, tarball } of packed) {
-        expect(tarball.startsWith(`${abs}${sep}`)).toBe(true)
-        expect(tarball.includes(`${sep}packages${sep}`)).toBe(false)
-        expect(existsSync(tarball)).toBe(true)
-        const manifest = readPackedManifest(tarball)
-        assertPublishableManifest(manifest, tarball)
-        const json = JSON.stringify(manifest)
-        expect(json).not.toContain('workspace:')
-        expect(json).not.toContain('catalog:')
-        if (pkg.name === 'modelschemas') {
-          expect(json).toContain(`"@modelschemas/client":"${version}"`)
-          expect(json).toContain(`"@modelschemas/codegen":"${version}"`)
-        }
-        if (pkg.name === '@modelschemas/vite') {
-          expect(json).toContain(`"@modelschemas/codegen":"${version}"`)
-        }
-        const entries = packedEntryNames(tarball)
-        expect(entries.some((entry) => entry.endsWith('.test.ts'))).toBe(false)
-        expect(entries).toContain('package/package.json')
-        expect(entries).toContain('package/LICENSE')
+    expect(packed.map((row) => row.pkg.name)).toEqual(
+      publishOrder(listPublicPackages()).map((pkg) => pkg.name),
+    )
+    const version = sharedVersion()
+    for (const { pkg, tarball } of packed) {
+      expect(tarball.startsWith(`${abs}${sep}`)).toBe(true)
+      expect(tarball.includes(`${sep}packages${sep}`)).toBe(false)
+      expect(existsSync(tarball)).toBe(true)
+      const manifest = readPackedManifest(tarball)
+      assertPublishableManifest(manifest, tarball)
+      const json = JSON.stringify(manifest)
+      expect(json).not.toContain('workspace:')
+      expect(json).not.toContain('catalog:')
+      if (pkg.name === 'modelschemas') {
+        expect(json).toContain(`"@modelschemas/client":"${version}"`)
+        expect(json).toContain(`"@modelschemas/codegen":"${version}"`)
+      }
+      if (pkg.name === '@modelschemas/vite') {
+        expect(json).toContain(`"@modelschemas/codegen":"${version}"`)
+      }
+      const entries = packedEntryNames(tarball)
+      expect(entries.some((entry) => entry.endsWith('.test.ts'))).toBe(false)
+      expect(entries).toContain('package/package.json')
+      expect(entries).toContain('package/LICENSE')
+      if (pkg.name === '@modelschemas/rate-card') {
+        expect(entries).toContain('package/dist/index.js')
+        expect(entries).toContain('package/dist/evaluator.d.ts')
+        expect(
+          entries.filter((e) => e.endsWith('.ts') && !e.endsWith('.d.ts')),
+        ).toEqual([])
+      } else {
         expect(entries).toContain('package/src/index.ts')
       }
-    } finally {
-      rmSync(abs, { recursive: true, force: true })
     }
+  })
+
+  describe('the packed rate-card evaluator', () => {
+    let dir = ''
+    let evaluator = ''
+
+    beforeAll(() => {
+      const row = packed.find((r) => r.pkg.name === '@modelschemas/rate-card')
+      if (!row) throw new Error('rate-card was not packed')
+      // No node_modules anywhere above: an import of any package fails.
+      dir = mkdtempSync(join(tmpdir(), 'rate-card-'))
+      run('tar', ['-xzf', row.tarball, '-C', dir], dir)
+      evaluator = join(dir, 'package', 'dist', 'evaluator.js')
+    })
+    afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+    it('gives every shared estimate case its expected result', async () => {
+      const { evaluateCard } = (await import(
+        /* @vite-ignore */ pathToFileURL(evaluator).href
+      )) as {
+        evaluateCard: (
+          card: RateCard,
+          inputs: { request?: object; usage?: object },
+        ) => CardEvaluation
+      }
+      for (const c of ESTIMATE_CASES) {
+        expect(
+          settle(() =>
+            evaluateCard(c.card, { request: c.request, usage: c.usage }),
+          ),
+          c.name,
+        ).toEqual(packageExpected(c))
+      }
+    })
   })
 })
 

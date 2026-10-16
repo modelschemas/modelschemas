@@ -1,12 +1,12 @@
 /**
  * Deterministic rate-card evaluator. ~100 lines of JSONLogic over
- * the closed vocabulary in `rate-card.schema.ts` — smaller than json-logic-js,
+ * the closed vocabulary in `card.ts` — smaller than json-logic-js,
  * no `eval`, and it refuses instead of coercing: an unknown op, an unbound
  * input, a missing table key or a non-numeric operand throws, and so does a
  * price that is not a finite positive number. A refusal is an honest
  * "unknown"; a made-up number is a wrong price.
  */
-import { CORE_OPS, currencyWrapper } from './rate-card.schema.ts'
+import { CORE_OPS, currencyWrapper } from './card.ts'
 import type {
   CoreOp,
   Expr,
@@ -14,7 +14,7 @@ import type {
   RateCardEstimate,
   RateCardExample,
   Table,
-} from './rate-card.schema.ts'
+} from './card.ts'
 
 export type RateCardErrorCode =
   | 'unknown-op'
@@ -25,6 +25,8 @@ export type RateCardErrorCode =
   | 'not-comparable'
   | 'bad-result'
   | 'estimate-unavailable'
+  | 'unknown-usage-key'
+  | 'mixed-usage'
 
 export class RateCardError extends Error {
   constructor(
@@ -75,7 +77,7 @@ export function cardCurrency(card: Pick<RateCard, 'price'>): string {
   return cardPrice(card).currency
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> =>
+export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
 const isCoreOp = (op: string): op is CoreOp =>
@@ -248,14 +250,23 @@ const isNumeric = (v: unknown): v is number | string =>
   (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)))
 
 /**
- * Bind every input from `vars` by param name, with defaults. Never applies
- * an `estimate`: a number input with one but no value throws `required`
- * here (see `priceDetailed`).
+ * Bind every input from `vars` by param name, with defaults; the param of
+ * each input that took one is appended to `defaulted`. Never applies an
+ * `estimate`: a number input with one but no value throws `required` here
+ * (see `priceDetailed`).
  */
-export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
+export function bindInputs(
+  card: Pick<RateCard, 'inputs'>,
+  params: Vars,
+  defaulted: string[] = [],
+): Vars {
   const vars: Vars = {}
   for (const [name, input] of Object.entries(card.inputs)) {
     const raw = params[input.param]
+    const orDefault = (fallback: unknown) => {
+      if (raw == null && fallback !== undefined) defaulted.push(input.param)
+      return raw ?? fallback
+    }
     const bad = (why: string, value?: unknown) =>
       new RateCardError(
         'bad-input',
@@ -263,12 +274,14 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
       )
     switch (input.kind) {
       case 'count':
-        if (raw === undefined) vars[name] = 0
-        else if (Array.isArray(raw)) vars[name] = raw.length
+        if (raw === undefined) {
+          vars[name] = 0
+          defaulted.push(input.param)
+        } else if (Array.isArray(raw)) vars[name] = raw.length
         else throw bad('expected a list, got', raw)
         break
       case 'number': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (value === undefined) throw bad('required')
         // Enum-typed durations arrive as strings ("5").
         if (!isNumeric(value)) throw bad('not a number:', value)
@@ -276,7 +289,7 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
         break
       }
       case 'boolean': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (value === undefined) throw bad('required')
         if (typeof value !== 'boolean')
           throw bad('expected a boolean, got', value)
@@ -284,7 +297,7 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
         break
       }
       case 'enum': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (value === undefined) throw bad('required')
         if (typeof value !== 'string' || !input.values.includes(value)) {
           throw bad(`not one of ${input.values.join('|')}:`, value)
@@ -293,7 +306,7 @@ export function bindInputs(card: Pick<RateCard, 'inputs'>, params: Vars): Vars {
         break
       }
       case 'dimensions': {
-        const value = raw ?? input.default
+        const value = orDefault(input.default)
         if (
           isRecord(value) &&
           isNumeric(value.width) &&
@@ -361,6 +374,17 @@ export interface PriceResult {
    * default), so `amount` is the price as billed.
    */
   estimated: string[]
+  /**
+   * Params of inputs the caller omitted that took the card's `default` (an
+   * omitted count input counts as an empty list). The card assumes these
+   * values; it did not get them.
+   */
+  defaulted: string[]
+  /**
+   * Request keys the card does not read. Request-bound cards get full
+   * request bodies, so these do not change the price.
+   */
+  ignored: string[]
 }
 
 /** Read each input's param from the request or usage object by bound. */
@@ -374,16 +398,59 @@ function collect(inputs: RateCard['inputs'], request: Vars, usage: Vars): Vars {
 }
 
 /**
+ * The request and usage keys a card reads, its estimate inputs included,
+ * in card order.
+ */
+export function cardParams(card: Pick<RateCard, 'inputs'>): {
+  request: string[]
+  usage: string[]
+} {
+  const request = new Set<string>()
+  const usage = new Set<string>()
+  const add = (input: RateCardEstimate['inputs'][string]) =>
+    (input.bound === 'usage' ? usage : request).add(input.param)
+  for (const input of Object.values(card.inputs)) {
+    add(input)
+    if (input.kind === 'number' && input.estimate) {
+      Object.values(input.estimate.inputs).forEach(add)
+    }
+  }
+  return { request: [...request], usage: [...usage] }
+}
+
+/**
  * `price`, but an omitted input that carries an `estimate` is estimated
  * by it and named in `estimated`. An estimate that cannot be made for this
  * request throws `estimate-unavailable` naming the input to pass instead.
+ * A usage key the card does not read throws `unknown-usage-key`, because a
+ * dropped usage count is a wrong price. A request key the card does not
+ * read is named in `ignored`.
  */
 export function priceDetailed(
   card: RateCard,
   request: Vars = {},
   usage: Vars = {},
 ): PriceResult {
-  return evaluate(card, request, usage, true)
+  const params = cardParams(card)
+  const unknown = Object.keys(usage).filter(
+    (key) => !params.usage.includes(key),
+  )
+  if (unknown.length > 0) {
+    const reads = [
+      ...params.request.map((param) => `request.${param}`),
+      ...params.usage.map((param) => `usage.${param}`),
+    ]
+    throw new RateCardError(
+      'unknown-usage-key',
+      `${unknown.map((key) => `usage.${key}`).join(', ')}: not read by this card; it reads ${reads.join(', ') || 'no inputs'}`,
+    )
+  }
+  return {
+    ...evaluate(card, request, usage, true),
+    ignored: Object.keys(request).filter(
+      (key) => !params.request.includes(key),
+    ),
+  }
 }
 
 function evaluate(
@@ -391,9 +458,10 @@ function evaluate(
   request: Vars,
   usage: Vars,
   estimates: boolean,
-): PriceResult {
+): Omit<PriceResult, 'ignored'> {
   const given = collect(card.inputs, request, usage)
   const estimated: string[] = []
+  const defaulted: string[] = []
   const direct: RateCard['inputs'] = {}
   const pending: Array<[string, string, RateCardEstimate]> = []
   for (const [name, input] of Object.entries(card.inputs)) {
@@ -409,10 +477,14 @@ function evaluate(
       direct[name] = input
     }
   }
-  const vars = bindInputs({ inputs: direct }, given)
+  const vars = bindInputs({ inputs: direct }, given, defaulted)
   for (const [name, param, estimate] of pending) {
     try {
-      const own = bindInputs(estimate, collect(estimate.inputs, request, usage))
+      const own = bindInputs(
+        estimate,
+        collect(estimate.inputs, request, usage),
+        defaulted,
+      )
       const value = evalExpr(estimate.value, { ...vars, ...own }, card.tables)
       if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
         throw new RateCardError(
@@ -449,6 +521,7 @@ function evaluate(
     currency,
     ...(currency === 'USD' && { usd: amount }),
     estimated,
+    defaulted,
   }
 }
 

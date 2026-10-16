@@ -366,7 +366,7 @@ a card in another currency wraps its price as
 only place the currency is stated. `price()` returns an amount in the
 card's currency. **`@modelschemas/rate-card` 0.1.0 cannot read non-USD
 cards: it rejects them at parse and `price()` throws `unknown-op`, so it
-refuses rather than report yuan as dollars. Upgrade to read them.**
+refuses rather than report yuan as dollars. 0.2.0 reads them.**
 `/v1/estimate` and `estimate_cost` return `{ amount, currency }`; `usd` is
 present only for USD cards and is deprecated. List summaries always include
 `currency`. Nothing is converted, so amounts in different currencies never
@@ -384,7 +384,13 @@ model with no card rather than a partial one. A card is re-read when its
 source text changes, or once the `expiresAt` of a dated price change has
 passed.
 
-Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap):
+**Breaking (`@modelschemas/rate-card` 0.2.0):** the package ships built
+JS and .d.ts, not TypeScript source. `zod` is an optional peer
+dependency: install it to import the package root (`rateCardSchema`).
+`@modelschemas/rate-card/evaluator` (`evaluateCard`, `price`,
+`normalizeUsage`) imports no package and runs on edge runtimes.
+
+Five public packages (`0.1.0` is on the registry; `@modelschemas/rate-card` from its bootstrap; `0.2.0` is the next release):
 
 | Package                        | Directory            |
 | ------------------------------ | -------------------- |
@@ -422,7 +428,10 @@ reviewer; deployment branches limited to `main` and tags `v*`.
 
 ### Ongoing releases
 
-1. Bump the five `package.json` versions together. Commit.
+1. Bump the five `package.json` versions together. Commit. MAJOR.MINOR
+   must equal `RATE_CARD_LANGUAGE` in `packages/rate-card/src/card.ts`
+   (a test checks it): a release that changes what a card can say bumps
+   both, and a release that does not is a patch.
 2. Tag `vX.Y.Z` matching those versions (or create a GitHub Release
    whose tag is that name) and push the tag.
 3. Actions runs CI, packs, then (after the `npm` environment approval)

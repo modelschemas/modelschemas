@@ -1,9 +1,17 @@
 /**
  * POST /v1/estimate — evaluate a stored rate card against a request/usage
- * pair. Thin wrapper around `priceDetailed` from @modelschemas/rate-card;
- * `estimated` names any input filled by the card's published estimate.
+ * pair. Thin wrapper around `normalizeUsage` and `priceDetailed` from
+ * @modelschemas/rate-card, so `usage` is card levers or the provider's own
+ * usage object;
+ * `estimated` names any input filled by the card's published estimate,
+ * `defaulted` any input that took the card's default, and `ignored` any
+ * request key the card does not read.
  */
-import { priceDetailed, RateCardError } from '@modelschemas/rate-card'
+import {
+  normalizeUsage,
+  priceDetailed,
+  RateCardError,
+} from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Db } from '#/db/index.ts'
@@ -29,6 +37,10 @@ export type EstimateOutcome =
         cardSource: RateCard['source']
         /** Omitted params the card estimated; empty means billed price. */
         estimated: string[]
+        /** Omitted params that took the card's default value. */
+        defaulted: string[]
+        /** Request keys the card does not read. */
+        ignored: string[]
       }
     }
   | { ok: false; status: number; code: string; message: string }
@@ -114,15 +126,12 @@ export async function estimateCost(
     }
   }
   try {
-    const { estimated, ...amount } = priceDetailed(
+    const result = priceDetailed(
       card,
       body.request ?? {},
-      body.usage ?? {},
+      normalizeUsage(card, body.usage ?? {}),
     )
-    return {
-      ok: true,
-      result: { ...amount, cardSource: card.source, estimated },
-    }
+    return { ok: true, result: { ...result, cardSource: card.source } }
   } catch (error) {
     if (error instanceof RateCardError) {
       const mapped = mapRateCardError(error, card, body)

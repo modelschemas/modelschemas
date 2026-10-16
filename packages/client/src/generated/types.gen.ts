@@ -421,9 +421,15 @@ export type ModelList = {
 export type EstimateRequest = {
   provider: string
   model: string
+  /**
+   * The provider request body. Request-bound levers read it; result.ignored names the keys the card does not read.
+   */
   request?: {
     [key: string]: unknown
   }
+  /**
+   * The provider's own usage object as returned (OpenAI Responses or Chat Completions usage, Anthropic usage, Gemini usageMetadata), or card levers. Native usage is mapped to card levers: OpenAI cached_tokens and cache_write_tokens move from the prompt total to cache_read_tokens and cache_write_tokens, and Gemini cachedContentTokenCount moves to cache_read_tokens; Anthropic cache_read_input_tokens and cache_creation_input_tokens become cache_read_tokens and cache_write_tokens (1-hour writes: cache_write_1h_tokens). Card lever counts do not overlap: input_tokens excludes the cache levers, and a count in reasoning_tokens, audio_tokens or image_tokens is not also in input_tokens or output_tokens. The model's pricing.inputs lists the levers its card reads. A payload that mixes native fields and card levers gets 422 mixed_usage; a usage key the card does not read gets 422 unknown_usage_key.
+   */
   usage?: {
     [key: string]: unknown
   }
@@ -449,6 +455,14 @@ export type EstimateResult = {
    * Params the caller omitted that the card estimated by its published method. Empty: amount is the price as billed for the supplied request and usage.
    */
   estimated: Array<string>
+  /**
+   * Params the caller omitted that took the card's default (an omitted list counts as empty). Supply them when the default does not match the call, such as cache_read_tokens on a call that read the cache.
+   */
+  defaulted: Array<string>
+  /**
+   * Request keys the card does not read. They do not change amount. A usage key the card does not read is a 422 unknown_usage_key instead, because a dropped usage count gives a wrong price.
+   */
+  ignored: Array<string>
 }
 
 export type GetServiceIndexData = {
@@ -890,7 +904,7 @@ export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors]
 
 export type EstimateCostResponses = {
   /**
-   * The amount for this call and its currency, the card source, and which inputs (if any) were estimated.
+   * The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored.
    */
   200: EstimateResult
 }

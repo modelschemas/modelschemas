@@ -1,4 +1,4 @@
-import type { Expr, RateCard } from '../rate-card.schema.ts'
+import type { Expr, RateCard } from '../card.ts'
 
 /**
  * https://fal.ai/models/openai/gpt-image-2.5/flare/text-to-image/llms.txt

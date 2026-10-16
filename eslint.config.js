@@ -28,6 +28,8 @@ export default [
       'eslint.config.js',
       'prettier.config.js',
       'src/routeTree.gen.ts',
+      // `bun run build` output of packages that ship JS (rate-card).
+      'packages/*/dist/**',
       // hey-api codegen output (task 7.4) — regenerated, not hand-linted.
       'packages/client/src/generated/**',
       // example-app generated artifacts: route trees from the Start dev

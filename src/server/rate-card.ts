@@ -4,6 +4,7 @@
  * token formula on list rows.
  */
 import {
+  cardParams,
   cardCurrency,
   compileOpenRouterPricing,
   price,
@@ -78,17 +79,9 @@ export function cardRequestParamsOk(
   card: RateCard,
   requestProperties: ReadonlySet<string> | undefined,
 ): boolean {
-  const inputs = Object.values(card.inputs).flatMap((input) => [
-    input,
-    ...(input.kind === 'number' && input.estimate
-      ? Object.values(input.estimate.inputs)
-      : []),
-  ])
-  for (const input of inputs) {
-    if (input.bound === 'usage') continue
-    if (!requestParamAllowed(input.param, requestProperties)) return false
-  }
-  return true
+  return cardParams(card).request.every((param) =>
+    requestParamAllowed(param, requestProperties),
+  )
 }
 
 function examplesOk(card: RateCard): boolean {

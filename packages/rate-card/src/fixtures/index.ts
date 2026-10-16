@@ -3,7 +3,7 @@
  * keyed by endpoint / model id. Test data only — not exported from the
  * package and not served.
  */
-import type { RateCard } from '../rate-card.schema.ts'
+import type { RateCard } from '../card.ts'
 import { BYTEPLUS_SEEDANCE_2_5 } from './byteplus-seedance-2-5.ts'
 import {
   BYTEPLUS_SEEDANCE_2_0,
