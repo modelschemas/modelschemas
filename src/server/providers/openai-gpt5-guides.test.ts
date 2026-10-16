@@ -33,17 +33,37 @@ Standard
 | Search | gpt-5-search-api | $1.25 | $0.125 | $10.00 |
 `
 
-function serve(guides: Partial<Record<string, string>>) {
+const proPage = `Model ID: \`gpt-5-pro\`
+
+GPT-5 Pro defaults to (and only supports) \`reasoning.effort: high\`.
+
+## Model details
+
+- Reasoning token support
+`
+
+function serve(
+  guides: Partial<Record<string, string>>,
+  pages: Record<string, string> = {},
+) {
   globalThis.fetch = (input) => {
     const url = String(input)
-    if (url === OPENAI_MODELS_INDEX_URL)
-      return Promise.resolve(
-        new Response('[Mini](/api/docs/models/gpt-5-mini.md)'),
-      )
+    if (url === OPENAI_MODELS_INDEX_URL) {
+      const links = [
+        '[Mini](/api/docs/models/gpt-5-mini.md)',
+        ...Object.keys(pages).map(
+          (slug) => `[Model](/api/docs/models/${slug}.md)`,
+        ),
+      ]
+      return Promise.resolve(new Response(links.join('\n')))
+    }
     if (url === OPENAI_PRICING_URL)
       return Promise.resolve(new Response(pricing))
     if (url.endsWith('/models/gpt-5-mini.md'))
       return Promise.resolve(new Response(docs['gpt-5-mini-page.md']))
+    const slug = url.match(/\/models\/([^/]+)\.md$/)?.[1]
+    if (slug && pages[slug] !== undefined)
+      return Promise.resolve(new Response(pages[slug]))
     const guide = guides[url]
     if (guide !== undefined) return Promise.resolve(new Response(guide))
     return Promise.resolve(new Response('outage', { status: 503 }))
@@ -117,24 +137,52 @@ it('keeps efforts unstated as mandatory null when the none guide fails', async (
   const row = (await openaiModelFacts(['gpt-5-mini'], undefined, run))(
     'gpt-5-mini',
   )
-  expect(row.reasoning?.mandatory).toBeNull()
+  expect(row.reasoning).toEqual({
+    mode: 'effort',
+    mandatory: null,
+    efforts: ['minimal', 'low', 'medium', 'high'],
+  })
   expect(row.factSources?.reasoning?.sourceUrl).toBe(OPENAI_GPT5_GUIDE_URL)
-  expect(row.absent).toEqual({ reasoning: 'unavailable' })
+  expect(row.absent).toBeUndefined()
   expect(run.failed).toBe(1)
 })
 
-it('marks GPT-5 rows unavailable when a guide does not parse', async () => {
-  serve({
-    ...allGuides,
-    [OPENAI_GPT52_GUIDE_URL]: '# Using GPT-5.2\n',
-  })
-  const run = docsRun()
-  const row = (await openaiModelFacts(['gpt-5-mini'], undefined, run))(
-    'gpt-5-mini',
+it('marks named family rows unavailable when a guide does not parse', async () => {
+  serve(
+    {
+      ...allGuides,
+      [OPENAI_GPT52_GUIDE_URL]: '# Using GPT-5.2\n',
+    },
+    { 'gpt-5-pro': proPage },
   )
-  expect(row.unsupportedCapabilities).toBeUndefined()
-  expect(row.absent).toEqual({ capabilities: 'unavailable' })
+  const run = docsRun()
+  const facts = await openaiModelFacts(
+    ['gpt-5-mini', 'gpt-5-pro'],
+    undefined,
+    run,
+  )
+  expect(facts('gpt-5-mini').unsupportedCapabilities).toBeUndefined()
+  expect(facts('gpt-5-mini').absent).toEqual({ capabilities: 'unavailable' })
+  expect(facts('gpt-5-pro').reasoning).toEqual({
+    mode: 'effort',
+    mandatory: true,
+    efforts: ['high'],
+  })
+  expect(facts('gpt-5-pro').absent).toBeUndefined()
+  expect(facts('gpt-5-pro').unsupportedCapabilities).toBeUndefined()
   expect(run.first[0]?.source).toBe(OPENAI_GPT52_GUIDE_URL)
+})
+
+it('does not copy the family list or sampling noes onto gpt-5-pro', async () => {
+  serve(allGuides, { 'gpt-5-pro': proPage })
+  const facts = await openaiModelFacts(['gpt-5-mini', 'gpt-5-pro'])
+  expect(facts('gpt-5-pro').reasoning).toEqual({
+    mode: 'effort',
+    mandatory: true,
+    efforts: ['high'],
+  })
+  expect(facts('gpt-5-pro').unsupportedCapabilities).toBeUndefined()
+  expect(facts('gpt-5-mini').reasoning?.mandatory).toBe(true)
 })
 
 it('does not fetch the guides when no GPT-5 id is listed', async () => {

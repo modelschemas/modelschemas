@@ -531,9 +531,22 @@ export function pageSlugFor(rawId: string, slugs: Set<string>): string | null {
   return null
 }
 
-/** Ids the GPT-5 guides can speak for: `gpt-5` and undotted `gpt-5-*`. */
+/**
+ * Ids whose listing should load the GPT-5 guides. Wider than the sentences:
+ * a parsed guide applies only to the ids it names.
+ */
 function gpt5GuideSelects(rawId: string): boolean {
   return /^gpt-5(?:-[a-z][a-z0-9-]*)?$/.test(undatedId(rawId))
+}
+
+/**
+ * Ids a failed family or sampling guide may hold. The parsed family sentence
+ * wins; without it, only the three ids those guides are written for.
+ */
+const GPT5_GUIDE_FAMILY = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano']
+
+function guideNames(rawId: string, ids: Array<string>): boolean {
+  return ids.includes(rawId) || ids.includes(undatedId(rawId))
 }
 
 type OpenAiDocsFacts = ModelFacts &
@@ -542,7 +555,8 @@ type OpenAiDocsFacts = ModelFacts &
 /**
  * Facts for the listed ids. Pages are fetched once per slug and memoised;
  * a page's snapshot list also seeds ids the index alone couldn't resolve.
- * A GPT-5 guide that fails marks its rows' facts `unavailable` in `run`.
+ * A failed family or sampling guide marks `absent` on the ids it speaks for.
+ * A failed GPT-5.1 guide does not: the family list stays, with mandatory null.
  */
 export async function openaiModelFacts(
   rawIds: Array<string>,
@@ -758,13 +772,20 @@ export async function openaiModelFacts(
     }
   }
   if (needed.length > 0) assertParsed(byId, 'openai model pages')
+  const familyIds = guides?.[0]?.parsed.rawIds ?? GPT5_GUIDE_FAMILY
   const guideGaps: OpenAiDocsFacts['absent'] = {}
-  if (guides && (!guides[0] || !guides[1])) guideGaps.reasoning = 'unavailable'
+  // The 5.1 sentence only upgrades mandatory. Its failure leaves the family
+  // list in place with mandatory null, which is the unstated value.
+  if (guides && !guides[0]) guideGaps.reasoning = 'unavailable'
   if (guides && !guides[2]) guideGaps.capabilities = 'unavailable'
   return (rawId) => {
     const facts = docsFacts(rawId)
-    return Object.keys(guideGaps).length > 0 && gpt5GuideSelects(rawId)
-      ? { ...facts, absent: { ...facts.absent, ...guideGaps } }
+    if (!guides || !guideNames(rawId, familyIds)) return facts
+    const absent = { ...facts.absent }
+    if (guideGaps.reasoning) absent.reasoning = 'unavailable'
+    if (guideGaps.capabilities) absent.capabilities = 'unavailable'
+    return guideGaps.reasoning || guideGaps.capabilities
+      ? { ...facts, absent }
       : facts
   }
   function docsFacts(rawId: string): OpenAiDocsFacts {

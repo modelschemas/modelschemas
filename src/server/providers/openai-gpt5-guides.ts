@@ -4,8 +4,8 @@
  * sampling parameters. Three "Using GPT-5.x" guides state them:
  * - GPT-5: the family's ids and its `reasoning.effort` levels.
  * - GPT-5.1: `none` is new, and GPT-5's `minimal` still spends reasoning
- *   tokens. With a level list that has no `none`, that states GPT-5 has no
- *   off value.
+ *   tokens. `mandatory` becomes true only when that level is first in the
+ *   family list, the list has no `none`, and it matches the row's efforts.
  * - GPT-5.2: `temperature` and `top_p` raise an error on the named GPT-5 ids.
  * Each parser throws when its sentence is not there; the caller loads them
  * through `tryDocs`.
