@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { parseGlmCodingModels } from './glm-coding-docs.ts'
 import type { CodingDoc, CodingLocale } from './glm-coding-docs.ts'
+import { reasoningViolation } from './types.ts'
 
 function docs(locale: CodingLocale) {
   const host = locale === 'en' ? 'docs.z.ai' : 'docs.bigmodel.cn'
@@ -39,6 +40,7 @@ describe('native GLM Coding sources', () => {
           mandatory: true,
           efforts: ['low', 'high', 'max'],
         })
+        expect(reasoningViolation(row.reasoning)).toBeNull()
         expect(row.requestMap?.thinking).toEqual({
           on: { reasoning_effort: 'high' },
           off: null,
