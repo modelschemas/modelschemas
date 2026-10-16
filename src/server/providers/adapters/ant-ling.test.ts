@@ -6,6 +6,7 @@ import { classifyAndBundle } from '../../ingest/sync.ts'
 import fixtures from '../fixtures/ant-ling-docs.json'
 import sourceFailure from '../fixtures/ant-ling-native-source-failure.json'
 import seriesThinking from '../fixtures/ant-ling-openai-series-thinking.json'
+import reasoningEffort from '../fixtures/ant-ling-openai-reasoning-effort.json'
 import {
   ANT_OPENAI,
   ANT_PRICE,
@@ -146,6 +147,131 @@ it('binds the thinking toggle to every id in the series the page names', async (
     mandatory: null,
     efforts: ['high', 'xhigh'],
   })
+})
+it('reads the top-level reasoning_effort string the page replaced reasoning.effort with', async () => {
+  serve({ [ANT_OPENAI]: reasoningEffort.html })
+  const { models } = await provider.listModels(nativeEnv)
+  const ring = models.find((m) => m.rawId === 'Ring-2.6-1T')
+  expect(ring?.reasoning).toEqual({
+    mode: 'effort',
+    mandatory: null,
+    efforts: ['high', 'xhigh'],
+  })
+  expect(ring?.requestMap?.thinking).toMatchObject({
+    off: null,
+    levels: { high: 'high', xhigh: 'xhigh', medium: null },
+  })
+  expect(ring?.requestMap?.thinking?.on).toEqual({ reasoning_effort: 'high' })
+  for (const id of ['Ling-3.0-flash', 'Ling-3.1-flash'])
+    expect(models.find((m) => m.rawId === id)?.reasoning).toEqual({
+      mode: 'toggle',
+      mandatory: false,
+    })
+  expect(models.find((m) => m.rawId === 'Ling-2.6-1T')?.reasoning).toBeNull()
+  const input = nativeRequest(reasoningEffort.html)
+  expect(
+    (input.properties as Record<string, unknown>).reasoning_effort,
+  ).toMatchObject({ type: 'string', enum: ['high', 'xhigh'], default: 'high' })
+  const bundled = classifyAndBundle(
+    provider,
+    await provider.fetchSpec(nativeEnv),
+  )
+  expect(bundled.endpoints).toHaveLength(1)
+})
+it('fails a reasoning_effort it cannot scope or whose default is no option', async () => {
+  const detailDefault =
+    'default <code class="nextra-code" dir="ltr">high</code>'
+  const overviewDefault =
+    /(<td[^>]*>\s*)<code class="nextra-code" dir="ltr">high<\/code>/
+  const description =
+    'Controls how much reasoning depth Ring-2.6-1T applies when responding.'
+  const cases: Array<[string, RegExp]> = [
+    [
+      reasoningEffort.html.replace('(Ring-2.6-1T only)', ''),
+      /unreadable reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        description,
+        'Only takes effect for Ring-3.0-1T.',
+      ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        description,
+        'Controls reasoning depth. Supported by 2.6 series models.',
+      ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        description,
+        'Controls how much reasoning depth Ring-3.0-1T applies when responding.',
+      ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        detailDefault,
+        'default <code class="nextra-code" dir="ltr">max</code>',
+      ),
+      /reasoning_effort defaults disagree/,
+    ],
+    [
+      reasoningEffort.html.replace(detailDefault, ''),
+      /reasoning_effort default unstated/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        description,
+        'Controls how much reasoning depth Ring-2.6-1T-mini applies when responding.',
+      ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        overviewDefault,
+        '$1<code class="nextra-code" dir="ltr">xhigh</code>',
+      ),
+      /reasoning_effort defaults disagree/,
+    ],
+    [
+      reasoningEffort.html
+        .replace(
+          detailDefault,
+          'default <code class="nextra-code" dir="ltr">max</code>',
+        )
+        .replace(
+          overviewDefault,
+          '$1<code class="nextra-code" dir="ltr">max</code>',
+        ),
+      /unknown parameter default/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        '<h3 id="thinking"',
+        '<h3 id="reasoning">reasoning</h3><ul><li><strong>Description</strong>: Only takes effect for Ring-2.6-1T.</li></ul><h4 id="reasoningeffort">reasoning.effort</h4><ul><li><strong>Type</strong>: <code>string</code></li></ul><h3 id="thinking"',
+      ),
+      /two native effort fields/,
+    ],
+  ]
+  const search = reasoningEffort.html
+    .replace(
+      /(<code class="nextra-code" dir="ltr">enable_search<\/code><\/td>(?:<td[^>]*>[\s\S]*?<\/td>){2}<td[^>]*>)<code class="nextra-code" dir="ltr">false<\/code>/,
+      '$1<code class="nextra-code" dir="ltr">auto</code>',
+    )
+    .replace(
+      'Whether to allow the model to use web search.</li>',
+      'Whether to allow the model to use web search.</li><li><strong>Options</strong>:<ul><li><code>auto</code></li></ul></li>',
+    )
+  expect(search).not.toBe(reasoningEffort.html)
+  expect(() => nativeRequest(search)).toThrow('unknown parameter default')
+  for (const [html, error] of cases) {
+    expect(html).not.toBe(reasoningEffort.html)
+    serve({ [ANT_OPENAI]: html })
+    await expect(provider.listModels(nativeEnv)).rejects.toThrow(error)
+  }
 })
 it('fails thinking scopes it cannot read as stated support', async () => {
   const sentence = 'Supported by 3.0 series models and 3.1 series models.'
