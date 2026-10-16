@@ -6,6 +6,7 @@ import { classifyAndBundle } from '../../ingest/sync.ts'
 import fixtures from '../fixtures/ant-ling-docs.json'
 import sourceFailure from '../fixtures/ant-ling-native-source-failure.json'
 import seriesThinking from '../fixtures/ant-ling-openai-series-thinking.json'
+import reasoningEffort from '../fixtures/ant-ling-openai-reasoning-effort.json'
 import {
   ANT_OPENAI,
   ANT_PRICE,
@@ -146,6 +147,70 @@ it('binds the thinking toggle to every id in the series the page names', async (
     mandatory: null,
     efforts: ['high', 'xhigh'],
   })
+})
+it('reads the top-level reasoning_effort string the page replaced reasoning.effort with', async () => {
+  serve({ [ANT_OPENAI]: reasoningEffort.html })
+  const { models } = await provider.listModels(nativeEnv)
+  const ring = models.find((m) => m.rawId === 'Ring-2.6-1T')
+  expect(ring?.reasoning).toEqual({
+    mode: 'effort',
+    mandatory: null,
+    efforts: ['high', 'xhigh'],
+  })
+  expect(ring?.requestMap?.thinking).toMatchObject({
+    on: { reasoning_effort: 'high' },
+    off: null,
+    levels: { high: 'high', xhigh: 'xhigh', medium: null },
+  })
+  expect(ring?.requestMap?.thinking?.on).toEqual({ reasoning_effort: 'high' })
+  for (const id of ['Ling-3.0-flash', 'Ling-3.1-flash'])
+    expect(models.find((m) => m.rawId === id)?.reasoning).toEqual({
+      mode: 'toggle',
+      mandatory: false,
+    })
+  expect(models.find((m) => m.rawId === 'Ling-2.6-1T')?.reasoning).toBeNull()
+  const input = nativeRequest(reasoningEffort.html)
+  expect(
+    (input.properties as Record<string, unknown>).reasoning_effort,
+  ).toMatchObject({ type: 'string', enum: ['high', 'xhigh'], default: 'high' })
+  const bundled = classifyAndBundle(
+    provider,
+    await provider.fetchSpec(nativeEnv),
+  )
+  expect(bundled.endpoints).toHaveLength(1)
+})
+it('fails a reasoning_effort it cannot scope or whose default is no option', async () => {
+  const cases: Array<[string, RegExp]> = [
+    [
+      reasoningEffort.html.replace('(Ring-2.6-1T only)', ''),
+      /unreadable reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        'default <code class="nextra-code" dir="ltr">high</code>',
+        'default <code class="nextra-code" dir="ltr">max</code>',
+      ),
+      /unreadable native control values/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        /(<td[^>]*>\s*)<code class="nextra-code" dir="ltr">high<\/code>/,
+        '$1<code class="nextra-code" dir="ltr">max</code>',
+      ),
+      /unknown parameter default/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        '<h3 id="thinking"',
+        '<h3 id="reasoning">reasoning</h3><ul><li><strong>Description</strong>: Only takes effect for Ring-2.6-1T.</li></ul><h4 id="reasoningeffort">reasoning.effort</h4><ul><li><strong>Type</strong>: <code>string</code></li></ul><h3 id="thinking"',
+      ),
+      /two native effort fields/,
+    ],
+  ]
+  for (const [html, error] of cases) {
+    serve({ [ANT_OPENAI]: html })
+    await expect(provider.listModels(nativeEnv)).rejects.toThrow(error)
+  }
 })
 it('fails thinking scopes it cannot read as stated support', async () => {
   const sentence = 'Supported by 3.0 series models and 3.1 series models.'

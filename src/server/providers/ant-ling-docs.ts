@@ -213,16 +213,17 @@ export function nativeRequest(html: string): Schema {
       node[range[1] === '(' ? 'exclusiveMinimum' : 'minimum'] = Number(range[2])
       node[range[4] === ')' ? 'exclusiveMaximum' : 'maximum'] = Number(range[3])
     }
+    const detail = fields.get(name)
+    if (!detail) fail(`missing native detail for ${name}`)
+    const values = options(detail)
     const def = row[3]
     if (def !== undefined && def !== '—') {
       if (!def) fail('missing parameter default cell')
       if (def === 'true' || def === 'false') node.default = def === 'true'
       else if (Number.isFinite(Number(def))) node.default = Number(def)
+      else if (values.includes(def)) node.default = def
       else fail('unknown parameter default')
     }
-    const detail = fields.get(name)
-    if (!detail) fail(`missing native detail for ${name}`)
-    const values = options(detail)
     if (values.length) {
       // Native model options lag the direct pricing catalog. Preserve the list
       // as evidence without inventing a closed allowlist for newer native IDs.
@@ -274,15 +275,21 @@ export function nativeRequest(html: string): Schema {
 }
 /**
  * What a field's description scopes it to: one named id ("Only takes effect
- * for Ring-2.6-1T"), or every model option in each named version series
- * when that is the description's last sentence ("Supported by 3.0 series
- * models and 3.1 series models.").
+ * for Ring-2.6-1T", or its Overview row's "(Ring-2.6-1T only)"), or every
+ * model option in each named version series when that is the description's
+ * last sentence ("Supported by 3.0 series models and 3.1 series models.").
  */
 function scope(html: string, field: string) {
-  const block = nativeFields(html).get(field)
+  const fields = nativeFields(html)
+  const block = fields.get(field)
   if (!block) fail(`missing ${field} applicability`)
   const t = text(block)
-  const id = t.match(/Only (?:takes effect|effective) for ([\w.-]+)/i)?.[1]
+  const overview = rows(fields.get('Overview') ?? '')
+    .map((row) => row.map(text))
+    .find((row) => row[0] === field)?.[4]
+  const id =
+    t.match(/Only (?:takes effect|effective) for ([\w.-]+)/i)?.[1] ??
+    overview?.match(/\(([\w.-]+) only\)$/)?.[1]
   if (id) {
     const only = id.replace(/\.$/, '')
     return { named: [only], ids: [only] }
@@ -310,16 +317,23 @@ export function applicability(html: string, field: string): Array<string> {
 }
 export function controls(html: string) {
   const fields = nativeFields(html)
-  const effort = fields.get('reasoning.effort')
+  // The page has published the effort as `reasoning.effort` and, since
+  // 2026-10-16, as a top-level `reasoning_effort` string.
+  const nested = fields.get('reasoning.effort')
+  const flat = fields.get('reasoning_effort')
+  if (nested && flat) fail('two native effort fields')
+  const effort = nested ?? flat
   const toggle = fields.get('thinking.type')
   if (!effort || !toggle) fail('missing native reasoning controls')
-  const effortIds = applicability(html, 'reasoning')
+  const effortField = nested ? 'reasoning' : 'reasoning_effort'
+  const effortIds = applicability(html, effortField)
   const thinking = scope(html, 'thinking')
   if (!thinking.named.every((name) => text(toggle).includes(name)))
     fail('thinking.type names other models than thinking')
   if (thinking.ids.some((id) => effortIds.includes(id)))
     fail('a model has both native reasoning controls')
   return {
+    effortField,
     effortIds,
     toggleIds: thinking.ids,
     efforts: options(effort),
