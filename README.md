@@ -346,7 +346,7 @@ case. `true` means the provider states thinking cannot be turned off —
 but rows written before this rule also store `true` when a level list
 merely has no `none`. Until those adapters are converted, treat `true` as
 "inferred" on `openai`, `vercel`, `amazon-bedrock` (effort rows),
-`mistral`, `groq`, `grok`, `zai`, `moonshotai-cn`, `baseten`, `byteplus`,
+`mistral`, `groq`, `grok`, `moonshotai-cn`, `baseten`, `byteplus`,
 `fal`, and on the `effort` rows of `gemini` and `google-vertex`.
 
 **Breaking (0.1.x):** `models.pricing` is a RateCard or `null`, not an
