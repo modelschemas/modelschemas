@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
-  MINIMAX_CN_PRICING_PAGE,
+  MINIMAX_CN_PRICING_OVERVIEW_PAGE,
   MINIMAX_CN_SDK_PAGE,
-  MINIMAX_PRICING_PAGE,
+  MINIMAX_PRICING_OVERVIEW_PAGE,
 } from '../fixtures/minimax-docs.ts'
 import { MINIMAX_CN, MINIMAX_CN_MESSAGES_SPEC_URL } from '../minimax-docs.ts'
 import { MINIMAX_CN_MODELS_URL, provider } from './minimax-cn.ts'
@@ -61,7 +61,7 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_CN_MODELS_URL]: FIXTURE,
   [MINIMAX_CN.sdkUrl]: MINIMAX_CN_SDK_PAGE,
-  [MINIMAX_CN.pricingUrl]: MINIMAX_CN_PRICING_PAGE,
+  [MINIMAX_CN.pricingUrl]: MINIMAX_CN_PRICING_OVERVIEW_PAGE,
   [MINIMAX_CN.chatSpecUrl]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_CN_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',
@@ -195,7 +195,10 @@ describe('minimax-cn', () => {
 
   it('throws rather than store a price off a page that is not yuan', async () => {
     // The international page, as a cross-platform redirect would serve it.
-    mockFetch({ ...PAGES, [MINIMAX_CN.pricingUrl]: MINIMAX_PRICING_PAGE })
+    mockFetch({
+      ...PAGES,
+      [MINIMAX_CN.pricingUrl]: MINIMAX_PRICING_OVERVIEW_PAGE,
+    })
     await expect(provider.listModels({})).rejects.toThrow(
       'minimax-cn pricing page: parsed 0 model rows',
     )
