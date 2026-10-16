@@ -206,10 +206,21 @@ it('fails a reasoning_effort it cannot scope or whose default is no option', asy
     ],
     [
       reasoningEffort.html.replace(
+        description,
+        'Controls how much reasoning depth Ring-3.0-1T applies when responding.',
+      ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
         detailDefault,
         'default <code class="nextra-code" dir="ltr">max</code>',
       ),
       /reasoning_effort defaults disagree/,
+    ],
+    [
+      reasoningEffort.html.replace(detailDefault, ''),
+      /reasoning_effort default unstated/,
     ],
     [
       reasoningEffort.html.replace(

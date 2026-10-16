@@ -303,7 +303,12 @@ function scope(html: string, field: string) {
   const listed = overviewRow(fields, field)?.[4]?.match(
     /\(([\w.-]+) only\)$/,
   )?.[1]
-  if (listed && (stated ? stated !== listed : /series models/i.test(t)))
+  if (
+    listed &&
+    (stated
+      ? stated !== listed
+      : /series models/i.test(t) || !t.includes(listed))
+  )
     fail(`conflicting ${field} applicability`)
   const id = stated ?? listed
   if (id) return { named: [id], ids: [id] }
@@ -344,8 +349,12 @@ export function controls(html: string) {
     fail('a model has both native reasoning controls')
   const effortDefault =
     effort.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null
-  if (flat && overviewRow(fields, effortField)?.[3] !== effortDefault)
-    fail('reasoning_effort defaults disagree')
+  if (flat) {
+    const listed = overviewRow(fields, effortField)?.[3]
+    if (!effortDefault || !listed || listed === '—')
+      fail('reasoning_effort default unstated')
+    if (listed !== effortDefault) fail('reasoning_effort defaults disagree')
+  }
   return {
     effortField,
     effortIds,
