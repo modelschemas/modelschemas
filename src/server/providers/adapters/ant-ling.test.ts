@@ -158,7 +158,6 @@ it('reads the top-level reasoning_effort string the page replaced reasoning.effo
     efforts: ['high', 'xhigh'],
   })
   expect(ring?.requestMap?.thinking).toMatchObject({
-    on: { reasoning_effort: 'high' },
     off: null,
     levels: { high: 'high', xhigh: 'xhigh', medium: null },
   })
@@ -180,6 +179,12 @@ it('reads the top-level reasoning_effort string the page replaced reasoning.effo
   expect(bundled.endpoints).toHaveLength(1)
 })
 it('fails a reasoning_effort it cannot scope or whose default is no option', async () => {
+  const detailDefault =
+    'default <code class="nextra-code" dir="ltr">high</code>'
+  const overviewDefault =
+    /(<td[^>]*>\s*)<code class="nextra-code" dir="ltr">high<\/code>/
+  const description =
+    'Controls how much reasoning depth Ring-2.6-1T applies when responding.'
   const cases: Array<[string, RegExp]> = [
     [
       reasoningEffort.html.replace('(Ring-2.6-1T only)', ''),
@@ -187,16 +192,42 @@ it('fails a reasoning_effort it cannot scope or whose default is no option', asy
     ],
     [
       reasoningEffort.html.replace(
-        'default <code class="nextra-code" dir="ltr">high</code>',
-        'default <code class="nextra-code" dir="ltr">max</code>',
+        description,
+        'Only takes effect for Ring-3.0-1T.',
       ),
-      /unreadable native control values/,
+      /conflicting reasoning_effort applicability/,
     ],
     [
       reasoningEffort.html.replace(
-        /(<td[^>]*>\s*)<code class="nextra-code" dir="ltr">high<\/code>/,
-        '$1<code class="nextra-code" dir="ltr">max</code>',
+        description,
+        'Controls reasoning depth. Supported by 2.6 series models.',
       ),
+      /conflicting reasoning_effort applicability/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        detailDefault,
+        'default <code class="nextra-code" dir="ltr">max</code>',
+      ),
+      /reasoning_effort defaults disagree/,
+    ],
+    [
+      reasoningEffort.html.replace(
+        overviewDefault,
+        '$1<code class="nextra-code" dir="ltr">xhigh</code>',
+      ),
+      /reasoning_effort defaults disagree/,
+    ],
+    [
+      reasoningEffort.html
+        .replace(
+          detailDefault,
+          'default <code class="nextra-code" dir="ltr">max</code>',
+        )
+        .replace(
+          overviewDefault,
+          '$1<code class="nextra-code" dir="ltr">max</code>',
+        ),
       /unknown parameter default/,
     ],
     [
@@ -208,6 +239,7 @@ it('fails a reasoning_effort it cannot scope or whose default is no option', asy
     ],
   ]
   for (const [html, error] of cases) {
+    expect(html).not.toBe(reasoningEffort.html)
     serve({ [ANT_OPENAI]: html })
     await expect(provider.listModels(nativeEnv)).rejects.toThrow(error)
   }

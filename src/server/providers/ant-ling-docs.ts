@@ -221,7 +221,8 @@ export function nativeRequest(html: string): Schema {
       if (!def) fail('missing parameter default cell')
       if (def === 'true' || def === 'false') node.default = def === 'true'
       else if (Number.isFinite(Number(def))) node.default = Number(def)
-      else if (values.includes(def)) node.default = def
+      else if (node.type === 'string' && values.includes(def))
+        node.default = def
       else fail('unknown parameter default')
     }
     if (values.length) {
@@ -273,30 +274,39 @@ export function nativeRequest(html: string): Schema {
   }
   return schema
 }
+function overviewRow(
+  fields: Map<string, string>,
+  field: string,
+): Array<string> | undefined {
+  return rows(fields.get('Overview') ?? '')
+    .map((row) => row.map(text))
+    .find((row) => row[0] === field)
+}
 /**
  * What a field's description scopes it to: one named id ("Only takes effect
  * for Ring-2.6-1T", or its Overview row's "(Ring-2.6-1T only)"), or every
  * model option in each named version series when that is the description's
  * last sentence ("Supported by 3.0 series models and 3.1 series models.").
+ * An Overview id that disagrees with the description throws.
  */
 function scope(html: string, field: string) {
   const fields = nativeFields(html)
   const block = fields.get(field)
   if (!block) fail(`missing ${field} applicability`)
   const t = text(block)
-  const overview = rows(fields.get('Overview') ?? '')
-    .map((row) => row.map(text))
-    .find((row) => row[0] === field)?.[4]
-  const id =
-    t.match(/Only (?:takes effect|effective) for ([\w.-]+)/i)?.[1] ??
-    overview?.match(/\(([\w.-]+) only\)$/)?.[1]
-  if (id) {
-    const only = id.replace(/\.$/, '')
-    return { named: [only], ids: [only] }
-  }
+  const stated = t
+    .match(/Only (?:takes effect|effective) for ([\w.-]+)/i)?.[1]
+    ?.replace(/\.$/, '')
   const series = t.match(
     /(?:^|\.\s)Supported by (\d+(?:\.\d+)* series models(?:(?:,| and|, and) \d+(?:\.\d+)* series models)*)\.$/,
   )?.[1]
+  const listed = overviewRow(fields, field)?.[4]?.match(
+    /\(([\w.-]+) only\)$/,
+  )?.[1]
+  if (listed && (stated ? stated !== listed : /series models/i.test(t)))
+    fail(`conflicting ${field} applicability`)
+  const id = stated ?? listed
+  if (id) return { named: [id], ids: [id] }
   if (!series) fail(`unreadable ${field} applicability`)
   const offered = nativeModelIds(html)
   const named = [...series.matchAll(/\d+(?:\.\d+)* series models/g)].map(
@@ -332,13 +342,16 @@ export function controls(html: string) {
     fail('thinking.type names other models than thinking')
   if (thinking.ids.some((id) => effortIds.includes(id)))
     fail('a model has both native reasoning controls')
+  const effortDefault =
+    effort.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null
+  if (flat && overviewRow(fields, effortField)?.[3] !== effortDefault)
+    fail('reasoning_effort defaults disagree')
   return {
     effortField,
     effortIds,
     toggleIds: thinking.ids,
     efforts: options(effort),
-    effortDefault:
-      effort.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null,
+    effortDefault,
     toggles: options(toggle),
   }
 }
