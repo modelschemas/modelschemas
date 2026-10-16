@@ -17,10 +17,10 @@ import {
   providers,
   schemaVersions,
 } from '#/db/schema.ts'
-import { exportProviderModels } from '#/server/catalog.ts'
+import { listModelsCatalog } from '#/server/catalog.ts'
 import type { ApiModel } from '#/server/catalog.ts'
 import { errorMessage } from '#/server/errors.ts'
-import { publicEndpointId } from '#/server/schemas-api.ts'
+import { publicEndpointId, schemaProvenance } from '#/server/schemas-api.ts'
 import type { SchemaProvenance } from '#/server/schemas-api.ts'
 
 /** Stored JSON text, written to the body as it is. */
@@ -50,11 +50,8 @@ export function stableJson(value: unknown): string {
 }
 
 /** `lastSeenAt` moves on every poll; `_links` are API navigation. */
-function exportModel(model: ApiModel): Partial<ApiModel> {
-  const entry: Partial<ApiModel> = { ...model }
-  delete entry.lastSeenAt
-  delete entry._links
-  return entry
+function exportModel({ lastSeenAt, _links, ...model }: ApiModel) {
+  return model
 }
 
 interface SchemaVersionEntry {
@@ -62,6 +59,17 @@ interface SchemaVersionEntry {
   specRevision: string | null
   provenance: SchemaProvenance
   schema: RawJson
+}
+
+interface SchemaEntry {
+  provider: string
+  endpointId: string
+  activity: string
+  method: string
+  path: string
+  description: string | null
+  input: SchemaVersionEntry | null
+  output: SchemaVersionEntry | null
 }
 
 /** Every endpoint of one provider with its current input and output. */
@@ -79,19 +87,7 @@ async function exportProviderSchemas(db: Db, providerId: string) {
     .where(eq(endpoints.providerId, providerId))
     .orderBy(endpoints.id)
 
-  const byEndpoint = new Map<
-    string,
-    {
-      provider: string
-      endpointId: string
-      activity: string
-      method: string
-      path: string
-      description: string | null
-      input: SchemaVersionEntry | null
-      output: SchemaVersionEntry | null
-    }
-  >()
+  const byEndpoint = new Map<string, SchemaEntry>()
   for (const { endpoint, version } of rows) {
     let entry = byEndpoint.get(endpoint.id)
     if (!entry) {
@@ -111,19 +107,26 @@ async function exportProviderSchemas(db: Db, providerId: string) {
       entry[version.kind] = {
         contentHash: version.contentHash,
         specRevision: version.specRevision,
-        provenance: {
-          sourceUrl: version.sourceUrl,
-          sourceHash: version.sourceHash,
-          fetchedAt: version.createdAt,
-          extractorVersion: version.extractorVersion,
-          derivation: version.derivation,
-          verifiedAt: version.verifiedAt,
-        },
+        provenance: schemaProvenance(version),
         schema: new RawJson(version.schema),
       }
     }
   }
   return [...byEndpoint.values()]
+}
+
+/** Each provider's rows as JSON, comma-joined across providers. */
+async function* perProvider(
+  providerIds: Array<string>,
+  load: (providerId: string) => Promise<Array<unknown>>,
+): AsyncGenerator<string> {
+  let separator = ''
+  for (const providerId of providerIds) {
+    const rows = await load(providerId)
+    if (rows.length === 0) continue
+    yield separator + rows.map(stableJson).join(',')
+    separator = ','
+  }
 }
 
 /**
@@ -143,14 +146,17 @@ async function* exportChunks(db: Db): AsyncGenerator<string> {
     .from(providerModelNamespaces)
     .orderBy(providerModelNamespaces.namespace)
 
+  const providerIds = providerRows.map((provider) => provider.id)
+
   yield `{"latestChange":${stableJson(latestChange ?? null)},"models":[`
-  let separator = ''
-  for (const provider of providerRows) {
-    const rows = await exportProviderModels(db, provider.id)
-    if (rows.length === 0) continue
-    yield separator + rows.map((row) => stableJson(exportModel(row))).join(',')
-    separator = ','
-  }
+  yield* perProvider(providerIds, async (provider) => {
+    const catalog = await listModelsCatalog(db, {
+      provider,
+      includeDeprecated: true,
+      pricing: true,
+    })
+    return catalog.models.map(exportModel)
+  })
 
   const exportedProviders = providerRows.map((provider) => ({
     id: provider.id,
@@ -165,13 +171,9 @@ async function* exportChunks(db: Db): AsyncGenerator<string> {
   }))
   yield `],"providers":${stableJson(exportedProviders)},"schemas":[`
 
-  separator = ''
-  for (const provider of providerRows) {
-    const entries = await exportProviderSchemas(db, provider.id)
-    if (entries.length === 0) continue
-    yield separator + entries.map((entry) => stableJson(entry)).join(',')
-    separator = ','
-  }
+  yield* perProvider(providerIds, (provider) =>
+    exportProviderSchemas(db, provider),
+  )
   yield ']}'
 }
 
