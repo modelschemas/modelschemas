@@ -1,7 +1,5 @@
+import { stripFences } from './model-facts.ts'
 import type { ThinkingRequest } from './request-map.ts'
-
-const stripFences = (markdown: string) =>
-  markdown.replace(/```[\s\S]*?```/g, '')
 
 /** Gateway effort names come from normative provider documentation, never examples. */
 export const OPENROUTER_REASONING_URL =
@@ -93,14 +91,10 @@ const OPENROUTER_MIGRATIONS =
   'https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/'
 
 // ponytail: hand-written from OpenRouter's Claude migration guides on
-// 2026-10-15. Each guide names its models in prose; the sentence below is
-// re-checked on every fetch. Add a row when OpenRouter publishes a guide
-// for a new Claude model.
-export const OPENROUTER_ADAPTIVE_GUIDES: ReadonlyArray<{
-  url: string
-  ids: ReadonlyArray<string>
-  states: RegExp
-}> = [
+// 2026-10-15. Each guide names its models in prose; each row's `states`
+// sentence is re-checked whenever its guide is fetched. Add a row when
+// OpenRouter publishes a guide for a new Claude model.
+export const OPENROUTER_ADAPTIVE_GUIDES = [
   {
     url: `${OPENROUTER_MIGRATIONS}claude-4-6.md`,
     ids: ['anthropic/claude-opus-4.6', 'anthropic/claude-sonnet-4.6'],
@@ -136,17 +130,14 @@ export const OPENROUTER_ADAPTIVE_GUIDES: ReadonlyArray<{
 
 /** The guide for an OpenRouter id; a `:variant` suffix serves the same model. */
 export function openRouterAdaptiveGuide(rawId: string) {
-  const base = rawId.split(':')[0]
-  return OPENROUTER_ADAPTIVE_GUIDES.find((guide) =>
-    guide.ids.some((id) => id === base),
-  )
+  const base = rawId.replace(/:.*/, '')
+  return OPENROUTER_ADAPTIVE_GUIDES.find((guide) => guide.ids.includes(base))
 }
 
-/** Throws unless the guide prose still states adaptive thinking. */
-export function assertOpenRouterAdaptive(
+/** True while the guide prose still states adaptive thinking. */
+export function statesAdaptive(
   markdown: string,
   guide: { states: RegExp },
-): void {
-  if (!guide.states.test(stripFences(markdown)))
-    throw new Error('openrouter: adaptive thinking statement missing')
+): boolean {
+  return guide.states.test(stripFences(markdown))
 }

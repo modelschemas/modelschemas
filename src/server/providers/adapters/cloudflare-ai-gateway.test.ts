@@ -186,6 +186,51 @@ describe('cloudflare-ai-gateway', () => {
     ).toBeUndefined()
   })
 
+  // The row stands in for `thinking.type` only when the schema has no
+  // control at all; an effort field without `thinking` stays an effort row.
+  it('reads the declared Adaptive Thinking row only when the schema publishes no control', () => {
+    const messages = {
+      ...FABLE,
+      request_formats: ['anthropic-messages'],
+      schema: {
+        input: {
+          type: 'object',
+          properties: {
+            ...FABLE.schema.input.properties,
+            output_config: {
+              properties: { effort: { enum: ['low', 'high'] } },
+            },
+          },
+        },
+      },
+    }
+    expect(parseCatalogModel(messages, SOURCE).reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'high'],
+    })
+    expect(
+      parseCatalogModel(
+        { ...FABLE, request_formats: ['anthropic-messages'] },
+        SOURCE,
+        { schemaShared: true },
+      ).reasoning,
+    ).toEqual({ mode: 'adaptive', mandatory: null })
+  })
+
+  it('refuses an Adaptive Thinking value it cannot read', () => {
+    expect(() =>
+      parseCatalogModel(
+        {
+          ...FABLE,
+          request_formats: ['anthropic-messages'],
+          metadata: { 'Adaptive Thinking': 'Enabled' },
+        },
+        SOURCE,
+      ),
+    ).toThrow(/unknown Adaptive Thinking value Enabled/)
+  })
+
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
     expect(
       parseCatalogModel(

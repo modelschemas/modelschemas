@@ -181,7 +181,7 @@ const GLM_TOOL_STREAM = [
   'glm-4.6',
 ]
 
-function blank(partial: Partial<ChatRequestMap>): ChatRequestMap {
+export function blank(partial: Partial<ChatRequestMap>): ChatRequestMap {
   return {
     thinking: null,
     maxTokensField: null,
