@@ -3,6 +3,7 @@ import { GLM_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  namedBy,
   parseZaiContextWindows,
   parseZaiOutputCaps,
   parseZaiReasoning,
@@ -801,6 +802,58 @@ Prices per 1M tokens.
     expect(reasoning('glm-5')).toEqual({ mode: 'toggle', mandatory: false })
     // An effort row keeps its own reading.
     expect(reasoning('glm-5.3')?.mode).toBe('effort')
+  })
+
+  it('states mandatory only from the switch or an off value in the list', async () => {
+    const effort = (id: string) =>
+      namedBy(id, parseZaiReasoning(THINKING))?.reasoning
+    // "only `max`, `high` and `low`" does not say thinking cannot turn off.
+    expect(effort('glm-5.3')).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['max', 'high', 'low'],
+    })
+    expect(effort('glm-5.2')?.mandatory).toBe(false)
+
+    // The switch no longer locks the GLM-5.3 series: nothing states it.
+    const unlocked = THINKING_TYPE.description.replace(
+      '`GLM-5.3` `GLM-5.3-FLASH` series',
+      '`GLM-4.7` series',
+    )
+    serve({
+      ...DOCS,
+      [ZAI_OPENAPI_URL]: JSON.stringify(
+        spec({ thinkingType: { ...THINKING_TYPE, description: unlocked } }),
+      ),
+    })
+    const { models } = await provider.listModels({})
+    for (const id of ['glm-5.3', 'glm-5.3-flash', 'glm-5.3-flashx']) {
+      expect(models.find((model) => model.rawId === id)?.reasoning).toEqual({
+        mode: 'effort',
+        mandatory: null,
+        efforts: ['max', 'high', 'low'],
+      })
+    }
+  })
+
+  it('throws when a locked model lists a none effort', async () => {
+    serve({
+      ...DOCS,
+      [ZAI_OPENAPI_URL]: JSON.stringify(
+        spec({
+          thinkingType: {
+            ...THINKING_TYPE,
+            description: THINKING_TYPE.description.replace(
+              '`GLM-5.3` `GLM-5.3-FLASH` series',
+              '`GLM-5.3` `GLM-5.3-FLASH` `GLM-5.2` series',
+            ),
+          },
+        }),
+      ),
+    })
+    await expect(provider.listModels({})).rejects.toThrow(
+      /glm-5.2 lists a none effort but cannot disable thinking/,
+    )
   })
 
   it('throws on a thinking.type switch it cannot read', async () => {

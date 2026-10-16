@@ -224,7 +224,11 @@ export interface UpstreamModelIdentity {
  *
  * `efforts`: the accepted effort values as published, an off value such as
  * `none` included. Never present on `toggle`. A `none` effort turns thinking
- * off, so `reasoningViolation` refuses it with `mandatory: true`.
+ * off, so `reasoningViolation` refuses it with `mandatory: true`. The GLM
+ * Coding Plan pages map accepted inputs onto fewer levels (`none` and
+ * `minimal` run as `low`), so those rows hold the level each input maps
+ * to, not the input names. zai API rows keep the input names the Deep Thinking
+ * page's API list gives, mapped or not.
  *
  * No object is stored when the source names no request field for the model:
  * a catalog flag alone, thinking picked by a model-id suffix or a prompt
