@@ -28,18 +28,40 @@ does not stamp reasoning_content replay on its rows.
   configurable reasoning effort list.
 - https://developers.openai.com/api/docs/models/gpt-6-luna.md — explicit none
   support makes reasoning optional.
+- https://developers.openai.com/api/docs/models/gpt-5-pro.md — "defaults to (and
+  only supports) `reasoning.effort: high`": the one accepted level is not off, so
+  mandatory is true.
+- https://developers.openai.com/api/docs/guides/latest-model/gpt-5.md — the GPT-5
+  family ids and their effort list, for gpt-5-mini and gpt-5-nano, whose pages
+  state no levels.
+- https://developers.openai.com/api/docs/guides/latest-model/gpt-5.1.md — `none` is
+  new in GPT-5.1, and GPT-5's `minimal` still uses reasoning tokens. With the
+  family list above (lowest level `minimal`, no `none`), this states the family
+  cannot turn reasoning off: mandatory is true.
+- https://developers.openai.com/api/docs/guides/latest-model/gpt-5.2.md — requests
+  to the named older GPT-5 ids that carry `temperature` or `top_p` raise an error:
+  both flags are `false` on those rows.
+
+A family-guide or sampling-guide failure is a `tryDocs` failure. The ids that
+guide names — or, when the family sentence did not parse, `gpt-5`, `gpt-5-mini`,
+and `gpt-5-nano` — keep their stored reasoning or capabilities (`unavailable`).
+A GPT-5.1 failure leaves the family effort list in place with `mandatory` null.
+Other GPT-5 rows, including `gpt-5-pro`, keep the facts their own pages stated.
 
 Parse only normative prose; fenced examples do not establish effort allowlists.
 Individual model-page fetch and parse failures now error instead of returning
 unknown facts. A model's own page takes precedence over another alias page's
 snapshot reference. Realtime pages explicitly declaring configurable reasoning
 effort retain effort mode with unknown levels and mandatory status.
-A level list without none does not prove mandatory thinking; only explicit native
-cannot-disable/always-on prose establishes true. Reasoning-token capability
-without a control declaration does not justify an
-invented effort mode or mandatory=true. Such configurations remain null while
-capability remains independently sourced. Pages that do not name effort levels
-are not covered by a blanket effort exemption.
+A level list without `none` does not by itself prove mandatory thinking.
+`mandatory` is true when the page says the model only supports one level other
+than `none`, when cannot-disable or always-on prose says so, or when the GPT-5
+family list has no `none` and the GPT-5.1 guide says that list's first level
+still spends reasoning tokens. Otherwise it stays null. Reasoning-token
+capability without a control declaration does not justify an invented effort
+mode or mandatory=true. Such configurations remain null while capability
+remains independently sourced. Pages that do not name effort levels are not
+covered by a blanket effort exemption.
 
 ## Gemini
 

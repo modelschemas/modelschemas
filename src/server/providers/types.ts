@@ -223,7 +223,8 @@ export interface UpstreamModelIdentity {
  *   `null`. A probe (off returns 400) is not a source.
  *
  * `efforts`: the accepted effort values as published, an off value such as
- * `none` included. Never present on `toggle`.
+ * `none` included. Never present on `toggle`. A `none` effort turns thinking
+ * off, so `reasoningViolation` refuses it with `mandatory: true`.
  *
  * No object is stored when the source names no request field for the model:
  * a catalog flag alone, thinking picked by a model-id suffix or a prompt
@@ -267,6 +268,9 @@ export function reasoningViolation(value: unknown): string | null {
     !efforts.every((effort) => typeof effort === 'string' && effort !== '')
   ) {
     return 'efforts is not a non-empty array of strings'
+  }
+  if (mandatory === true && efforts.includes('none')) {
+    return 'mandatory is true but efforts include none'
   }
   return null
 }

@@ -11,6 +11,7 @@ import {
   openaiGenerationEndpointId,
   openaiModelActivity,
 } from './model-meta.ts'
+import { docsReport, docsRun } from './model-facts.ts'
 import { openaiModelFacts } from './openai-model-docs.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from './types.ts'
 import type {
@@ -82,11 +83,14 @@ async function listModels(
     headers: { Authorization: `Bearer ${key}` },
   })) as OpenAiModelList
   const listed = body.data ?? []
+  const docs = docsRun()
   const facts = await openaiModelFacts(
     listed.map((m) => m.id),
     kv,
+    docs,
   )
   return {
+    docsFailures: docsReport(docs),
     models: listed.map((m) => ({
       rawId: m.id,
       displayName: displayNameFromRawId(m.id),

@@ -26,6 +26,20 @@ export const FACT_KEYS = [
 
 export type FactKey = (typeof FACT_KEYS)[number]
 
+/**
+ * Row shapes `@tanstack/ai-models` cannot read correctly, counted apart from
+ * the score (issue #323). The score counts a fact as filled; a flag says the
+ * stored value still leaves the catalog to guess.
+ */
+export const FLAG_KEYS = [
+  'mandatoryUnknown',
+  'reasoningUnknown',
+  'outputModalitiesEmpty',
+  'mandatoryWithNone',
+] as const
+
+export type FlagKey = (typeof FLAG_KEYS)[number]
+
 /** The fields of a `/v1/models` row the report reads. */
 export type ModelRow = {
   provider: string
@@ -34,7 +48,7 @@ export type ModelRow = {
   activity?: string | null
   contextWindow?: number | null
   maxOutput?: number | null
-  modalities?: { input?: unknown } | null
+  modalities?: { input?: unknown; output?: unknown } | null
   pricing?: {
     tables?: { rate?: { base?: unknown } }
     source?: { url?: string }
@@ -60,6 +74,8 @@ export type ProviderReport = {
   /** Applicable missing rows excluded by exact model-scoped evidence. */
   modelSilent?: Partial<Record<FactKey, number>>
   score: number
+  /** Raw ids of the chat rows each flag matches. */
+  flags: Record<FlagKey, Array<string>>
 }
 
 export type GapReport = {
@@ -151,7 +167,7 @@ const FACTS: Record<
   },
   // Only `effort` and `adaptive` rows need effort names; a `toggle` or
   // `budget` row needs none. `mandatory` plays no part: efforts with
-  // `mandatory: null` is filled.
+  // `mandatory: null` is filled, and the `mandatoryUnknown` flag counts it.
   efforts: {
     need: (row) =>
       row.reasoning?.mode === 'effort' || row.reasoning?.mode === 'adaptive',
@@ -169,6 +185,41 @@ const FACTS: Record<
       !Array.isArray(row.requestMap) &&
       typeof (row.requestMap as Record<string, unknown>)
         .replayReasoningContent === 'boolean',
+  },
+}
+
+/**
+ * `reasoningUnknown` is the `reasoning` gap, so a `reasoning` ledger entry
+ * for the provider or the exact model clears it. No ledger entry clears
+ * the other flags: each is a stored value in the wrong shape.
+ */
+const FLAGS: Record<
+  FlagKey,
+  { silencedBy?: FactKey; match: (row: ModelRow) => boolean }
+> = {
+  // The catalog cannot tell if it can offer an off level.
+  mandatoryUnknown: {
+    match: (row) =>
+      row.reasoning?.mode === 'effort' && row.reasoning.mandatory === null,
+  },
+  // The catalog has to guess the mode and the levels.
+  reasoningUnknown: {
+    silencedBy: 'reasoning',
+    match: (row) =>
+      FACTS.reasoning.need?.(row) === true && !FACTS.reasoning.have(row),
+  },
+  // The catalog reads `[]` as unknown; an unknown list is stored as null.
+  outputModalitiesEmpty: {
+    match: (row) => {
+      const output = row.modalities?.output
+      return Array.isArray(output) && output.length === 0
+    },
+  },
+  // Thinking cannot be turned off, yet `none` turns it off.
+  mandatoryWithNone: {
+    match: (row) =>
+      row.reasoning?.mandatory === true &&
+      (row.reasoning.efforts?.includes('none') ?? false),
   },
 }
 
@@ -205,23 +256,35 @@ export function buildReport(
     const chat = group.filter((row) => row.activity === 'chat')
     const silent = FACT_KEYS.filter((key) => ledger.get(provider)?.has(key))
     const modelSilent: Partial<Record<FactKey, number>> = {}
+    const modelLedgered = (row: ModelRow, key: FactKey) =>
+      row.rawId !== undefined &&
+      ledger.get(modelLedgerScope(provider, row.rawId))?.has(key)
     const facts = Object.fromEntries(
       FACT_KEYS.map((key) => {
         const { need, have } = FACTS[key]
         const needed = need ? chat.filter(need) : chat
         const scoped = silent.includes(key)
           ? 0
-          : needed.filter(
-              (row) =>
-                !have(row) &&
-                row.rawId !== undefined &&
-                ledger.get(modelLedgerScope(provider, row.rawId))?.has(key),
-            ).length
+          : needed.filter((row) => !have(row) && modelLedgered(row, key)).length
         if (scoped > 0) modelSilent[key] = scoped
         return [key, { have: needed.filter(have).length, need: needed.length }]
       }),
     ) as ProviderReport['facts']
     const { have, need } = scoredFacts({ facts, silent, modelSilent })
+    const flags = Object.fromEntries(
+      FLAG_KEYS.map((key) => {
+        const { silencedBy, match } = FLAGS[key]
+        const isSilent = (row: ModelRow) =>
+          silencedBy !== undefined &&
+          (silent.includes(silencedBy) || modelLedgered(row, silencedBy))
+        return [
+          key,
+          chat
+            .filter((row) => match(row) && !isSilent(row))
+            .map((row) => row.rawId ?? ''),
+        ]
+      }),
+    ) as ProviderReport['flags']
 
     return {
       provider,
@@ -235,6 +298,7 @@ export function buildReport(
       // No chat rows is a gap, not a pass. Chat rows with every needed fact
       // on the ledger have nothing left to fill.
       score: need === 0 ? (chat.length > 0 ? 1 : 0) : have / need,
+      flags,
     }
   })
 

@@ -16,6 +16,7 @@ describe('reasoningViolation', () => {
     { mode: 'effort', mandatory: true },
     { mode: 'effort', mandatory: null, efforts: ['low', 'max'] },
     { mode: 'effort', mandatory: false, efforts: ['none', 'low'] },
+    { mode: 'effort', mandatory: null, efforts: ['none', 'low'] },
     { mode: 'adaptive', mandatory: false },
     // One prod budget row carries efforts; that is allowed.
     { mode: 'budget', mandatory: false, efforts: ['low'] },
@@ -49,6 +50,11 @@ describe('reasoningViolation', () => {
       'a non-string effort',
       { mode: 'effort', mandatory: true, efforts: ['low', 1] },
       'efforts',
+    ],
+    [
+      'a mandatory true with a none effort',
+      { mode: 'effort', mandatory: true, efforts: ['none', 'low'] },
+      'mandatory is true but efforts include none',
     ],
     [
       'null efforts',
@@ -100,6 +106,37 @@ describe('keepValidReasoning', () => {
           job: 'models-poll',
           providerId: 'prov',
           error: 'm-1: reasoning not stored: a toggle needs a stated mandatory',
+        },
+      },
+    ])
+  })
+
+  it('keeps the prior value over a mandatory true with a none effort', () => {
+    const prior = {
+      reasoning: { mode: 'effort', mandatory: false, efforts: ['none', 'low'] },
+      factSources: null,
+    }
+    const kept = keepValidReasoning(
+      'prov',
+      {
+        rawId: 'm-3',
+        reasoning: {
+          mode: 'effort',
+          mandatory: true,
+          efforts: ['none', 'low'],
+        },
+      },
+      prior,
+    )
+    expect(kept.reasoning).toEqual(prior.reasoning)
+    expect(takeIngestEvents()).toEqual([
+      {
+        event: 'ingest_failed',
+        properties: {
+          job: 'models-poll',
+          providerId: 'prov',
+          error:
+            'm-3: reasoning not stored: mandatory is true but efforts include none',
         },
       },
     ])
