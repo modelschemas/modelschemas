@@ -303,6 +303,25 @@ export async function listProviderModels(
 }
 
 /**
+ * Every row of one provider, live and deprecated, with the full rate card
+ * and provenance: the rows `GET /v1/admin/export` serves.
+ */
+export async function exportProviderModels(
+  db: Db,
+  providerId: string,
+): Promise<Array<ApiModel>> {
+  const rows = await db
+    .select(catalogSelection)
+    .from(models)
+    .leftJoin(upstreamModel, eq(models.sameAsModelId, upstreamModel.id))
+    .where(eq(models.providerId, providerId))
+    .orderBy(models.id)
+  return rows.map(({ row, upstream }) =>
+    toApiModel(row, { pricing: 'full', upstream }),
+  )
+}
+
+/**
  * GET /v1/models/{provider}/{modelId} — accepts the model slug or the raw
  * provider id. Returns null when not found.
  */

@@ -20,6 +20,7 @@ export {
   listProviders,
   listProviderSchemas,
   estimateCost,
+  exportCatalog,
   extractFalPricing,
   syncProvider,
   validatePayload,

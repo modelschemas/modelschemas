@@ -488,6 +488,31 @@ export const openApiDocument = {
         },
       },
     },
+    '/v1/admin/export': {
+      get: {
+        operationId: 'exportCatalog',
+        summary:
+          'The whole catalog in one streamed response, for the public git mirror (admin only)',
+        description:
+          'Returns `latestChange` (the newest change id and createdAt, or null), ' +
+          'then `models` (live and deprecated, full rate card), `providers`, and ' +
+          '`schemas` (each endpoint with its current input and output versions). ' +
+          'Object keys are sorted, and fields that change on every poll ' +
+          '(`lastSeenAt`, `lastPolledAt`, `lastSyncedAt`, `_links`) are left out, ' +
+          'so the same catalog gives the same bytes. To list the changes since ' +
+          'an earlier export, read GET /v1/changes?since=<its latestChange.createdAt> ' +
+          'until its latestChange.id. A failure part way breaks the stream, so ' +
+          'the body is not valid JSON.',
+        security: [{ adminKey: [] }],
+        responses: {
+          '200': {
+            description: 'Catalog export.',
+            content: { 'application/json': { schema: { type: 'object' } } },
+          },
+          '401': errorResponse,
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
