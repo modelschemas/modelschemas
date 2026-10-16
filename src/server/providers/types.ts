@@ -226,8 +226,8 @@ export interface UpstreamModelIdentity {
  * `none` included. Never present on `toggle`. A `none` effort turns thinking
  * off, so `reasoningViolation` refuses it with `mandatory: true`. When the
  * source maps accepted inputs onto fewer levels (GLM Coding Plan: `none` and
- * `minimal` run as `low`), the list holds the levels the model runs at, and
- * `requestMap.thinking.levels` keeps the input-to-level map.
+ * `minimal` run as `low`), the list holds the levels the model runs at, not
+ * the input names.
  *
  * No object is stored when the source names no request field for the model:
  * a catalog flag alone, thinking picked by a model-id suffix or a prompt
