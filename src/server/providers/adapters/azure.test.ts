@@ -132,7 +132,7 @@ describe('azure', () => {
     expect(o3).toMatchObject({
       contextWindow: 200_000,
       maxOutput: 100_000,
-      modalities: { input: ['text', 'image'], output: [] },
+      modalities: { input: ['text', 'image'], output: null },
       capabilities: [
         'reasoning',
         'tools',
