@@ -4,13 +4,14 @@
  * Card levers are disjoint: `input_tokens` excludes the tokens billed at a
  * cache or modality lever, and `output_tokens` excludes any lever split out
  * of it. Providers report overlapping counts instead: OpenAI and Gemini
- * count cached tokens inside the prompt total, Anthropic does not. Pass the
- * usage object as the API returned it and `normalizeUsage` subtracts each
- * part from its total.
+ * count cached tokens and cache writes inside the prompt total, Anthropic
+ * does not. Pass the usage object as the API returned it and
+ * `normalizeUsage` subtracts each part from its total.
  *
- * Cache tokens always get their own lever, so a card with no cache rate
- * refuses them. Reasoning, audio, image and video tokens get their own
- * lever only when the card reads it; otherwise they stay in their total,
+ * Cache reads and cache writes always get their own lever, so a card with
+ * no rate for that lever refuses them. Reasoning, audio, image and video
+ * tokens get their own lever only when the card reads it; otherwise they
+ * stay in their total,
  * which is how the source bills them. A usage object in the card's own
  * vocabulary passes through unchanged.
  */
@@ -139,6 +140,17 @@ function count(value: unknown, path: string): number {
   return value
 }
 
+/** A format total. Missing is an incomplete bill, not a zero. */
+function requiredCount(value: unknown, path: string): number {
+  if (value == null) {
+    throw new RateCardError(
+      'bad-input',
+      `usage.${path}: expected a token count, got ${JSON.stringify(value)}`,
+    )
+  }
+  return count(value, path)
+}
+
 /**
  * A count reader over a nested details object. A key this reader does not
  * know throws.
@@ -223,10 +235,12 @@ function apportion(
 type Normalizer = (usage: Vars, reads: Set<string>) => Record<string, number>
 
 const NORMALIZERS: Record<NativeFormat, Normalizer> = {
-  // input_tokens includes cached_tokens; output_tokens includes reasoning.
+  // input_tokens includes cached_tokens and cache_write_tokens.
+  // output_tokens includes reasoning.
   'openai-responses': (usage, reads) => {
     const input = details(usage.input_tokens_details, 'input_tokens_details', [
       'cached_tokens',
+      'cache_write_tokens',
     ])
     const output = details(
       usage.output_tokens_details,
@@ -237,13 +251,16 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
       ...apportion(
         reads,
         'input_tokens',
-        count(usage.input_tokens, 'input_tokens'),
-        [['cache_read_tokens', input('cached_tokens')]],
+        requiredCount(usage.input_tokens, 'input_tokens'),
+        [
+          ['cache_read_tokens', input('cached_tokens')],
+          ['cache_write_tokens', input('cache_write_tokens')],
+        ],
       ),
       ...apportion(
         reads,
         'output_tokens',
-        count(usage.output_tokens, 'output_tokens'),
+        requiredCount(usage.output_tokens, 'output_tokens'),
         [['reasoning_tokens', output('reasoning_tokens')]],
       ),
     }
@@ -254,7 +271,7 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
     const prompt = details(
       usage.prompt_tokens_details,
       'prompt_tokens_details',
-      ['cached_tokens', 'audio_tokens'],
+      ['cached_tokens', 'cache_write_tokens', 'audio_tokens'],
     )
     const completion = details(
       usage.completion_tokens_details,
@@ -270,16 +287,17 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
       ...apportion(
         reads,
         'input_tokens',
-        count(usage.prompt_tokens, 'prompt_tokens'),
+        requiredCount(usage.prompt_tokens, 'prompt_tokens'),
         [
           ['cache_read_tokens', prompt('cached_tokens')],
+          ['cache_write_tokens', prompt('cache_write_tokens')],
           ['audio_tokens', prompt('audio_tokens')],
         ],
       ),
       ...apportion(
         reads,
         'output_tokens',
-        count(usage.completion_tokens, 'completion_tokens'),
+        requiredCount(usage.completion_tokens, 'completion_tokens'),
         [
           ['reasoning_tokens', completion('reasoning_tokens')],
           ['audio_output_tokens', completion('audio_tokens')],
@@ -299,8 +317,8 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
       'web_fetch_requests',
     ])
     return {
-      input_tokens: count(usage.input_tokens, 'input_tokens'),
-      output_tokens: count(usage.output_tokens, 'output_tokens'),
+      input_tokens: requiredCount(usage.input_tokens, 'input_tokens'),
+      output_tokens: requiredCount(usage.output_tokens, 'output_tokens'),
       cache_read_tokens: count(
         usage.cache_read_input_tokens,
         'cache_read_input_tokens',
@@ -328,7 +346,8 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
       'candidatesTokensDetails',
     )
     const thoughts = count(usage.thoughtsTokenCount, 'thoughtsTokenCount')
-    const uncached = count(usage.promptTokenCount, 'promptTokenCount') - cached
+    const uncached =
+      requiredCount(usage.promptTokenCount, 'promptTokenCount') - cached
     if (uncached < 0) {
       throw new RateCardError(
         'bad-input',
@@ -352,7 +371,8 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
       ...apportion(
         reads,
         'output_tokens',
-        count(usage.candidatesTokenCount, 'candidatesTokenCount') + thoughts,
+        requiredCount(usage.candidatesTokenCount, 'candidatesTokenCount') +
+          thoughts,
         [
           ['reasoning_tokens', thoughts],
           ...MODALITIES.map((m): [string, number] => [

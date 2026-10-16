@@ -54,6 +54,62 @@ describe('normalizeUsage', () => {
     expect(amount(GPT_5, usage)).toBeCloseTo(0.0185, 10)
   })
 
+  it('subtracts OpenAI cache writes from the prompt total', () => {
+    // Writes bill at 1.25× input: 1.25e-6 × 1.25.
+    const priced = card({
+      input_tokens: 1.25e-6,
+      cache_read_tokens: 0.125e-6,
+      cache_write_tokens: 1.5625e-6,
+      output_tokens: 10e-6,
+    })
+    const usage = {
+      input_tokens: 10_000,
+      input_tokens_details: { cached_tokens: 4000, cache_write_tokens: 2000 },
+      output_tokens: 100,
+    }
+    expect(normalizeUsage(priced, usage)).toEqual({
+      input_tokens: 4000,
+      cache_read_tokens: 4000,
+      cache_write_tokens: 2000,
+      output_tokens: 100,
+    })
+    // 4000×1.25 + 4000×0.125 + 2000×1.5625 + 100×10, per 1M
+    expect(amount(priced, usage)).toBeCloseTo(0.009625, 10)
+    const chat = {
+      prompt_tokens: 10_000,
+      prompt_tokens_details: { cached_tokens: 4000, cache_write_tokens: 2000 },
+      completion_tokens: 100,
+    }
+    expect(normalizeUsage(priced, chat)).toEqual({
+      input_tokens: 4000,
+      cache_read_tokens: 4000,
+      cache_write_tokens: 2000,
+      output_tokens: 100,
+    })
+    // A zero write is not a lever. A write the card does not price is refused.
+    expect(
+      normalizeUsage(GPT_5, {
+        ...usage,
+        input_tokens_details: { cached_tokens: 4000, cache_write_tokens: 0 },
+      }),
+    ).toEqual({
+      input_tokens: 6000,
+      cache_read_tokens: 4000,
+      output_tokens: 100,
+    })
+    expect(() =>
+      priceDetailed(
+        GPT_5,
+        {},
+        normalizeUsage(GPT_5, {
+          input_tokens: 100,
+          input_tokens_details: { cache_write_tokens: 40 },
+          output_tokens: 10,
+        }),
+      ),
+    ).toThrow(expect.objectContaining({ code: 'unknown-usage-key' }))
+  })
+
   it('subtracts OpenAI Chat cached tokens from prompt tokens', () => {
     const usage = {
       prompt_tokens: 12_000,
@@ -207,6 +263,31 @@ describe('normalizeUsage', () => {
     expect(() =>
       priceDetailed(plain, {}, normalizeUsage(plain, usage)),
     ).toThrow(expect.objectContaining({ code: 'unknown-usage-key' }))
+  })
+
+  it('refuses a native usage object that omits a format total', () => {
+    expect(() => normalizeUsage(GPT_5, { completion_tokens: 1000 })).toThrow(
+      /prompt_tokens/,
+    )
+    expect(() =>
+      normalizeUsage(GPT_5, {
+        input_tokens: 10,
+        input_tokens_details: { cached_tokens: 0 },
+      }),
+    ).toThrow(/output_tokens/)
+    expect(() =>
+      normalizeUsage(CLAUDE, { output_tokens: 10, cache_read_input_tokens: 5 }),
+    ).toThrow(/input_tokens/)
+    expect(() => normalizeUsage(GPT_5, { candidatesTokenCount: 10 })).toThrow(
+      /promptTokenCount/,
+    )
+    expect(
+      normalizeUsage(GPT_5, {
+        input_tokens: 0,
+        output_tokens: 0,
+        input_tokens_details: { cache_write_tokens: 0 },
+      }),
+    ).toEqual({ input_tokens: 0, output_tokens: 0 })
   })
 
   it('refuses counts that are not token counts or do not add up', () => {
