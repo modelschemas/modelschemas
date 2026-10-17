@@ -271,6 +271,22 @@ describe('azure model rates', () => {
     expect(azureModelPricing(doc, 'gpt-5.5', '2026-04-24')).toEqual({})
   })
 
+  it('clears the price of a version the list does not meter yet', () => {
+    expect(azureModelPricing(doc, 'gpt-chat-latest', '2026-10-07')).toEqual({
+      absent: { pricing: 'cleared' },
+    })
+    expect(azureModelPricing(doc, 'gpt-4o', '2024-08-06')).toEqual({
+      absent: { pricing: 'cleared' },
+    })
+    expect(
+      azureModelPricing(doc, 'gpt-chat-latest', '2026-08-06').pricing,
+    ).toBeDefined()
+    // No meter names it, or the row names no version: a parser miss, not a
+    // stated absence, so the stored card is kept.
+    expect(azureModelPricing(doc, 'gpt-5.6', '2026-09-01')).toEqual({})
+    expect(azureModelPricing(doc, 'o3', null)).toEqual({})
+  })
+
   it('says whether the price list meters an id', () => {
     expect(azureMetered(meters, 'o3-deep-research')).toBe(true)
     expect(azureMetered(meters, 'gpt-5.6')).toBe(false)
