@@ -20,7 +20,10 @@ import type { Activity } from '#/db/schema.ts'
 import { seedForProvider } from '#/db/seed-providers.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
-import { PROVENANCE_MARKER } from '#/server/providers/types.ts'
+import {
+  isMissingSecretSkip,
+  PROVENANCE_MARKER,
+} from '#/server/providers/types.ts'
 import type {
   BundledEndpoint,
   Derivation,
@@ -365,6 +368,16 @@ export async function syncProvider(
   if (fetched.skipped) {
     outcome.skipped = fetched.skipped
     outcome.warnings.push(fetched.skipped)
+    // A by-design skip fetched its sources and found no schema to store.
+    // That is a clean sync: clear a stale `degraded` from an earlier throw.
+    // Leave `lastSyncedAt` alone — it still means a spec was stored.
+    // A missing secret never fetched, so it does not clear `degraded`.
+    if (!isMissingSecretSkip(fetched.skipped)) {
+      await db
+        .update(providers)
+        .set({ status: 'active' })
+        .where(eq(providers.id, provider.id))
+    }
     return outcome
   }
 

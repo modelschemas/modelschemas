@@ -791,10 +791,17 @@ export async function parseGzippedOpenApi(
   }
 }
 
+const MISSING_SECRET_SKIP_SUFFIX = ' not set — skipped'
+
 /** Standard skip result for providers whose secret is absent. */
 export function skippedResult(
   providerId: string,
   envVar: string,
 ): { skipped: string } {
-  return { skipped: `${providerId}: ${envVar} not set — skipped` }
+  return { skipped: `${providerId}: ${envVar}${MISSING_SECRET_SKIP_SUFFIX}` }
+}
+
+/** A `skippedResult` skip. A by-design skip does not use this suffix. */
+export function isMissingSecretSkip(skipped: string): boolean {
+  return skipped.endsWith(MISSING_SECRET_SKIP_SUFFIX)
 }
