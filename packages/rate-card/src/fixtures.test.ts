@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { FIXTURE_CARDS as ALL_CARDS } from './fixtures/index.ts'
 import { price, verifyExamples } from './evaluate.ts'
 import { rateCardSchema } from './rate-card.schema.ts'
-import type { RateCard } from './rate-card.schema.ts'
+import type { RateCard } from './card.ts'
 
 const MINIMAL_REQUEST: Record<string, Record<string, unknown>> = {
   'xai/grok-imagine-video/v1.5/reference-to-video': {

@@ -11,7 +11,7 @@
  * `compileOpenRouterPricing` maps OpenRouter's listing keys onto these
  * levers; the native providers build the rate map from their own docs.
  */
-import type { Expr, RateCard, Table } from './rate-card.schema.ts'
+import type { Expr, RateCard, Table } from './card.ts'
 
 /** Levers a tier threshold counts as prompt tokens. */
 const PROMPT_LEVERS = [

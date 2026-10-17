@@ -1,4 +1,4 @@
-import type { Expr, RateCard, RateCardExample } from '../rate-card.schema.ts'
+import type { Expr, RateCard, RateCardExample } from '../card.ts'
 
 /**
  * The nine fal Seedance endpoints, Pricing sections read 2026-09-13. Three

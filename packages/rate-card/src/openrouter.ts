@@ -14,7 +14,7 @@
  */
 import { compileTokenCard } from './token-card.ts'
 import type { TokenRateTier } from './token-card.ts'
-import type { RateCard } from './rate-card.schema.ts'
+import type { RateCard } from './card.ts'
 
 /** OpenRouter pricing key → the usage lever it prices. */
 const LEVERS: Record<string, string> = {

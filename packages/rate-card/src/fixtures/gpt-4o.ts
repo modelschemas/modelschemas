@@ -1,4 +1,4 @@
-import type { RateCard } from '../rate-card.schema.ts'
+import type { RateCard } from '../card.ts'
 
 /**
  * https://openrouter.ai/api/v1/models, `openai/gpt-4o` pricing, read

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { parseGlmCodingModels } from './glm-coding-docs.ts'
 import type { CodingDoc, CodingLocale } from './glm-coding-docs.ts'
+import { reasoningViolation } from './types.ts'
 
 function docs(locale: CodingLocale) {
   const host = locale === 'en' ? 'docs.z.ai' : 'docs.bigmodel.cn'
@@ -37,8 +38,9 @@ describe('native GLM Coding sources', () => {
         expect(row.reasoning).toEqual({
           mode: 'effort',
           mandatory: true,
-          efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+          efforts: ['low', 'high', 'max'],
         })
+        expect(reasoningViolation(row.reasoning)).toBeNull()
         expect(row.requestMap?.thinking).toEqual({
           on: { reasoning_effort: 'high' },
           off: null,
@@ -158,6 +160,7 @@ it('does not infer forced thinking merely from a remapped none value or claim a 
   }
   const rows = parseGlmCodingModels({ ...d, thinking }, 'en')
   expect(rows.every((row) => row.reasoning?.mandatory === null)).toBe(true)
+  expect(rows[0]?.reasoning?.efforts).toEqual(['low', 'high', 'max'])
   expect(rows.every((row) => row.exactCapabilities === undefined)).toBe(true)
   expect(rows[0]?.requestMap?.thinking?.levels?.minimal).toBe('low')
   expect(rows[0]?.requestMap?.thinking?.off).toBeNull()

@@ -13,15 +13,25 @@
  *
  * If `--tag` or `RELEASE_TAG` is set, it must be `vMAJOR.MINOR.PATCH`
  * (optional prerelease) and match every public package's version.
+ *
+ * A package with a `build` script is built first. A package whose
+ * `publishConfig` names entry points (rate-card: `dist/` JS and .d.ts
+ * instead of `src/` TypeScript) is packed from a staged copy with those
+ * fields lifted onto the manifest, because `bun pm pack` does not apply
+ * them. Every tarball must contain each file its manifest points at.
  */
 import {
+  cpSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { basename, join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 export type PublicPackage = {
@@ -143,23 +153,15 @@ export function assertPublishableManifest(
 }
 
 export function readPackedManifest(tarball: string): unknown {
-  const result = spawnSync('tar', ['-xOf', tarball, 'package/package.json'], {
-    encoding: 'utf8',
-  })
-  if (result.status !== 0) {
-    throw new Error(
-      `tar -xOf ${tarball} package/package.json failed: ${result.stderr}`,
-    )
-  }
-  return JSON.parse(result.stdout) as unknown
+  return JSON.parse(
+    run('tar', ['-xOf', tarball, 'package/package.json'], process.cwd()),
+  ) as unknown
 }
 
 export function packedEntryNames(tarball: string): Array<string> {
-  const result = spawnSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
-  if (result.status !== 0) {
-    throw new Error(`tar -tzf ${tarball} failed: ${result.stderr}`)
-  }
-  return result.stdout.split('\n').filter((line) => line.length > 0)
+  return run('tar', ['-tzf', tarball], process.cwd())
+    .split('\n')
+    .filter((line) => line.length > 0)
 }
 
 /** Absolute dest so `bun pm pack` (cwd = package dir) writes where we look. */
@@ -167,23 +169,112 @@ export function resolvePackDir(packDir: string): string {
   return resolve(packDir)
 }
 
+/** `publishConfig` keys that configure npm, not the packed manifest. */
+const NPM_CONFIG_KEYS = new Set(['access', 'registry', 'tag', 'provenance'])
+
+/**
+ * The manifest npm should see: `publishConfig` manifest fields (`main`,
+ * `types`, `exports`) lifted to the top level, as pnpm does on publish.
+ * `undefined` when there is nothing to lift.
+ */
+export function publishManifest(
+  manifest: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const config = manifest.publishConfig
+  if (!isRecord(config)) return undefined
+  const lifted = Object.entries(config).filter(
+    ([key]) => !NPM_CONFIG_KEYS.has(key),
+  )
+  if (lifted.length === 0) return undefined
+  return {
+    ...manifest,
+    ...Object.fromEntries(lifted),
+    publishConfig: Object.fromEntries(
+      Object.entries(config).filter(([key]) => NPM_CONFIG_KEYS.has(key)),
+    ),
+  }
+}
+
+/** Relative file paths a manifest's `main`, `types`, `bin` and `exports` name. */
+export function manifestEntryPoints(manifest: unknown): Array<string> {
+  if (!isRecord(manifest)) return []
+  const paths = new Set<string>()
+  const collect = (value: unknown) => {
+    if (typeof value === 'string') {
+      if (value.startsWith('./')) paths.add(value.slice(2))
+    } else if (isRecord(value)) {
+      Object.values(value).forEach(collect)
+    }
+  }
+  for (const key of ['main', 'types', 'module', 'bin', 'exports']) {
+    collect(manifest[key])
+  }
+  return [...paths].sort()
+}
+
+export function assertShipsEntryPoints(
+  manifest: unknown,
+  entries: Array<string>,
+  source: string,
+): void {
+  const missing = manifestEntryPoints(manifest).filter(
+    (path) => !entries.includes(`package/${path}`),
+  )
+  if (missing.length > 0) {
+    throw new Error(`${source}: does not ship ${missing.join(', ')}`)
+  }
+}
+
+export function run(command: string, args: Array<string>, cwd: string): string {
+  const result = spawnSync(command, args, { cwd, encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${args.join(' ')} in ${cwd} failed: ${result.stderr || result.stdout}`,
+    )
+  }
+  return result.stdout
+}
+
 export function packPackage(pkg: PublicPackage, packDir: string): string {
   const dest = resolvePackDir(packDir)
   mkdirSync(dest, { recursive: true })
-  const result = spawnSync(
-    'bun',
-    ['pm', 'pack', '--destination', dest, '--quiet'],
-    { cwd: pkg.dir, encoding: 'utf8' },
+  const manifest: unknown = JSON.parse(
+    readFileSync(join(pkg.dir, 'package.json'), 'utf8'),
   )
-  if (result.status !== 0) {
-    throw new Error(
-      `bun pm pack ${pkg.name} failed: ${result.stderr || result.stdout}`,
+  if (!isRecord(manifest)) {
+    throw new Error(`${pkg.dir}: package.json is not an object`)
+  }
+  if (
+    isRecord(manifest.scripts) &&
+    typeof manifest.scripts.build === 'string'
+  ) {
+    run('bun', ['run', 'build'], pkg.dir)
+  }
+  const published = publishManifest(manifest)
+  let cwd = pkg.dir
+  if (published) {
+    // Outside the workspace, so bun cannot rewrite `workspace:*` here;
+    // assertPublishableManifest refuses the tarball if one is left.
+    cwd = mkdtempSync(join(tmpdir(), 'npm-pack-'))
+    cpSync(pkg.dir, cwd, {
+      recursive: true,
+      filter: (path) => basename(path) !== 'node_modules',
+    })
+    writeFileSync(
+      join(cwd, 'package.json'),
+      `${JSON.stringify(published, null, 2)}\n`,
     )
+  }
+  let stdout: string
+  try {
+    stdout = run('bun', ['pm', 'pack', '--destination', dest, '--quiet'], cwd)
+  } finally {
+    if (cwd !== pkg.dir) rmSync(cwd, { recursive: true, force: true })
   }
   const tarball = join(dest, tarballFileName(pkg.name, pkg.version))
   if (!existsSync(tarball)) {
     throw new Error(
-      `expected ${tarball} after bun pm pack; stdout=${result.stdout.trim()}`,
+      `expected ${tarball} after bun pm pack; stdout=${stdout.trim()}`,
     )
   }
   return tarball
@@ -199,8 +290,10 @@ export function packAll(
   const packed: Array<{ pkg: PublicPackage; tarball: string }> = []
   for (const pkg of packages) {
     const tarball = packPackage(pkg, dest)
-    assertPublishableManifest(readPackedManifest(tarball), tarball)
+    const manifest = readPackedManifest(tarball)
+    assertPublishableManifest(manifest, tarball)
     const entries = packedEntryNames(tarball)
+    assertShipsEntryPoints(manifest, entries, tarball)
     const tests = entries.filter((entry) => entry.endsWith('.test.ts'))
     if (tests.length > 0) {
       throw new Error(`${tarball} includes test files: ${tests.join(', ')}`)

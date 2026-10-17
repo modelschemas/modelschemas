@@ -1,17 +1,20 @@
 {
   "name": "@modelschemas/rate-card",
-  "version": "0.1.0",
-  "description": "Model pricing as data: a closed-vocabulary JSONLogic rate-card schema, a refuse-not-coerce evaluator, and listing compilers (OpenRouter).",
+  "version": "0.2.0",
+  "description": "Model pricing as data: a closed-vocabulary JSONLogic rate-card schema, a refuse-not-coerce evaluator with no dependencies, and listing compilers (OpenRouter).",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./evaluator": "./src/evaluator.ts"
   },
   "files": [
-    "src",
-    "!src/**/*.test.ts",
-    "!src/fixtures"
+    "dist"
   ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+  },
   "license": "MIT",
   "homepage": "https://modelschemas.com",
   "repository": {
@@ -28,9 +31,26 @@
     "openrouter"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./evaluator": {
+        "types": "./dist/evaluator.d.ts",
+        "default": "./dist/evaluator.js"
+      }
+    }
   },
-  "dependencies": {
+  "peerDependencies": {
     "zod": "^4.3.6"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
   }
 }

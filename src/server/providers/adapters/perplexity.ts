@@ -76,8 +76,11 @@ function dedent(text: string): string {
  *   name, and its list is the row's `efforts`. A list that holds `none`
  *   or `off` says reasoning can be turned off; any other list leaves
  *   `mandatory` null.
- * - A card that ends "… reasoning model(s)." gives `reasoning` to every row
- *   of its tab, and only when it names as many models as the tab lists.
+ * - A card sentence that ends "… reasoning model(s)." or "… reasoning model
+ *   with a N-token context window[ and up to N output tokens]." gives
+ *   `reasoning` to every row of its tab, and only when it names as many
+ *   models as the tab lists. The card's other sentences are not read, so
+ *   one speaking of reasoning or thinking throws.
  *
  * Any other wording of either statement throws, as does an effort sentence
  * outside the tabs or a second one for the same model. So does tab prose
@@ -104,8 +107,15 @@ export function parsePerplexityModelsPage(markdown: string): {
 
     const card = /<Card title="[^"]*">\n([^]*?)\n<\/Card>/.exec(tab)?.[1] ?? ''
     if (/reasoning models?\b/i.test(card)) {
+      const parts = card.split(/(?<=\.)\s+/)
+      const said = parts.filter((s) => /reasoning models?\b/i.test(s))
+      const rest = parts.filter((s) => !said.includes(s))
       const subject =
-        /^(.+?) (?:—|is) .*\breasoning models?\.$/.exec(card)?.[1] ?? ''
+        said.length === 1 && !rest.some((s) => /reason|think/i.test(s))
+          ? (/^(.+?) (?:—|is) .*\breasoning models?(?: with an? [\d,]+-token context window(?: and up to [\d,]+ output tokens)?)?\.$/.exec(
+              said[0] ?? '',
+            )?.[1] ?? '')
+          : ''
       const names = subject.split(/, and |, | and /)
       if (
         subject === '' ||

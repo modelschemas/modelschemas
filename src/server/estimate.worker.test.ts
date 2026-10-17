@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 
-import { compileTokenCard } from '@modelschemas/rate-card'
+import { compileTokenCard, evaluateCard } from '@modelschemas/rate-card'
 
+import { ESTIMATE_CASES } from '../../packages/rate-card/src/fixtures/estimate-cases.ts'
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
@@ -44,6 +45,23 @@ beforeAll(async () => {
         [],
         GPT_4O.source,
         { currency: 'CNY' },
+      ),
+      firstSeenAt: NOW,
+      lastSeenAt: NOW,
+    },
+    {
+      id: 'est-openai-gpt-5',
+      providerId: 'est-openai',
+      rawId: 'gpt-5',
+      activity: 'chat',
+      pricing: compileTokenCard(
+        {
+          input_tokens: 1.25 / 1e6,
+          cache_read_tokens: 0.125 / 1e6,
+          output_tokens: 10 / 1e6,
+        },
+        [],
+        GPT_4O.source,
       ),
       firstSeenAt: NOW,
       lastSeenAt: NOW,
@@ -153,10 +171,81 @@ describe('estimateCost', () => {
     },
   )
 
+  it.each([
+    [
+      'Responses',
+      {
+        input_tokens: 12_000,
+        input_tokens_details: { cached_tokens: 4000 },
+        output_tokens: 800,
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 12_800,
+      },
+    ],
+    [
+      'Chat',
+      {
+        prompt_tokens: 12_000,
+        prompt_tokens_details: { cached_tokens: 4000, audio_tokens: 0 },
+        completion_tokens: 800,
+        total_tokens: 12_800,
+      },
+    ],
+  ])(
+    'prices native OpenAI %s usage with cached tokens counted once',
+    async (_, usage) => {
+      const outcome = await estimateCost(db, {
+        provider: 'est-openai',
+        model: 'gpt-5',
+        usage,
+      })
+      // 8000 × 1.25/M + 4000 × 0.125/M + 800 × 10/M, not 0.0235.
+      expect(outcome).toMatchObject({ ok: true, result: { defaulted: [] } })
+      if (outcome.ok) expect(outcome.result.amount).toBeCloseTo(0.0185, 10)
+    },
+  )
+
+  it.each([
+    ['claude-opus-5-5', 0.2],
+    ['claude-fable-5-1', 0.25],
+  ])('prices native Anthropic cache reads for %s', async (model, usd) => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-anthropic',
+      model,
+      usage: {
+        input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 1_000_000,
+        output_tokens: 0,
+        service_tier: 'standard',
+      },
+    })
+    expect(outcome).toMatchObject({ ok: true, result: { usd } })
+  })
+
+  it('returns 422 mixed_usage for native fields beside card levers', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-openai',
+      model: 'gpt-5',
+      usage: {
+        input_tokens: 12_000,
+        input_tokens_details: { cached_tokens: 4000 },
+        output_tokens: 800,
+        cache_read_tokens: 4000,
+      },
+    })
+    expect(outcome).toMatchObject({
+      ok: false,
+      status: 422,
+      code: 'mixed_usage',
+    })
+  })
+
   it('prices a stored token card', async () => {
     const outcome = await estimateCost(db, {
       provider: 'est-openai',
       model: 'gpt-4o',
+      request: { model: 'gpt-4o', messages: [], max_tokens: 400 },
       usage: { input_tokens: 1200, output_tokens: 400 },
     })
     expect(outcome).toEqual({
@@ -167,6 +256,8 @@ describe('estimateCost', () => {
         usd: 0.007,
         cardSource: GPT_4O.source,
         estimated: [],
+        defaulted: ['cache_read_tokens'],
+        ignored: ['model', 'messages', 'max_tokens'],
       },
     })
   })
@@ -185,8 +276,34 @@ describe('estimateCost', () => {
         currency: 'CNY',
         cardSource: GPT_4O.source,
         estimated: [],
+        defaulted: [],
+        ignored: [],
       },
     })
+  })
+
+  it('returns 422 unknown_usage_key for a usage key the card does not read', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-anthropic',
+      model: 'claude-opus-5-5',
+      usage: {
+        input_tokens: 12_000,
+        output_tokens: 800,
+        cache_hits: 4000,
+      },
+    })
+    expect(outcome).toMatchObject({
+      ok: false,
+      status: 422,
+      code: 'unknown_usage_key',
+    })
+    if (!outcome.ok) {
+      expect(outcome.message).toContain(
+        'usage.cache_hits: not read by this card; it reads',
+      )
+      expect(outcome.message).toContain('usage.cache_read_tokens')
+      expect(outcome.message).toContain('usage.input_tokens')
+    }
   })
 
   it('returns 404 unknown_model when the model is missing', async () => {
@@ -267,4 +384,61 @@ describe('estimateCost', () => {
     })
     expect(draft).toMatchObject({ ok: false, code: 'unbound_input' })
   })
+})
+
+// The shared cases (packages/rate-card/src/fixtures/estimate-cases.ts) run
+// the route's path: JSON body → parseEstimateBody → estimateCost → JSON.
+// Each must match evaluateCard on amount, currency, and estimated.
+describe('POST /v1/estimate conformance with evaluateCard', () => {
+  beforeAll(async () => {
+    await db.insert(providers).values({
+      id: 'conformance',
+      displayName: 'Conformance',
+      specSourceUrl: 'https://example.com/c.json',
+    })
+    await db.insert(models).values(
+      ESTIMATE_CASES.map((c, i) => ({
+        id: `conformance-case-${i}`,
+        providerId: 'conformance',
+        rawId: `case-${i}`,
+        activity: 'chat' as const,
+        pricing: c.card,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+      })),
+    )
+  })
+
+  it.each(ESTIMATE_CASES.map((c, i) => [c.name, c, i] as const))(
+    '%s',
+    async (_, c, i) => {
+      const body = parseEstimateBody(
+        JSON.parse(
+          JSON.stringify({
+            provider: 'conformance',
+            model: `case-${i}`,
+            request: c.request,
+            usage: c.usage,
+          }),
+        ),
+      )
+      if (!body) throw new Error('body did not parse')
+      const outcome = await estimateCost(db, body)
+      if ('error' in c.expected) {
+        expect(outcome).toMatchObject({
+          ok: false,
+          status: 422,
+          code: c.expected.apiError,
+        })
+        return
+      }
+      if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`)
+      const { amount, currency, estimated } = JSON.parse(
+        JSON.stringify(outcome.result),
+      ) as typeof outcome.result
+      expect({ amount, currency, estimated }).toEqual(
+        evaluateCard(c.card, { request: c.request, usage: c.usage }),
+      )
+    },
+  )
 })

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_MAX_COMPLETION_TOKENS,
-  MINIMAX_PRICING_PAGE,
+  MINIMAX_PRICING_OVERVIEW_PAGE,
   MINIMAX_SDK_PAGE,
 } from '../fixtures/minimax-docs.ts'
 import {
@@ -57,7 +57,7 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_MODELS_URL]: FIXTURE,
   [MINIMAX_SDK_URL]: MINIMAX_SDK_PAGE,
-  [MINIMAX_PRICING_URL]: MINIMAX_PRICING_PAGE,
+  [MINIMAX_PRICING_URL]: MINIMAX_PRICING_OVERVIEW_PAGE,
   [MINIMAX_CHAT_SPEC_URL]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',

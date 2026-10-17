@@ -301,7 +301,7 @@ describe('azure reasoning feature matrix', () => {
       maxCompletionTokens: null,
     })
     expect(matrix.get('o3-mini')).toMatchObject({
-      modalities: { input: ['text'], output: [] },
+      modalities: { input: ['text'], output: null },
       chatCompletions: true,
       responses: null,
     })
@@ -650,7 +650,7 @@ describe('azure GPT-4 section prose', () => {
     expect(rows.get('gpt-4')).toMatchObject({
       chatCompletions: true,
       responses: false,
-      modalities: { input: ['text', 'image'], output: [] },
+      modalities: { input: ['text', 'image'], output: null },
     })
     expect(rows.get('gpt-4o')).toMatchObject({
       version: '2024-11-20',

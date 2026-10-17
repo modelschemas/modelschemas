@@ -211,7 +211,7 @@ Reasoning.effort supports: minimal, low, medium, and high.
       parseReasoningEffort(
         'GPT-5 Pro defaults to (and only supports) `reasoning.effort: high`.',
       ),
-    ).toEqual({ mode: 'effort', mandatory: null, efforts: ['high'] })
+    ).toEqual({ mode: 'effort', mandatory: true, efforts: ['high'] })
     expect(parseReasoningEffort('No effort prose.')).toBeNull()
   })
 

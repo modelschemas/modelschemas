@@ -8,13 +8,19 @@
  *   bun run gap:report --check --providers grok,mistral --target 0.9
  *
  * `docs/source-silent/<provider>.md` lists facts a provider does not publish; those
- * are left out of that provider's score and listed under `silent`.
+ * are left out of that provider's score and listed under `silent`. `flags`
+ * lists rows whose stored shape is wrong; flags do not change the score.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { FACT_KEYS, buildReport, parseLedger } from '../src/lib/completeness.ts'
+import {
+  FACT_KEYS,
+  FLAG_KEYS,
+  buildReport,
+  parseLedger,
+} from '../src/lib/completeness.ts'
 import type { GapReport, Ledger, ModelRow } from '../src/lib/completeness.ts'
 
 // The scoring itself is shared with `GET /v1/status`.
@@ -58,6 +64,7 @@ export function formatTable(report: GapReport): string {
     'noAct',
     'm.dev',
     ...FACT_KEYS,
+    ...FLAG_KEYS,
   ]
   const body = report.providers.map((p) => [
     p.provider,
@@ -71,6 +78,7 @@ export function formatTable(report: GapReport): string {
         ? 'silent'
         : `${p.facts[key].have}/${p.facts[key].need}${p.modelSilent?.[key] ? ` (${p.modelSilent[key]} model-silent)` : ''}`,
     ),
+    ...FLAG_KEYS.map((key) => String(p.flags[key].length)),
   ])
   const width = (i: number) =>
     Math.max(...[header, ...body].map((line) => line[i]?.length ?? 0))

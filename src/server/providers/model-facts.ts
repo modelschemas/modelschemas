@@ -168,7 +168,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v30: DashScope China priced rows no longer carry absent.pricing 'cleared'.
 // A v29 entry would keep dropping every CNY card for six hours.
 // v31: the Gemini pricing entry gained `named`; a v30 entry has none.
-const DOCS_CACHE_VERSION = 'v31'
+// v32: OpenAI "only supports" a non-none effort is mandatory true. A v31
+// model-page entry would keep gpt-5-pro at mandatory null for six hours.
+const DOCS_CACHE_VERSION = 'v32'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

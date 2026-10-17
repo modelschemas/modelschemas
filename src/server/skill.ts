@@ -50,12 +50,18 @@ availability and schema questions.
    \`modelschemas validate anthropic/v1/messages payload.json\` (exit 2 when
    invalid).
 5. **Estimate cost.** \`POST /v1/estimate {"provider","model","request"?,"usage"?}\`
-   → \`{amount, currency, usd?, cardSource, estimated}\`. \`amount\` is in
-   \`currency\` (ISO 4217, mostly USD; never converted) and \`usd\` repeats it
-   only for a USD card. \`estimated\` names any omitted
+   → \`{amount, currency, usd?, cardSource, estimated, defaulted, ignored}\`.
+   \`amount\` is in \`currency\` (ISO 4217, mostly USD; never converted) and
+   \`usd\` repeats it only for a USD card. \`estimated\` names any omitted
    usage the card filled by the source's published estimate method (empty:
-   billed price). Missing levers → 422; no card → 404
-   \`unknown_pricing\`. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.
+   billed price). \`defaulted\` names omitted inputs that took the card's
+   default; \`ignored\` names request keys the card does not read. Missing
+   levers → 422; a usage key the card does not read → 422
+   \`unknown_usage_key\`; no card → 404 \`unknown_pricing\`. \`usage\` is
+   the provider's own usage object (OpenAI Responses or Chat, Anthropic,
+   Gemini \`usageMetadata\`) or card levers whose counts do not overlap
+   (\`input_tokens\` excludes \`cache_read_tokens\`), never both → 422
+   \`mixed_usage\`. "Estimate usage" below maps each native field. CLI: \`modelschemas estimate openai gpt-4o usage.json\`.
 6. **Stay current.** Poll \`GET /v1/changes?since=<epoch>\` (cursor-paginated)
    or subscribe: \`POST /v1/subscriptions\` (authed) delivers HMAC-signed
    webhooks for model/schema changes.

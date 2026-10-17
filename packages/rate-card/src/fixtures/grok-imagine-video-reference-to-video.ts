@@ -1,4 +1,4 @@
-import type { RateCard } from '../rate-card.schema.ts'
+import type { RateCard } from '../card.ts'
 
 /**
  * https://fal.ai/models/xai/grok-imagine-video/v1.5/reference-to-video/llms.txt
