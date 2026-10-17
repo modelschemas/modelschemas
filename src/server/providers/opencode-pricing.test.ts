@@ -96,16 +96,68 @@ describe('parseOpenCodePricing', () => {
   })
 
   it.each([
-    ['an unreadable cell', PAGE.replace('$4.00 ', 'TBD   ')],
-    ['a changed header', PAGE.replace('Cached Write', 'Cache Write ')],
-    ['a row naming no id', PAGE.replace('| Opus      ', '| Opus 9    ')],
-    ['a tier with no pair', PAGE.replace(/\| GPT \(> 272K.*\n/, '')],
-    ['no Pricing section', PAGE.replace('## Pricing', '## Prices')],
+    [
+      'an unreadable cell',
+      PAGE.replace('$4.00 ', 'TBD   '),
+      /unreadable price TBD/,
+    ],
+    [
+      'a changed header',
+      PAGE.replace('Cached Write', 'Cache Write '),
+      /Pricing header changed/,
+    ],
+    [
+      'a row naming no id',
+      PAGE.replace('| Opus      ', '| Opus 9    '),
+      /names no model id/,
+    ],
+    [
+      'a tier with no pair',
+      PAGE.replace(/\| GPT \(> 272K.*\n/, ''),
+      /unreadable context tiers/,
+    ],
+    [
+      'mismatched tier thresholds',
+      PAGE.replace('≤ 272K', '≤ 200K'),
+      /unreadable context tiers/,
+    ],
+    [
+      'a tier that drops a lever',
+      PAGE.replace(
+        '| $10.00          | $45.00          | $1.00 ',
+        '| $10.00          | $45.00          | -     ',
+      ),
+      /changes the levers/,
+    ],
+    [
+      'a duplicate price row',
+      PAGE.replace(/^\| Opus {2}.*\$4\.00.*$/m, (row) => `${row}\n${row}`),
+      /duplicate price row/,
+    ],
+    [
+      'no output price',
+      PAGE.replace(
+        '| $4.00           | $20.00 ',
+        '| $4.00           | -      ',
+      ),
+      /omits input or output/,
+    ],
+    [
+      'a price table that ends early',
+      PAGE.replace('\n| GPT (≤', '\n\n| GPT (≤'),
+      /has an endpoint but no price row/,
+    ],
+    [
+      'no Pricing section',
+      PAGE.replace('## Pricing', '## Prices'),
+      /has no Pricing/,
+    ],
     [
       'an empty table',
       PAGE.replace(/\| (Pickle|Jev|Mistral|Opus|GPT) .*\n/g, ''),
+      /unreadable/,
     ],
-  ])('throws on %s', (_, text) => {
-    expect(() => parseOpenCodePricing(doc(text))).toThrow(/opencode/)
+  ])('throws on %s', (_, text, message) => {
+    expect(() => parseOpenCodePricing(doc(text))).toThrow(message)
   })
 })

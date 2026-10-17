@@ -27,7 +27,7 @@ export interface OpenCodePricingDoc {
   extractedAt: string
 }
 
-/** USD per million tokens, as `Record<lever, rate>`. Throws on a shape a card must not invent. */
+/** Page rates, USD per 1M tokens, keyed by rate-card lever (`input_tokens`, …). */
 export type OpenCodeCost = Record<string, number>
 
 function sameKeys(a: object, b: object): boolean {
@@ -36,8 +36,9 @@ function sameKeys(a: object, b: object): boolean {
 }
 
 /**
- * Per-token rates (USD per 1M on the page) with optional context tiers.
- * All-zero quotes are a sourced free card.
+ * Page rates (USD per 1M) with an optional context tier → card. Throws on
+ * missing input or output, a tier with other levers, or a zero base with a
+ * tier. An all-zero base with no tier is a sourced free card.
  */
 export function compileOpenCodeCost(
   base: OpenCodeCost,
@@ -191,6 +192,13 @@ export function parseOpenCodePricing(
       ? [{ minPromptTokens: row.from!, rates: row.over }]
       : []
     cards.set(id, compileOpenCodeCost(row.base, tiers, id, source))
+  }
+  // The Endpoints table names the model set. A price table that ends early
+  // (a blank line, a split table) would otherwise clear the rows after it.
+  for (const name of idByName.keys()) {
+    if (!rows.has(name)) {
+      throw new Error(`opencode: ${name} has an endpoint but no price row`)
+    }
   }
   assertParsed(cards, 'opencode-pricing')
   return cards

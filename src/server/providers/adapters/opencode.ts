@@ -1,5 +1,5 @@
-import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
 /** OpenCode Zen: live ids, routes from OpenCode's models.dev catalog, prices from its console models page. */
+import { openCodeRouteSpec, classifyOpenCodeRoute } from '../opencode-routes.ts'
 import {
   loadOpenCodeCatalog,
   OPENCODE_CATALOG_URL,
