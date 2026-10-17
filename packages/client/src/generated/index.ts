@@ -2,6 +2,7 @@
 
 export {
   estimateCost,
+  exportCatalog,
   extractFalPricing,
   getActivitySchemas,
   getModel,
@@ -33,6 +34,11 @@ export type {
   EstimateCostResponses,
   EstimateRequest,
   EstimateResult,
+  ExportCatalogData,
+  ExportCatalogError,
+  ExportCatalogErrors,
+  ExportCatalogResponse,
+  ExportCatalogResponses,
   ExtractFalPricingData,
   ExtractFalPricingError,
   ExtractFalPricingErrors,

@@ -41,6 +41,7 @@ import { Route as V1SubscriptionsIdRouteImport } from './routes/v1/subscriptions
 import { Route as V1OpenapiProviderRouteImport } from './routes/v1/openapi/$provider'
 import { Route as V1AgentsRegisterKeyRouteImport } from './routes/v1/agents/register-key'
 import { Route as V1AgentsMeRouteImport } from './routes/v1/agents/me'
+import { Route as V1AdminExportRouteImport } from './routes/v1/admin/export'
 import { Route as ModelsProviderModelIdRouteImport } from './routes/models/$provider.$modelId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as DotwellKnownMcpServerCardDotjsonRouteImport } from './routes/[.]well-known/mcp/server-card[.]json'
@@ -218,6 +219,11 @@ const V1AgentsMeRoute = V1AgentsMeRouteImport.update({
   path: '/v1/agents/me',
   getParentRoute: () => rootRouteImport,
 } as any)
+const V1AdminExportRoute = V1AdminExportRouteImport.update({
+  id: '/v1/admin/export',
+  path: '/v1/admin/export',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ModelsProviderModelIdRoute = ModelsProviderModelIdRouteImport.update({
   id: '/models/$provider/$modelId',
   path: '/models/$provider/$modelId',
@@ -320,6 +326,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
+  '/v1/admin/export': typeof V1AdminExportRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
   '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
@@ -367,6 +374,7 @@ export interface FileRoutesByTo {
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
+  '/v1/admin/export': typeof V1AdminExportRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
   '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
@@ -415,6 +423,7 @@ export interface FileRoutesById {
   '/.well-known/mcp/server-card.json': typeof DotwellKnownMcpServerCardDotjsonRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/models/$provider/$modelId': typeof ModelsProviderModelIdRoute
+  '/v1/admin/export': typeof V1AdminExportRoute
   '/v1/agents/me': typeof V1AgentsMeRoute
   '/v1/agents/register-key': typeof V1AgentsRegisterKeyRoute
   '/v1/openapi/$provider': typeof V1OpenapiProviderRoute
@@ -464,6 +473,7 @@ export interface FileRouteTypes {
     | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
     | '/models/$provider/$modelId'
+    | '/v1/admin/export'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
     | '/v1/openapi/$provider'
@@ -511,6 +521,7 @@ export interface FileRouteTypes {
     | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
     | '/models/$provider/$modelId'
+    | '/v1/admin/export'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
     | '/v1/openapi/$provider'
@@ -558,6 +569,7 @@ export interface FileRouteTypes {
     | '/.well-known/mcp/server-card.json'
     | '/api/auth/$'
     | '/models/$provider/$modelId'
+    | '/v1/admin/export'
     | '/v1/agents/me'
     | '/v1/agents/register-key'
     | '/v1/openapi/$provider'
@@ -606,6 +618,7 @@ export interface RootRouteChildren {
   DotwellKnownMcpServerCardDotjsonRoute: typeof DotwellKnownMcpServerCardDotjsonRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ModelsProviderModelIdRoute: typeof ModelsProviderModelIdRoute
+  V1AdminExportRoute: typeof V1AdminExportRoute
   V1AgentsMeRoute: typeof V1AgentsMeRoute
   V1AgentsRegisterKeyRoute: typeof V1AgentsRegisterKeyRoute
   V1OpenapiProviderRoute: typeof V1OpenapiProviderRoute
@@ -851,6 +864,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof V1AgentsMeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/v1/admin/export': {
+      id: '/v1/admin/export'
+      path: '/v1/admin/export'
+      fullPath: '/v1/admin/export'
+      preLoaderRoute: typeof V1AdminExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/models/$provider/$modelId': {
       id: '/models/$provider/$modelId'
       path: '/models/$provider/$modelId'
@@ -977,6 +997,7 @@ const rootRouteChildren: RootRouteChildren = {
   DotwellKnownMcpServerCardDotjsonRoute: DotwellKnownMcpServerCardDotjsonRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ModelsProviderModelIdRoute: ModelsProviderModelIdRoute,
+  V1AdminExportRoute: V1AdminExportRoute,
   V1AgentsMeRoute: V1AgentsMeRoute,
   V1AgentsRegisterKeyRoute: V1AgentsRegisterKeyRoute,
   V1OpenapiProviderRoute: V1OpenapiProviderRoute,

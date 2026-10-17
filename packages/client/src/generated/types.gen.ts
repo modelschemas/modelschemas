@@ -1022,3 +1022,31 @@ export type ExtractFalPricingResponses = {
 
 export type ExtractFalPricingResponse =
   ExtractFalPricingResponses[keyof ExtractFalPricingResponses]
+
+export type ExportCatalogData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/v1/admin/export'
+}
+
+export type ExportCatalogErrors = {
+  /**
+   * Error
+   */
+  401: Error
+}
+
+export type ExportCatalogError = ExportCatalogErrors[keyof ExportCatalogErrors]
+
+export type ExportCatalogResponses = {
+  /**
+   * Catalog export.
+   */
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type ExportCatalogResponse =
+  ExportCatalogResponses[keyof ExportCatalogResponses]
