@@ -1325,7 +1325,7 @@ describe('pollProviderModels', () => {
     })
   })
 
-  it('keeps an OpenCode card read from its own models.dev catalog', async () => {
+  it('drops an OpenCode models.dev card: Zen prices come from its console page (#314)', async () => {
     const id = 'opencode'
     const deps = await freshDeps(id)
     const fixture = FIXTURE_CARDS['openai/gpt-4o']!
@@ -1350,11 +1350,7 @@ describe('pollProviderModels', () => {
     const row = await deps.db.query.models.findFirst({
       where: eq(models.id, modelDbId(id, 'opus')),
     })
-    expect(row?.pricing).toMatchObject({ source: { url: MODELS_DEV_API_URL } })
-    expect(
-      (row?.factSources as { pricing?: { sourceUrl?: string } }).pricing
-        ?.sourceUrl,
-    ).toBe(MODELS_DEV_API_URL)
+    expect(row?.pricing).toBeNull()
   })
 })
 
