@@ -207,7 +207,10 @@ export const provider: ProviderConfig = {
               : null
           const thinking = hasEffort
             ? {
-                on: { reasoning: { effort: control.effortDefault } },
+                on:
+                  control.effortField === 'reasoning'
+                    ? { reasoning: { effort: control.effortDefault } }
+                    : { reasoning_effort: control.effortDefault },
                 off: null,
                 levels,
               }
