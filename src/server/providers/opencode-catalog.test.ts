@@ -246,6 +246,62 @@ it('uses the provider package when the model states none, and keeps an explicit 
   expect(model?.pricing).toMatchObject({ price: 0 })
 })
 
+it('routes each Zen model on its own protocol api, not the provider default', () => {
+  const data = {
+    opencode: {
+      npm: '@ai-sdk/openai-compatible',
+      api: 'https://opencode.ai/inference/openai/v1',
+      models: {
+        open: {
+          id: 'open',
+          provider: { api: 'https://opencode.ai/inference/openai/v1' },
+        },
+        gpt: {
+          id: 'gpt',
+          provider: {
+            npm: '@ai-sdk/openai',
+            api: 'https://opencode.ai/inference/openai/v1',
+          },
+        },
+        claude: {
+          id: 'claude',
+          provider: {
+            npm: '@ai-sdk/anthropic',
+            api: 'https://opencode.ai/inference/anthropic/v1',
+          },
+        },
+        gemini: {
+          id: 'gemini',
+          provider: {
+            npm: '@ai-sdk/google',
+            api: 'https://opencode.ai/inference/google/v1beta',
+          },
+        },
+      },
+    },
+  }
+  const byId = parseOpenCodeCatalog(data, 'opencode', 'h')
+  expect(
+    Object.fromEntries(
+      Object.entries(byId).map(([id, model]) => [id, model.schemaEndpointId]),
+    ),
+  ).toEqual({
+    open: 'inference/openai/v1/chat/completions',
+    gpt: 'inference/openai/v1/responses',
+    claude: 'inference/anthropic/v1/messages',
+    gemini: 'inference/google/v1beta/models/gemini',
+  })
+})
+
+it.each([
+  { provider: { api: 'https://example.com/inference/anthropic/v1' } },
+  { provider: { api: 42 } },
+])('rejects a model api that is not an opencode.ai path %j', (fields) => {
+  expect(() => parseOpenCodeCatalog(payload(fields), 'opencode', 'h')).toThrow(
+    /opencode: /,
+  )
+})
+
 it('leaves an unmapped package without a route', () => {
   const model = parseOpenCodeCatalog(
     payload({
