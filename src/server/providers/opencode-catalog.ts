@@ -211,11 +211,16 @@ export function compileOpenCodeCost(
 }
 
 /** Zen's base path under opencode.ai, from a provider or model `api`. */
-function openCodeApiPath(api: string): string {
-  const url = new URL(api)
-  const path = url.pathname.replace(/^\//, '').replace(/\/$/, '')
-  if (url.origin !== 'https://opencode.ai' || path.length === 0) {
-    throw new Error('opencode: models.dev api is not an opencode.ai path')
+function openCodeApiPath(api: string, field: string): string {
+  let url: URL | null = null
+  try {
+    url = new URL(api)
+  } catch {
+    // Reported below with the field it came from.
+  }
+  const path = url?.pathname.replace(/^\//, '').replace(/\/$/, '') ?? ''
+  if (url?.origin !== 'https://opencode.ai' || path.length === 0) {
+    throw new Error(`opencode: models.dev ${field} is not an opencode.ai path`)
   }
   return path
 }
@@ -262,7 +267,7 @@ export function parseOpenCodeCatalog(
     if (typeof block.api !== 'string') {
       throw new Error('opencode: models.dev api is missing')
     }
-    apiPath = openCodeApiPath(block.api)
+    apiPath = openCodeApiPath(block.api, 'api')
   }
   const out: Record<string, ModelInfo> = {}
   for (const [id, row] of Object.entries(models)) {
@@ -296,6 +301,7 @@ export function parseOpenCodeCatalog(
     }
     let modelNpm: string | null = null
     let modelApiPath = apiPath
+    let modelApi = false
     if (row.provider !== undefined) {
       if (!record(row.provider)) {
         throw new Error(`${provider}: unreadable provider for ${id}`)
@@ -313,7 +319,11 @@ export function parseOpenCodeCatalog(
         if (typeof row.provider.api !== 'string') {
           throw new Error(`opencode: unreadable provider.api for ${id}`)
         }
-        modelApiPath = openCodeApiPath(row.provider.api)
+        modelApiPath = openCodeApiPath(
+          row.provider.api,
+          `provider.api for ${id}`,
+        )
+        modelApi = true
       }
     }
     const npm = modelNpm ?? block.npm
@@ -325,10 +335,13 @@ export function parseOpenCodeCatalog(
         derivation: 'listing',
         sourceUrl: OPENCODE_CATALOG_URL,
         sourceHash: hash,
-        // The route is the package's path, not an endpoint stated on the model.
-        path: modelNpm
-          ? `${provider}.models.${id}.provider.npm`
-          : `${provider}.npm`,
+        // The route is the package's path under the model's (or provider's)
+        // api, not an endpoint stated on the model.
+        path: modelApi
+          ? `${provider}.models.${id}.provider`
+          : modelNpm
+            ? `${provider}.models.${id}.provider.npm`
+            : `${provider}.npm`,
       }
     } else if (PACKAGE_SUFFIX[npm]) {
       model.activity = 'chat'

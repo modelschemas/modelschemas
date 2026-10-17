@@ -86,6 +86,8 @@ it.each([
   'inference/openai/v1/messages',
   'inference/anthropic/v1/chat/completions',
   'inference/openai/v1/models/gemini',
+  'inference/systemone/v1/systemone',
+  'inference/go/openai/v1/chat/completions',
 ])('rejects %s, a path its protocol does not serve', async (id) => {
   globalThis.fetch = vi.fn(
     async () => new Response('export function POST(input: APIEvent) {}'),

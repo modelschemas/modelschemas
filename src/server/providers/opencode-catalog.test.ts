@@ -291,14 +291,18 @@ it('routes each Zen model on its own protocol api, not the provider default', ()
     claude: 'inference/anthropic/v1/messages',
     gemini: 'inference/google/v1beta/models/gemini',
   })
+  expect(byId.open?.factSources?.schemaEndpointId?.path).toBe(
+    'opencode.models.open.provider',
+  )
 })
 
 it.each([
   { provider: { api: 'https://example.com/inference/anthropic/v1' } },
   { provider: { api: 42 } },
+  { provider: { api: '' } },
 ])('rejects a model api that is not an opencode.ai path %j', (fields) => {
   expect(() => parseOpenCodeCatalog(payload(fields), 'opencode', 'h')).toThrow(
-    /opencode: /,
+    /opencode: .*synthetic/,
   )
 })
 
@@ -317,7 +321,7 @@ it('leaves an unmapped package without a route', () => {
   expect(model?.pricing).toBeTruthy()
 })
 
-it('does not compile a Go price from cost', () => {
+it('keeps Go on its v1 ids and does not compile a Go price from cost', () => {
   const data = {
     'opencode-go': {
       npm: '@ai-sdk/openai-compatible',
@@ -325,7 +329,10 @@ it('does not compile a Go price from cost', () => {
       models: {
         synthetic: {
           id: 'synthetic',
-          provider: { npm: '@ai-sdk/openai' },
+          provider: {
+            npm: '@ai-sdk/openai',
+            api: 'https://opencode.ai/inference/go/openai/v1',
+          },
           cost: { input: 1, output: 2, cache_read: 0.1 },
         },
       },

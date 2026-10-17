@@ -32,6 +32,8 @@ function sourceFile(schemaEndpointId: string, go: boolean): string {
       throw new Error(`opencode: ${schemaEndpointId} is no ${prefix} route`)
     local = `v1/${tail}`
   }
+  if (!local.startsWith('v1/'))
+    throw new Error(`opencode: ${schemaEndpointId} names no native route`)
   const file = /^v1\/models\/.+/.test(local) ? 'v1/models/[model]' : local
   return `${go ? 'go/' : ''}${file}`
 }
