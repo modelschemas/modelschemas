@@ -210,7 +210,22 @@ export function compileOpenCodeCost(
   return card
 }
 
-/** Path under the host. Zen follows models.dev `api`; Go stays on the documented `/zen/go/v1` ids. */
+/** Zen's base path under opencode.ai, from a provider or model `api`. */
+function openCodeApiPath(api: string, field: string): string {
+  let url: URL | null = null
+  try {
+    url = new URL(api)
+  } catch {
+    // Reported below with the field it came from.
+  }
+  const path = url?.pathname.replace(/^\//, '').replace(/\/$/, '') ?? ''
+  if (url?.origin !== 'https://opencode.ai' || path.length === 0) {
+    throw new Error(`opencode: models.dev ${field} is not an opencode.ai path`)
+  }
+  return path
+}
+
+/** Path under the host. Zen follows the model's models.dev `api`, else the provider's; Go stays on the documented `/zen/go/v1` ids. */
 function schemaEndpointId(
   provider: OpenCodeProvider,
   apiPath: string | null,
@@ -252,11 +267,7 @@ export function parseOpenCodeCatalog(
     if (typeof block.api !== 'string') {
       throw new Error('opencode: models.dev api is missing')
     }
-    const url = new URL(block.api)
-    apiPath = url.pathname.replace(/^\//, '').replace(/\/$/, '')
-    if (url.origin !== 'https://opencode.ai' || apiPath.length === 0) {
-      throw new Error('opencode: models.dev api is not an opencode.ai path')
-    }
+    apiPath = openCodeApiPath(block.api, 'api')
   }
   const out: Record<string, ModelInfo> = {}
   for (const [id, row] of Object.entries(models)) {
@@ -289,6 +300,8 @@ export function parseOpenCodeCatalog(
       model.displayName = row.name
     }
     let modelNpm: string | null = null
+    let modelApiPath = apiPath
+    let modelApi = false
     if (row.provider !== undefined) {
       if (!record(row.provider)) {
         throw new Error(`${provider}: unreadable provider for ${id}`)
@@ -302,9 +315,19 @@ export function parseOpenCodeCatalog(
         }
         modelNpm = row.provider.npm
       }
+      if (provider === 'opencode' && row.provider.api !== undefined) {
+        if (typeof row.provider.api !== 'string') {
+          throw new Error(`opencode: unreadable provider.api for ${id}`)
+        }
+        modelApiPath = openCodeApiPath(
+          row.provider.api,
+          `provider.api for ${id}`,
+        )
+        modelApi = true
+      }
     }
     const npm = modelNpm ?? block.npm
-    const endpoint = schemaEndpointId(provider, apiPath, npm, id)
+    const endpoint = schemaEndpointId(provider, modelApiPath, npm, id)
     if (endpoint) {
       model.schemaEndpointId = endpoint
       model.activity = 'chat'
@@ -312,10 +335,13 @@ export function parseOpenCodeCatalog(
         derivation: 'listing',
         sourceUrl: OPENCODE_CATALOG_URL,
         sourceHash: hash,
-        // The route is the package's path, not an endpoint stated on the model.
-        path: modelNpm
-          ? `${provider}.models.${id}.provider.npm`
-          : `${provider}.npm`,
+        // The route is the package's path under the model's (or provider's)
+        // api, not an endpoint stated on the model.
+        path: modelApi
+          ? `${provider}.models.${id}.provider`
+          : modelNpm
+            ? `${provider}.models.${id}.provider.npm`
+            : `${provider}.npm`,
       }
     } else if (PACKAGE_SUFFIX[npm]) {
       model.activity = 'chat'

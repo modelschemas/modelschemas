@@ -12,9 +12,28 @@ interface RouteRow {
   activity?: string | null
 }
 
-/** Public path → handler file under `routes/zen`. Zen ids are `inference/v1/...`; the source tree is still `v1`. */
+/**
+ * Protocol paths the console's inference proxy (`lib/inference-proxy.ts`)
+ * maps the `routes/zen/v1` handlers onto, and the handler each one serves.
+ */
+const PROTOCOL_ROUTES: Record<string, RegExp> = {
+  'openai/v1/': /^(?:chat\/completions|responses)$/,
+  'anthropic/v1/': /^messages$/,
+  'google/v1beta/': /^models\/[^/]+$/,
+}
+
+/** Public path → handler file under `routes/zen`. Zen ids are `inference/[protocol/]v1/...`; the source tree is still `v1`. */
 function sourceFile(schemaEndpointId: string, go: boolean): string {
-  const local = schemaEndpointId.replace(/^\//, '').replace(/^inference\//, '')
+  let local = schemaEndpointId.replace(/^\//, '').replace(/^inference\//, '')
+  const prefix = Object.keys(PROTOCOL_ROUTES).find((p) => local.startsWith(p))
+  if (prefix) {
+    const tail = local.slice(prefix.length)
+    if (!PROTOCOL_ROUTES[prefix]?.test(tail))
+      throw new Error(`opencode: ${schemaEndpointId} is no ${prefix} route`)
+    local = `v1/${tail}`
+  }
+  if (!local.startsWith('v1/'))
+    throw new Error(`opencode: ${schemaEndpointId} names no native route`)
   const file = /^v1\/models\/.+/.test(local) ? 'v1/models/[model]' : local
   return `${go ? 'go/' : ''}${file}`
 }
