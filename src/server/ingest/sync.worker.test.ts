@@ -326,6 +326,52 @@ describe('syncProvider', () => {
     expect(providerRow?.lastSyncedAt).toBeNull()
   })
 
+  it('restores active after a by-design skip and leaves a missing-key skip degraded', async () => {
+    const id = 'stub-skip-recovers'
+    const deps = await freshDeps(id)
+    const syncedAt = 1_700_000_000
+    await deps.db
+      .update(providers)
+      .set({ status: 'degraded', lastSyncedAt: syncedAt })
+      .where(eq(providers.id, id))
+    const skip = (skipped: string): ProviderConfig => ({
+      ...stubProvider(id, fixtureSpec(false)),
+      fetchSpec: () =>
+        Promise.resolve({
+          specs: [],
+          sources: [STUB_SOURCE],
+          outputStrategy: 'post-200' as const,
+          skipped,
+        }),
+    })
+
+    const recovered = await syncProvider(
+      deps,
+      skip('stub: docs publish no request schema — skipped'),
+    )
+    expect(recovered.skipped).toContain('no request schema')
+    const restored = await deps.db.query.providers.findFirst({
+      where: eq(providers.id, id),
+    })
+    expect(restored?.status).toBe('active')
+    expect(restored?.lastSyncedAt).toBe(syncedAt)
+
+    await deps.db
+      .update(providers)
+      .set({ status: 'degraded' })
+      .where(eq(providers.id, id))
+    const missed = await syncProvider(
+      deps,
+      skip('stub: STUB_KEY not set — skipped'),
+    )
+    expect(missed.skipped).toContain('STUB_KEY')
+    const stillDegraded = await deps.db.query.providers.findFirst({
+      where: eq(providers.id, id),
+    })
+    expect(stillDegraded?.status).toBe('degraded')
+    expect(stillDegraded?.lastSyncedAt).toBe(syncedAt)
+  })
+
   it('drops schema versions sourced from models.dev on a skipped sync', async () => {
     const id = 'stub-models-dev-schema'
     const deps = await freshDeps(id)
