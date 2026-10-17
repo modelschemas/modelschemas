@@ -11,18 +11,29 @@ import {
   openrouterGenerationEndpointId,
   openrouterModelActivity,
 } from './model-meta.ts'
-import { cachedDocs } from './model-facts.ts'
 import {
+  cachedDocs,
+  docsReport,
+  docsRun,
+  tryDocs,
+  unavailable,
+} from './model-facts.ts'
+import {
+  OPENROUTER_ADAPTIVE_GUIDES,
+  openRouterAdaptiveGuide,
   openRouterGatewayEfforts,
   openRouterGatewayToggle,
   openRouterGatewayEffortWire,
+  statesAdaptive,
   OPENROUTER_REASONING_URL,
 } from './openrouter-reasoning.ts'
 import { openRouterReasoning } from './reasoning-config.ts'
+import { blank } from './request-map.ts'
 import { namespacedUpstreamIdentity } from './upstream-model.ts'
 import { fetchJson, fetchText, sha256Text } from './types.ts'
 import type {
   ListModelsResult,
+  ModelReasoning,
   OpenApiDocument,
   OpenApiOperation,
   ProviderConfig,
@@ -322,7 +333,7 @@ async function listModels(
       Array.isArray(m.reasoning.supported_efforts) &&
       m.reasoning.supported_efforts.includes('high'),
   )
-  const gateway =
+  const gatewayLoad =
     needsToggle ||
     needsEffortWire ||
     body.data.some(
@@ -330,7 +341,7 @@ async function listModels(
         m.reasoning?.supported_efforts === null &&
         typeof m.reasoning.mandatory === 'boolean',
     )
-      ? await cachedDocs(
+      ? cachedDocs(
           kv,
           `${OPENROUTER_REASONING_URL}#${needsToggle ? 'gateway-efforts-and-toggle-wire-v1' : 'gateway-efforts-wire-v1'}`,
           async () => {
@@ -346,12 +357,31 @@ async function listModels(
           },
         )
       : null
-  const ownThinking = (m: NonNullable<OpenRouterModelList['data']>[number]) => {
-    const reason = openRouterReasoning(
-      m,
-      gateway?.efforts,
-      gateway?.toggle !== undefined,
-    )
+  const run = docsRun()
+  const listed = new Set(body.data.map((m) => openRouterAdaptiveGuide(m.id)))
+  const adaptiveLoad = Promise.all(
+    OPENROUTER_ADAPTIVE_GUIDES.filter((guide) => listed.has(guide)).map(
+      async (guide) =>
+        [
+          guide.url,
+          await tryDocs(run, guide.url, (cached) =>
+            cached(kv, `${guide.url}#adaptive-v1`, async () => {
+              const text = await fetchText(guide.url, {
+                signal: AbortSignal.timeout(30_000),
+              })
+              if (!statesAdaptive(text, guide))
+                throw new Error(
+                  'openrouter: adaptive thinking statement missing',
+                )
+              return { hash: await sha256Text(text) }
+            }),
+          ),
+        ] as const,
+    ),
+  )
+  const [gateway, guides] = await Promise.all([gatewayLoad, adaptiveLoad])
+  const adaptive = new Map(guides)
+  const ownThinking = (reason: ModelReasoning | null) => {
     if (reason?.mode === 'toggle') return gateway?.toggle ?? null
     const high = reason?.efforts?.find((e) => e === 'high')
     if (reason?.mode === 'effort' && high && gateway?.effortWire)
@@ -364,80 +394,99 @@ async function listModels(
       }
     return null
   }
+  // The guide states the mode; the listing states mandatory and efforts.
+  // A guided row keeps its stored reasoning (`unavailable`) when its guide
+  // failed to load or its listing no longer reads as per-model efforts.
+  const adaptiveReasoning = (
+    rawId: string,
+    reasoning: ModelReasoning | null,
+  ) => {
+    const guide = openRouterAdaptiveGuide(rawId)
+    if (!guide) return null
+    const doc = adaptive.get(guide.url)
+    if (!doc || reasoning?.mode !== 'effort') return 'unavailable' as const
+    return {
+      reasoning: { ...reasoning, mode: 'adaptive' as const },
+      source: {
+        derivation: 'docs-derived' as const,
+        sourceUrl: guide.url,
+        sourceHash: doc.hash,
+        path: 'adaptive thinking statement; listing reasoning.mandatory and supported_efforts',
+      },
+    }
+  }
   return {
-    models: body.data.map((m) => ({
-      rawId: m.id,
-      displayName: m.name ?? null,
-      activity: openrouterModelActivity(m.architecture?.output_modalities),
-      releasedAt: m.created ?? null,
-      contextWindow: m.context_length ?? null,
-      maxOutput: m.top_provider?.max_completion_tokens ?? null,
-      pricing: m.pricing,
-      modalities: m.architecture
-        ? {
-            input: m.architecture.input_modalities,
-            output: m.architecture.output_modalities,
-          }
-        : undefined,
-      capabilities: openrouterCapabilities(m),
-      requestMap: null,
-      reasoning: openRouterReasoning(
+    docsFailures: docsReport(run),
+    models: body.data.map((m) => {
+      const listedReasoning = openRouterReasoning(
         m,
         gateway?.efforts,
         gateway?.toggle !== undefined,
-      ),
-      ...(ownThinking(m)
-        ? {
-            requestMap: {
-              thinking: ownThinking(m),
-              maxTokensField: null,
-              developerRole: null,
-              replayReasoningContent: null,
-              store: null,
-              strictTools: null,
-              sessionAffinity: null,
-              cacheControl: null,
-              toolStream: null,
-              reasoningEffort: null,
-            },
-          }
-        : {}),
-      ...(gateway &&
-      (m.reasoning?.supported_efforts === null || ownThinking(m) !== null) &&
-      typeof m.reasoning?.mandatory === 'boolean'
-        ? {
-            factSources: {
-              ...(ownThinking(m)
-                ? {
-                    requestMapFields: {
-                      thinking: {
-                        derivation: 'docs-derived' as const,
-                        sourceUrl: OPENROUTER_REASONING_URL,
-                        sourceHash: gateway.hash,
-                        path: 'native accepted effort values or nonmandatory toggle; normative universal normalized reasoning effort/enabled fields',
+      )
+      const adapted = adaptiveReasoning(m.id, listedReasoning)
+      const thinking = ownThinking(listedReasoning)
+      const gatewayDoc =
+        gateway &&
+        (m.reasoning?.supported_efforts === null || thinking !== null) &&
+        typeof m.reasoning?.mandatory === 'boolean'
+          ? gateway
+          : null
+      const reasoningSource =
+        adapted && adapted !== 'unavailable'
+          ? adapted.source
+          : gatewayDoc && {
+              derivation: 'docs-derived' as const,
+              sourceUrl: OPENROUTER_REASONING_URL,
+              sourceHash: gatewayDoc.hash,
+              path:
+                m.reasoning?.supported_efforts === null
+                  ? 'supported_efforts:null; normative gateway effort bullets; listing mandatory'
+                  : listedReasoning?.mode === 'toggle'
+                    ? 'native mandatory:false; Messages API normalized reasoning.enabled accepted on every reasoning model; explicit disables prose'
+                    : 'native per-model accepted efforts and mandatory metadata; universal normalized reasoning.effort field',
+            }
+      return {
+        rawId: m.id,
+        displayName: m.name ?? null,
+        activity: openrouterModelActivity(m.architecture?.output_modalities),
+        releasedAt: m.created ?? null,
+        contextWindow: m.context_length ?? null,
+        maxOutput: m.top_provider?.max_completion_tokens ?? null,
+        pricing: m.pricing,
+        modalities: m.architecture
+          ? {
+              input: m.architecture.input_modalities,
+              output: m.architecture.output_modalities,
+            }
+          : undefined,
+        capabilities: openrouterCapabilities(m),
+        requestMap: thinking ? blank({ thinking }) : null,
+        reasoning:
+          adapted && adapted !== 'unavailable'
+            ? adapted.reasoning
+            : listedReasoning,
+        ...(adapted === 'unavailable' ? unavailable('reasoning') : {}),
+        ...(reasoningSource
+          ? {
+              factSources: {
+                ...(gatewayDoc && thinking
+                  ? {
+                      requestMapFields: {
+                        thinking: {
+                          derivation: 'docs-derived' as const,
+                          sourceUrl: OPENROUTER_REASONING_URL,
+                          sourceHash: gatewayDoc.hash,
+                          path: 'native accepted effort values or nonmandatory toggle; normative universal normalized reasoning effort/enabled fields',
+                        },
                       },
-                    },
-                  }
-                : {}),
-              reasoning: {
-                derivation: 'docs-derived' as const,
-                sourceUrl: OPENROUTER_REASONING_URL,
-                sourceHash: gateway.hash,
-                path:
-                  m.reasoning.supported_efforts === null
-                    ? 'supported_efforts:null; normative gateway effort bullets; listing mandatory'
-                    : openRouterReasoning(
-                          m,
-                          gateway.efforts,
-                          gateway.toggle !== undefined,
-                        )?.mode === 'toggle'
-                      ? 'native mandatory:false; Messages API normalized reasoning.enabled accepted on every reasoning model; explicit disables prose'
-                      : 'native per-model accepted efforts and mandatory metadata; universal normalized reasoning.effort field',
+                    }
+                  : {}),
+                reasoning: reasoningSource,
               },
-            },
-          }
-        : {}),
-    })),
+            }
+          : {}),
+      }
+    }),
   }
 }
 

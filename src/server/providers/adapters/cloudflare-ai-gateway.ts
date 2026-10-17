@@ -402,6 +402,8 @@ function collectEffortFields(
   return [...byWire.values()]
 }
 
+const ADAPTIVE_DECLARATIONS = ['Yes', 'Always on', 'No']
+
 function thinkingTypeIsAdaptive(node: unknown): boolean | null {
   if (!isRecord(node) || !isRecord(node.properties)) return null
   const typeNode = node.properties.type
@@ -413,8 +415,14 @@ function thinkingTypeIsAdaptive(node: unknown): boolean | null {
   return false
 }
 
-/** True when every `thinking.type` this schema publishes is exactly `adaptive`. */
-function adaptiveThinking(schema: unknown, rawId: string): boolean {
+/**
+ * `adaptive` when every `thinking.type` this schema publishes is exactly
+ * `adaptive`, `other` when another type is published, null when none is.
+ */
+function thinkingTypeKind(
+  schema: unknown,
+  rawId: string,
+): 'adaptive' | 'other' | null {
   const kinds: Array<'adaptive' | 'other'> = []
   const visit = (node: unknown, key: string | null, depth: number) => {
     if (!isRecord(node)) return
@@ -436,7 +444,8 @@ function adaptiveThinking(schema: unknown, rawId: string): boolean {
     }
   }
   visit(schema, null, 0)
-  return kinds.includes('adaptive') && !kinds.includes('other')
+  if (kinds.includes('other')) return 'other'
+  return kinds.length > 0 ? 'adaptive' : null
 }
 
 function effortReasoning(field: EffortField): ModelReasoning {
@@ -451,8 +460,15 @@ function parsedReasoning(
   metadata: Record<string, unknown>,
   schema: unknown,
   rawId: string,
-  schemaShared: boolean,
-  nativeReasoningTag: boolean,
+  {
+    schemaShared,
+    nativeReasoningTag,
+    anthropicMessages,
+  }: {
+    schemaShared: boolean
+    nativeReasoningTag: boolean
+    anthropicMessages: boolean
+  },
 ): ParsedReasoning | null {
   const stated = metaString(metadata, 'Reasoning', rawId)
   if (stated === 'No') return null
@@ -476,16 +492,30 @@ function parsedReasoning(
       path: 'metadata.Reasoning',
     }
   }
-  // Identical schemas do not negate an exact catalog's unqualified control.
-  const adaptive = adaptiveThinking(schema, rawId)
+  const thinkingType = thinkingTypeKind(schema, rawId)
   const adaptiveDeclaration = metaString(metadata, 'Adaptive Thinking', rawId)
-  const ownedAdaptive =
-    adaptive &&
-    (adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on')
+  if (
+    adaptiveDeclaration !== null &&
+    !ADAPTIVE_DECLARATIONS.includes(adaptiveDeclaration)
+  )
+    throw fail(rawId, `unknown Adaptive Thinking value ${adaptiveDeclaration}`)
+  const declaredAdaptive =
+    adaptiveDeclaration === 'Yes' || adaptiveDeclaration === 'Always on'
+  // On an `anthropic-messages` file, the file's own Adaptive Thinking row
+  // declares adaptive `thinking.type` when the schema publishes neither
+  // `thinking` nor an effort field.
+  const declaredOnly =
+    thinkingType === null &&
+    anthropicMessages &&
+    declaredAdaptive &&
+    fields.length === 0
+  const adaptive = thinkingType === 'adaptive' || declaredOnly
+  const ownedAdaptive = adaptive && declaredAdaptive
   const ownedResponses =
     nativeReasoningTag &&
     metaString(metadata, 'API', rawId) === 'Responses' &&
     fields.length === 1
+  // Identical schemas do not negate an exact catalog's unqualified control.
   if (
     schemaShared &&
     !(stated === 'Yes' && fields.length === 1) &&
@@ -494,8 +524,7 @@ function parsedReasoning(
   )
     return null
   if (adaptive) {
-    const alwaysOn =
-      metaString(metadata, 'Adaptive Thinking', rawId) === 'Always on'
+    const alwaysOn = adaptiveDeclaration === 'Always on'
     const effort = fields.filter(
       (field) => field.wire === 'output_config.effort',
     )
@@ -508,7 +537,9 @@ function parsedReasoning(
       return {
         reasoning: { mode: 'adaptive', mandatory: alwaysOn ? true : null },
         wire: null,
-        path: 'schema.input.properties.thinking.type',
+        path: declaredOnly
+          ? 'metadata.Adaptive Thinking'
+          : 'schema.input.properties.thinking.type',
       }
     }
     return {
@@ -728,13 +759,15 @@ export function parseCatalogModel(
   const schema = schemaInput(model, rawId)
   const schemaShared = options?.schemaShared === true
   const modalities = inputModalities(metadata, rawId, activity)
-  const parsed = parsedReasoning(
-    metadata,
-    schema,
-    rawId,
+  const parsed = parsedReasoning(metadata, schema, rawId, {
     schemaShared,
-    tags.includes('Reasoning'),
-  )
+    nativeReasoningTag: tags.includes('Reasoning'),
+    anthropicMessages: stringList(
+      model.request_formats,
+      rawId,
+      'request_formats',
+    ).includes('anthropic-messages'),
+  })
   const requestMap = gatewayRequestMap(
     activity,
     maxTokenField(schema, rawId),

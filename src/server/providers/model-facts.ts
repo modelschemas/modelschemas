@@ -117,6 +117,11 @@ export function markdownSection(text: string, heading: string): string {
   return end < 0 ? rest : rest.slice(0, end)
 }
 
+/** Markdown with its fenced code blocks removed: examples state nothing. */
+export function stripFences(markdown: string): string {
+  return markdown.replace(/```[\s\S]*?```/g, '')
+}
+
 const DOCS_TTL_SECONDS = 6 * 60 * 60
 
 /**

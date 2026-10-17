@@ -168,7 +168,14 @@ ones).
   `models.serverTools` (provider tool type ids) come from docs: OpenAI and
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
   Models API + thinking table; Anthropic tools are a hand-written table
-  in `anthropic-features.ts` (re-verify on each Claude launch).
+  in `anthropic-features.ts` (re-verify on each Claude launch). Gateway
+  Claude rows get `adaptive` from the gateway's own docs, never through
+  sameAs: OpenRouter from its Claude migration guides
+  (`OPENROUTER_ADAPTIVE_GUIDES`, a hand-written id table; add a row when a
+  guide ships; only rows the listing reads as `effort`, else the row is
+  `unavailable`), Cloudflare AI Gateway from the schema's `thinking.type`,
+  or failing that a file's `Adaptive Thinking` row on an
+  `anthropic-messages` request format.
 - **Stated facts** (`settleStatedFacts` in `poll-models.ts`; contract in
   the `FactAbsence` comment in `providers/types.ts`): `models.capabilities`
   is a yes/no flag map (`src/lib/capabilities.ts`), a boolean map or null

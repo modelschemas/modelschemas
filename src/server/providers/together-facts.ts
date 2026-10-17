@@ -14,6 +14,7 @@ import {
   assertParsed,
   markdownSection,
   markdownTableRows,
+  stripFences,
 } from './model-facts.ts'
 import { TOGETHER_MODELS_DOCS_URL } from './together-pricing.ts'
 import { fetchText, sha256Text } from './types.ts'
@@ -67,10 +68,6 @@ export interface TogetherReasoningHit {
 function section(markdown: string, heading: string): string {
   const text = markdown.startsWith('## ') ? `\n${markdown}` : markdown
   return markdownSection(text, heading)
-}
-
-function stripFences(markdown: string): string {
-  return markdown.replace(/```[\s\S]*?```/g, '')
 }
 
 function clean(cell: string): string {

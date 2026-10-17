@@ -138,6 +138,99 @@ describe('cloudflare-ai-gateway', () => {
     expect(parseCatalogModel(FABLE, SOURCE).capabilities).toEqual(['reasoning'])
   })
 
+  it('reads adaptive thinking from the Adaptive Thinking row of a Messages API file', () => {
+    const messages = { ...FABLE, request_formats: ['anthropic-messages'] }
+    const parsed = parseCatalogModel(messages, SOURCE)
+    expect(parsed.reasoning).toEqual({ mode: 'adaptive', mandatory: null })
+    expect(parsed.requestMap?.thinking).toBeNull()
+    expect(parsed.factSources?.capabilities?.reasoning).toMatchObject({
+      path: 'metadata.Adaptive Thinking',
+    })
+    expect(
+      parseCatalogModel(
+        { ...messages, metadata: { 'Adaptive Thinking': 'Always on' } },
+        SOURCE,
+      ).reasoning,
+    ).toEqual({ mode: 'adaptive', mandatory: true })
+    expect(
+      parseCatalogModel(
+        { ...messages, metadata: { 'Extended Thinking': 'Yes' } },
+        SOURCE,
+      ).reasoning,
+    ).toBeUndefined()
+    expect(
+      parseCatalogModel(
+        { ...FABLE, request_formats: ['openai-chat-completions'] },
+        SOURCE,
+      ).reasoning,
+    ).toBeUndefined()
+    expect(
+      parseCatalogModel(
+        {
+          ...messages,
+          schema: {
+            input: {
+              type: 'object',
+              properties: {
+                ...FABLE.schema.input.properties,
+                thinking: {
+                  type: 'object',
+                  properties: { type: { const: 'enabled' } },
+                },
+              },
+            },
+          },
+        },
+        SOURCE,
+      ).reasoning,
+    ).toBeUndefined()
+  })
+
+  // The row stands in for `thinking.type` only when the schema has no
+  // control at all; an effort field without `thinking` stays an effort row.
+  it('reads the declared Adaptive Thinking row only when the schema publishes no control', () => {
+    const messages = {
+      ...FABLE,
+      request_formats: ['anthropic-messages'],
+      schema: {
+        input: {
+          type: 'object',
+          properties: {
+            ...FABLE.schema.input.properties,
+            output_config: {
+              properties: { effort: { enum: ['low', 'high'] } },
+            },
+          },
+        },
+      },
+    }
+    expect(parseCatalogModel(messages, SOURCE).reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'high'],
+    })
+    expect(
+      parseCatalogModel(
+        { ...FABLE, request_formats: ['anthropic-messages'] },
+        SOURCE,
+        { schemaShared: true },
+      ).reasoning,
+    ).toEqual({ mode: 'adaptive', mandatory: null })
+  })
+
+  it('refuses an Adaptive Thinking value it cannot read', () => {
+    expect(() =>
+      parseCatalogModel(
+        {
+          ...FABLE,
+          request_formats: ['anthropic-messages'],
+          metadata: { 'Adaptive Thinking': 'Enabled' },
+        },
+        SOURCE,
+      ),
+    ).toThrow(/unknown Adaptive Thinking value Enabled/)
+  })
+
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
     expect(
       parseCatalogModel(
