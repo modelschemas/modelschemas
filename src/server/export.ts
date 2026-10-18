@@ -3,9 +3,10 @@
  * public git mirror. Fields that change on every poll are left out and
  * object keys are sorted, so a mirror commit holds only real changes.
  *
- * The full catalog is tens of MB, more than a Worker can hold as one
- * object. The body is streamed one provider at a time; a failure part way
- * errors the stream, so the client gets no valid JSON and commits nothing.
+ * The full catalog is tens of MB; built as one string, plus its encoded
+ * copy, it risks the 128 MB isolate limit. The body is streamed one
+ * provider at a time; a failure part way errors the stream, so the client
+ * gets no valid JSON and commits nothing.
  */
 import { and, desc, eq, isNull } from 'drizzle-orm'
 
@@ -29,9 +30,9 @@ class RawJson {
 }
 
 /**
- * JSON with every object's keys sorted. A schema is the exception: its
- * stored text is fixed by its content hash, and its key order is the
- * provider's, as `GET /v1/schemas` serves it.
+ * JSON with every object's keys sorted. A schema is the exception: it is
+ * written as its stored text. That text is fixed for a content hash (the
+ * hash is over sorted keys), so its key order is the one first stored.
  */
 export function stableJson(value: unknown): string {
   if (value instanceof RawJson) return value.text
@@ -46,7 +47,9 @@ export function stableJson(value: unknown): string {
       .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
     return `{${members.join(',')}}`
   }
-  return JSON.stringify(value)
+  const text = JSON.stringify(value) as string | undefined
+  if (text === undefined) throw new Error(`export: ${typeof value} is not JSON`)
+  return text
 }
 
 /** `lastSeenAt` moves on every poll; `_links` are API navigation. */
@@ -85,7 +88,7 @@ async function exportProviderSchemas(db: Db, providerId: string) {
       ),
     )
     .where(eq(endpoints.providerId, providerId))
-    .orderBy(endpoints.id)
+    .orderBy(endpoints.id, schemaVersions.kind, schemaVersions.id)
 
   const byEndpoint = new Map<string, SchemaEntry>()
   for (const { endpoint, version } of rows) {
@@ -104,6 +107,17 @@ async function exportProviderSchemas(db: Db, providerId: string) {
       byEndpoint.set(endpoint.id, entry)
     }
     if (version) {
+      // An interrupted sync can leave two current rows; picking one would
+      // make the mirror flip between them, so the export refuses.
+      if (entry[version.kind]) {
+        throw new Error(
+          `${endpoint.id} has more than one current ${version.kind} version`,
+        )
+      }
+      // Written raw, so a broken text would break the body with no clue.
+      if (!/^\s*\{[\s\S]*\}\s*$/.test(version.schema)) {
+        throw new Error(`schema version ${version.id} is not a JSON object`)
+      }
       entry[version.kind] = {
         contentHash: version.contentHash,
         specRevision: version.specRevision,
@@ -117,12 +131,17 @@ async function exportProviderSchemas(db: Db, providerId: string) {
 
 /** Each provider's rows as JSON, comma-joined across providers. */
 async function* perProvider(
+  section: string,
   providerIds: Array<string>,
   load: (providerId: string) => Promise<Array<unknown>>,
 ): AsyncGenerator<string> {
   let separator = ''
   for (const providerId of providerIds) {
-    const rows = await load(providerId)
+    const rows = await load(providerId).catch((error: unknown) => {
+      throw new Error(`${section} of ${providerId}: ${errorMessage(error)}`, {
+        cause: error,
+      })
+    })
     if (rows.length === 0) continue
     yield separator + rows.map(stableJson).join(',')
     separator = ','
@@ -131,10 +150,12 @@ async function* perProvider(
 
 /**
  * The body in order: `latestChange`, then `models`, `providers`, and
- * `schemas`, each ordered by provider id and then by its own id.
+ * `schemas`. `providers` is ordered by id; `models` and `schemas` by
+ * provider id, then their own id.
  */
 async function* exportChunks(db: Db): AsyncGenerator<string> {
-  // Read first: every change it covers is already in the rows below.
+  // Read first: every change it covers is already in the rows below. The
+  // export is not one snapshot, so those rows may also hold later changes.
   const [latestChange] = await db
     .select({ id: changes.id, createdAt: changes.createdAt })
     .from(changes)
@@ -149,7 +170,7 @@ async function* exportChunks(db: Db): AsyncGenerator<string> {
   const providerIds = providerRows.map((provider) => provider.id)
 
   yield `{"latestChange":${stableJson(latestChange ?? null)},"models":[`
-  yield* perProvider(providerIds, async (provider) => {
+  yield* perProvider('models', providerIds, async (provider) => {
     const catalog = await listModelsCatalog(db, {
       provider,
       includeDeprecated: true,
@@ -171,7 +192,7 @@ async function* exportChunks(db: Db): AsyncGenerator<string> {
   }))
   yield `],"providers":${stableJson(exportedProviders)},"schemas":[`
 
-  yield* perProvider(providerIds, (provider) =>
+  yield* perProvider('schemas', providerIds, (provider) =>
     exportProviderSchemas(db, provider),
   )
   yield ']}'
@@ -189,7 +210,11 @@ export function exportCatalogStream(db: Db): ReadableStream<Uint8Array> {
         else controller.enqueue(encoder.encode(next.value))
       } catch (error) {
         console.error(
-          JSON.stringify({ job: 'catalog-export', error: errorMessage(error) }),
+          JSON.stringify({
+            job: 'catalog-export',
+            error: errorMessage(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          }),
         )
         controller.error(error)
       }

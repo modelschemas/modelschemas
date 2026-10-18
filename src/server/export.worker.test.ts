@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
+import { eq, like } from 'drizzle-orm'
 
+import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
 import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
 import {
@@ -39,6 +41,18 @@ beforeAll(async () => {
       specSourceUrl: 'https://example.com/a.json',
       lastPolledAt: NOW,
     },
+    // Sorts first with no rows at all; `exp-also` sits between alpha and
+    // beta with a model but no endpoint. Both test the comma joins.
+    {
+      id: 'exp-0none',
+      displayName: 'Export None',
+      specSourceUrl: 'https://example.com/0.json',
+    },
+    {
+      id: 'exp-also',
+      displayName: 'Export Also',
+      specSourceUrl: 'https://example.com/s.json',
+    },
   ])
   await db
     .insert(providerModelNamespaces)
@@ -50,6 +64,15 @@ beforeAll(async () => {
       rawId: 'chat-1',
       activity: 'chat',
       capabilities: { vision: true, tools: false },
+      pricing: GPT_4O,
+      firstSeenAt: NOW - 50,
+      lastSeenAt: NOW,
+    },
+    {
+      id: 'exp-also-chat',
+      providerId: 'exp-also',
+      rawId: 'chat',
+      activity: 'chat',
       firstSeenAt: NOW - 50,
       lastSeenAt: NOW,
     },
@@ -86,7 +109,12 @@ beforeAll(async () => {
       kind: 'input',
       contentHash: 'c'.repeat(64),
       schema: INPUT_TEXT,
+      specRevision: 'rev-7',
+      sourceUrl: 'https://example.com/a.json',
+      sourceHash: 'e'.repeat(64),
+      extractorVersion: 'x1',
       derivation: 'upstream-spec',
+      verifiedAt: '2026-10-01',
       createdAt: NOW - 20,
     },
     {
@@ -148,10 +176,20 @@ describe('exportCatalogStream', () => {
     expect(body.latestChange).toEqual({ createdAt: NOW - 10, id: 'chg-b' })
     expect(body.models.map((m) => m.id)).toEqual([
       'exp-alpha-chat',
+      'exp-also-chat',
       'exp-beta-old',
     ])
-    expect(body.models[1]?.deprecatedAt).toBe(NOW - 10)
-    expect(body.providers).toEqual([
+    expect(body.models[0]?.pricing).toEqual(GPT_4O)
+    expect(body.models[2]?.deprecatedAt).toBe(NOW - 10)
+    expect(body.providers.map((p) => p.id)).toEqual([
+      'exp-0none',
+      'exp-alpha',
+      'exp-also',
+      'exp-beta',
+    ])
+    expect(
+      body.providers.filter((p) => p.id === 'exp-alpha' || p.id === 'exp-beta'),
+    ).toEqual([
       {
         authEnvVar: null,
         displayName: 'Export Alpha',
@@ -185,7 +223,28 @@ describe('exportCatalogStream', () => {
     expect(Object.keys(model)).toEqual(Object.keys(model).sort())
     expect(model.capabilities).toEqual({ tools: false, vision: true })
     expect(text).toContain('"capabilities":{"tools":false,"vision":true}')
-    expect(await exportText()).toBe(text)
+  })
+
+  it('gives the same bytes after a poll that changed nothing else', async () => {
+    const before = await exportText()
+    await db
+      .update(models)
+      .set({ lastSeenAt: NOW + 900 })
+      .where(like(models.providerId, 'exp-%'))
+    await db
+      .update(providers)
+      .set({ lastPolledAt: NOW + 900, lastSyncedAt: NOW + 900 })
+      .where(like(providers.id, 'exp-%'))
+    expect(await exportText()).toBe(before)
+  })
+
+  it('streams one chunk per provider section, not one buffer', async () => {
+    const reader = exportCatalogStream(db).getReader()
+    let chunks = 0
+    while (!(await reader.read()).done) chunks++
+    // Opening, 3 model providers, the providers block, 2 schema providers,
+    // close. Empty providers send nothing.
+    expect(chunks).toBe(8)
   })
 
   it('serves current schema versions with their stored text', async () => {
@@ -203,7 +262,15 @@ describe('exportCatalogStream', () => {
       path: '/v1/images',
       input: {
         contentHash: 'c'.repeat(64),
-        provenance: { derivation: 'upstream-spec', fetchedAt: NOW - 20 },
+        specRevision: 'rev-7',
+        provenance: {
+          sourceUrl: 'https://example.com/a.json',
+          sourceHash: 'e'.repeat(64),
+          fetchedAt: NOW - 20,
+          extractorVersion: 'x1',
+          derivation: 'upstream-spec',
+          verifiedAt: '2026-10-01',
+        },
       },
       output: { contentHash: 'd'.repeat(64) },
     })
@@ -213,10 +280,85 @@ describe('exportCatalogStream', () => {
   })
 })
 
+describe('exportCatalogStream failures', () => {
+  /** Reads until the stream errors; returns what arrived and the error. */
+  async function readUntilError() {
+    const reader = exportCatalogStream(db).getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    try {
+      for (;;) {
+        const next = await reader.read()
+        if (next.done) return { text, error: null }
+        text += decoder.decode(next.value)
+      }
+    } catch (error) {
+      return { text, error: error as Error }
+    }
+  }
+
+  async function withVersion(
+    row: typeof schemaVersions.$inferInsert,
+    run: () => Promise<void>,
+  ) {
+    await db.insert(schemaVersions).values(row)
+    try {
+      await run()
+    } finally {
+      await db.delete(schemaVersions).where(eq(schemaVersions.id, row.id))
+    }
+  }
+
+  it('errors part way on two current versions, leaving invalid JSON', async () => {
+    await withVersion(
+      {
+        id: 'exp-alpha/v1/images:output:dup',
+        endpointId: 'exp-alpha/v1/images',
+        kind: 'output',
+        contentHash: 'f'.repeat(64),
+        schema: '{}',
+        createdAt: NOW - 5,
+      },
+      async () => {
+        const { text, error } = await readUntilError()
+        expect(error?.message).toMatch(
+          /schemas of exp-alpha: .*more than one current output version/,
+        )
+        // Models went out before the failure; the body still does not parse.
+        expect(text).toContain('"exp-alpha-chat"')
+        expect(() => JSON.parse(text) as unknown).toThrow()
+      },
+    )
+  })
+
+  it('errors on stored schema text that is not a JSON object', async () => {
+    await withVersion(
+      {
+        id: 'exp-beta/v1/empty:input:bad',
+        endpointId: 'exp-beta/v1/empty',
+        kind: 'input',
+        contentHash: '0'.repeat(64),
+        schema: '',
+        createdAt: NOW - 5,
+      },
+      async () => {
+        const { error } = await readUntilError()
+        expect(error?.message).toMatch(
+          /exp-beta\/v1\/empty:input:bad is not a JSON object/,
+        )
+      },
+    )
+  })
+})
+
 describe('stableJson', () => {
   it('sorts nested keys, keeps array order, and drops undefined', () => {
     expect(stableJson({ b: [3, { y: 1, x: undefined }], a: null })).toBe(
       '{"a":null,"b":[3,{"y":1}]}',
     )
+  })
+
+  it('refuses a value JSON cannot hold instead of writing `undefined`', () => {
+    expect(() => stableJson({ a: () => 1 })).toThrow(/function is not JSON/)
   })
 })

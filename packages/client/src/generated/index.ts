@@ -39,6 +39,7 @@ export type {
   ExportCatalogErrors,
   ExportCatalogResponse,
   ExportCatalogResponses,
+  ExportSchemaVersion,
   ExtractFalPricingData,
   ExtractFalPricingError,
   ExtractFalPricingErrors,

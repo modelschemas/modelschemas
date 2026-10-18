@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
 
 import { getDb } from '../db/index.ts'
+import { openApiDocument } from '../server/openapi.ts'
 import { createAuth } from './auth.ts'
 
 const TEST_SECRET = 'vitest-only-better-auth-secret-0123456789'
@@ -54,9 +55,22 @@ describe('agent-auth provider surface', () => {
     ]) {
       expect(names).toContain(expected)
     }
-    expect(names).not.toContain('syncProvider')
-    expect(names).not.toContain('extractFalPricing')
-    expect(names).not.toContain('exportCatalog')
+    // Every admin op in the spec, so a renamed operationId cannot leak.
+    const adminOps = Object.entries(openApiDocument.paths)
+      .filter(([path]) => path.startsWith('/v1/admin/'))
+      .flatMap(([, ops]) =>
+        Object.values(ops as Record<string, { operationId: string }>).map(
+          (op) => op.operationId,
+        ),
+      )
+    expect(adminOps).toEqual(
+      expect.arrayContaining([
+        'syncProvider',
+        'extractFalPricing',
+        'exportCatalog',
+      ]),
+    )
+    for (const op of adminOps) expect(names).not.toContain(op)
 
     // Read/validate capabilities are approval-free for autonomous agents.
     const getSchema = listed.capabilities.find((c) => c.name === 'getSchema')

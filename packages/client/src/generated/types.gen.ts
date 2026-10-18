@@ -201,6 +201,25 @@ export type ChangesPage = {
   }
 }
 
+/**
+ * A current schema version, or null when there is none.
+ */
+export type ExportSchemaVersion = {
+  contentHash: string
+  specRevision: string | null
+  provenance: {
+    sourceUrl?: string | null
+    sourceHash?: string | null
+    fetchedAt?: number
+    extractorVersion?: string | null
+    derivation?: string | null
+    verifiedAt?: string | null
+  }
+  schema: {
+    [key: string]: unknown
+  }
+} | null
+
 export type ValidateRequest = {
   provider: string
   endpointId: string
@@ -1041,10 +1060,33 @@ export type ExportCatalogError = ExportCatalogErrors[keyof ExportCatalogErrors]
 
 export type ExportCatalogResponses = {
   /**
-   * Catalog export.
+   * Catalog export. `models[]` items are the Model shape without `lastSeenAt` and `_links`.
    */
   200: {
-    [key: string]: unknown
+    latestChange: {
+      id: string
+      createdAt: number
+    } | null
+    models: Array<Model>
+    providers: Array<{
+      id: string
+      displayName: string
+      specSourceUrl?: string | null
+      modelsEndpoint?: string | null
+      authEnvVar?: string | null
+      status: string
+      modelNamespaces: Array<string>
+    }>
+    schemas: Array<{
+      provider: string
+      endpointId: string
+      activity: string
+      method: string
+      path: string
+      description?: string | null
+      input: ExportSchemaVersion
+      output: ExportSchemaVersion
+    }>
   }
 }
 
