@@ -192,8 +192,9 @@ Secrets live in `.env.local` (see CLAUDE.md). Pull them from Doppler:
 bun run secrets:pull     # Doppler `dev` → .env.local (strips DOPPLER_*)
 ```
 
-`ADMIN_KEY` gates `POST /v1/admin/sync/{provider}` and
-`POST /v1/admin/extract/fal`. Useful scripts:
+`ADMIN_KEY` gates `POST /v1/admin/sync/{provider}`,
+`POST /v1/admin/extract/fal`, and `GET /v1/admin/export` (the whole
+catalog in one streamed response, for the git mirror). Useful scripts:
 `bun scripts/agent-roundtrip.ts` (agent-auth end-to-end),
 `bun scripts/client-smoke.ts` (typed client), `bun run check:client`
 (client/spec drift), `bun scripts/emit-skill.ts` (regenerate SKILL.md),

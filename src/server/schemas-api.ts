@@ -202,6 +202,19 @@ export interface SchemaProvenance {
   verifiedAt: string | null
 }
 
+export function schemaProvenance(
+  row: typeof schemaVersions.$inferSelect,
+): SchemaProvenance {
+  return {
+    sourceUrl: row.sourceUrl,
+    sourceHash: row.sourceHash,
+    fetchedAt: row.createdAt,
+    extractorVersion: row.extractorVersion,
+    derivation: row.derivation,
+    verifiedAt: row.verifiedAt,
+  }
+}
+
 export interface EndpointSchemaResult {
   provider: string
   activity: Activity
@@ -265,14 +278,7 @@ export async function getEndpointSchema(
     kind,
     contentHash: row.contentHash,
     specRevision: row.specRevision,
-    provenance: {
-      sourceUrl: row.sourceUrl,
-      sourceHash: row.sourceHash,
-      fetchedAt: row.createdAt,
-      extractorVersion: row.extractorVersion,
-      derivation: row.derivation,
-      verifiedAt: row.verifiedAt,
-    },
+    provenance: schemaProvenance(row),
     createdAt: row.createdAt,
     supersededAt: row.supersededAt,
     schema: pinned,

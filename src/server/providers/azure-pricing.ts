@@ -14,6 +14,9 @@
  * not say where the long band starts. The pricing page's row labels do for
  * a few (`GPT-5.4 (<272k context length)`); those get a tiered card. A model
  * with long-context meters and no published threshold gets no card.
+ *
+ * A model version the price list does not meter yet, while it meters other
+ * versions of that model, is `cleared`: the list visibly has no price for it.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
@@ -179,14 +182,18 @@ export interface AzureRates {
  * its meters are for other versions, when two meters disagree, or when a
  * band lacks input or output.
  */
+/** `2024-11-20` → `1120`, the version word a SKU carries. */
+function meterVersion(version: string | null): string | null {
+  return version ? version.slice(5).replace('-', '') : null
+}
+
 export function azureModelRates(
   meters: Array<AzureMeter>,
   rawId: string,
   version: string | null,
 ): AzureRates | null {
   const mine = meters.filter((meter) => names(meter, rawId))
-  // `2024-11-20` → `1120`
-  const dated = version ? version.slice(5).replace('-', '') : null
+  const dated = meterVersion(version)
   const exact = mine.filter((m) => m.version !== null && m.version === dated)
   const picked = exact.length > 0 ? exact : mine.filter((m) => !m.version)
 
@@ -282,13 +289,36 @@ export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
   }
 }
 
+/**
+ * Every meter that names the model is for another dated version: a new
+ * `gpt-chat-latest` version before Azure publishes its meters. A model with
+ * no meter at all, or with an undated one, is not this.
+ */
+function azureVersionUnmetered(
+  meters: Array<AzureMeter>,
+  rawId: string,
+  version: string | null,
+): boolean {
+  const dated = meterVersion(version)
+  const mine = meters.filter((meter) => names(meter, rawId))
+  return (
+    dated !== null &&
+    mine.length > 0 &&
+    mine.every((meter) => meter.version !== null && meter.version !== dated)
+  )
+}
+
 export function azureModelPricing(
   doc: AzurePriceDoc,
   rawId: string,
   version: string | null,
-): Pick<ModelInfo, 'pricing' | 'factSources'> {
+): Pick<ModelInfo, 'pricing' | 'factSources' | 'absent'> {
   const rates = azureModelRates(doc.meters, rawId, version)
-  if (!rates) return {}
+  if (!rates) {
+    return azureVersionUnmetered(doc.meters, rawId, version)
+      ? { absent: { pricing: 'cleared' } }
+      : {}
+  }
   const threshold = doc.thresholds[rawId]
   // Never the short band alone for a model that also has a long one.
   if (rates.long && threshold === undefined) return {}
