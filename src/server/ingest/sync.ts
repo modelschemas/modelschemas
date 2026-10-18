@@ -20,7 +20,10 @@ import type { Activity } from '#/db/schema.ts'
 import { seedForProvider } from '#/db/seed-providers.ts'
 import { errorMessage } from '#/server/errors.ts'
 import { contentHash, putJson, schemaKey } from '#/server/kv.ts'
-import { PROVENANCE_MARKER } from '#/server/providers/types.ts'
+import {
+  isMissingSecretSkip,
+  PROVENANCE_MARKER,
+} from '#/server/providers/types.ts'
 import type {
   BundledEndpoint,
   Derivation,
@@ -365,6 +368,15 @@ export async function syncProvider(
   if (fetched.skipped) {
     outcome.skipped = fetched.skipped
     outcome.warnings.push(fetched.skipped)
+    // Any skip other than the missing-secret suffix is by design, so the
+    // provider is active again. `lastSyncedAt` is written only on the
+    // non-skip path below.
+    if (!isMissingSecretSkip(fetched.skipped)) {
+      await db
+        .update(providers)
+        .set({ status: 'active' })
+        .where(eq(providers.id, provider.id))
+    }
     return outcome
   }
 
