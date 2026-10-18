@@ -33,7 +33,6 @@ async function listModels(
     loaded.payload,
     'opencode-go',
     loaded.hash,
-    loaded.extractedAt,
   )
   const models = parseOpencodeModels(payload, 'opencode-go').map(
     (model): ModelInfo => {
@@ -62,7 +61,6 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
     loaded.payload,
     'opencode-go',
     loaded.hash,
-    loaded.extractedAt,
   )
   return openCodeRouteSpec(
     Object.values(catalog),

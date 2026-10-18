@@ -21,7 +21,8 @@ export const MODELS_DEV_API_URL = 'https://models.dev/api.json'
 
 /**
  * OpenCode publishes its own catalog at models.dev. Issue #197 drops that
- * URL for every other provider. It does not apply here.
+ * URL for every other provider; for OpenCode it still supplies routes and
+ * schema versions. Prices are not exempt: Zen reads its console page (#314).
  */
 export function modelsDevIsFirstParty(providerId: string): boolean {
   return providerId === 'opencode' || providerId === 'opencode-go'
@@ -98,7 +99,6 @@ export async function nullModelsDevRateCards(
   db: Db,
   providerId: string,
 ): Promise<void> {
-  if (modelsDevIsFirstParty(providerId)) return
   await db
     .update(models)
     .set({

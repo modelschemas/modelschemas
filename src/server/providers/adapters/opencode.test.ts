@@ -1,6 +1,7 @@
 import { price } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
+import { OPENCODE_PRICING_URL } from '../opencode-pricing.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -9,9 +10,16 @@ import { OPENCODE_MODELS_URL, provider } from './opencode.ts'
 /** Excerpt-shaped listing. Ids are fixtures, not a live snapshot. */
 const LISTING = {
   object: 'list',
-  data: ['opus', 'gpt', 'gemini', 'qwen', 'pickle', 'unlisted', 'mistral'].map(
-    (id) => ({ id, object: 'model', owned_by: 'opencode' }),
-  ),
+  data: [
+    'opus',
+    'gpt',
+    'gemini',
+    'qwen',
+    'pickle',
+    'unlisted',
+    'mistral',
+    'jev',
+  ].map((id) => ({ id, object: 'model', owned_by: 'opencode' })),
 }
 
 const CATALOG = {
@@ -27,52 +35,58 @@ const CATALOG = {
         tool_call: true,
         reasoning_options: [{ type: 'budget_tokens', min: 1 }],
         interleaved: { field: 'reasoning_content' },
-        cost: { input: 4, output: 20, cache_read: 0.2, cache_write: 5 },
       },
       gpt: {
         id: 'gpt',
         name: 'GPT',
         provider: { npm: '@ai-sdk/openai' },
-        cost: {
-          input: 5,
-          output: 30,
-          cache_read: 0.5,
-          tiers: [
-            {
-              input: 10,
-              output: 45,
-              cache_read: 1,
-              tier: { type: 'context', size: 272000 },
-            },
-          ],
-          context_over_200k: { input: 10, output: 45, cache_read: 1 },
-        },
       },
       gemini: {
         id: 'gemini',
         name: 'Gemini',
         provider: { npm: '@ai-sdk/google' },
-        cost: { input: 2, output: 12, cache_read: 0.2 },
       },
       qwen: {
         id: 'qwen',
         name: 'Qwen',
-        cost: { input: 2, output: 6, cache_read: 0.25, cache_write: 2.5 },
       },
       pickle: {
         id: 'pickle',
         name: 'Pickle',
-        cost: { input: 0, output: 0, cache_read: 0 },
       },
       mistral: {
         id: 'mistral',
         name: 'Mistral',
         provider: { npm: '@ai-sdk/mistral' },
-        cost: { input: 1, output: 2 },
       },
     },
   },
 }
+
+/** Console page excerpt: prices `jev`, an id models.dev has no record of, and not `qwen`. */
+const PAGE = `## Endpoints
+
+| Model   | Model ID | Endpoint | AI SDK Package |
+| ------- | -------- | -------- | -------------- |
+| Opus    | opus     | -        | -              |
+| GPT     | gpt      | -        | -              |
+| Gemini  | gemini   | -        | -              |
+| Pickle  | pickle   | -        | -              |
+| Mistral | mistral  | -        | -              |
+| Jev     | jev      | -        | -              |
+
+## Pricing
+
+| Model               | Input  | Output | Cached Read | Cached Write |
+| ------------------- | ------ | ------ | ----------- | ------------ |
+| Opus                | $4.00  | $20.00 | $0.20       | $5.00        |
+| GPT (≤ 272K tokens) | $5.00  | $30.00 | $0.50       | -            |
+| GPT (> 272K tokens) | $10.00 | $45.00 | $1.00       | -            |
+| Gemini              | $2.00  | $12.00 | $0.20       | -            |
+| Pickle              | Free   | Free   | Free        | -            |
+| Mistral             | $1.00  | $2.00  | -           | -            |
+| Jev                 | $0.042 | Free   | -           | -            |
+`
 
 const originalFetch = globalThis.fetch
 
@@ -80,7 +94,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
-function serve(catalog: unknown = CATALOG) {
+function serve(catalog: unknown = CATALOG, page = PAGE) {
   const urls: Array<string> = []
   globalThis.fetch = ((url: string) => {
     urls.push(String(url))
@@ -89,6 +103,9 @@ function serve(catalog: unknown = CATALOG) {
     }
     if (String(url) === OPENCODE_CATALOG_URL) {
       return Promise.resolve(new Response(JSON.stringify(catalog)))
+    }
+    if (String(url) === OPENCODE_PRICING_URL) {
+      return Promise.resolve(new Response(page))
     }
     if (
       String(url).startsWith(
@@ -107,13 +124,13 @@ function serve(catalog: unknown = CATALOG) {
 type Card = { tables: { rate: Record<string, Record<string, number>> } }
 
 describe('opencode', () => {
-  it('reads routes and prices from the catalog, not the removed docs page', async () => {
+  it('reads routes from the catalog and prices from the console page', async () => {
     const urls = serve()
     const { models } = await provider.listModels({})
     const byId = Object.fromEntries(models.map((m) => [m.rawId, m]))
 
     expect(models.map((m) => m.rawId)).toEqual(LISTING.data.map((r) => r.id))
-    expect(urls.some((url) => url.includes('/docs/'))).toBe(false)
+    expect(urls.some((url) => url.includes('opencode.ai/docs/'))).toBe(false)
 
     expect(byId.opus).toMatchObject({
       displayName: 'Opus',
@@ -121,7 +138,10 @@ describe('opencode', () => {
       schemaEndpointId: 'inference/v1/messages',
       contextWindow: 1234,
       factSources: {
-        pricing: { derivation: 'listing', sourceUrl: OPENCODE_CATALOG_URL },
+        pricing: {
+          derivation: 'docs-derived',
+          sourceUrl: OPENCODE_PRICING_URL,
+        },
         schemaEndpointId: {
           derivation: 'listing',
           path: 'opencode.models.opus.provider.npm',
@@ -153,6 +173,21 @@ describe('opencode', () => {
     expect(byId.gemini?.schemaEndpointId).toBe('inference/v1/models/gemini')
     expect(byId.qwen?.schemaEndpointId).toBe('inference/v1/chat/completions')
     expect(byId.qwen?.factSources?.schemaEndpointId?.path).toBe('opencode.npm')
+    // The page does not price qwen: a stored card is cleared.
+    expect(byId.qwen?.pricing).toBeNull()
+    expect(byId.qwen?.absent).toEqual({
+      releasedAt: 'cleared',
+      pricing: 'cleared',
+    })
+    // jev has no models.dev record but the page prices it.
+    expect(byId.jev?.absent).toEqual({ releasedAt: 'cleared' })
+    expect(
+      price(
+        byId.jev!.pricing as RateCard,
+        {},
+        { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+      ),
+    ).toBeCloseTo(0.042)
 
     expect(byId.pickle).toMatchObject({
       activity: 'chat',
@@ -209,14 +244,14 @@ describe('opencode', () => {
     await expect(provider.listModels({})).rejects.toThrow()
   })
 
-  it('prices a model that was free once the catalog quotes a rate', async () => {
-    const catalog = structuredClone(CATALOG)
-    catalog.opencode.models.pickle.cost = {
-      input: 0.1,
-      output: 0.2,
-      cache_read: 0.01,
-    }
-    serve(catalog)
+  it('prices a model that was free once the page quotes a rate', async () => {
+    serve(
+      CATALOG,
+      PAGE.replace(
+        '| Pickle              | Free   | Free   | Free        |',
+        '| Pickle              | $0.10  | $0.20  | $0.01       |',
+      ),
+    )
     const paid = (await provider.listModels({})).models.find(
       (model) => model.rawId === 'pickle',
     )!
@@ -227,5 +262,15 @@ describe('opencode', () => {
         { input_tokens: 1_000_000, output_tokens: 1_000_000 },
       ),
     ).toBeCloseTo(0.3)
+  })
+
+  it('keeps stored prices when the page fails, and still polls', async () => {
+    serve(CATALOG, '## Pricing\n\nmoved\n')
+    const result = await provider.listModels({})
+    expect(result.docsFailures).toMatchObject({ failed: 1 })
+    for (const model of result.models) {
+      expect(model.pricing ?? null).toBeNull()
+      expect(model.absent?.pricing).toBe('unavailable')
+    }
   })
 })

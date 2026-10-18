@@ -14,8 +14,10 @@ rates remain distinct from billed token prices.
 The current chat score does not erase unknown activity on other live ids.
 Native live listing: https://opencode.ai/inference/v1/models
 (the previous https://opencode.ai/zen/v1/models listing still answers the same ids).
-Routes and Zen prices are read from https://models.dev/api.json (`npm`, `cost`).
-Console page: https://opencode.ai/v2/docs/console/models/. The per-row checks
+Routes are read from https://models.dev/api.json (`npm`). Zen prices are read
+only from the console page, https://opencode.ai/v2/docs/console/models/ (its
+source: https://raw.githubusercontent.com/anomalyco/opencode/dev/services/www/src/docs/content/console/models.mdx,
+Pricing table, issue #314); an id it does not price has no price. The per-row checks
 below cited https://opencode.ai/docs/zen, removed upstream on 2026-10-12.
 Checked 2026-10-13. Among activity-null rows,
 no own catalog record was published for: `jev-1.13`, `jev-1.13-free`,
