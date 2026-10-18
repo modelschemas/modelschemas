@@ -316,7 +316,7 @@ async function listModels(
     const url = new URL(GEMINI_MODELS_URL)
     url.searchParams.set('pageSize', '1000')
     if (pageToken) url.searchParams.set('pageToken', pageToken)
-    // Header, not `?key=`: fetch errors quote the URL into telemetry.
+    // Header, not `?key=`: fetchJson errors quote the URL into telemetry.
     const body = (await fetchJson(url.toString(), {
       headers: { 'x-goog-api-key': key },
     })) as GeminiModelList
