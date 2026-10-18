@@ -707,12 +707,24 @@ export async function fetchJson(
   init?: RequestInit,
 ): Promise<unknown> {
   const response = await fetch(url, init)
-  if (!response.ok) {
-    throw new Error(
-      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
-    )
-  }
+  if (!response.ok) throw await fetchFailure(url, response)
   return response.json()
+}
+
+/**
+ * The error for a non-2xx response. Quotes the start of the body because
+ * that is where providers say why (Gemini's location 400, Anthropic's 403);
+ * status text alone cannot tell a bad key from a blocked region.
+ */
+async function fetchFailure(url: string, response: Response): Promise<Error> {
+  const status = `${String(response.status)} ${response.statusText}`
+  const body = (await response.text().catch(() => ''))
+    .replace(/\s+/g, ' ')
+    .trim()
+  const snippet = body.length > 200 ? `${body.slice(0, 200)}…` : body
+  return new Error(
+    `fetch failed: ${url} → ${status}${snippet ? `: ${snippet}` : ''}`,
+  )
 }
 
 /** SHA-256 hex of raw fetched text (the `SpecSource.hash` for file specs). */
@@ -731,11 +743,7 @@ export async function fetchText(
   init?: RequestInit,
 ): Promise<string> {
   const response = await fetch(url, init)
-  if (!response.ok) {
-    throw new Error(
-      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
-    )
-  }
+  if (!response.ok) throw await fetchFailure(url, response)
   return response.text()
 }
 
