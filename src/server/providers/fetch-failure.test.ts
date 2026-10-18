@@ -17,6 +17,7 @@ function respondWith(body: string, status: number, statusText: string) {
 
 describe('fetch failure message', () => {
   it("quotes the provider's stated reason after the status", async () => {
+    // Illustrative Gemini error shape, not a recorded response.
     respondWith(
       JSON.stringify({
         error: {
@@ -53,6 +54,33 @@ describe('fetch failure message', () => {
 
     await expect(fetchJson(LISTING_URL)).rejects.toThrow(
       new Error(`fetch failed: ${LISTING_URL} → 403 Forbidden`),
+    )
+  })
+
+  it('throws with what arrived when the error body stalls', async () => {
+    vi.useFakeTimers()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('upstream stalled'))
+      },
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(body, { status: 502, statusText: 'Bad Gateway' }),
+        ),
+      ),
+    )
+
+    const failed = fetchJson(LISTING_URL).catch((err: unknown) => err)
+    await vi.advanceTimersByTimeAsync(2000)
+    vi.useRealTimers()
+
+    expect(await failed).toEqual(
+      new Error(
+        `fetch failed: ${LISTING_URL} → 502 Bad Gateway: upstream stalled`,
+      ),
     )
   })
 })
