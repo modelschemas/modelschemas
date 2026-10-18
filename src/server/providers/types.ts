@@ -707,12 +707,51 @@ export async function fetchJson(
   init?: RequestInit,
 ): Promise<unknown> {
   const response = await fetch(url, init)
-  if (!response.ok) {
-    throw new Error(
-      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
-    )
-  }
+  if (!response.ok) throw await fetchFailure(url, response)
   return response.json()
+}
+
+/**
+ * The error for a non-2xx response. Quotes the start of the body because
+ * that is where providers say why: a Gemini 400 or an Anthropic 403 can
+ * mean a refused key or a refused region, and the status alone can't tell.
+ */
+async function fetchFailure(url: string, response: Response): Promise<Error> {
+  const status = `${String(response.status)} ${response.statusText}`
+  const body = (await bodyPrefix(response)).replace(/\s+/g, ' ').trim()
+  const snippet = body.length > 200 ? `${body.slice(0, 200)}…` : body
+  return new Error(
+    `fetch failed: ${url} → ${status}${snippet ? `: ${snippet}` : ''}`,
+  )
+}
+
+/**
+ * Up to ~4 KB of an error body, given at most 2s, then the stream is
+ * cancelled. The status error throws either way; an unreadable or stalled
+ * body only leaves the message ending at the status, as it did before.
+ */
+async function bodyPrefix(response: Response): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const decoder = new TextDecoder()
+  let text = ''
+  const read = async () => {
+    while (text.length < 4096) {
+      const { done, value } = await reader.read()
+      if (done) break
+      text += decoder.decode(value, { stream: true })
+    }
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    read().catch(() => {}),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, 2000)
+    }),
+  ])
+  clearTimeout(timer)
+  void reader.cancel().catch(() => {})
+  return text
 }
 
 /** SHA-256 hex of raw fetched text (the `SpecSource.hash` for file specs). */
@@ -731,11 +770,7 @@ export async function fetchText(
   init?: RequestInit,
 ): Promise<string> {
   const response = await fetch(url, init)
-  if (!response.ok) {
-    throw new Error(
-      `fetch failed: ${url} → ${String(response.status)} ${response.statusText}`,
-    )
-  }
+  if (!response.ok) throw await fetchFailure(url, response)
   return response.text()
 }
 
