@@ -314,10 +314,12 @@ async function listModels(
   let pageToken: string | undefined
   do {
     const url = new URL(GEMINI_MODELS_URL)
-    url.searchParams.set('key', key)
     url.searchParams.set('pageSize', '1000')
     if (pageToken) url.searchParams.set('pageToken', pageToken)
-    const body = (await fetchJson(url.toString())) as GeminiModelList
+    // Header, not `?key=`: fetch errors quote the URL into telemetry.
+    const body = (await fetchJson(url.toString(), {
+      headers: { 'x-goog-api-key': key },
+    })) as GeminiModelList
     listed.push(...(body.models ?? []))
     pageToken = body.nextPageToken
   } while (pageToken)
