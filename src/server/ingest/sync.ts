@@ -368,10 +368,9 @@ export async function syncProvider(
   if (fetched.skipped) {
     outcome.skipped = fetched.skipped
     outcome.warnings.push(fetched.skipped)
-    // A by-design skip fetched its sources and found no schema to store.
-    // That is a clean sync: clear a stale `degraded` from an earlier throw.
-    // Leave `lastSyncedAt` alone — it still means a spec was stored.
-    // A missing secret never fetched, so it does not clear `degraded`.
+    // Any skip other than the missing-secret suffix is by design, so the
+    // provider is active again. `lastSyncedAt` is written only on the
+    // non-skip path below.
     if (!isMissingSecretSkip(fetched.skipped)) {
       await db
         .update(providers)
