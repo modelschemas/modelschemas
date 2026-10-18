@@ -195,6 +195,76 @@ it('uses the provider package when the model states none', () => {
   expect(model?.factSources?.schemaEndpointId?.path).toBe('opencode.npm')
 })
 
+it('routes each Zen model on its own protocol api, not the provider default', () => {
+  const data = {
+    opencode: {
+      npm: '@ai-sdk/openai-compatible',
+      api: 'https://opencode.ai/inference/openai/v1',
+      models: {
+        open: {
+          id: 'open',
+          provider: { api: 'https://opencode.ai/inference/openai/v1' },
+        },
+        gpt: {
+          id: 'gpt',
+          provider: {
+            npm: '@ai-sdk/openai',
+            api: 'https://opencode.ai/inference/openai/v1',
+          },
+        },
+        claude: {
+          id: 'claude',
+          provider: {
+            npm: '@ai-sdk/anthropic',
+            api: 'https://opencode.ai/inference/anthropic/v1',
+          },
+        },
+        gemini: {
+          id: 'gemini',
+          provider: {
+            npm: '@ai-sdk/google',
+            api: 'https://opencode.ai/inference/google/v1beta',
+          },
+        },
+      },
+    },
+  }
+  const byId = parseOpenCodeCatalog(data, 'opencode', 'h')
+  expect(
+    Object.fromEntries(
+      Object.entries(byId).map(([id, model]) => [id, model.schemaEndpointId]),
+    ),
+  ).toEqual({
+    open: 'inference/openai/v1/chat/completions',
+    gpt: 'inference/openai/v1/responses',
+    claude: 'inference/anthropic/v1/messages',
+    gemini: 'inference/google/v1beta/models/gemini:generateContent',
+  })
+  expect(
+    Object.fromEntries(
+      Object.entries(byId).map(([id, model]) => [
+        id,
+        model.factSources?.schemaEndpointId?.path,
+      ]),
+    ),
+  ).toEqual({
+    open: 'opencode.models.open.provider',
+    gpt: 'opencode.models.gpt.provider',
+    claude: 'opencode.models.claude.provider',
+    gemini: 'opencode.models.gemini.provider',
+  })
+})
+
+it.each([
+  { provider: { api: 'https://example.com/inference/anthropic/v1' } },
+  { provider: { api: 42 } },
+  { provider: { api: '' } },
+])('rejects a model api that is not an opencode.ai path %j', (fields) => {
+  expect(() => parseOpenCodeCatalog(payload(fields), 'opencode', 'h')).toThrow(
+    /opencode: .*synthetic/,
+  )
+})
+
 it('leaves an unmapped package without a route', () => {
   const model = parseOpenCodeCatalog(
     payload({ provider: { npm: '@ai-sdk/mistral' } }),
@@ -205,13 +275,19 @@ it('leaves an unmapped package without a route', () => {
   expect(model?.activity).toBeUndefined()
 })
 
-it('routes Go rows on the documented base', () => {
+it('routes Go rows on the documented base and ignores a model api', () => {
   const data = {
     'opencode-go': {
       npm: '@ai-sdk/openai-compatible',
       api: 'https://opencode.ai/inference/go/v1',
       models: {
-        synthetic: { id: 'synthetic', provider: { npm: '@ai-sdk/openai' } },
+        synthetic: {
+          id: 'synthetic',
+          provider: {
+            npm: '@ai-sdk/openai',
+            api: 'https://opencode.ai/inference/go/openai/v1',
+          },
+        },
       },
     },
   }

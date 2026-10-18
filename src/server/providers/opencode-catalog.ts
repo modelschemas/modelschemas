@@ -12,11 +12,12 @@ import type {
 export const OPENCODE_CATALOG_URL = 'https://models.dev/api.json'
 type OpenCodeProvider = 'opencode' | 'opencode-go'
 
-/** Path under the provider's `/v1` base. A package this map does not name has no route. */
+/** Path under the provider api. A package this map does not name has no route. */
 const PACKAGE_SUFFIX: Record<string, (id: string) => string> = {
   '@ai-sdk/anthropic': () => 'messages',
   '@ai-sdk/openai': () => 'responses',
-  '@ai-sdk/google': (id) => `models/${id}`,
+  // The action is part of the path: .../models/<id>:generateContent
+  '@ai-sdk/google': (id) => `models/${id}:generateContent`,
   '@ai-sdk/openai-compatible': () => 'chat/completions',
 }
 
@@ -67,7 +68,17 @@ function reasoning(value: unknown): ModelReasoning | null {
   return toggle ? { mode: 'toggle', mandatory: false } : null
 }
 
-/** Path under the host. Zen follows models.dev `api`; Go stays on the documented `/zen/go/v1` ids. */
+/** Zen's base path under opencode.ai, from a provider or model `api`. */
+function openCodeApiPath(api: string, field: string): string {
+  const url = URL.parse(api)
+  const path = url?.pathname.replace(/^\//, '').replace(/\/$/, '') ?? ''
+  if (url?.origin !== 'https://opencode.ai' || path.length === 0) {
+    throw new Error(`opencode: models.dev ${field} is not an opencode.ai path`)
+  }
+  return path
+}
+
+/** Zen id is the passed api path plus the package suffix. Go ignores api and returns `v1/<suffix>`. */
 function schemaEndpointId(
   provider: OpenCodeProvider,
   apiPath: string | null,
@@ -108,11 +119,7 @@ export function parseOpenCodeCatalog(
     if (typeof block.api !== 'string') {
       throw new Error('opencode: models.dev api is missing')
     }
-    const url = new URL(block.api)
-    apiPath = url.pathname.replace(/^\//, '').replace(/\/$/, '')
-    if (url.origin !== 'https://opencode.ai' || apiPath.length === 0) {
-      throw new Error('opencode: models.dev api is not an opencode.ai path')
-    }
+    apiPath = openCodeApiPath(block.api, 'api')
   }
   const out: Record<string, ModelInfo> = {}
   for (const [id, row] of Object.entries(models)) {
@@ -145,6 +152,8 @@ export function parseOpenCodeCatalog(
       model.displayName = row.name
     }
     let modelNpm: string | null = null
+    let modelApiPath = apiPath
+    let routeFact = `${provider}.npm`
     if (row.provider !== undefined) {
       if (!record(row.provider)) {
         throw new Error(`${provider}: unreadable provider for ${id}`)
@@ -157,10 +166,21 @@ export function parseOpenCodeCatalog(
           throw new Error(`${provider}: unreadable provider.npm for ${id}`)
         }
         modelNpm = row.provider.npm
+        routeFact = `${provider}.models.${id}.provider.npm`
+      }
+      if (provider === 'opencode' && row.provider.api !== undefined) {
+        if (typeof row.provider.api !== 'string') {
+          throw new Error(`opencode: unreadable provider.api for ${id}`)
+        }
+        modelApiPath = openCodeApiPath(
+          row.provider.api,
+          `provider.api for ${id}`,
+        )
+        routeFact = `${provider}.models.${id}.provider`
       }
     }
     const npm = modelNpm ?? block.npm
-    const endpoint = schemaEndpointId(provider, apiPath, npm, id)
+    const endpoint = schemaEndpointId(provider, modelApiPath, npm, id)
     if (endpoint) {
       model.schemaEndpointId = endpoint
       model.activity = 'chat'
@@ -168,10 +188,9 @@ export function parseOpenCodeCatalog(
         derivation: 'listing',
         sourceUrl: OPENCODE_CATALOG_URL,
         sourceHash: hash,
-        // The route is the package's path, not an endpoint stated on the model.
-        path: modelNpm
-          ? `${provider}.models.${id}.provider.npm`
-          : `${provider}.npm`,
+        // Not an endpoint field. Zen joins the package suffix to the model
+        // api, else the provider api. Go uses only the package suffix.
+        path: routeFact,
       }
     } else if (PACKAGE_SUFFIX[npm]) {
       model.activity = 'chat'

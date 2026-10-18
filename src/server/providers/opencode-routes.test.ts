@@ -45,6 +45,62 @@ it('sources POST methods and emits only native paths, with no schema bodies', as
   expect(source.url).toContain('/zen/v1/messages.ts')
   expect(source.hash).toMatch(/^[a-f0-9]{64}$/)
 })
+it('sources protocol paths from the zen handlers the inference proxy maps them to', async () => {
+  globalThis.fetch = vi.fn(
+    async () => new Response('export function POST(input: APIEvent) {}'),
+  )
+  const result = await openCodeRouteSpec(
+    [
+      {
+        schemaEndpointId: 'inference/openai/v1/chat/completions',
+        activity: 'chat',
+      },
+      { schemaEndpointId: 'inference/openai/v1/responses', activity: 'chat' },
+      { schemaEndpointId: 'inference/anthropic/v1/messages', activity: 'chat' },
+      {
+        schemaEndpointId:
+          'inference/google/v1beta/models/gemini:generateContent',
+        activity: 'chat',
+      },
+    ],
+    { url: 'https://models.dev/api.json', text: 'catalog fixture' },
+    false,
+  )
+  const paths = result.specs[0]?.paths ?? {}
+  expect(
+    Object.fromEntries(
+      Object.entries(paths).map(([path, item]) => [
+        path,
+        (item.post?.['x-modelschemas-method-source'] as { url: string }).url
+          .split('/routes/zen/')
+          .pop(),
+      ]),
+    ),
+  ).toEqual({
+    '/inference/openai/v1/chat/completions': 'v1/chat/completions.ts',
+    '/inference/openai/v1/responses': 'v1/responses.ts',
+    '/inference/anthropic/v1/messages': 'v1/messages.ts',
+    '/inference/google/v1beta/models/gemini:generateContent':
+      'v1/models/[model].ts',
+  })
+})
+it.each([
+  'inference/openai/v1/messages',
+  'inference/anthropic/v1/chat/completions',
+  'inference/go/openai/v1/chat/completions',
+])('rejects %s, a path its protocol does not serve', async (id) => {
+  globalThis.fetch = vi.fn(
+    async () => new Response('export function POST(input: APIEvent) {}'),
+  )
+  await expect(
+    openCodeRouteSpec(
+      [{ schemaEndpointId: id, activity: 'chat' }],
+      { url: 'docs', text: 'docs' },
+      false,
+    ),
+  ).rejects.toThrow('opencode: ')
+  expect(globalThis.fetch).not.toHaveBeenCalled()
+})
 it('rejects missing native methods rather than manufacturing an operation', async () => {
   globalThis.fetch = vi.fn(async () => new Response('export function GET() {}'))
   await expect(
