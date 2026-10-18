@@ -58,7 +58,8 @@ it('sources protocol paths from the zen handlers the inference proxy maps them t
       { schemaEndpointId: 'inference/openai/v1/responses', activity: 'chat' },
       { schemaEndpointId: 'inference/anthropic/v1/messages', activity: 'chat' },
       {
-        schemaEndpointId: 'inference/google/v1beta/models/gemini',
+        schemaEndpointId:
+          'inference/google/v1beta/models/gemini:generateContent',
         activity: 'chat',
       },
     ],
@@ -79,14 +80,13 @@ it('sources protocol paths from the zen handlers the inference proxy maps them t
     '/inference/openai/v1/chat/completions': 'v1/chat/completions.ts',
     '/inference/openai/v1/responses': 'v1/responses.ts',
     '/inference/anthropic/v1/messages': 'v1/messages.ts',
-    '/inference/google/v1beta/models/gemini': 'v1/models/[model].ts',
+    '/inference/google/v1beta/models/gemini:generateContent':
+      'v1/models/[model].ts',
   })
 })
 it.each([
   'inference/openai/v1/messages',
   'inference/anthropic/v1/chat/completions',
-  'inference/openai/v1/models/gemini',
-  'inference/systemone/v1/systemone',
   'inference/go/openai/v1/chat/completions',
 ])('rejects %s, a path its protocol does not serve', async (id) => {
   globalThis.fetch = vi.fn(

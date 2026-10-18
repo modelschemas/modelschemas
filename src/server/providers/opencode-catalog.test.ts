@@ -289,11 +289,21 @@ it('routes each Zen model on its own protocol api, not the provider default', ()
     open: 'inference/openai/v1/chat/completions',
     gpt: 'inference/openai/v1/responses',
     claude: 'inference/anthropic/v1/messages',
-    gemini: 'inference/google/v1beta/models/gemini',
+    gemini: 'inference/google/v1beta/models/gemini:generateContent',
   })
-  expect(byId.open?.factSources?.schemaEndpointId?.path).toBe(
-    'opencode.models.open.provider',
-  )
+  expect(
+    Object.fromEntries(
+      Object.entries(byId).map(([id, model]) => [
+        id,
+        model.factSources?.schemaEndpointId?.path,
+      ]),
+    ),
+  ).toEqual({
+    open: 'opencode.models.open.provider',
+    gpt: 'opencode.models.gpt.provider',
+    claude: 'opencode.models.claude.provider',
+    gemini: 'opencode.models.gemini.provider',
+  })
 })
 
 it.each([

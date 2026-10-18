@@ -150,7 +150,9 @@ describe('opencode', () => {
       },
     })
     expect(byId.gpt?.schemaEndpointId).toBe('inference/v1/responses')
-    expect(byId.gemini?.schemaEndpointId).toBe('inference/v1/models/gemini')
+    expect(byId.gemini?.schemaEndpointId).toBe(
+      'inference/v1/models/gemini:generateContent',
+    )
     expect(byId.qwen?.schemaEndpointId).toBe('inference/v1/chat/completions')
     expect(byId.qwen?.factSources?.schemaEndpointId?.path).toBe('opencode.npm')
 

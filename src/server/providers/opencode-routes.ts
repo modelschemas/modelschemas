@@ -13,8 +13,8 @@ interface RouteRow {
 }
 
 /**
- * Protocol paths the console's inference proxy (`lib/inference-proxy.ts`)
- * maps the `routes/zen/v1` handlers onto, and the handler each one serves.
+ * Allowed tails for each public protocol prefix. A match is fetched from
+ * `routes/zen/v1/<tail>` (`models/*` from `v1/models/[model].ts`).
  */
 const PROTOCOL_ROUTES: Record<string, RegExp> = {
   'openai/v1/': /^(?:chat\/completions|responses)$/,
@@ -22,7 +22,7 @@ const PROTOCOL_ROUTES: Record<string, RegExp> = {
   'google/v1beta/': /^models\/[^/]+$/,
 }
 
-/** Public path → handler file under `routes/zen`. Zen ids are `inference/[protocol/]v1/...`; the source tree is still `v1`. */
+/** Public path → handler file under `routes/zen`. Handler files stay under `v1` (or `go/v1`). */
 function sourceFile(schemaEndpointId: string, go: boolean): string {
   let local = schemaEndpointId.replace(/^\//, '').replace(/^inference\//, '')
   const prefix = Object.keys(PROTOCOL_ROUTES).find((p) => local.startsWith(p))

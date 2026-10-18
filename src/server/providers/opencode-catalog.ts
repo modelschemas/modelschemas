@@ -15,11 +15,12 @@ import type {
 export const OPENCODE_CATALOG_URL = 'https://models.dev/api.json'
 type OpenCodeProvider = 'opencode' | 'opencode-go'
 
-/** Path under the provider's `/v1` base. A package this map does not name has no route. */
+/** Path under the provider api. A package this map does not name has no route. */
 const PACKAGE_SUFFIX: Record<string, (id: string) => string> = {
   '@ai-sdk/anthropic': () => 'messages',
   '@ai-sdk/openai': () => 'responses',
-  '@ai-sdk/google': (id) => `models/${id}`,
+  // The action is part of the path: .../models/<id>:generateContent
+  '@ai-sdk/google': (id) => `models/${id}:generateContent`,
   '@ai-sdk/openai-compatible': () => 'chat/completions',
 }
 
@@ -212,12 +213,7 @@ export function compileOpenCodeCost(
 
 /** Zen's base path under opencode.ai, from a provider or model `api`. */
 function openCodeApiPath(api: string, field: string): string {
-  let url: URL | null = null
-  try {
-    url = new URL(api)
-  } catch {
-    // Reported below with the field it came from.
-  }
+  const url = URL.parse(api)
   const path = url?.pathname.replace(/^\//, '').replace(/\/$/, '') ?? ''
   if (url?.origin !== 'https://opencode.ai' || path.length === 0) {
     throw new Error(`opencode: models.dev ${field} is not an opencode.ai path`)
@@ -225,7 +221,7 @@ function openCodeApiPath(api: string, field: string): string {
   return path
 }
 
-/** Path under the host. Zen follows the model's models.dev `api`, else the provider's; Go stays on the documented `/zen/go/v1` ids. */
+/** Zen id is the passed api path plus the package suffix. Go ignores api and returns `v1/<suffix>`. */
 function schemaEndpointId(
   provider: OpenCodeProvider,
   apiPath: string | null,
@@ -301,7 +297,7 @@ export function parseOpenCodeCatalog(
     }
     let modelNpm: string | null = null
     let modelApiPath = apiPath
-    let modelApi = false
+    let routeFact = `${provider}.npm`
     if (row.provider !== undefined) {
       if (!record(row.provider)) {
         throw new Error(`${provider}: unreadable provider for ${id}`)
@@ -314,6 +310,7 @@ export function parseOpenCodeCatalog(
           throw new Error(`${provider}: unreadable provider.npm for ${id}`)
         }
         modelNpm = row.provider.npm
+        routeFact = `${provider}.models.${id}.provider.npm`
       }
       if (provider === 'opencode' && row.provider.api !== undefined) {
         if (typeof row.provider.api !== 'string') {
@@ -323,7 +320,7 @@ export function parseOpenCodeCatalog(
           row.provider.api,
           `provider.api for ${id}`,
         )
-        modelApi = true
+        routeFact = `${provider}.models.${id}.provider`
       }
     }
     const npm = modelNpm ?? block.npm
@@ -335,13 +332,9 @@ export function parseOpenCodeCatalog(
         derivation: 'listing',
         sourceUrl: OPENCODE_CATALOG_URL,
         sourceHash: hash,
-        // The route is the package's path under the model's (or provider's)
-        // api, not an endpoint stated on the model.
-        path: modelApi
-          ? `${provider}.models.${id}.provider`
-          : modelNpm
-            ? `${provider}.models.${id}.provider.npm`
-            : `${provider}.npm`,
+        // Not an endpoint field. Zen joins the package suffix to the model
+        // api, else the provider api. Go uses only the package suffix.
+        path: routeFact,
       }
     } else if (PACKAGE_SUFFIX[npm]) {
       model.activity = 'chat'
