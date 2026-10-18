@@ -488,6 +488,109 @@ export const openApiDocument = {
         },
       },
     },
+    '/v1/admin/export': {
+      get: {
+        operationId: 'exportCatalog',
+        summary:
+          'The whole catalog in one streamed response, for the public git mirror (admin only)',
+        description:
+          'Returns `latestChange` (the newest change id and createdAt, or null), ' +
+          'then `models` (live and deprecated, full rate card), `providers`, and ' +
+          '`schemas` (each endpoint with its current input and output versions). ' +
+          'Object keys are sorted, and fields that change on every poll ' +
+          '(`lastSeenAt`, `lastPolledAt`, `lastSyncedAt`, `_links`) are left out; ' +
+          'provenance timestamps such as `factSources.*.fetchedAt` are kept and ' +
+          'can move without a value changing. The export is not one snapshot: ' +
+          'rows read after `latestChange` may already hold newer changes. To ' +
+          'catch up from an earlier export, read every page of ' +
+          'GET /v1/changes?since=<its latestChange.createdAt> and skip only its ' +
+          'latestChange.id (change ids are random, so do not stop at it). A ' +
+          'failure part way breaks the stream, so the body is not valid JSON.',
+        security: [{ adminKey: [] }],
+        responses: {
+          '200': {
+            description:
+              'Catalog export. `models[]` items are the Model shape without `lastSeenAt` and `_links`.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['latestChange', 'models', 'providers', 'schemas'],
+                  properties: {
+                    latestChange: {
+                      type: ['object', 'null'],
+                      required: ['id', 'createdAt'],
+                      properties: {
+                        id: { type: 'string' },
+                        createdAt: { type: 'integer' },
+                      },
+                    },
+                    models: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/Model' },
+                    },
+                    providers: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: [
+                          'id',
+                          'displayName',
+                          'status',
+                          'modelNamespaces',
+                        ],
+                        properties: {
+                          id: { type: 'string' },
+                          displayName: { type: 'string' },
+                          specSourceUrl: { type: ['string', 'null'] },
+                          modelsEndpoint: { type: ['string', 'null'] },
+                          authEnvVar: { type: ['string', 'null'] },
+                          status: { type: 'string' },
+                          modelNamespaces: {
+                            type: 'array',
+                            items: { type: 'string' },
+                          },
+                        },
+                      },
+                    },
+                    schemas: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: [
+                          'provider',
+                          'endpointId',
+                          'activity',
+                          'method',
+                          'path',
+                          'input',
+                          'output',
+                        ],
+                        properties: {
+                          provider: { type: 'string' },
+                          endpointId: { type: 'string' },
+                          activity: { type: 'string' },
+                          method: { type: 'string' },
+                          path: { type: 'string' },
+                          description: { type: ['string', 'null'] },
+                          input: {
+                            $ref: '#/components/schemas/ExportSchemaVersion',
+                          },
+                          output: {
+                            $ref: '#/components/schemas/ExportSchemaVersion',
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '401': errorResponse,
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -767,6 +870,27 @@ export const openApiDocument = {
           },
           nextCursor: { type: ['string', 'null'] },
           _links: { type: 'object' },
+        },
+      },
+      ExportSchemaVersion: {
+        description: 'A current schema version, or null when there is none.',
+        type: ['object', 'null'],
+        required: ['contentHash', 'specRevision', 'provenance', 'schema'],
+        properties: {
+          contentHash: { type: 'string' },
+          specRevision: { type: ['string', 'null'] },
+          provenance: {
+            type: 'object',
+            properties: {
+              sourceUrl: { type: ['string', 'null'] },
+              sourceHash: { type: ['string', 'null'] },
+              fetchedAt: { type: 'integer' },
+              extractorVersion: { type: ['string', 'null'] },
+              derivation: { type: ['string', 'null'] },
+              verifiedAt: { type: ['string', 'null'] },
+            },
+          },
+          schema: { type: 'object' },
         },
       },
       ValidateRequest: {

@@ -12,7 +12,11 @@ import * as schema from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 /** Capabilities never exposed to agents (admin surface). */
-const EXCLUDED_CAPABILITIES = new Set(['syncProvider', 'extractFalPricing'])
+const EXCLUDED_CAPABILITIES = new Set([
+  'syncProvider',
+  'extractFalPricing',
+  'exportCatalog',
+])
 
 /**
  * The public (approval-free) capability set. This is also the EXACT set an
@@ -91,7 +95,8 @@ function buildAgentAuthConfig(options?: CreateAuthOptions) {
     capabilities,
     // Hosts that register without an explicit capability list get the full
     // public set. Must be the FILTERED list — deriving from the spec would
-    // include excluded admin ops (syncProvider, extractFalPricing) and 400 every registration.
+    // include excluded admin ops (syncProvider, extractFalPricing,
+    // exportCatalog) and 400 every registration.
     defaultHostCapabilities: capabilities.map((capability) => capability.name),
     // Open agent signup: unknown hosts may self-register with inline keys.
     allowDynamicHostRegistration: true,

@@ -254,5 +254,5 @@ API map: `GET /v1` (index) · `/v1/status` · `/v1/providers[/{p}/models]` ·
 `/v1/schemas/{p}[/{activity}[/{endpointId}?kind,version]]` ·
 `POST /v1/validate` · `POST /v1/estimate` · `/v1/changes` · `POST /v1/agents/register-key` ·
 `/v1/agents/me` · `/v1/subscriptions` · `POST /v1/admin/sync/{p}` · `POST /v1/admin/extract/fal` ·
-`/openapi.json` · `/llms.txt` · `/skill` · `/docs` · `/mcp` ·
+`/v1/admin/export` · `/openapi.json` · `/llms.txt` · `/skill` · `/docs` · `/mcp` ·
 `/.well-known/agent-configuration`.

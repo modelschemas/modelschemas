@@ -450,7 +450,7 @@ export async function syncProvider(
       // The id is deterministic on content, so when upstream reverts to a
       // previously served schema (A → B → A) the row already exists as a
       // superseded version — revive it instead of colliding on the insert.
-      await db
+      const insert = db
         .insert(schemaVersions)
         .values({
           id: `${endpoint.dbId}:${kind}:${hash.slice(0, 16)}`,
@@ -479,15 +479,20 @@ export async function syncProvider(
             createdAt: now,
           },
         })
+      // One batch, so a run that dies here never leaves two current rows.
+      if (current) {
+        await db.batch([
+          db
+            .update(schemaVersions)
+            .set({ supersededAt: now })
+            .where(eq(schemaVersions.id, current.id)),
+          insert,
+        ])
+      } else {
+        await insert
+      }
       outcome.versionsAdded++
       await putJson(kv, schemaKey(hash), schema)
-
-      if (current) {
-        await db
-          .update(schemaVersions)
-          .set({ supersededAt: now })
-          .where(eq(schemaVersions.id, current.id))
-      }
       await db.insert(changes).values({
         id: newChangeId(),
         type: current ? 'schema.updated' : 'schema.added',

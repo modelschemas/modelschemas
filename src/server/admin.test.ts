@@ -21,6 +21,11 @@ describe('isAdminRequest', () => {
   it('rejects wrong or missing keys', () => {
     expect(isAdminRequest(req({ 'x-admin-key': 'nope' }), 'sekret')).toBe(false)
     expect(isAdminRequest(req(), 'sekret')).toBe(false)
+    // Prefix and extension of the key, which a length-blind loop could pass.
+    expect(isAdminRequest(req({ 'x-admin-key': 'sek' }), 'sekret')).toBe(false)
+    expect(isAdminRequest(req({ 'x-admin-key': 'sekretx' }), 'sekret')).toBe(
+      false,
+    )
   })
 
   it('fails closed when no admin key is configured', () => {
