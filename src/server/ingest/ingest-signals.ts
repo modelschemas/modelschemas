@@ -193,7 +193,7 @@ export function posthogBatch(
  * (issue #356). Cron Triggers run wherever Cloudflare has capacity, and
  * some providers refuse requests from some regions.
  */
-export async function traceColo(
+async function traceColo(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string | null> {
   try {
