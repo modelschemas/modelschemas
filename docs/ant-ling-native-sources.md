@@ -5,7 +5,7 @@ capture their article contents for offline regression tests. There is no static
 model registry, reseller pricing source, credential requirement or generation
 request in the adapter.
 
-- https://developer.ant-ling.com/en/docs/api-reference/openai/ — request address,
+- https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ — request address,
   model options, parameter types, required fields, defaults, bounds, role options,
   model-scoped reasoning and thinking controls, and multimodal applicability.
 - https://developer.ant-ling.com/en/docs/api-reference/ — hosted context lengths
@@ -19,13 +19,17 @@ request in the adapter.
   zero. The source's promotion duration is not converted into a guessed deadline.
 - https://developer.ant-ling.com/en/docs/models/ling/ — model selection contexts
   absent from the hosted API overview, and native model-specific capabilities.
-- https://developer.ant-ling.com/en/docs/models/ring/ and
-  https://developer.ant-ling.com/en/docs/tutorials/effort/ — native Ring provenance
-  and agreement on the model using high/xhigh effort. Mandatory reasoning remains
-  unknown because a mandatory flag is not published.
+- https://developer.ant-ling.com/en/docs/tutorials/effort/ — agreement on the
+  model using high/xhigh effort. Mandatory reasoning remains unknown because a
+  mandatory flag is not published. Since 2026-10-19 the API reference publishes
+  no effort field (Ring-2.6-1T left its model options ahead of its 2026-11-15
+  deprecation, and the `models/ring/` page is gone), so no row has an effort
+  mode; the 3.0/3.1 `thinking.type` toggle is unchanged.
 
 The catalog is the union of native API model options and direct CNY price IDs.
-Currently it contains eight rows, including newer Ling-3.1-flash and AntAngelMed.
+As of 2026-10-19 it contains six rows: the Ling 3.x models, Ming-3.0-audio-flash
+and AntAngelMed. Every `When using <id>, the request accepts ...` sentence on the
+reference sets that model's input modalities (VL: text/image/video, Ming: text/audio).
 The API options lag the pricing page: model options are retained as source
 annotations rather than a closed schema allowlist that would reject the newer
 provider-published ID. New IDs and changes from free to paid are tested by changing
@@ -33,12 +37,11 @@ source documents, without changing production code.
 
 The source-silent ledger exempts only maxOutput. Other gaps remain real: native
 pricing is not published for AntAngelMed or Ling-3.0-tiny; tiny/AntAngelMed context
-is unknown; Ling-3.1-flash is not yet in the API-scoped options and its request map
-and API modalities stay null. Its hosted activity also remains unknown; direct price IDs do not imply chat. Only native API-options models are bound to the
+is unknown. A price-only ID's hosted activity remains unknown; direct price IDs do not imply chat. Only native API-options models are bound to the
 published request schema; pricing-only rows keep schemaEndpointId null. Missing
 per-model native quotes explicitly clear prior unsourced prices after a successful
-source read. Effort is supported only for its native scoped
-model. No provider-wide exemption masks these partial gaps, and this change does
+source read. Effort is supported only for a model the reference scopes it to
+(none since 2026-10-19). No provider-wide exemption masks these partial gaps, and this change does
 not assert the issue's requested gap score of 1.
 
 The OpenAI page publishes request tables and response examples, but no formal

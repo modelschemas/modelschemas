@@ -72,7 +72,7 @@ it('syncs native Ant Ling schema without spreading model-specific reasoning acro
       ).toMatchObject({
         derivation: 'docs-derived',
         sourceUrl:
-          'https://developer.ant-ling.com/en/docs/api-reference/openai/',
+          'https://developer.ant-ling.com/en/docs/api-reference/chat/openai/',
       })
   }
   const report = buildReport(
