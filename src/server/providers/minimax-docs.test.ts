@@ -72,10 +72,13 @@ describe('minimax docs', () => {
 
   it('reads the legacy rows the page indents inside an accordion', () => {
     // The live page (Oct 2026) moved the M2.x rows into an indented
-    // `<Accordion title="Legacy Models">` under the M3 table.
+    // `<Accordion title="Legacy Models">` under the M3 table. The other
+    // tables take their ids from this one, as `minimaxModelFacts` does.
     const lines = MINIMAX_SDK_PAGE.split('\n')
     const first = lines.findIndex((line) => line.startsWith('| MiniMax-M2.7 '))
     const last = lines.findIndex((line) => line.startsWith('| MiniMax-M2 '))
+    expect(first).toBeGreaterThan(0)
+    expect(last).toBeGreaterThan(first)
     const page = [
       ...lines.slice(0, first),
       '',
@@ -87,12 +90,13 @@ describe('minimax docs', () => {
       ...lines.slice(last + 1),
     ].join('\n')
     const windows = parseMinimaxContextWindows(page)
-    expect([...windows.keys()]).toEqual(IDS)
+    const ids = [...windows.keys()]
+    expect(ids).toEqual(IDS)
     expect(windows.get('MiniMax-M2')).toBe(204_800)
-    expect(parseMinimaxInputModalities(page, IDS).get('MiniMax-M2')).toEqual([
+    expect(parseMinimaxInputModalities(page, ids).get('MiniMax-M2')).toEqual([
       'text',
     ])
-    expect(parseMinimaxReasoning(page, IDS).get('MiniMax-M2')).toEqual({
+    expect(parseMinimaxReasoning(page, ids).get('MiniMax-M2')).toEqual({
       mode: 'adaptive',
       mandatory: true,
     })

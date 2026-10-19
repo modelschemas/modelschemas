@@ -156,7 +156,7 @@ export const MINIMAX_CN: MinimaxPlatform = {
 /**
  * The pages indent what sits inside a `<section>` or `<Accordion>` (the
  * legacy models' table), and `markdownTableRows` reads only lines that
- * start with `|`: every parser reads the page dedented.
+ * start with `|`: every page parser reads the page dedented.
  */
 function dedent(markdown: string): string {
   return markdown
