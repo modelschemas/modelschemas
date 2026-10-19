@@ -133,6 +133,7 @@ async function listModels(
               'fireworks: missing API key for native model metadata',
             )
           })(),
+        docs,
         kv,
       ),
     ),

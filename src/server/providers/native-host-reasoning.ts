@@ -1,4 +1,5 @@
-import { cachedDocs } from './model-facts.ts'
+import { tryDocs, unavailable } from './model-facts.ts'
+import type { DocsRun } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo, FactSource } from './types.ts'
 
@@ -95,9 +96,15 @@ export function parseFireworksNativeReasoning(
     )
   return reasoningStatement(data.description)
 }
+/**
+ * One model's native metadata is a docs source like any other: a failed
+ * load (Fireworks answers 403 for some listed ids) keeps the row's stored
+ * capabilities and lands in `run`, not the provider's poll.
+ */
 export async function fireworksHostedReasoning(
   model: ModelInfo,
   apiKey: string,
+  run: DocsRun,
   kv?: KVNamespace,
 ): Promise<ModelInfo> {
   if (
@@ -107,16 +114,23 @@ export async function fireworksHostedReasoning(
   )
     return model
   const url = 'https://api.fireworks.ai/v1/' + model.rawId
-  const doc = await cachedDocs(kv, url, async () => {
-    const text = await fetchText(url, {
-      headers: { Authorization: 'Bearer ' + apiKey },
-      signal: AbortSignal.timeout(30_000),
-    })
+  const doc = await tryDocs(run, url, (cached) =>
+    cached(kv, url, async () => {
+      const text = await fetchText(url, {
+        headers: { Authorization: 'Bearer ' + apiKey },
+        signal: AbortSignal.timeout(30_000),
+      })
+      return {
+        supported: parseFireworksNativeReasoning(JSON.parse(text), model.rawId),
+        hash: await sha256Text(text),
+      }
+    }),
+  )
+  if (!doc)
     return {
-      supported: parseFireworksNativeReasoning(JSON.parse(text), model.rawId),
-      hash: await sha256Text(text),
+      ...model,
+      absent: { ...model.absent, ...unavailable('capabilities').absent },
     }
-  })
   return doc.supported
     ? nativeReasoningCapability(model, {
         derivation: 'listing',

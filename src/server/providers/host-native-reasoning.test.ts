@@ -1,10 +1,17 @@
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import docs from './fixtures/host-native-reasoning.json'
+import { docsRun } from './model-facts.ts'
+import type { ModelInfo } from './types.ts'
 import {
+  fireworksHostedReasoning,
   nativeReasoningCapability,
   parseFireworksNativeReasoning,
   parseHfHostedReasoning,
 } from './native-host-reasoning.ts'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 it('extracts exact hosted model links only from native explicit reasoning recommendations', () => {
   expect(parseHfHostedReasoning(docs.hf)).toEqual([
@@ -80,4 +87,42 @@ it('preserves populated flags, unknown controls, and unrelated provenance', () =
       source,
     ),
   ).toThrow()
+})
+it('keeps a row whose Fireworks metadata is forbidden and reports the failure', async () => {
+  const forbidden = 'accounts/fireworks/models/minimax-m3p1-flash'
+  const open = 'accounts/fireworks/models/minimax-m3'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) =>
+      Promise.resolve(
+        url.endsWith(forbidden)
+          ? new Response('{ "code": 7, "details": [], "message": "" }', {
+              status: 403,
+              statusText: 'Forbidden',
+            })
+          : new Response(
+              JSON.stringify({
+                name: open,
+                description: 'A model with strong reasoning capabilities.',
+              }),
+            ),
+      ),
+    ),
+  )
+  const row = (rawId: string) =>
+    ({
+      rawId,
+      activity: 'chat',
+      capabilities: ['tools'],
+      reasoning: null,
+    }) as unknown as ModelInfo
+  const run = docsRun()
+  const kept = await fireworksHostedReasoning(row(forbidden), 'key', run)
+  expect(kept.absent).toEqual({ capabilities: 'unavailable' })
+  expect(kept.capabilities).toEqual(['tools'])
+  expect(run.failed).toBe(1)
+  expect(run.first[0]?.source).toBe('https://api.fireworks.ai/v1/' + forbidden)
+  const read = await fireworksHostedReasoning(row(open), 'key', run)
+  expect(read.capabilities).toEqual(['tools', 'reasoning'])
+  expect(read.absent).toBeUndefined()
 })
