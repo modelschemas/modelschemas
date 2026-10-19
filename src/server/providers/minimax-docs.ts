@@ -153,6 +153,18 @@ export const MINIMAX_CN: MinimaxPlatform = {
   otherModels: /其他模型/,
 }
 
+/**
+ * The pages indent what sits inside a `<section>` or `<Accordion>` (the
+ * legacy models' table), and `markdownTableRows` reads only lines that
+ * start with `|`: every page parser reads the page dedented.
+ */
+function dedent(markdown: string): string {
+  return markdown
+    .split('\n')
+    .map((line) => line.trim())
+    .join('\n')
+}
+
 /** `MiniMax-M3` must not match inside `MiniMax-M3.1-Flash-Preview`. */
 function names(text: string, id: string): boolean {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -166,7 +178,7 @@ export function parseMinimaxContextWindows(
 ): Map<string, number> {
   const out = new Map<string, number>()
   let column = -1
-  for (const cells of markdownTableRows(markdown)) {
+  for (const cells of markdownTableRows(dedent(markdown))) {
     const header = cells.indexOf(platform.contextWindow)
     if (header >= 0) {
       column = header
@@ -196,7 +208,7 @@ export function parseMinimaxInputModalities(
   platform: MinimaxPlatform = MINIMAX,
 ): Map<string, Array<string>> {
   const out = new Map<string, Array<string>>()
-  for (const cells of markdownTableRows(markdown)) {
+  for (const cells of markdownTableRows(dedent(markdown))) {
     const type = cells[0]?.match(/^`type="(\w+)"`$/)?.[1]
     const status = cells[1] ?? ''
     if (!type || !INPUT_TYPES.has(type)) continue
@@ -230,7 +242,7 @@ export function parseMinimaxReasoning(
 ): Map<string, ModelReasoning> {
   const out = new Map<string, ModelReasoning>()
   const families: Array<[string, ModelReasoning]> = []
-  const rows = markdownTableRows(markdown)
+  const rows = markdownTableRows(dedent(markdown))
   let adaptive = -1
   let disabled = -1
   for (const cells of rows) {
@@ -366,13 +378,9 @@ export function parseMinimaxPricing(
   markdown: string,
   platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  // The page nests each `## ` section, indented, in a `<section>` element,
-  // which closes the section even when the next heading is not `## `.
-  const dedented = markdown
-    .split('\n')
-    .map((line) => line.trim())
-    .join('\n')
-  const tabbed = markdownSection(dedented, platform.priceSection)
+  // The page nests each `## ` section in a `<section>` element, which
+  // closes the section even when the next heading is not `## `.
+  const tabbed = markdownSection(dedent(markdown), platform.priceSection)
     .replace(/<\/section>[\s\S]*/i, '')
     .replace(
       new RegExp(
