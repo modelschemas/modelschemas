@@ -6,7 +6,9 @@
  * FIREWORKS_API_KEY.
  *
  * Prices, reasoning, and the chat request map are read on each poll from
- * the pricing page, the serverless models API, and that same YAML.
+ * the pricing page, the serverless models API, and that same YAML. A chat
+ * row with no stated reasoning also reads its native metadata
+ * (`/v1/<rawId>`); a failed load marks only that row unavailable.
  */
 import { fireworksHostedReasoning } from '../native-host-reasoning.ts'
 import { mapConcurrent, docsReport, docsRun, tryDocs } from '../model-facts.ts'
@@ -133,6 +135,7 @@ async function listModels(
               'fireworks: missing API key for native model metadata',
             )
           })(),
+        docs,
         kv,
       ),
     ),
