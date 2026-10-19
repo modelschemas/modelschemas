@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { assertParsed } from '#/server/providers/model-facts.ts'
 
 import {
+  CF_TRACE_URL,
   POSTHOG_CAPTURE_URL,
   captureIngestEvents,
   ingestFailedEvent,
@@ -184,6 +185,68 @@ describe('posthog capture', () => {
     await expect(
       captureIngestEvents('phc_test', fetchImpl),
     ).resolves.toBeUndefined()
+  })
+
+  it('stamps the colo on ingest_failed events and on no other event', async () => {
+    takeIngestEvents()
+    noteIngest(ingestFailedEvent('models-poll', 'gemini', 'GET → 400'))
+    noteIngest(parseRowsEvent('page', 1))
+    const urls: Array<string> = []
+    let body = ''
+    const fetchImpl: typeof fetch = (input, init) => {
+      urls.push(String(input))
+      if (String(input) === CF_TRACE_URL) {
+        return Promise.resolve(
+          new Response('fl=1\nh=www.cloudflare.com\ncolo=HKG\nloc=US\n'),
+        )
+      }
+      body = String(init?.body)
+      return Promise.resolve(new Response('{}'))
+    }
+    await captureIngestEvents('phc_test', fetchImpl)
+    expect(urls).toEqual([CF_TRACE_URL, POSTHOG_CAPTURE_URL])
+    const { batch } = JSON.parse(body) as {
+      batch: Array<{ properties: Record<string, unknown> }>
+    }
+    expect(batch[0]?.properties).toMatchObject({
+      providerId: 'gemini',
+      colo: 'HKG',
+    })
+    expect(batch[1]?.properties).not.toHaveProperty('colo')
+  })
+
+  it('still captures ingest_failed without a colo when the trace fails', async () => {
+    takeIngestEvents()
+    noteIngest(ingestFailedEvent('models-poll', 'anthropic', 'GET → 403'))
+    let body = ''
+    const fetchImpl: typeof fetch = (input, init) => {
+      if (String(input) === CF_TRACE_URL) {
+        return Promise.reject(new Error('down'))
+      }
+      body = String(init?.body)
+      return Promise.resolve(new Response('{}'))
+    }
+    await captureIngestEvents('phc_test', fetchImpl)
+    const { batch } = JSON.parse(body) as {
+      batch: Array<{ properties: Record<string, unknown> }>
+    }
+    expect(batch[0]?.properties).toEqual({
+      job: 'models-poll',
+      providerId: 'anthropic',
+      error: 'GET → 403',
+    })
+  })
+
+  it('reads no trace when no event is ingest_failed', async () => {
+    takeIngestEvents()
+    noteIngest(parseRowsEvent('page', 1))
+    const urls: Array<string> = []
+    const fetchImpl: typeof fetch = (input) => {
+      urls.push(String(input))
+      return Promise.resolve(new Response('{}'))
+    }
+    await captureIngestEvents('phc_test', fetchImpl)
+    expect(urls).toEqual([POSTHOG_CAPTURE_URL])
   })
 
   it('assertParsed throws on zero rows and does not emit parse_rows', () => {
