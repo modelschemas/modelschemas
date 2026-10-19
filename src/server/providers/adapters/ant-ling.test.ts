@@ -209,6 +209,21 @@ it('reads a reference that dropped reasoning_effort with Ring as no effort model
     output: ['text'],
   })
 })
+it('fails an input-modality statement it cannot read', async () => {
+  for (const html of [
+    noEffort.html.replace('accepts text and audio', 'accepts text and smell'),
+    noEffort.html.replace(
+      'the request accepts text, images, and videos',
+      'the request also accepts text, images, and videos',
+    ),
+  ]) {
+    expect(html).not.toBe(noEffort.html)
+    serve({ [ANT_OPENAI]: html })
+    await expect(provider.listModels(nativeEnv)).rejects.toThrow(
+      /unreadable native input modality smell|missing native multimodal applicability/,
+    )
+  }
+})
 it('fails a reasoning_effort it cannot scope or whose default is no option', async () => {
   const detailDefault =
     'default <code class="nextra-code" dir="ltr">high</code>'

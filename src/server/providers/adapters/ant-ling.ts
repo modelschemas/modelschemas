@@ -179,7 +179,12 @@ export const provider: ProviderConfig = {
         }),
       ]),
     )
-    if (!accepts.size)
+    if (
+      !accepts.size ||
+      accepts.size !==
+        text(fields.get('model') ?? '').split('When using ').length - 1 ||
+      [...accepts.keys()].some((id) => !apiIds.has(id))
+    )
       throw new Error('ant-ling: missing native multimodal applicability')
     const levels = Object.fromEntries(
       SHARED_EFFORT_LEVELS.map((level) => [
