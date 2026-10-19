@@ -161,11 +161,8 @@ describe('stability listModels', () => {
     const { result, urls } = await withFetch(
       (url) => {
         if (url === STABILITY_PRICING_URL) {
-          return new Response('<script src="/assets/pricing.js"></script>')
-        }
-        if (url === 'https://platform.stability.ai/assets/pricing.js') {
           return new Response(
-            '1 credit = $0.01.\n{id:"generate-ultra",service:"Stable Image Ultra",description:"Flagship",price:"8"}',
+            '1 credit = \\$0.01.\n\n| Service | Description | Price (credits) |\n| - | - | - |\n| [Stable Image Ultra](/api-reference/generate/stable-image-ultra) | Flagship | 8 |\n',
           )
         }
         expect(url).toBe(ENGINES_URL)
@@ -182,12 +179,9 @@ describe('stability listModels', () => {
       },
       () => provider.listModels({ STABILITY_API_KEY: 'test-key' }),
     )
-    expect(urls).toEqual([
-      ENGINES_URL,
-      STABILITY_PRICING_URL,
-      'https://platform.stability.ai/assets/pricing.js',
-    ])
+    expect(urls).toEqual([ENGINES_URL, STABILITY_PRICING_URL])
     expect(result.skipped).toBeUndefined()
+    expect(result.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
     expect(result.models).toEqual([
       {
         rawId: 'stable-diffusion-xl-1024-v1-0',
@@ -200,6 +194,40 @@ describe('stability listModels', () => {
         activity: 'audio',
       },
     ])
+  })
+
+  it('keeps the listing and reports the pricing page when it prices nothing', async () => {
+    const { result } = await withFetch(
+      (url) => {
+        if (url === STABILITY_PRICING_URL) {
+          return new Response('<!DOCTYPE html><html></html>')
+        }
+        expect(url).toBe(ENGINES_URL)
+        return new Response(
+          JSON.stringify([
+            {
+              id: 'stable-diffusion-xl-1024-v1-0',
+              name: 'Stable Diffusion XL 1.0',
+              type: 'PICTURE',
+            },
+          ]),
+        )
+      },
+      () => provider.listModels({ STABILITY_API_KEY: 'test-key' }),
+    )
+    expect(result.models).toEqual([
+      {
+        rawId: 'stable-diffusion-xl-1024-v1-0',
+        displayName: 'Stable Diffusion XL 1.0',
+        activity: 'image',
+        absent: { pricing: 'unavailable' },
+      },
+    ])
+    expect(result.docsFailures?.failed).toBe(1)
+    expect(result.docsFailures?.first[0]).toMatchObject({
+      source: STABILITY_PRICING_URL,
+      error: 'stability pricing page: parsed 0 model rows',
+    })
   })
 })
 

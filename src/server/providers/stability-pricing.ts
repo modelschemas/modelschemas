@@ -1,60 +1,68 @@
 /**
- * Stability prices from the pricing app bundle (issue #122). The HTML
- * shell is empty; the published table lives in the script it loads.
- * `1 credit = $0.01`, and a service whose price is a single credit count
- * becomes that many cents per request. "From 0.9" is not a single amount,
- * so that service stays unpriced. A page that prices nothing throws.
+ * Stability prices from the pricing docs (issues #122, #362). The page
+ * moved to Mintlify at docs.stability.ai, which serves it as markdown:
+ * `1 credit = \$0.01` (the dollar sign escaped), then
+ * `| Service | Description | Price (credits) |` tables. A service whose
+ * price is a single credit count becomes that many cents per request. "From 0.9" is not a single amount, so that
+ * service stays unpriced. A page that prices nothing throws.
  */
 import { compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
-import { assertParsed, cachedDocs } from './model-facts.ts'
+import { assertParsed, markdownTableRows } from './model-facts.ts'
+import type { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
-export const STABILITY_PRICING_URL = 'https://platform.stability.ai/pricing'
+export const STABILITY_PRICING_URL = 'https://docs.stability.ai/pricing.md'
 
-const SERVICE =
-  /\{id:"([^"]+)",service:"([^"]+)",description:"[^"]*",price:"([^"]+)"/g
-const CREDIT_USD = /1 credit = \$(\d+(?:\.\d+)?)/
+const CREDIT_USD = /1 credit = \\?\$(\d+(?:\.\d+)?)/
 const EXACT_CREDITS = /^\d+(?:\.\d+)?$/
+/** `[Stable Image Ultra](/api-reference/...)` → `Stable Image Ultra`. */
+const LINKED_NAME = /^\[([^\]]+)\]\([^)]*\)$/
 
-/** Service id → USD per request. Inexact prices are absent. */
+/** Service name → USD per request. Inexact prices are absent. */
 export function parseStabilityPricing(source: string): Map<string, number> {
   const credit = source.match(CREDIT_USD)?.[1]
   if (credit === undefined) return new Map()
   const usd = Number(credit)
   const out = new Map<string, number>()
-  for (const match of source.matchAll(SERVICE)) {
-    const id = match[1]
-    const price = match[3]
-    if (!id || !price || !EXACT_CREDITS.test(price) || out.has(id)) continue
-    out.set(id, Number(price) * usd)
+  // Only tables headed `| Service | … | Price (credits) |` are credits
+  // per request; any other table on the page is not read.
+  for (const block of source.split(/\n\s*\n/)) {
+    const [header, ...rows] = markdownTableRows(block)
+    if (header?.[0] !== 'Service' || header[2] !== 'Price (credits)') continue
+    for (const [service, , price] of rows) {
+      if (service === undefined || price === undefined) continue
+      if (!EXACT_CREDITS.test(price)) continue
+      const name = service.match(LINKED_NAME)?.[1] ?? service
+      const rate = Number(price) * usd
+      const prior = out.get(name)
+      if (prior !== undefined && prior !== rate) {
+        throw new Error(`stability pricing: ${name} has two prices`)
+      }
+      out.set(name, rate)
+    }
   }
   return out
-}
-
-async function loadStabilityPricingSource(): Promise<string> {
-  const html = await fetchText(STABILITY_PRICING_URL)
-  const src = html.match(/src="(\/assets\/[^"]+\.js)"/)?.[1]
-  if (!src) {
-    throw new Error('stability pricing: page has no app script')
-  }
-  return fetchText(new URL(src, STABILITY_PRICING_URL).href)
 }
 
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 /**
- * Card lookup by the pricing page's service id. Catalog engine ids that
- * the page does not name (including SDXL's "From 0.9") get no card.
+ * Card lookup by catalog id against the page's service names. The page
+ * names services, not `/v1/engines/list` ids, so an engine id matches only
+ * where the page states that same string; today none does, and no card is
+ * attached. Load it through `tryDocs`; this throws when the page prices
+ * nothing.
  */
 export async function stabilityModelPricing(
-  kv?: KVNamespace,
+  kv: KVNamespace | undefined,
+  cached: typeof cachedDocs,
 ): Promise<(rawId: string) => PricedFacts> {
-  const doc = await cachedDocs(kv, STABILITY_PRICING_URL, async () => {
-    const source = await loadStabilityPricingSource()
+  const doc = await cached(kv, STABILITY_PRICING_URL, async () => {
+    const source = await fetchText(STABILITY_PRICING_URL)
     const parsed = parseStabilityPricing(source)
     assertParsed(parsed, 'stability pricing page')
     return {

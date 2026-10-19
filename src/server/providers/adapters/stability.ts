@@ -5,7 +5,11 @@
  * Model catalog is GET /v1/engines/list (Bearer).
  */
 import type { Activity } from '#/db/schema.ts'
-import { stabilityModelPricing } from '../stability-pricing.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
+import {
+  STABILITY_PRICING_URL,
+  stabilityModelPricing,
+} from '../stability-pricing.ts'
 import { fetchJson, fetchOpenApi, skippedResult } from '../types.ts'
 import type {
   ListModelsResult,
@@ -63,7 +67,10 @@ async function listModels(
   const body = (await fetchJson(STABILITY_ENGINES_URL, {
     headers: { Authorization: `Bearer ${key}` },
   })) as Array<StabilityEngine>
-  const pricing = await stabilityModelPricing(kv)
+  const docs = docsRun()
+  const pricing = await tryDocs(docs, STABILITY_PRICING_URL, (cached) =>
+    stabilityModelPricing(kv, cached),
+  )
   return {
     models: (Array.isArray(body) ? body : [])
       .filter((m) => typeof m.id === 'string' && m.id.length > 0)
@@ -71,8 +78,9 @@ async function listModels(
         rawId: m.id,
         displayName: m.name ?? null,
         activity: ENGINE_ACTIVITIES[m.type ?? ''] ?? null,
-        ...pricing(m.id),
+        ...(pricing ? pricing(m.id) : unavailable('pricing')),
       })),
+    docsFailures: docsReport(docs),
   }
 }
 
