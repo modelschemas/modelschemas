@@ -7,6 +7,7 @@ import fixtures from '../fixtures/ant-ling-docs.json'
 import sourceFailure from '../fixtures/ant-ling-native-source-failure.json'
 import seriesThinking from '../fixtures/ant-ling-openai-series-thinking.json'
 import reasoningEffort from '../fixtures/ant-ling-openai-reasoning-effort.json'
+import noEffort from '../fixtures/ant-ling-openai-no-effort.json'
 import {
   ANT_OPENAI,
   ANT_PRICE,
@@ -177,6 +178,36 @@ it('reads the top-level reasoning_effort string the page replaced reasoning.effo
     await provider.fetchSpec(nativeEnv),
   )
   expect(bundled.endpoints).toHaveLength(1)
+})
+it('reads a reference that dropped reasoning_effort with Ring as no effort model', async () => {
+  serve({ [ANT_OPENAI]: noEffort.html })
+  const { models } = await provider.listModels(nativeEnv)
+  for (const id of [
+    'Ling-3.1-flash',
+    'Ling-3.0-flash-VL',
+    'Ling-3.0-flash',
+    'Ling-3.0-tiny',
+  ]) {
+    const row = models.find((m) => m.rawId === id)
+    expect(row?.reasoning).toEqual({ mode: 'toggle', mandatory: false })
+    expect(row?.requestMap?.thinking).toEqual({
+      on: { thinking: { type: 'enabled' } },
+      off: { thinking: { type: 'disabled' } },
+      levels: null,
+    })
+  }
+  expect(models.some((m) => m.reasoning?.mode === 'effort')).toBe(false)
+  expect(models.find((m) => m.rawId === 'Ring-2.6-1T')?.requestMap).toBeNull()
+  expect(
+    models.find((m) => m.rawId === 'Ming-3.0-audio-flash')?.modalities,
+  ).toEqual({ input: ['text', 'audio'], output: ['text'] })
+  expect(
+    models.find((m) => m.rawId === 'Ling-3.0-flash-VL')?.modalities,
+  ).toEqual({ input: ['text', 'image', 'video'], output: ['text'] })
+  expect(models.find((m) => m.rawId === 'Ling-3.0-flash')?.modalities).toEqual({
+    input: ['text'],
+    output: ['text'],
+  })
 })
 it('fails a reasoning_effort it cannot scope or whose default is no option', async () => {
   const detailDefault =
@@ -486,7 +517,7 @@ it('rejects the actual production captcha before caching and retries native docs
   expect(writes).toEqual([])
   serve()
   expect((await provider.listModels(nativeEnv, kv)).models).toHaveLength(8)
-  expect(writes).toHaveLength(6)
+  expect(writes).toHaveLength(5)
   expect(
     writes.every((key) => key.includes('#cloudflare-browser-content-v1')),
   ).toBe(true)
@@ -671,7 +702,7 @@ it('hashes the rendered native HTML and bounds browser source reads sequentially
   }) as typeof browser.quickAction
   const { models } = await provider.listModels(nativeEnv)
   expect(models).toHaveLength(8)
-  expect(urls).toHaveLength(6)
+  expect(urls).toHaveLength(5)
   expect(peak).toBe(1)
   const spec = await provider.fetchSpec(nativeEnv)
   expect(spec.sources).toEqual([

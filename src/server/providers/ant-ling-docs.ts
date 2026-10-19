@@ -4,11 +4,10 @@ import type { RateCard } from '@modelschemas/rate-card'
 import type { ModelInfo } from './types.ts'
 
 export const ANT_ROOT = 'https://developer.ant-ling.com/en/docs/'
-export const ANT_OPENAI = `${ANT_ROOT}api-reference/openai/`
+export const ANT_OPENAI = `${ANT_ROOT}api-reference/chat/openai/`
 export const ANT_OVERVIEW = `${ANT_ROOT}api-reference/`
 export const ANT_PRICE = `${ANT_ROOT}models/price/`
 export const ANT_LING = `${ANT_ROOT}models/ling/`
-export const ANT_RING = `${ANT_ROOT}models/ring/`
 export const ANT_EFFORT = `${ANT_ROOT}tutorials/effort/`
 function fail(message: string): never {
   throw new Error(`ant-ling: ${message}`)
@@ -334,22 +333,24 @@ export function applicability(html: string, field: string): Array<string> {
 export function controls(html: string) {
   const fields = nativeFields(html)
   // The page has published the effort as `reasoning.effort` and, since
-  // 2026-10-16, as a top-level `reasoning_effort` string.
+  // 2026-10-16, as a top-level `reasoning_effort` string. Since 2026-10-19
+  // it publishes neither: Ring-2.6-1T, the one model it scoped, left the
+  // model options for deprecation. No effort field means no effort model.
   const nested = fields.get('reasoning.effort')
   const flat = fields.get('reasoning_effort')
   if (nested && flat) fail('two native effort fields')
   const effort = nested ?? flat
   const toggle = fields.get('thinking.type')
-  if (!effort || !toggle) fail('missing native reasoning controls')
+  if (!toggle) fail('missing native reasoning controls')
   const effortField = nested ? 'reasoning' : 'reasoning_effort'
-  const effortIds = applicability(html, effortField)
+  const effortIds = effort ? applicability(html, effortField) : []
   const thinking = scope(html, 'thinking')
   if (!thinking.named.every((name) => text(toggle).includes(name)))
     fail('thinking.type names other models than thinking')
   if (thinking.ids.some((id) => effortIds.includes(id)))
     fail('a model has both native reasoning controls')
   const effortDefault =
-    effort.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null
+    effort?.match(/default <code\b[^>]*>([^<]+)<\/code>/)?.[1] ?? null
   if (flat) {
     const listed = overviewRow(fields, effortField)?.[3]
     if (!effortDefault || !listed || listed === '—')
@@ -360,7 +361,7 @@ export function controls(html: string) {
     effortField,
     effortIds,
     toggleIds: thinking.ids,
-    efforts: options(effort),
+    efforts: effort ? options(effort) : [],
     effortDefault,
     toggles: options(toggle),
   }

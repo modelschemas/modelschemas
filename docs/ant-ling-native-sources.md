@@ -5,7 +5,7 @@ capture their article contents for offline regression tests. There is no static
 model registry, reseller pricing source, credential requirement or generation
 request in the adapter.
 
-- https://developer.ant-ling.com/en/docs/api-reference/openai/ — request address,
+- https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ — request address,
   model options, parameter types, required fields, defaults, bounds, role options,
   model-scoped reasoning and thinking controls, and multimodal applicability.
 - https://developer.ant-ling.com/en/docs/api-reference/ — hosted context lengths
@@ -19,10 +19,12 @@ request in the adapter.
   zero. The source's promotion duration is not converted into a guessed deadline.
 - https://developer.ant-ling.com/en/docs/models/ling/ — model selection contexts
   absent from the hosted API overview, and native model-specific capabilities.
-- https://developer.ant-ling.com/en/docs/models/ring/ and
-  https://developer.ant-ling.com/en/docs/tutorials/effort/ — native Ring provenance
-  and agreement on the model using high/xhigh effort. Mandatory reasoning remains
-  unknown because a mandatory flag is not published.
+- https://developer.ant-ling.com/en/docs/tutorials/effort/ — agreement on the
+  model using high/xhigh effort. Mandatory reasoning remains unknown because a
+  mandatory flag is not published. Since 2026-10-19 the API reference publishes
+  no effort field (Ring-2.6-1T left its model options ahead of its 2026-11-15
+  deprecation, and the `models/ring/` page is gone), so no row has an effort
+  mode; the 3.0/3.1 `thinking.type` toggle is unchanged.
 
 The catalog is the union of native API model options and direct CNY price IDs.
 Currently it contains eight rows, including newer Ling-3.1-flash and AntAngelMed.

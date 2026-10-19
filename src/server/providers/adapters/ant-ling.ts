@@ -15,7 +15,6 @@ import {
   ANT_OVERVIEW,
   ANT_PRICE,
   ANT_LING,
-  ANT_RING,
   ANT_EFFORT,
   text,
   article,
@@ -40,6 +39,13 @@ function validateNativeArticle(html: string): void {
   )
     throw new Error('native documentation blocked by Alipay WAF/captcha')
   article(html)
+}
+
+const INPUT_WORDS: Record<string, string> = {
+  text: 'text',
+  images: 'image',
+  videos: 'video',
+  audio: 'audio',
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -128,12 +134,11 @@ export const provider: ProviderConfig = {
       ANT_OVERVIEW,
       ANT_PRICE,
       ANT_LING,
-      ANT_RING,
       ANT_EFFORT,
     ])
       sources.push(await load(url, env, kv))
-    const [api, overview, pricing, ling, ring, effort] = sources
-    if (!api || !overview || !pricing || !ling || !ring || !effort)
+    const [api, overview, pricing, ling, effort] = sources
+    if (!api || !overview || !pricing || !ling || !effort)
       throw new Error('ant-ling: missing loaded source')
     const overviewIds = overviewContextIds(overview.html)
     const contexts = nativeContexts(overview.html, ling.html)
@@ -155,10 +160,26 @@ export const provider: ProviderConfig = {
       throw new Error('ant-ling: unreadable native API route')
     const nativeEndpointId = nativePaths[0].replace(/^\//, '')
     const apiOverview = text(article(overview.html))
-    const multimodal = text(fields.get('model') ?? '').match(
-      /When using ([\w.-]+)\s*, the request accepts text, images, and videos/,
-    )?.[1]
-    if (!multimodal)
+    // "When using <id>, the request accepts text, images, and videos." — one
+    // statement per model that takes more than text.
+    const accepts = new Map(
+      [
+        ...text(fields.get('model') ?? '').matchAll(
+          /When using ([\w.-]+)\s*, the request accepts ([^.]+)\./g,
+        ),
+      ].map(([, id = '', list = '']) => [
+        id,
+        list.split(/,\s*(?:and\s+)?|\s+and\s+/).map((word) => {
+          const modality = INPUT_WORDS[word]
+          if (!modality)
+            throw new Error(
+              `ant-ling: unreadable native input modality ${word}`,
+            )
+          return modality
+        }),
+      ]),
+    )
+    if (!accepts.size)
       throw new Error('ant-ling: missing native multimodal applicability')
     const levels = Object.fromEntries(
       SHARED_EFFORT_LEVELS.map((level) => [
@@ -171,9 +192,10 @@ export const provider: ProviderConfig = {
     if (
       !toggleOn ||
       !toggleOff ||
-      !control.efforts.length ||
-      !control.effortDefault ||
-      !control.efforts.includes(control.effortDefault)
+      (control.effortIds.length > 0 &&
+        (!control.efforts.length ||
+          !control.effortDefault ||
+          !control.efforts.includes(control.effortDefault)))
     )
       throw new Error('ant-ling: unreadable native control values')
     const effortText = text(article(effort.html))
@@ -227,10 +249,7 @@ export const provider: ProviderConfig = {
           // a newer price-only ID has no API-scoped modality statement yet.
           const modalities = declaredText
             ? {
-                input:
-                  model.rawId === multimodal
-                    ? ['text', 'image', 'video']
-                    : ['text'],
+                input: accepts.get(model.rawId) ?? ['text'],
                 output: ['text'],
               }
             : null
@@ -276,7 +295,7 @@ export const provider: ProviderConfig = {
                   }
                 : {}),
               ...(control.effortIds.includes(model.rawId)
-                ? { nativeReasoningModelSource: ANT_RING }
+                ? { nativeReasoningModelSource: ANT_EFFORT }
                 : {}),
             },
             factSources: {
