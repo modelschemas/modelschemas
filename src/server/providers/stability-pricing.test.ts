@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { compileUnitCard } from '@modelschemas/rate-card'
 
-import { parseStabilityPricing } from './stability-pricing.ts'
+import type { cachedDocs } from './model-facts.ts'
+import {
+  parseStabilityPricing,
+  stabilityModelPricing,
+} from './stability-pricing.ts'
 
 /** Excerpt of https://docs.stability.ai/pricing.md (2026-10-19). */
 const PAGE = String.raw`# Pricing
@@ -37,9 +41,9 @@ const SOURCE = {
 describe('stability pricing page', () => {
   it('prices an exact credit count and leaves an inexact model null', () => {
     const rates = parseStabilityPricing(PAGE)
-    expect(rates.get('Stable Image Ultra')).toBe(0.08)
+    expect(rates.get('Stable Image Ultra')).toBeCloseTo(0.08)
     expect(rates.get('Stable Diffusion 3.5 Large')).toBeCloseTo(0.065)
-    expect(rates.get('Fast Upscaler')).toBe(0.02)
+    expect(rates.get('Fast Upscaler')).toBeCloseTo(0.02)
     expect(
       compileUnitCard({ rates: rates.get('Stable Image Ultra') ?? 0 }, SOURCE),
     ).toMatchObject({ price: 0.08 })
@@ -48,9 +52,50 @@ describe('stability pricing page', () => {
     expect(rates.size).toBe(3)
   })
 
+  it('reads only tables priced in credits', () => {
+    const page = `${PAGE}
+| Pack | Description | Price (USD) |
+| - | - | - |
+| Starter | 1,000 credits | 10 |
+`
+    expect(parseStabilityPricing(page).has('Starter')).toBe(false)
+    expect(parseStabilityPricing(page).size).toBe(3)
+  })
+
+  it('refuses a service the page prices twice', () => {
+    const page = `${PAGE}
+| Service | Description | Price (credits) |
+| - | - | - |
+| [Fast Upscaler](/api-reference/upscale/fast) | Again | 3 |
+`
+    expect(() => parseStabilityPricing(page)).toThrow(
+      'stability pricing: Fast Upscaler has two prices',
+    )
+  })
+
   it('prices nothing without the stated credit rate', () => {
     expect(
       parseStabilityPricing(PAGE.replace('1 credit', 'One credit')).size,
     ).toBe(0)
+  })
+
+  it('attaches a card only to an id the page names', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(PAGE))
+    const uncached: typeof cachedDocs = (_kv, _url, load) => load()
+    try {
+      const lookup = await stabilityModelPricing(undefined, uncached)
+      const named = lookup('Stable Image Ultra')
+      expect(named.pricing).toMatchObject({ price: 0.08 })
+      expect(named.factSources?.pricing).toMatchObject({
+        sourceUrl: 'https://docs.stability.ai/pricing.md',
+      })
+      // Engine ids from /v1/engines/list are not page service names.
+      expect(lookup('stable-diffusion-xl-1024-v1-0')).toEqual({})
+      expect(lookup('SDXL 1.0')).toEqual({})
+    } finally {
+      fetchMock.mockRestore()
+    }
   })
 })
