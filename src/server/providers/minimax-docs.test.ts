@@ -70,6 +70,34 @@ describe('minimax docs', () => {
     }
   })
 
+  it('reads the legacy rows the page indents inside an accordion', () => {
+    // The live page (Oct 2026) moved the M2.x rows into an indented
+    // `<Accordion title="Legacy Models">` under the M3 table.
+    const lines = MINIMAX_SDK_PAGE.split('\n')
+    const first = lines.findIndex((line) => line.startsWith('| MiniMax-M2.7 '))
+    const last = lines.findIndex((line) => line.startsWith('| MiniMax-M2 '))
+    const page = [
+      ...lines.slice(0, first),
+      '',
+      '<Accordion title="Legacy Models">',
+      '  | Model Name | Context Window | Description |',
+      '  | :- | :- | :- |',
+      ...lines.slice(first, last + 1).map((line) => `  ${line}`),
+      '</Accordion>',
+      ...lines.slice(last + 1),
+    ].join('\n')
+    const windows = parseMinimaxContextWindows(page)
+    expect([...windows.keys()]).toEqual(IDS)
+    expect(windows.get('MiniMax-M2')).toBe(204_800)
+    expect(parseMinimaxInputModalities(page, IDS).get('MiniMax-M2')).toEqual([
+      'text',
+    ])
+    expect(parseMinimaxReasoning(page, IDS).get('MiniMax-M2')).toEqual({
+      mode: 'adaptive',
+      mandatory: true,
+    })
+  })
+
   it('reads the output cap for the named models and for the rest', () => {
     const caps = parseMinimaxMaxOutput(MINIMAX_MAX_COMPLETION_TOKENS, IDS)
     expect(caps.get('MiniMax-M3.1-Flash-Preview')).toBe(524_288)
