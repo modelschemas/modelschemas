@@ -109,13 +109,12 @@ it('keeps a row whose Fireworks metadata is forbidden and reports the failure', 
       ),
     ),
   )
-  const row = (rawId: string) =>
-    ({
-      rawId,
-      activity: 'chat',
-      capabilities: ['tools'],
-      reasoning: null,
-    }) as unknown as ModelInfo
+  const row = (rawId: string): ModelInfo => ({
+    rawId,
+    activity: 'chat',
+    capabilities: ['tools'],
+    reasoning: null,
+  })
   const run = docsRun()
   const kept = await fireworksHostedReasoning(row(forbidden), 'key', run)
   expect(kept.absent).toEqual({ capabilities: 'unavailable' })
