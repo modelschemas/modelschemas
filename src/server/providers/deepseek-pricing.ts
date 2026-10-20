@@ -11,8 +11,9 @@ import { assertParsed } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
+/** The trailing slash is load-bearing: without it the docs host serves its home page (issue #369). */
 export const DEEPSEEK_PRICING_URL =
-  'https://api-docs.deepseek.com/quick_start/pricing'
+  'https://api-docs.deepseek.com/quick_start/pricing/'
 
 export interface DeepseekRates {
   input: number
@@ -71,9 +72,8 @@ export function parseDeepseekPricing(html: string): Map<string, DeepseekRates> {
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 /**
- * On the Worker the page sometimes parses to 0 rows, though it parses
- * from elsewhere (issue #367). Name the body's size and title so the
- * failure says what came back.
+ * Name the body's size and title so a zero-row parse says what came back
+ * (issue #367; the title is how #369 found the home page served instead).
  */
 function describeBody(html: string): string {
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()

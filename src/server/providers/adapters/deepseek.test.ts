@@ -141,6 +141,45 @@ it('sources DeepSeek effort and replay without losing other native capabilities'
   }
 })
 
+it('reads prices from the slashed pricing path, not the home page the bare path serves', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) => {
+    if (String(url) === 'https://api-docs.deepseek.com/quick_start/pricing/')
+      return Promise.resolve(
+        new Response(
+          [
+            'MODEL',
+            'deepseek-v4-pro',
+            'PRICING',
+            '$1',
+            '$2',
+            '$3',
+            '$4',
+            '$5',
+            '$6',
+            'Concurrency',
+          ].join('\n'),
+        ),
+      )
+    if (String(url).includes('api-docs.deepseek.com'))
+      return Promise.resolve(
+        new Response(
+          '<html><title>Your First API Call | DeepSeek API Docs</title></html>',
+        ),
+      )
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }] })),
+    )
+  }) as typeof fetch
+  try {
+    const result = await provider.listModels({ DEEPSEEK_API_KEY: 'test-key' })
+    expect(result.models[0]?.pricing).toBeDefined()
+    expect(result.models[0]?.absent?.pricing).toBeUndefined()
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
 it('keeps the poll when the pricing page has no table', async () => {
   const original = globalThis.fetch
   globalThis.fetch = ((url: string) => {
