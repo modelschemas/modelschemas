@@ -139,3 +139,28 @@ it('sources DeepSeek effort and replay without losing other native capabilities'
     globalThis.fetch = original
   }
 })
+
+it('keeps the poll when the pricing page has no table', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) => {
+    if (String(url).includes('api-docs.deepseek.com'))
+      return Promise.resolve(
+        new Response('<html><title>Just a moment</title><p>wait</p></html>'),
+      )
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }] })),
+    )
+  }) as typeof fetch
+  try {
+    const result = await provider.listModels({ DEEPSEEK_API_KEY: 'test-key' })
+    expect(result.models[0]?.rawId).toBe('deepseek-v4-pro')
+    expect(result.models[0]?.pricing).toBeUndefined()
+    expect(result.models[0]?.absent).toEqual({ pricing: 'unavailable' })
+    expect(result.docsFailures?.failed).toBe(1)
+    expect(result.docsFailures?.first[0]?.error).toBe(
+      'deepseek pricing page (52 bytes, title "Just a moment"): parsed 0 model rows',
+    )
+  } finally {
+    globalThis.fetch = original
+  }
+})

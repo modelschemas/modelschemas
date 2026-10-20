@@ -6,7 +6,8 @@
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
-import { assertParsed, cachedDocs } from './model-facts.ts'
+import type { cachedDocs } from './model-facts.ts'
+import { assertParsed } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
@@ -69,12 +70,27 @@ export function parseDeepseekPricing(html: string): Map<string, DeepseekRates> {
 
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
+/**
+ * The page sometimes reaches the Worker as a body with no pricing table
+ * (issue #367). Name its size and title so the failure says what came back.
+ */
+function describeBody(html: string): string {
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()
+  return `${html.length} bytes, title ${JSON.stringify(title ?? null)}`
+}
+
 export async function deepseekModelPricing(
-  kv?: KVNamespace,
+  kv: KVNamespace | undefined,
+  cached: typeof cachedDocs,
 ): Promise<(rawId: string) => PricedFacts> {
-  const doc = await cachedDocs(kv, DEEPSEEK_PRICING_URL, async () => {
+  const doc = await cached(kv, DEEPSEEK_PRICING_URL, async () => {
     const html = await fetchText(DEEPSEEK_PRICING_URL)
     const parsed = parseDeepseekPricing(html)
+    if (parsed.size === 0) {
+      throw new Error(
+        `deepseek pricing page (${describeBody(html)}): parsed 0 model rows`,
+      )
+    }
     assertParsed(parsed, 'deepseek pricing page')
     return {
       rates: Object.fromEntries(parsed),

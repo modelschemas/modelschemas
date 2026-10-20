@@ -10,7 +10,11 @@ import {
   loadReplayDoc,
   parseDeepseekReplay,
 } from '../provider-replay.ts'
-import { deepseekModelPricing } from '../deepseek-pricing.ts'
+import {
+  DEEPSEEK_PRICING_URL,
+  deepseekModelPricing,
+} from '../deepseek-pricing.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import {
   listOpenAiCompatibleModels,
   openAiCompatModelFacts,
@@ -68,7 +72,10 @@ export const provider: ProviderConfig = {
       },
     })
     if (listed.models.length === 0) return listed
-    const pricing = await deepseekModelPricing(kv)
+    const docs = docsRun()
+    const pricing = await tryDocs(docs, DEEPSEEK_PRICING_URL, (cached) =>
+      deepseekModelPricing(kv, cached),
+    )
     const replay = listed.models.some((model) => model.reasoning != null)
       ? await loadReplayDoc(DEEPSEEK_THINKING_URL, kv)
       : null
@@ -76,11 +83,15 @@ export const provider: ProviderConfig = {
     return {
       ...listed,
       models: listed.models.map((model) => {
-        const priced = { ...model, ...pricing(model.rawId) }
+        const priced = {
+          ...model,
+          ...(pricing ? pricing(model.rawId) : unavailable('pricing')),
+        }
         return replay && model.reasoning != null
           ? applyReplay(priced, replay.source)
           : priced
       }),
+      docsFailures: docsReport(docs),
     }
   },
   classify: (_path, operation) =>
