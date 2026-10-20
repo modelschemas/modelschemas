@@ -71,12 +71,13 @@ export function parseDeepseekPricing(html: string): Map<string, DeepseekRates> {
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 /**
- * The page sometimes reaches the Worker as a body with no pricing table
- * (issue #367). Name its size and title so the failure says what came back.
+ * On the Worker the page sometimes parses to 0 rows, though it parses
+ * from elsewhere (issue #367). Name the body's size and title so the
+ * failure says what came back.
  */
 function describeBody(html: string): string {
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()
-  return `${html.length} bytes, title ${JSON.stringify(title ?? null)}`
+  return `${html.length} chars, title ${JSON.stringify(title ?? null)}`
 }
 
 export async function deepseekModelPricing(

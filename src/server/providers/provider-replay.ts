@@ -156,17 +156,24 @@ export function explicitCardReplay(text: string): boolean {
   )
 }
 
+/**
+ * `verify` runs before the body is cached, so a page it rejects is
+ * refetched next poll instead of being served from KV for six hours.
+ */
 export async function loadReplayDoc(
   url: string,
   kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
+  verify?: (text: string) => unknown,
 ): Promise<{ text: string; source: FactSource }> {
-  const doc = await cachedDocs(kv, url, async () => {
+  const doc = await cached(kv, url, async () => {
     const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
     if (
       /^\s*<(?:!doctype|html)/i.test(text) &&
       !url.includes('api-docs.deepseek.com')
     )
       throw new Error(`replay docs: ${url} returned HTML`)
+    verify?.(text)
     return { text, hash: await sha256Text(text) }
   })
   return {

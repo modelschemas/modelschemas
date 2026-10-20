@@ -22,6 +22,7 @@ import {
 import { deepseekModelActivity } from '../model-meta.ts'
 import type {
   ListModelsResult,
+  ModelFact,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -76,20 +77,39 @@ export const provider: ProviderConfig = {
     const pricing = await tryDocs(docs, DEEPSEEK_PRICING_URL, (cached) =>
       deepseekModelPricing(kv, cached),
     )
+    // Same docs host as pricing. The second parse covers a KV entry cached
+    // before `verify` checked bodies.
     const replay = listed.models.some((model) => model.reasoning != null)
-      ? await loadReplayDoc(DEEPSEEK_THINKING_URL, kv)
+      ? await tryDocs(docs, DEEPSEEK_THINKING_URL, async (cached) => {
+          const doc = await loadReplayDoc(
+            DEEPSEEK_THINKING_URL,
+            kv,
+            cached,
+            parseDeepseekReplay,
+          )
+          parseDeepseekReplay(doc.text)
+          return doc
+        })
       : null
-    if (replay) parseDeepseekReplay(replay.text)
     return {
       ...listed,
       models: listed.models.map((model) => {
-        const priced = {
+        const lost: Array<ModelFact> = [
+          ...(pricing ? [] : ['pricing' as const]),
+          ...(model.reasoning != null && !replay
+            ? ['requestMap' as const]
+            : []),
+        ]
+        const row = {
           ...model,
-          ...(pricing ? pricing(model.rawId) : unavailable('pricing')),
+          ...pricing?.(model.rawId),
+          ...(lost.length > 0
+            ? { absent: { ...model.absent, ...unavailable(...lost).absent } }
+            : {}),
         }
         return replay && model.reasoning != null
-          ? applyReplay(priced, replay.source)
-          : priced
+          ? applyReplay(row, replay.source)
+          : row
       }),
       docsFailures: docsReport(docs),
     }
