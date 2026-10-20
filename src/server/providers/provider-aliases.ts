@@ -228,8 +228,9 @@ async function fetchOptional(url: string): Promise<string | null> {
 /** Alias → dated id, from the models overview and the pages it points at. */
 export async function anthropicAliasMap(
   kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
 ): Promise<Map<string, string>> {
-  const doc = await cachedDocs(kv, ANTHROPIC_MODELS_OVERVIEW_URL, async () => {
+  const doc = await cached(kv, ANTHROPIC_MODELS_OVERVIEW_URL, async () => {
     const overview = await fetchText(ANTHROPIC_MODELS_OVERVIEW_URL)
     const depUrl = deprecationsUrl(overview)
     const deprecations = depUrl ? await fetchText(depUrl) : ''

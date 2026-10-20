@@ -4,18 +4,28 @@
  * codegen). `.stats.yml` stopped carrying `openapi_spec_url` on 2026-09-03.
  */
 import type { Activity } from '#/db/schema.ts'
-import { anthropicModelFeatures } from './anthropic-features.ts'
 import {
+  ANTHROPIC_THINKING_URL,
+  anthropicModelFeatures,
+  anthropicServerTools,
+} from './anthropic-features.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from './model-facts.ts'
+import {
+  ANTHROPIC_MODELS_OVERVIEW_URL,
   anthropicAliasMap,
   applyDocumentedAliases,
 } from './provider-aliases.ts'
 import type { AnthropicThinkingCaps } from './anthropic-features.ts'
-import { anthropicModelPricing } from './anthropic-pricing.ts'
+import {
+  ANTHROPIC_PRICING_URL,
+  anthropicModelPricing,
+} from './anthropic-pricing.ts'
 import { isoToEpochSeconds } from './release-dates.ts'
 import { fetchJson, parseGzippedOpenApi, skippedResult } from './types.ts'
 import { headerApiKeyConnect } from './connect.ts'
 import type {
   ListModelsResult,
+  ModelFact,
   ProviderConfig,
   ProviderSecrets,
   SpecFetchResult,
@@ -103,11 +113,25 @@ async function listModels(
     return { models: [], ...skippedResult('anthropic', 'ANTHROPIC_API_KEY') }
   }
   const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION }
+  // A failed docs load leaves the facts it feeds unavailable on every row;
+  // the Models API listing itself is never wrapped.
+  const docs = docsRun()
   const [pricing, features, aliasMap] = await Promise.all([
-    anthropicModelPricing(kv),
-    anthropicModelFeatures(kv),
-    anthropicAliasMap(kv),
+    tryDocs(docs, ANTHROPIC_PRICING_URL, (cached) =>
+      anthropicModelPricing(kv, cached),
+    ),
+    tryDocs(docs, ANTHROPIC_THINKING_URL, (cached) =>
+      anthropicModelFeatures(kv, cached),
+    ),
+    tryDocs(docs, ANTHROPIC_MODELS_OVERVIEW_URL, (cached) =>
+      anthropicAliasMap(kv, cached),
+    ),
   ])
+  const lost: Array<ModelFact> = [
+    ...(pricing ? [] : ['pricing' as const]),
+    ...(features ? [] : ['reasoning' as const]),
+    ...(aliasMap ? [] : ['aliases' as const]),
+  ]
   const models: ListModelsResult['models'] = []
   let afterId: string | undefined
   do {
@@ -121,8 +145,12 @@ async function listModels(
       const input = ['text']
       if (m.capabilities?.image_input?.supported) input.push('image')
       if (m.capabilities?.pdf_input?.supported) input.push('file')
-      const priced = pricing(m.display_name)
-      const feat = features(m.id, m.display_name, m.capabilities)
+      const priced = pricing?.(m.display_name) ?? {}
+      // Server tools come from the hand-written table, not the docs load.
+      const feat = features?.(m.id, m.display_name, m.capabilities) ?? {
+        reasoning: null,
+        ...toolsOnly(m.id),
+      }
       models.push({
         rawId: m.id,
         displayName: m.display_name ?? null,
@@ -137,11 +165,20 @@ async function listModels(
         reasoning: feat.reasoning,
         serverTools: feat.serverTools,
         factSources: { ...priced.factSources, ...feat.factSources },
+        ...(lost.length > 0 ? unavailable(...lost) : {}),
       })
     }
     afterId = body.has_more ? body.last_id : undefined
   } while (afterId)
-  return { models: applyDocumentedAliases(models, aliasMap) }
+  return {
+    models: aliasMap ? applyDocumentedAliases(models, aliasMap) : models,
+    docsFailures: docsReport(docs),
+  }
+}
+
+function toolsOnly(rawId: string) {
+  const { serverTools, sources } = anthropicServerTools(rawId)
+  return { serverTools, factSources: { serverTools: sources } }
 }
 
 export const anthropicProvider: ProviderConfig = {
