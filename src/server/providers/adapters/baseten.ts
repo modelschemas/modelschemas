@@ -2,7 +2,8 @@
  * Baseten Model APIs. The catalog is `GET /v1/models` on the inference host.
  * That list publishes id, context, modalities, and per-token prices. It
  * requires `BASETEN_API_KEY`; a missing key skips so stored rows stay.
- * Effort values come from the public reasoning page, joined by display name.
+ * Effort values come from the public reasoning page's depth table, joined by
+ * display name; its effective-depth column says what `none` does.
  * A zero price string is not a rate. Schemas are the published OpenAPI files.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
@@ -74,55 +75,70 @@ function positiveInt(value: unknown): number | null {
     : null
 }
 
-function parseEfforts(markdown: string): Map<string, Array<string>> {
-  const start = markdown.search(/^## Control reasoning depth/m)
-  if (start < 0) {
+const DEPTH_HEADING = /^(#{2,3}) (?:Control|Set) reasoning depth[ \t]*$/m
+
+/**
+ * The page states `none` turns reasoning off on every row that lists it
+ * unless the row's effective depth says otherwise. `none` running at a
+ * level is a stated always-on, and the row holds that level instead of
+ * `none`; any other word on `none` is unstated.
+ */
+function effortReasoning(values: Array<string>, depth: string): ModelReasoning {
+  if (!values.includes('none')) {
+    return { mode: 'effort', mandatory: true, efforts: values }
+  }
+  const runsAt = /`none` runs at `([^`]+)`/.exec(depth)?.[1]
+  if (runsAt) {
+    return {
+      mode: 'effort',
+      mandatory: true,
+      efforts: [
+        ...new Set(values.map((value) => (value === 'none' ? runsAt : value))),
+      ],
+    }
+  }
+  const mandatory =
+    !depth.includes('`none`') || /`none` turns reasoning off/.test(depth)
+      ? false
+      : null
+  return { mode: 'effort', mandatory, efforts: values }
+}
+
+function parseEfforts(markdown: string): Map<string, ModelReasoning> {
+  const heading = DEPTH_HEADING.exec(markdown)
+  if (!heading) {
     throw new Error('baseten: reasoning page has no effort table')
   }
-  const rest = markdown.slice(start)
-  const next = rest.slice(1).search(/^## /m)
-  const section = next < 0 ? rest : rest.slice(0, next + 1)
-  const efforts = new Map<string, Array<string>>()
+  const rest = markdown.slice(heading.index + heading[0].length)
+  const next = rest.search(new RegExp(`^#{1,${heading[1]?.length ?? 2}} `, 'm'))
+  const section = next < 0 ? rest : rest.slice(0, next)
+  const efforts = new Map<string, ModelReasoning>()
+  let valuesColumn = -1
+  let depthColumn = -1
   for (const line of section.split('\n')) {
     const row = cells(line)
-    if (!row || row.length < 2 || row[0] === 'Model') continue
-    const values = (row[1] ?? '')
+    if (!row) continue
+    if (row[0] === 'Model') {
+      valuesColumn = row.indexOf('Supported values')
+      depthColumn = row.indexOf('Effective depth')
+      continue
+    }
+    if (valuesColumn < 0) continue
+    const values = (row[valuesColumn] ?? '')
       .replace(/\(default\)/gi, '')
       .split(',')
       .map((value) => value.replace(/`/g, '').trim())
       .filter((value) => value.length > 0)
     if (values.length === 0) continue
-    efforts.set(row[0] ?? '', values)
+    efforts.set(
+      row[0] ?? '',
+      effortReasoning(values, depthColumn < 0 ? '' : (row[depthColumn] ?? '')),
+    )
   }
   if (efforts.size === 0) {
     throw new Error('baseten: reasoning page listed no efforts')
   }
   return efforts
-}
-
-function alwaysOnPrefixes(markdown: string): Array<string> {
-  const match = /Thinking is always on for the ([^,\n]+?) family/i.exec(
-    markdown,
-  )
-  const prefix = match?.[1]?.trim()
-  return prefix ? [prefix] : []
-}
-
-function reasoningFor(
-  name: string,
-  efforts: Map<string, Array<string>>,
-  families: Array<string>,
-): ModelReasoning | null {
-  const values = efforts.get(name)
-  if (!values) return null
-  const alwaysOn = families.some(
-    (family) => name === family || name.startsWith(`${family} `),
-  )
-  return {
-    mode: 'effort',
-    mandatory: alwaysOn || !values.includes('none'),
-    efforts: values,
-  }
 }
 
 function quoteFor(pricing: unknown): TokenQuote | null {
@@ -152,7 +168,6 @@ export function parseBasetenModels(
     throw new Error('baseten: models payload has no data array')
   }
   const efforts = parseEfforts(reasoningMarkdown)
-  const families = alwaysOnPrefixes(reasoningMarkdown)
   const models: Array<ModelInfo> = []
   for (const row of payload.data) {
     if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
@@ -171,7 +186,7 @@ export function parseBasetenModels(
           source,
         )
       : null
-    const reasoning = name ? reasoningFor(name, efforts, families) : null
+    const reasoning = name ? (efforts.get(name) ?? null) : null
     const input = stringList(row.input_modalities)
     const output = stringList(row.output_modalities)
     const reasoningSource: FactSource | undefined = reasoning
