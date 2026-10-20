@@ -2,6 +2,7 @@ import { DEEPSEEK_THINKING_URL } from '../provider-replay.ts'
 import { DEEPSEEK_REPLAY_FIXTURE } from '../fixtures/provider-replay.ts'
 import { describe, expect, it } from 'vitest'
 
+import { DEEPSEEK_PRICING_URL } from '../deepseek-pricing.ts'
 import { provider } from './deepseek.ts'
 
 describe('deepseek classify', () => {
@@ -135,6 +136,68 @@ it('sources DeepSeek effort and replay without losing other native capabilities'
       DEEPSEEK_THINKING_URL,
     )
     expect(model?.pricing).not.toBeNull()
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+it('keeps the poll when the pricing page has no table', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) => {
+    if (String(url).includes('api-docs.deepseek.com'))
+      return Promise.resolve(
+        new Response('<html><title>Just a moment</title><p>wait</p></html>'),
+      )
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: [{ id: 'deepseek-v4-pro' }] })),
+    )
+  }) as typeof fetch
+  try {
+    const result = await provider.listModels({ DEEPSEEK_API_KEY: 'test-key' })
+    expect(result.models[0]?.rawId).toBe('deepseek-v4-pro')
+    expect(result.models[0]?.pricing).toBeUndefined()
+    expect(result.models[0]?.absent).toEqual({ pricing: 'unavailable' })
+    expect(result.docsFailures?.failed).toBe(1)
+    expect(result.docsFailures?.first[0]?.error).toBe(
+      'deepseek pricing page (52 chars, title "Just a moment"): parsed 0 model rows',
+    )
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+it('keeps the poll when the whole docs host serves a page with no table', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) => {
+    if (String(url).includes('api-docs.deepseek.com'))
+      return Promise.resolve(
+        new Response('<html><title>Just a moment</title><p>wait</p></html>'),
+      )
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: 'deepseek-v4-pro',
+              effort: { supported_levels: ['high', 'max'] },
+            },
+          ],
+        }),
+      ),
+    )
+  }) as typeof fetch
+  try {
+    const result = await provider.listModels({ DEEPSEEK_API_KEY: 'test-key' })
+    const model = result.models[0]
+    expect(model?.reasoning).not.toBeNull()
+    expect(model?.absent).toEqual({
+      pricing: 'unavailable',
+      requestMap: 'unavailable',
+    })
+    expect(model?.factSources?.requestMapFields).toBeUndefined()
+    expect(result.docsFailures?.first.map((failure) => failure.source)).toEqual(
+      [DEEPSEEK_PRICING_URL, DEEPSEEK_THINKING_URL],
+    )
   } finally {
     globalThis.fetch = original
   }
