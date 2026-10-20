@@ -571,7 +571,8 @@ const PAGE_FACTS = [
  * it feeds `unavailable` on the rows it speaks for and the listing still
  * polls: the index or a model page (every page fact; a failed page may be
  * the alias page that seeds an id, so unresolved ids too), the pricing
- * page (an unpriced row's pricing), the realtime guide (realtime reasoning).
+ * page (an unpriced row's pricing), the realtime guide (reasoning on a
+ * realtime id whose effort-mode page lists no efforts).
  * A failed family or sampling guide marks `absent` on the ids it speaks for.
  * A failed GPT-5.1 guide does not: the family list stays, with mandatory null.
  */
@@ -831,7 +832,15 @@ export async function openaiModelFacts(
     const facts = docsFacts(rawId)
     const gaps: OpenAiDocsFacts['absent'] = { ...facts.absent }
     if (!searchDoc && !facts.pricing) gaps.pricing = 'unavailable'
-    if (realtimeListed && !realtime && openaiRealtimeSelects(rawId)) {
+    // The guide only fills efforts an effort-mode page left unlisted.
+    const effortsUnlisted =
+      facts.reasoning?.mode === 'effort' && !facts.reasoning.efforts?.length
+    if (
+      realtimeListed &&
+      !realtime &&
+      openaiRealtimeSelects(rawId) &&
+      effortsUnlisted
+    ) {
       gaps.reasoning = 'unavailable'
     }
     return Object.keys(gaps).length > 0 ? { ...facts, absent: gaps } : facts
