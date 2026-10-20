@@ -1,16 +1,18 @@
 /**
  * Kimi prices from the international pricing page (issue #109). Amounts
  * are USD per 1M tokens. K2 rows are cache-hit / cache-miss / output.
- * K3 rows add cache-write TTLs. A zero-row parse throws.
+ * K3 rows add cache-write TTLs. A zero-row parse throws. The tables are
+ * read from the HTML page: its `.md` export renders them empty.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
+import { parseKimiDocTables } from './kimi-doc-tables.ts'
+import type { KimiDocTable } from './kimi-doc-tables.ts'
 import { assertParsed, cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
-export const MOONSHOT_PRICING_URL =
-  'https://platform.kimi.ai/docs/pricing/chat.md'
+export const MOONSHOT_PRICING_URL = 'https://platform.kimi.ai/docs/pricing/chat'
 
 export interface MoonshotRates {
   input: number
@@ -20,20 +22,23 @@ export interface MoonshotRates {
   cacheWrite1h?: number
 }
 
-function dollars(row: string): Array<number> {
-  return [...row.matchAll(/\{"\$"\}([\d.]+)/g)].map((match) => Number(match[1]))
+function dollars(cells: Array<string | null>): Array<number> {
+  return cells.flatMap((cell) => {
+    const amount = cell?.match(/^\$([\d.]+)$/)?.[1]
+    return amount === undefined ? [] : [Number(amount)]
+  })
 }
 
 /** Model id → USD per million tokens. */
 export function parseMoonshotPricing(
-  markdown: string,
+  tables: Array<KimiDocTable>,
 ): Map<string, MoonshotRates> {
   const out = new Map<string, MoonshotRates>()
-  const rows = markdown.matchAll(/\["(kimi-[^"]+)",\s*"1M tokens",[\s\S]*?\]/g)
-  for (const match of rows) {
-    const id = match[1]
-    const amounts = dollars(match[0])
-    if (!id || out.has(id)) continue
+  for (const [id, unit, ...cells] of tables.flatMap((table) => table.rows)) {
+    const amounts = dollars(cells)
+    if (!id?.startsWith('kimi-') || unit !== '1M tokens' || out.has(id)) {
+      continue
+    }
     if (amounts.length === 3) {
       const [cacheRead, input, output] = amounts
       if (
@@ -67,12 +72,13 @@ export async function moonshotModelPricing(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => PricedFacts> {
   const doc = await cachedDocs(kv, MOONSHOT_PRICING_URL, async () => {
-    const markdown = await fetchText(MOONSHOT_PRICING_URL)
-    const parsed = parseMoonshotPricing(markdown)
+    const tables = parseKimiDocTables(await fetchText(MOONSHOT_PRICING_URL))
+    const parsed = parseMoonshotPricing(tables)
     assertParsed(parsed, 'moonshot pricing page')
     return {
       rates: Object.fromEntries(parsed),
-      hash: await sha256Text(markdown),
+      // The tables, not the page: its HTML changes with every docs deploy.
+      hash: await sha256Text(JSON.stringify(tables)),
       extractedAt: new Date().toISOString(),
     }
   })

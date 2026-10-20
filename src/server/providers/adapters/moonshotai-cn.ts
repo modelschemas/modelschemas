@@ -16,7 +16,9 @@ import {
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import { classifyOpenAiCompat } from '../openai-compat.ts'
-import { cachedDocs, markdownSection } from '../model-facts.ts'
+import { parseKimiDocTables } from '../kimi-doc-tables.ts'
+import type { KimiDocTable } from '../kimi-doc-tables.ts'
+import { cachedDocs } from '../model-facts.ts'
 import { compatGenerationEndpointId } from '../model-meta.ts'
 import { REASONING_SOURCE_SILENT } from '../reasoning-config.ts'
 import { fetchText, sha256Text } from '../types.ts'
@@ -32,8 +34,9 @@ import type {
   SpecFetchResult,
 } from '../types.ts'
 
+/** The HTML page: its `.md` export renders the price tables empty. */
 export const MOONSHOT_CN_PRICING_URL =
-  'https://platform.kimi.com/docs/pricing/chat.md'
+  'https://platform.kimi.com/docs/pricing/chat'
 export const MOONSHOT_CN_OPENAPI_URL =
   'https://platform.kimi.com/docs/openapi.json'
 
@@ -60,18 +63,21 @@ function isRecord(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function parseMoonshotCnModels(markdown: string): Array<ModelInfo> {
+export function parseMoonshotCnModels(
+  tables: Array<KimiDocTable>,
+): Array<ModelInfo> {
   const models: Array<ModelInfo> = []
   const seen = new Set<string>()
-  for (const match of markdown.matchAll(
-    /\["((?:kimi|moonshot)-[^"]+)"([\s\S]*?)\]/g,
-  )) {
-    const rawId = match[1]
-    const body = match[2] ?? ''
-    if (!rawId || seen.has(rawId)) continue
+  for (const [rawId, ...cells] of tables.flatMap((table) => table.rows)) {
+    if (!rawId || !/^(?:kimi|moonshot)-/.test(rawId) || seen.has(rawId)) {
+      continue
+    }
     seen.add(rawId)
-    const windows = [...body.matchAll(/"([0-9,]+) tokens"/g)]
-    const last = windows.at(-1)?.[1]
+    const windows = cells.flatMap((cell) => {
+      const match = cell?.match(/^([0-9,]+) tokens$/)
+      return match?.[1] ? [match[1]] : []
+    })
+    const last = windows.at(-1)
     const contextWindow = last ? Number(last.replace(/,/g, '')) : null
     models.push({
       rawId,
@@ -106,7 +112,7 @@ const OTHER_COLUMNS = new Set(['模型', UNIT_COLUMN, '上下文窗口'])
 
 /**
  * Model id → yuan per token, by lever, from the `### … 系列模型` tables
- * of `## 模型定价`. Columns are read by title. A row is priced only when
+ * of `## 模型定价` (`parseKimiDocTables`). Columns are read by title. A row is priced only when
  * its unit is `1M tokens` and every price cell is a bare `¥12.50`. Any
  * other row naming the model leaves it unpriced: a unit suffix, a struck
  * price, a range, a table with a title this does not know, a table under
@@ -114,49 +120,42 @@ const OTHER_COLUMNS = new Set(['模型', UNIT_COLUMN, '上下文窗口'])
  * Throws when no row is priced.
  */
 export function parseMoonshotCnPricing(
-  markdown: string,
+  tables: Array<KimiDocTable>,
 ): Map<string, Record<string, number>> {
   const out = new Map<string, Record<string, number>>()
   const refused = new Set<string>()
-  const chunks = markdownSection(markdown, '模型定价').split(/^### /m)
-  for (const chunk of chunks) {
-    const series = /^[^\n]*系列模型\s*\n/.test(chunk)
-    for (const table of chunk.matchAll(
-      /columns=\{\[([\s\S]*?)\]\}\s*rows=\{\[([\s\S]*?)\]\}/g,
-    )) {
-      const titles = [...(table[1] ?? '').matchAll(/title:\s*"([^"]*)"/g)].map(
-        (match) => match[1] ?? '',
+  for (const { section, subsection, titles, rows } of tables) {
+    if (section !== '模型定价') continue
+    const known =
+      /系列模型$/.test(subsection ?? '') &&
+      titles.every(
+        (t) => t !== null && (t in PRICE_COLUMNS || OTHER_COLUMNS.has(t)),
       )
-      const known =
-        series &&
-        titles.every((t) => t in PRICE_COLUMNS || OTHER_COLUMNS.has(t))
-      for (const row of (table[2] ?? '').matchAll(/\[("[^\]]*")\]/g)) {
-        const cells = [...(row[1] ?? '').matchAll(/"([^"]*)"/g)].map(
-          (match) => match[1] ?? '',
-        )
-        const id = cells[0]
-        if (!id) continue
-        const rates: Record<string, number> = {}
-        titles.forEach((title, index) => {
-          const lever = PRICE_COLUMNS[title]
-          const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?)$/)?.[1]
-          if (lever && amount !== undefined) rates[lever] = Number(amount) / 1e6
-        })
-        const priceColumns = titles.filter((title) => title in PRICE_COLUMNS)
-        if (
-          !known ||
-          out.has(id) ||
-          cells.length !== titles.length ||
-          cells[titles.indexOf(UNIT_COLUMN)] !== '1M tokens' ||
-          Object.keys(rates).length !== priceColumns.length ||
-          rates.input_tokens === undefined ||
-          rates.output_tokens === undefined
-        ) {
-          refused.add(id)
-          continue
-        }
-        out.set(id, rates)
+    for (const cells of rows) {
+      const id = cells[0]
+      if (!id) continue
+      const rates: Record<string, number> = {}
+      titles.forEach((title, index) => {
+        const lever = title === null ? undefined : PRICE_COLUMNS[title]
+        const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?)$/)?.[1]
+        if (lever && amount !== undefined) rates[lever] = Number(amount) / 1e6
+      })
+      const priceColumns = titles.filter(
+        (title) => title !== null && title in PRICE_COLUMNS,
+      )
+      if (
+        !known ||
+        out.has(id) ||
+        cells.length !== titles.length ||
+        cells[titles.indexOf(UNIT_COLUMN)] !== '1M tokens' ||
+        Object.keys(rates).length !== priceColumns.length ||
+        rates.input_tokens === undefined ||
+        rates.output_tokens === undefined
+      ) {
+        refused.add(id)
+        continue
       }
+      out.set(id, rates)
     }
   }
   for (const id of refused) out.delete(id)
@@ -183,11 +182,7 @@ async function fetchPricingPage(): Promise<string> {
   if (host !== new URL(MOONSHOT_CN_PRICING_URL).host) {
     throw new Error(`moonshotai-cn: pricing page was answered by ${host}`)
   }
-  const text = await response.text()
-  if (/^\s*<(?:!doctype|html)/i.test(text)) {
-    throw new Error('moonshotai-cn: pricing page is HTML, not markdown')
-  }
-  return text
+  return response.text()
 }
 
 function deref(spec: OpenApiDocument, node: unknown, depth = 0): unknown {
@@ -373,9 +368,10 @@ async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  const markdown = await fetchPricingPage()
-  const pricingHash = await sha256Text(markdown)
-  const prices = parseMoonshotCnPricing(markdown)
+  const tables = parseKimiDocTables(await fetchPricingPage())
+  // The tables, not the page: its HTML changes with every docs deploy.
+  const pricingHash = await sha256Text(JSON.stringify(tables))
+  const prices = parseMoonshotCnPricing(tables)
   const extractedAt = new Date().toISOString()
   const chat = await cachedDocs(kv, MOONSHOT_CN_OPENAPI_URL, async () => {
     const { spec, hash } = await fetchCnSpec()
@@ -383,7 +379,7 @@ async function listModels(
   })
   const replay = await loadReplayDoc(KIMI_CN_THINKING_URL, kv)
   const replayIds = new Set(parseKimiReplay(replay.text))
-  const models = parseMoonshotCnModels(markdown).map((model): ModelInfo => {
+  const models = parseMoonshotCnModels(tables).map((model): ModelInfo => {
     const facts = chat[model.rawId]
     const factSources: ModelFactSources = { ...facts?.factSources }
     if (model.contextWindow != null) {
