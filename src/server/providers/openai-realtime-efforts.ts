@@ -28,13 +28,19 @@ export function parseOpenAiRealtimeEfforts(markdown: string): {
     throw new Error('openai realtime effort guide: duplicate efforts')
   return { rawId, efforts }
 }
+/** Ids whose listing loads the realtime effort guide. */
+export function openaiRealtimeSelects(rawId: string): boolean {
+  return rawId.includes('realtime')
+}
+
 export async function openaiRealtimeEfforts(
   rawIds: ReadonlyArray<string>,
   kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
 ) {
   // Model names select an own guide; its literal model ID alone binds the result.
-  if (!rawIds.some((id) => id.includes('realtime'))) return null
-  return cachedDocs(kv, OPENAI_REALTIME_EFFORT_URL, async () => {
+  if (!rawIds.some(openaiRealtimeSelects)) return null
+  return cached(kv, OPENAI_REALTIME_EFFORT_URL, async () => {
     const markdown = await fetchText(OPENAI_REALTIME_EFFORT_URL, {
       signal: AbortSignal.timeout(20_000),
     })

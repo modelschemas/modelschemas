@@ -191,3 +191,42 @@ it('does not fetch the guides when no GPT-5 id is listed', async () => {
   await openaiModelFacts(['gpt-5.1'], undefined, run)
   expect(run.failed).toBe(0)
 })
+
+it('keeps the listing when the docs host forbids the index or a page (#371)', async () => {
+  const forbidden = () =>
+    Promise.resolve(new Response('Forbidden', { status: 403 }))
+  globalThis.fetch = forbidden
+  const run = docsRun()
+  const row = (await openaiModelFacts(['gpt-4o'], undefined, run))('gpt-4o')
+  expect(row.pricing).toBeNull()
+  expect(row.absent).toMatchObject({
+    contextWindow: 'unavailable',
+    pricing: 'unavailable',
+    capabilities: 'unavailable',
+    reasoning: 'unavailable',
+  })
+  expect(run.first.map((failure) => failure.source)).toEqual([
+    OPENAI_MODELS_INDEX_URL,
+    OPENAI_PRICING_URL,
+  ])
+
+  serve(allGuides, { 'gpt-5-pro': proPage })
+  const served = globalThis.fetch
+  globalThis.fetch = (input, init) =>
+    String(input).endsWith('/models/gpt-5-mini.md')
+      ? forbidden()
+      : served(input, init)
+  const pageRun = docsRun()
+  const facts = await openaiModelFacts(
+    ['gpt-5-mini', 'gpt-5-pro', 'gpt-5-search-api'],
+    undefined,
+    pageRun,
+  )
+  expect(facts('gpt-5-mini').absent?.capabilities).toBe('unavailable')
+  expect(facts('gpt-5-mini').pricing).toBeNull()
+  // The failed page may be the alias page that seeds an unindexed id.
+  expect(facts('gpt-5-search-api').absent?.pricing).toBe('unavailable')
+  expect(facts('gpt-5-pro').reasoning?.mode).toBe('effort')
+  expect(facts('gpt-5-pro').absent).toBeUndefined()
+  expect(pageRun.failed).toBe(1)
+})
