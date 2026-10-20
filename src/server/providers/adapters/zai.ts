@@ -141,6 +141,14 @@ function list(value: unknown): Array<unknown> {
   return Array.isArray(value) ? value : []
 }
 
+/**
+ * A docs line with the accordion wrapper removed. The "Other …" accordions
+ * export indented on one render and as a `>` blockquote on another.
+ */
+function accordionLine(raw: string): string {
+  return raw.replace(/^\s*>\s?/, '').trim()
+}
+
 function money(cell: string): number | null {
   const match = cell.match(/\$([0-9]+(?:\.[0-9]+)?)/)
   if (!match?.[1]) return null
@@ -204,8 +212,8 @@ export function parseZaiTokenPrices(markdown: string): Map<string, TokenPrice> {
   const prices = new Map<string, TokenPrice>()
   let inTokenTable = false
   for (const raw of markdown.split('\n')) {
-    // The "Other Pricing" tables sit indented inside an accordion.
-    const line = raw.trim()
+    // The "Other Pricing" tables sit inside an accordion.
+    const line = accordionLine(raw)
     if (/per 1M tokens/i.test(line)) {
       inTokenTable = true
       continue
@@ -254,8 +262,8 @@ export function parseZaiContextWindows(
   let header: Array<string> = []
   let column = -1
   for (const raw of markdown.split('\n')) {
-    // The "other models" tables sit indented inside an accordion.
-    const line = raw.trim()
+    // The "other models" tables sit inside an accordion.
+    const line = accordionLine(raw)
     if (!line.startsWith('|')) {
       column = -1
       continue
