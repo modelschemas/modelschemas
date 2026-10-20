@@ -198,7 +198,8 @@ describe('minimax-cn', () => {
   })
 
   it('throws rather than store a price off a page that is not yuan', async () => {
-    // The international page, as a cross-platform redirect would serve it.
+    // The international page's content filed under the China Source line:
+    // the yuan check refuses it.
     mockFetch({
       ...PAGES,
       [MINIMAX_CN.llmsFullUrl]: minimaxLlmsFull(

@@ -334,8 +334,9 @@ export const MINIMAX_CN_PRICING_PAGE = [
 ].join('\n')
 
 /**
- * platform.minimax.io/docs/pricing/overview.md (2026-10-14): the title, the
- * opening `<div>`, then the LLM section through the first table of Audio.
+ * The pricing overview's MDX as platform.minimax.io/docs/pricing/overview.md
+ * served it on 2026-10-14, before that export flattened tabs (#379). The
+ * page in llms-full.txt is the same MDX: the title, the opening `<div>`, then the LLM section through the first table of Audio.
  * The navigation block between them is left out. Each `## ` section sits
  * indented in a `<section>`.
  */
@@ -402,8 +403,10 @@ export const MINIMAX_PRICING_OVERVIEW_PAGE = [
 ].join('\n')
 
 /**
- * platform.minimax.cn/docs/pricing/overview.md (2026-10-14), the redirect
- * target of platform.minimaxi.com: cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
+ * The China pricing overview's MDX as platform.minimax.cn/docs/pricing/
+ * overview.md served it (2026-10-14). llms-full.txt redirects to that host
+ * too, yet names the page `Source: https://platform.minimaxi.com/docs/
+ * pricing/overview`. Cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
  * through the first table of `## 语音`. Prices are yuan.
  */
 export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
@@ -487,8 +490,6 @@ export function minimaxLlmsFull(url: string, page: string): string {
     '# Rate Limits',
     'Source: https://platform.minimax.io/docs/guides/rate-limits',
     '',
-    '| Model | RPM |',
-    '| :- | :- |',
-    '| **MiniMax-M3** | \\$9.99 / M tokens |',
+    'Requests per minute by tier.',
   ].join('\n')
 }
