@@ -467,3 +467,28 @@ export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
   '    | :- | :- | :- | :-: |',
   '    | 语音识别 | Speech-to-Text | 音频转文本，支持流式返回、说话人分离与字幕（srt/vtt）导出。 | 2.50 |',
 ].join('\n')
+
+/**
+ * `page` as one page of a Mintlify `llms-full.txt`: its `# <title>` line,
+ * then `Source: <url>`, between two other pages.
+ */
+export function minimaxLlmsFull(url: string, page: string): string {
+  const [title = '', ...body] = page.split('\n')
+  return [
+    '# Quick Start',
+    'Source: https://platform.minimax.io/docs/guides/quickstart',
+    '',
+    'Get an API key.',
+    '',
+    title,
+    `Source: ${url}`,
+    ...body,
+    '',
+    '# Rate Limits',
+    'Source: https://platform.minimax.io/docs/guides/rate-limits',
+    '',
+    '| Model | RPM |',
+    '| :- | :- |',
+    '| **MiniMax-M3** | \\$9.99 / M tokens |',
+  ].join('\n')
+}

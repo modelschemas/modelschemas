@@ -9,6 +9,7 @@ import {
   MINIMAX_PRICING_OVERVIEW_PAGE,
   MINIMAX_PRICING_PAGE,
   MINIMAX_SDK_PAGE,
+  minimaxLlmsFull,
 } from './fixtures/minimax-docs.ts'
 import {
   fetchMinimaxPage,
@@ -924,7 +925,7 @@ describe('a maximum equal to the context window is not an output cap', () => {
     const facts = (text: string) => {
       const pages: Record<string, string> = {
         [platform.sdkUrl]: sdk,
-        [platform.pricingUrl]: pricing,
+        [platform.llmsFullUrl]: minimaxLlmsFull(platform.pricingUrl, pricing),
         [platform.chatSpecUrl]: JSON.stringify({
           max_completion_tokens: { description: text },
         }),

@@ -117,6 +117,30 @@ export function markdownSection(text: string, heading: string): string {
   return end < 0 ? rest : rest.slice(0, end)
 }
 
+/**
+ * One page of a Mintlify `llms-full.txt`: each page opens with a `# <title>`
+ * line followed by `Source: <url>`, and runs to the next such pair. Throws
+ * unless exactly one page names `url`.
+ */
+export function llmsFullPage(text: string, url: string): string {
+  const lines = text.split('\n')
+  const opens = (index: number) =>
+    lines[index]?.startsWith('# ') === true &&
+    lines[index + 1]?.startsWith('Source: ') === true
+  const starts = lines.flatMap((_line, index) =>
+    opens(index) && lines[index + 1] === `Source: ${url}` ? [index] : [],
+  )
+  if (starts.length !== 1) {
+    throw new Error(
+      `llms-full.txt names ${url} ${String(starts.length)} times, not once`,
+    )
+  }
+  const start = starts[0] ?? 0
+  let end = start + 2
+  while (end < lines.length && !opens(end)) end += 1
+  return lines.slice(start, end).join('\n')
+}
+
 const DOCS_TTL_SECONDS = 6 * 60 * 60
 
 /**

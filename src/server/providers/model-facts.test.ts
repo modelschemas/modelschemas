@@ -15,7 +15,12 @@ import {
   parseGrokVideoPrices,
   withGrokImageQuality,
 } from './grok.ts'
-import { markdownTableRows, tokenCount, undatedId } from './model-facts.ts'
+import {
+  llmsFullPage,
+  markdownTableRows,
+  tokenCount,
+  undatedId,
+} from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
 import { openAiCompatModelFacts } from './openai-compat.ts'
 import {
@@ -49,6 +54,38 @@ describe('model-facts helpers', () => {
       ['a', 'b'],
       ['1', '2'],
     ])
+  })
+
+  it('cuts one page out of llms-full.txt by its Source line', () => {
+    const full = [
+      '# A',
+      'Source: https://docs.example/a',
+      'a body',
+      '# B',
+      'Source: https://docs.example/b',
+      '# not a page: no Source line follows',
+      'b body',
+      '# C',
+      'Source: https://docs.example/c',
+      'c body',
+    ].join('\n')
+    expect(llmsFullPage(full, 'https://docs.example/b')).toBe(
+      [
+        '# B',
+        'Source: https://docs.example/b',
+        '# not a page: no Source line follows',
+        'b body',
+      ].join('\n'),
+    )
+    expect(llmsFullPage(full, 'https://docs.example/c')).toBe(
+      '# C\nSource: https://docs.example/c\nc body',
+    )
+    expect(() => llmsFullPage(full, 'https://docs.example/d')).toThrow(
+      'llms-full.txt names https://docs.example/d 0 times, not once',
+    )
+    expect(() =>
+      llmsFullPage(`${full}\n${full}`, 'https://docs.example/a'),
+    ).toThrow('2 times')
   })
 })
 

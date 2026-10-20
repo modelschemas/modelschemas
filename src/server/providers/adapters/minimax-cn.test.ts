@@ -5,6 +5,7 @@ import {
   MINIMAX_CN_PRICING_OVERVIEW_PAGE,
   MINIMAX_CN_SDK_PAGE,
   MINIMAX_PRICING_OVERVIEW_PAGE,
+  minimaxLlmsFull,
 } from '../fixtures/minimax-docs.ts'
 import { MINIMAX_CN, MINIMAX_CN_MESSAGES_SPEC_URL } from '../minimax-docs.ts'
 import { MINIMAX_CN_MODELS_URL, provider } from './minimax-cn.ts'
@@ -61,7 +62,10 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_CN_MODELS_URL]: FIXTURE,
   [MINIMAX_CN.sdkUrl]: MINIMAX_CN_SDK_PAGE,
-  [MINIMAX_CN.pricingUrl]: MINIMAX_CN_PRICING_OVERVIEW_PAGE,
+  [MINIMAX_CN.llmsFullUrl]: minimaxLlmsFull(
+    MINIMAX_CN.pricingUrl,
+    MINIMAX_CN_PRICING_OVERVIEW_PAGE,
+  ),
   [MINIMAX_CN.chatSpecUrl]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_CN_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',
@@ -174,7 +178,7 @@ describe('minimax-cn', () => {
       [
         MINIMAX_CN_MODELS_URL,
         MINIMAX_CN.sdkUrl,
-        MINIMAX_CN.pricingUrl,
+        MINIMAX_CN.llmsFullUrl,
         MINIMAX_CN.chatSpecUrl,
       ].sort(),
     )
@@ -197,7 +201,10 @@ describe('minimax-cn', () => {
     // The international page, as a cross-platform redirect would serve it.
     mockFetch({
       ...PAGES,
-      [MINIMAX_CN.pricingUrl]: MINIMAX_PRICING_OVERVIEW_PAGE,
+      [MINIMAX_CN.llmsFullUrl]: minimaxLlmsFull(
+        MINIMAX_CN.pricingUrl,
+        MINIMAX_PRICING_OVERVIEW_PAGE,
+      ),
     })
     await expect(provider.listModels({})).rejects.toThrow(
       'minimax-cn pricing page: parsed 0 model rows',
