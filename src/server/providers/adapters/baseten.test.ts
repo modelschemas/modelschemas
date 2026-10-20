@@ -8,6 +8,7 @@ import {
   parseBasetenModels,
   provider,
 } from './baseten.ts'
+import { reasoningViolation } from '../types.ts'
 
 const REASONING = `
 ## Control reasoning
@@ -27,7 +28,15 @@ const REASONING = `
 | - | - | - |
 | Beam | \`minimal\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, \`max\` | As sent |
 | GLM 5.3 | \`none\`, \`low\`, \`high\` (default), \`max\` | \`none\` runs at \`low\` |
+| Kimi K3 | \`none\`, \`low\`, \`high\`, \`max\` (default) | As sent |
+| Nemotron Super 3.5 | \`none\` (default), \`high\` | \`none\` turns reasoning off; every other value runs at one depth, \`high\` |
 | OpenAI GPT 120B | \`none\`, \`low\`, \`medium\` (default), \`high\` | \`none\` can still reason; other values as sent |
+
+### Set a reasoning budget
+
+| Model | Supported values |
+| - | - |
+| Nemotron Ultra | \`none\`, \`high\` |
 
 ## Parse the response
 
@@ -127,7 +136,7 @@ describe('baseten', () => {
       reasoning: {
         mode: 'effort',
         mandatory: true,
-        efforts: ['none', 'low', 'high', 'max'],
+        efforts: ['low', 'high', 'max'],
       },
       pricing: {
         tables: {
@@ -166,22 +175,49 @@ describe('baseten', () => {
     )
   })
 
-  it('reads always-on from the Reasoning column and none from effective depth', () => {
-    const models = parseBasetenModels(PAYLOAD, REASONING, SOURCE, HASH)
+  it('reads mandatory from what effective depth says about none', () => {
+    const names = ['Beam', 'Kimi K3', 'Nemotron Super 3.5', 'OpenAI GPT 120B']
+    const models = parseBasetenModels(
+      { data: names.map((name) => ({ id: name, name })) },
+      REASONING,
+      SOURCE,
+      HASH,
+    )
     const reasoning = new Map(
       models.map((model) => [model.rawId, model.reasoning]),
     )
 
-    expect(reasoning.get('reflection/Beam-1.0')).toEqual({
+    expect(reasoning.get('Beam')).toEqual({
       mode: 'effort',
       mandatory: true,
       efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
     })
-    expect(reasoning.get('openai/gpt-oss-120b')).toEqual({
+    expect(reasoning.get('Kimi K3')?.mandatory).toBe(false)
+    expect(reasoning.get('Nemotron Super 3.5')?.mandatory).toBe(false)
+    expect(reasoning.get('OpenAI GPT 120B')).toEqual({
       mode: 'effort',
-      mandatory: false,
+      mandatory: null,
       efforts: ['none', 'low', 'medium', 'high'],
     })
+    for (const model of models) {
+      expect(reasoningViolation(model.reasoning)).toBeNull()
+    }
+  })
+
+  it('reads the table under the older ## heading too', () => {
+    const models = parseBasetenModels(
+      PAYLOAD,
+      REASONING.replace(
+        '### Set reasoning depth',
+        '## Control reasoning depth',
+      ),
+      SOURCE,
+      HASH,
+    )
+    expect(
+      models.find((model) => model.rawId === 'zai-org/GLM-5.3')?.reasoning
+        ?.efforts,
+    ).toEqual(['low', 'high', 'max'])
   })
 
   it('throws when the reasoning page has no effort table', () => {
