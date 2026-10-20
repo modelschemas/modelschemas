@@ -3,9 +3,15 @@
  * `<ModelInfo>` states the API id, paid prices per million tokens, the
  * paid output cap, input and output formats, and feature names. The
  * marketing pricing page is a client render and is not parsed.
+ *
+ * As of 2026-10-20 a page's `.md` export renders `<ModelInfo>` as bare
+ * labels with no values (issue #381), so the HTML page is read: its
+ * payload embeds the compiled MDX, `_jsx(ModelInfo,{…})` with the same
+ * props as template literals. The JSX form is still read.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
+import { closing } from './compiled-mdx.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import {
   assertParsed,
@@ -20,7 +26,7 @@ export const CEREBRAS_CATALOG_URL =
   'https://inference-docs.cerebras.ai/models/overview.md'
 
 const PAGE = (slug: string) =>
-  `https://inference-docs.cerebras.ai/models/${slug}.md`
+  `https://inference-docs.cerebras.ai/models/${slug}`
 
 export interface CerebrasModelFacts {
   inputPerMillion: number | null
@@ -38,6 +44,9 @@ const FEATURES: Record<string, Array<string>> = {
   'Tool Calling': ['tools'],
   'Structured Outputs': ['structured_outputs', 'response_format'],
 }
+
+/** A `"…"` (MDX source) or `` `…` `` (compiled MDX) string. */
+const STRING = '["`]([^"`]*)["`]'
 
 function dollars(cell: string): number | null {
   const match = cell.match(/\$(\d+(?:\.\d+)?)/)
@@ -64,12 +73,12 @@ function paidParenthetical(sentence: string | undefined): number | null {
  * Paid context window. The prose parenthetical beats `<ModelInfo>` (`128k`
  * → 128,000). An unreadable paid tier throws.
  */
-function paidContextWindow(markdown: string, block: string): number | null {
-  const sentence = markdown.match(/context window:\s*([^\n]+)/i)?.[1]
+function paidContextWindow(page: string, block: string): number | null {
+  const sentence = page.match(/context window:\s*([^\n`]+)/i)?.[1]
   const exact = paidParenthetical(sentence)
   if (exact != null) return exact
-  const contextPaid = block.match(/contextLength=\{\{([\s\S]*?)\}\}/)?.[1]
-  const paid = contextPaid?.match(/paidTiers:\s*"([^"]*)"/)?.[1]
+  const contextPaid = block.match(/contextLength(?:=\{\{|:\{)([^}]*)\}/)?.[1]
+  const paid = contextPaid?.match(new RegExp(`paidTiers:\\s*${STRING}`))?.[1]
   if (paid === undefined) return null
   if (paid.trim() === '' || /^n\/a$/i.test(paid.trim())) return null
   const count = tokenCount(paid)
@@ -85,13 +94,13 @@ function paidContextWindow(markdown: string, block: string): number | null {
  * Paid max output. `40K tokens (40,960) for paid` is 40960. Otherwise the
  * `<ModelInfo>` paid tier (`40k` → 40,000). An unreadable tier throws.
  */
-function paidMaxOutput(markdown: string, block: string): number | null {
-  const sentence = markdown.match(/max(?:imum)? output:\s*([^\n]+)/i)?.[1]
+function paidMaxOutput(page: string, block: string): number | null {
+  const sentence = page.match(/max(?:imum)? output:\s*([^\n`]+)/i)?.[1]
   const exact = paidParenthetical(sentence)
   if (exact != null) return exact
-  const paid = block.match(/maxOutput=\{\{([\s\S]*?)\}\}/)?.[1]
+  const paid = block.match(/maxOutput(?:=\{\{|:\{)([^}]*)\}/)?.[1]
   if (!paid) return null
-  const tiers = paid.match(/paidTiers:\s*"([^"]*)"/)?.[1]
+  const tiers = paid.match(new RegExp(`paidTiers:\\s*${STRING}`))?.[1]
   if (tiers === undefined) return null
   if (tiers.trim() === '' || /^n\/a$/i.test(tiers.trim())) return null
   const count = tokenCount(tiers)
@@ -108,7 +117,19 @@ function quotedList(block: string, key: string): Array<string> {
     new RegExp(`${key}(?:=|:)?\\s*\\{?\\s*\\[([^\\]]*)\\]`),
   )
   if (!match?.[1]) return []
-  return [...match[1].matchAll(/"([^"]+)"/g)].map((item) => item[1] ?? '')
+  return [...match[1].matchAll(/["`]([^"`]+)["`]/g)].map(
+    (item) => item[1] ?? '',
+  )
+}
+
+/** The `<ModelInfo …/>` JSX, else the props of the compiled `_jsx(ModelInfo,{…})`. */
+function modelInfoBlock(page: string): string | null {
+  const jsx = page.match(/<ModelInfo[\s\S]*?\/>/)?.[0]
+  if (jsx) return jsx
+  const call = /_jsxs?\(ModelInfo,\{/.exec(page)
+  if (!call) return null
+  const open = call.index + call[0].length - 1
+  return page.slice(open, closing(page, open, 'cerebras model page') + 1)
 }
 
 /** Catalog table: link slug plus the backticked API id. */
@@ -124,12 +145,16 @@ export function cerebrasCatalogRows(
 }
 
 export function parseCerebrasModelPage(
-  markdown: string,
+  page: string,
 ): CerebrasModelFacts | null {
-  const block = markdown.match(/<ModelInfo[\s\S]*?\/>/)?.[0]
+  const block = modelInfoBlock(page)
   if (!block) return null
-  const input = dollars(block.match(/inputPrice:\s*"([^"]+)"/)?.[1] ?? '')
-  const output = dollars(block.match(/outputPrice:\s*"([^"]+)"/)?.[1] ?? '')
+  const input = dollars(
+    block.match(new RegExp(`inputPrice:\\s*${STRING}`))?.[1] ?? '',
+  )
+  const output = dollars(
+    block.match(new RegExp(`outputPrice:\\s*${STRING}`))?.[1] ?? '',
+  )
   const inputFormats = quotedList(block, 'inputFormats')
   const outputFormats = quotedList(block, 'outputFormats')
   const features = quotedList(block, 'features')
@@ -142,8 +167,8 @@ export function parseCerebrasModelPage(
         ? { input: inputFormats, output: outputFormats }
         : null,
     capabilities,
-    contextWindow: paidContextWindow(markdown, block),
-    maxOutput: paidMaxOutput(markdown, block),
+    contextWindow: paidContextWindow(page, block),
+    maxOutput: paidMaxOutput(page, block),
   }
 }
 
@@ -166,20 +191,15 @@ export async function cerebrasModelFacts(
     assertParsed(new Map(rows.map((row) => [row.id, row])), 'cerebras catalog')
     const pages = await mapConcurrent(rows, 4, async (row) => {
       const url = PAGE(row.slug)
-      const markdown = await fetchText(url)
-      return {
-        id: row.id,
-        url,
-        markdown,
-        facts: parseCerebrasModelPage(markdown),
-      }
+      const html = await fetchText(url)
+      return { id: row.id, url, html, facts: parseCerebrasModelPage(html) }
     })
     const priced = pages.filter((page) => page.facts?.inputPerMillion)
     assertParsed(
       new Map(priced.map((page) => [page.id, page])),
       'cerebras model pages',
     )
-    const hash = await sha256Text(pages.map((page) => page.markdown).join('\n'))
+    const hash = await sha256Text(pages.map((page) => page.html).join('\n'))
     return {
       byId: Object.fromEntries(
         pages.flatMap((page) =>
