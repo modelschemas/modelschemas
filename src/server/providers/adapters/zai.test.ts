@@ -631,6 +631,34 @@ describe('zai parsers fail closed', () => {
     ])
   })
 
+  it('reads prices and context windows from blockquoted accordions', () => {
+    // Excerpts of the pricing and overview pages (2026-10-20).
+    const prices = parseZaiTokenPrices(`
+> **Other Pricing**
+>
+> ### Vision Models
+>
+> Prices per 1M tokens.
+>
+> | Model | Input | Cached Input | Cached Input Storage | Output |
+> | :- | :- | :- | :- | :- |
+> | GLM-OCR | \\$0.03 | \\\\ | \\\\ | \\$0.03 |
+`)
+    expect([...prices]).toEqual([
+      ['glm-ocr', { input: 0.03, output: 0.03, cache: null }],
+    ])
+    const windows = parseZaiContextWindows(`
+> **Other Models, Agents and Tools**
+>
+> ### Text Models
+>
+> | Model | Strength | Language | Context | Resource |
+> | :- | :- | :- | :- | :- |
+> | GLM-5.1 | Coding proficiency | English & Chinese | 200K | [Guide](/guides/llm/glm-5.1) |
+`)
+    expect([...windows]).toEqual([['glm-5.1', 200_000]])
+  })
+
   it('throws when the pricing page lists two prices for one model', () => {
     expect(() =>
       parseZaiTokenPrices(`
