@@ -61,6 +61,7 @@ const CEREBRAS_CATALOG = `
 | [OpenAI GPT OSS](/models/openai-oss) | \`gpt-oss-120b\` | 120 billion |
 `
 
+// The MDX-source <ModelInfo> JSX (the .md export before issue #381).
 const CEREBRAS_PAGE = `
 <ModelInfo
   modelId="gpt-oss-120b"
@@ -90,6 +91,7 @@ const CEREBRAS_PAGE = `
 // inference-docs.cerebras.ai/models/qwen-3.8-27b on 2026-10-20.
 const CEREBRAS_HTML = `<script>self.__next_f.push([1,"_jsx(_components.p,{children:['Model ID: ',_jsx(_components.code,{children:\`qwen-3.8-27b\`}),\`. Context window: 64K tokens (65,536) for Free Trial and 128K tokens (131,072) for paid tiers and trial customers. Maximum output: 32K tokens (32,768) for Free Trial and 40K tokens (40,960) for paid tiers and trial customers. Pricing: \`]}),_jsx(_MdxComponentBoundary,{name:\`ModelInfo\`,children:_jsx(ModelInfo,{modelId:\`qwen-3.8-27b\`,playgroundUrl:\`https://cloud.cerebras.ai\`,contextLength:{freeTier:\`64k tokens\`,paidTiers:\`128k tokens\`},maxOutput:{freeTier:\`32k tokens\`,paidTiers:\`40k tokens\`},speed:{value:\`~1850\`,unit:\`tokens/sec\`},pricing:{inputPrice:\`$0.99 / M tokens\`,outputPrice:\`$1.49 / M tokens\`},rateLimits:[{tier:\`Free Trial\`,requestsPerMin:\`5\`}],endpoints:[\`Chat Completions\`],features:[\`Image Inputs\`,\`Reasoning\`,\`Tool Calling\`],inputOutput:{inputFormats:[\`text\`,\`image\`],outputFormats:[\`text\`]},knownLimitations:[_jsxs(_components.span,{children:[\`Reasoning is enabled by default at \`,_jsx(_components.code,{children:\`high\`}),\`.\`]})]})})"])</script>`
 
+// A minimal compiled ModelInfo for the listModels test (hand-built).
 const CEREBRAS_OSS_HTML = `<script>self.__next_f.push([1,"_jsx(ModelInfo,{modelId:\`gpt-oss-120b\`,contextLength:{freeTier:\`65k tokens\`,paidTiers:\`131k tokens\`},maxOutput:{freeTier:\`32k tokens\`,paidTiers:\`40k tokens\`},pricing:{inputPrice:\`$0.35 / M tokens\`,outputPrice:\`$0.75 / M tokens\`},features:[\`Reasoning\`,\`Tool Calling\`],inputOutput:{inputFormats:[\`text\`],outputFormats:[\`text\`]}})"])</script>`
 
 function inputUsd(card: unknown): number {
@@ -200,6 +202,29 @@ describe('cerebras model pages', () => {
       contextWindow: 131_072,
       maxOutput: 40_960,
     })
+  })
+
+  it('reads the compiled copy with pricing when an unpriced copy comes first', () => {
+    const unpriced =
+      '_jsx(ModelInfo,{modelId:`gpt-oss-120b`,features:[`Reasoning`]})'
+    expect(
+      parseCerebrasModelPage(`${unpriced}${CEREBRAS_OSS_HTML}`),
+    ).toMatchObject({ inputPerMillion: 0.35, maxOutput: 40_000 })
+  })
+
+  it('throws when two priced compiled copies disagree', () => {
+    const other = CEREBRAS_OSS_HTML.replace('$0.35', '$0.40')
+    expect(() =>
+      parseCerebrasModelPage(`${CEREBRAS_OSS_HTML}${other}`),
+    ).toThrow('ModelInfo copies disagree')
+  })
+
+  it('keeps the context sentence out of the max output sentence', () => {
+    const facts = parseCerebrasModelPage(
+      `\`. Context window: 65k tokens (free tier), 131k tokens (paid). Max output: 32K tokens (32,768) for Free Trial and 40K tokens (40,960) for paid tiers.\`${CEREBRAS_OSS_HTML}`,
+    )
+    expect(facts?.contextWindow).toBe(131_000)
+    expect(facts?.maxOutput).toBe(40_960)
   })
 
   it('prefers the paid parenthetical context window over 128k', () => {
@@ -327,6 +352,7 @@ describe('issue #109 listModels', () => {
         })
         expect(inputUsd(priced?.pricing)).toBeCloseTo(0.35, 9)
         expect(priced?.maxOutput).toBe(40_000)
+        expect(priced?.contextWindow).toBe(131_000)
         expect(priced?.reasoning).toEqual({
           mode: 'effort',
           mandatory: true,

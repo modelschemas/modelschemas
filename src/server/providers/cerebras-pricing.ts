@@ -5,9 +5,12 @@
  * marketing pricing page is a client render and is not parsed.
  *
  * As of 2026-10-20 a page's `.md` export renders `<ModelInfo>` as bare
- * labels with no values (issue #381), so the HTML page is read: its
- * payload embeds the compiled MDX, `_jsx(ModelInfo,{…})` with the same
- * props as template literals. The JSX form is still read.
+ * labels with no values (issue #381), so the HTML page is read: its RSC
+ * payload (`self.__next_f.push`) embeds the compiled MDX,
+ * `_jsx(ModelInfo,{…})` with the same props as template literals. It
+ * carries the body twice, and on some pages the second copy has no
+ * `pricing`, `contextLength`, or `maxOutput`, so the copy with `pricing`
+ * is read. The `<ModelInfo …/>` JSX (the MDX source) is still accepted.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
@@ -45,8 +48,20 @@ const FEATURES: Record<string, Array<string>> = {
   'Structured Outputs': ['structured_outputs', 'response_format'],
 }
 
-/** A `"…"` (MDX source) or `` `…` `` (compiled MDX) string. */
+/** A `"…"` (MDX source) or `` `…` `` (compiled MDX) string; quotes are not paired. */
 const STRING = '["`]([^"`]*)["`]'
+
+/**
+ * The prose sentence after `label`. It ends at its full stop, a newline
+ * (`\\n` once JSON-escaped in the payload), or the end of its template
+ * literal, so the context sentence never reaches the max output one.
+ */
+function proseSentence(page: string, label: RegExp): string | undefined {
+  const rest = page.match(
+    new RegExp(`${label.source}\\s*([^\\n\`]+)`, 'i'),
+  )?.[1]
+  return rest?.split(/\.\s|\\n/)[0]
+}
 
 function dollars(cell: string): number | null {
   const match = cell.match(/\$(\d+(?:\.\d+)?)/)
@@ -74,7 +89,7 @@ function paidParenthetical(sentence: string | undefined): number | null {
  * → 128,000). An unreadable paid tier throws.
  */
 function paidContextWindow(page: string, block: string): number | null {
-  const sentence = page.match(/context window:\s*([^\n`]+)/i)?.[1]
+  const sentence = proseSentence(page, /context window:/)
   const exact = paidParenthetical(sentence)
   if (exact != null) return exact
   const contextPaid = block.match(/contextLength(?:=\{\{|:\{)([^}]*)\}/)?.[1]
@@ -95,7 +110,7 @@ function paidContextWindow(page: string, block: string): number | null {
  * `<ModelInfo>` paid tier (`40k` → 40,000). An unreadable tier throws.
  */
 function paidMaxOutput(page: string, block: string): number | null {
-  const sentence = page.match(/max(?:imum)? output:\s*([^\n`]+)/i)?.[1]
+  const sentence = proseSentence(page, /max(?:imum)? output:/)
   const exact = paidParenthetical(sentence)
   if (exact != null) return exact
   const paid = block.match(/maxOutput(?:=\{\{|:\{)([^}]*)\}/)?.[1]
@@ -122,14 +137,20 @@ function quotedList(block: string, key: string): Array<string> {
   )
 }
 
-/** The `<ModelInfo …/>` JSX, else the props of the compiled `_jsx(ModelInfo,{…})`. */
-function modelInfoBlock(page: string): string | null {
+/**
+ * The `<ModelInfo …/>` JSX, else the `{…}` props of each compiled
+ * `_jsx(s)(ModelInfo,{…})`: the copies with `pricing`, or all of them when
+ * none has it.
+ */
+function modelInfoBlocks(page: string): Array<string> {
   const jsx = page.match(/<ModelInfo[\s\S]*?\/>/)?.[0]
-  if (jsx) return jsx
-  const call = /_jsxs?\(ModelInfo,\{/.exec(page)
-  if (!call) return null
-  const open = call.index + call[0].length - 1
-  return page.slice(open, closing(page, open, 'cerebras model page') + 1)
+  if (jsx) return [jsx]
+  const blocks = [...page.matchAll(/_jsxs?\(ModelInfo,\{/g)].map((call) => {
+    const open = call.index + call[0].length - 1
+    return page.slice(open, closing(page, open, 'cerebras model page') + 1)
+  })
+  const priced = blocks.filter((block) => /\bpricing:\{/.test(block))
+  return priced.length > 0 ? priced : blocks
 }
 
 /** Catalog table: link slug plus the backticked API id. */
@@ -144,11 +165,25 @@ export function cerebrasCatalogRows(
   return out
 }
 
+/**
+ * Facts from the page's `<ModelInfo>`; null when it has none. Throws when
+ * two compiled copies with `pricing` state different facts.
+ */
 export function parseCerebrasModelPage(
   page: string,
 ): CerebrasModelFacts | null {
-  const block = modelInfoBlock(page)
-  if (!block) return null
+  const [first, ...rest] = modelInfoBlocks(page).map((block) =>
+    blockFacts(page, block),
+  )
+  if (!first) return null
+  const stated = JSON.stringify(first)
+  if (rest.some((facts) => JSON.stringify(facts) !== stated)) {
+    throw new Error('cerebras model page: ModelInfo copies disagree')
+  }
+  return first
+}
+
+function blockFacts(page: string, block: string): CerebrasModelFacts {
   const input = dollars(
     block.match(new RegExp(`inputPrice:\\s*${STRING}`))?.[1] ?? '',
   )
