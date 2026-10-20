@@ -7,6 +7,7 @@ import {
   OPENAI_PRICING_URL,
 } from './openai-model-docs.ts'
 import { keepValidReasoning } from './reasoning-config.ts'
+import { docsRun } from './model-facts.ts'
 
 const originalFetch = globalThis.fetch
 afterEach(() => {
@@ -89,9 +90,9 @@ Standard
 `
 for (const malformed of [false, true])
   it(
-    'rejects ' +
+    'marks ' +
       (malformed ? 'unparseable' : 'failed') +
-      ' native OpenAI pages rather than returning unknown facts',
+      ' native OpenAI pages unavailable rather than returning unknown facts',
     async () => {
       globalThis.fetch = async (input) => {
         const url = String(input)
@@ -104,9 +105,14 @@ for (const malformed of [false, true])
             : new Response('outage', { status: 503 })
         throw new Error('unexpected source ' + url)
       }
-      await expect(openaiModelFacts(['gpt-5'])).rejects.toThrow(
-        malformed ? 'no Model ID' : '503',
-      )
+      const run = docsRun()
+      const row = (await openaiModelFacts(['gpt-5'], undefined, run))('gpt-5')
+      expect(row.reasoning).toBeUndefined()
+      expect(row.absent?.reasoning).toBe('unavailable')
+      expect(
+        run.first.find((failure) => failure.source.endsWith('/gpt-5.md'))
+          ?.error,
+      ).toContain(malformed ? 'no Model ID' : '503')
     },
   )
 

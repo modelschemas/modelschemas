@@ -1,5 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import docs from './fixtures/openai-gpt5-guides.json'
+import realtimeDocs from './fixtures/openai-native-realtime-reasoning.json'
 import {
   OPENAI_GPT51_GUIDE_URL,
   OPENAI_GPT52_GUIDE_URL,
@@ -14,6 +15,7 @@ import {
   openaiModelFacts,
 } from './openai-model-docs.ts'
 import { docsRun } from './model-facts.ts'
+import { OPENAI_REALTIME_EFFORT_URL } from './openai-realtime-efforts.ts'
 
 const originalFetch = globalThis.fetch
 afterEach(() => {
@@ -190,4 +192,77 @@ it('does not fetch the guides when no GPT-5 id is listed', async () => {
   const run = docsRun()
   await openaiModelFacts(['gpt-5.1'], undefined, run)
   expect(run.failed).toBe(0)
+})
+
+it('keeps the listing when the docs host forbids the index or a page (#371)', async () => {
+  const forbidden = () =>
+    Promise.resolve(new Response('Forbidden', { status: 403 }))
+  globalThis.fetch = forbidden
+  const run = docsRun()
+  const row = (await openaiModelFacts(['gpt-4o'], undefined, run))('gpt-4o')
+  expect(row.pricing).toBeNull()
+  expect(row.absent).toMatchObject({
+    contextWindow: 'unavailable',
+    pricing: 'unavailable',
+    capabilities: 'unavailable',
+    reasoning: 'unavailable',
+  })
+  expect(run.first.map((failure) => failure.source)).toEqual([
+    OPENAI_MODELS_INDEX_URL,
+    OPENAI_PRICING_URL,
+  ])
+
+  serve(allGuides, { 'gpt-5-pro': proPage })
+  const served = globalThis.fetch
+  globalThis.fetch = (input, init) =>
+    String(input).endsWith('/models/gpt-5-mini.md')
+      ? forbidden()
+      : served(input, init)
+  const pageRun = docsRun()
+  const facts = await openaiModelFacts(
+    ['gpt-5-mini', 'gpt-5-pro', 'gpt-5-search-api'],
+    undefined,
+    pageRun,
+  )
+  expect(facts('gpt-5-mini').absent?.capabilities).toBe('unavailable')
+  expect(facts('gpt-5-mini').pricing).toBeNull()
+  // The failed page may be the alias page that seeds an unindexed id.
+  expect(facts('gpt-5-search-api').absent?.pricing).toBe('unavailable')
+  expect(facts('gpt-5-pro').reasoning?.mode).toBe('effort')
+  expect(facts('gpt-5-pro').absent).toBeUndefined()
+  expect(pageRun.failed).toBe(1)
+})
+
+it('marks only unpriced rows when the pricing page alone fails (#371)', async () => {
+  serve(allGuides, { 'gpt-5-pro': proPage })
+  const served = globalThis.fetch
+  globalThis.fetch = (input, init) =>
+    String(input) === OPENAI_PRICING_URL
+      ? Promise.resolve(new Response('Forbidden', { status: 403 }))
+      : served(input, init)
+  const run = docsRun()
+  const facts = await openaiModelFacts(
+    ['gpt-5-mini', 'gpt-5-search-api'],
+    undefined,
+    run,
+  )
+  expect(facts('gpt-5-search-api').absent?.pricing).toBe('unavailable')
+  expect(facts('gpt-5-mini').contextWindow).not.toBeNull()
+  expect(facts('gpt-5-mini').absent?.contextWindow).toBeUndefined()
+  expect(run.first.map((failure) => failure.source)).toEqual([
+    OPENAI_PRICING_URL,
+  ])
+})
+
+it('marks realtime reasoning unavailable when the realtime guide fails (#371)', async () => {
+  serve({}, { 'gpt-realtime-2': realtimeDocs['gpt-realtime-2'] })
+  const run = docsRun()
+  const row = (await openaiModelFacts(['gpt-realtime-2'], undefined, run))(
+    'gpt-realtime-2',
+  )
+  expect(row.reasoning).toEqual({ mode: 'effort', mandatory: null })
+  expect(row.absent?.reasoning).toBe('unavailable')
+  expect(run.first.map((failure) => failure.source)).toEqual([
+    OPENAI_REALTIME_EFFORT_URL,
+  ])
 })

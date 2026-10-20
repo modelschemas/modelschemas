@@ -1,6 +1,7 @@
 import {
   OPENAI_REALTIME_EFFORT_URL,
   openaiRealtimeEfforts,
+  openaiRealtimeSelects,
 } from './openai-realtime-efforts.ts'
 /**
  * OpenAI model facts from OpenAI's own docs. `GET /v1/models` is `id` +
@@ -17,7 +18,6 @@ import { tagDocsFacts } from './fact-sources.ts'
 import {
   NO_FACTS,
   assertParsed,
-  cachedDocs,
   docsRun,
   mapConcurrent,
   markdownSection,
@@ -25,6 +25,7 @@ import {
   parseDay,
   tokenCount,
   tryDocs,
+  unavailable,
   undatedId,
 } from './model-facts.ts'
 import type { DocsRun, ModelFacts } from './model-facts.ts'
@@ -552,9 +553,26 @@ function guideNames(rawId: string, ids: Array<string>): boolean {
 type OpenAiDocsFacts = ModelFacts &
   Pick<ModelInfo, 'unsupportedCapabilities' | 'absent'>
 
+/** Facts a model page (via the index that names it) feeds. */
+const PAGE_FACTS = [
+  'contextWindow',
+  'maxOutput',
+  'modalities',
+  'capabilities',
+  'pricing',
+  'reasoning',
+  'serverTools',
+] as const
+
 /**
  * Facts for the listed ids. Pages are fetched once per slug and memoised;
  * a page's snapshot list also seeds ids the index alone couldn't resolve.
+ * Every docs load goes through `tryDocs`, so a failed one leaves the facts
+ * it feeds `unavailable` on the rows it speaks for and the listing still
+ * polls: the index or a model page (every page fact; a failed page may be
+ * the alias page that seeds an id, so unresolved ids too), the pricing
+ * page (an unpriced row's pricing), the realtime guide (reasoning on a
+ * realtime id whose effort-mode page lists no efforts).
  * A failed family or sampling guide marks `absent` on the ids it speaks for.
  * A failed GPT-5.1 guide does not: the family list stays, with mandatory null.
  */
@@ -563,8 +581,8 @@ export async function openaiModelFacts(
   kv?: KVNamespace,
   run: DocsRun = docsRun(),
 ): Promise<(rawId: string) => OpenAiDocsFacts> {
-  const slugs = new Set(
-    await cachedDocs(kv, OPENAI_MODELS_INDEX_URL, async () => {
+  const indexed = await tryDocs(run, OPENAI_MODELS_INDEX_URL, (cached) =>
+    cached(kv, OPENAI_MODELS_INDEX_URL, async () => {
       const parsed = [
         ...parseModelIndex(await fetchText(OPENAI_MODELS_INDEX_URL)),
       ]
@@ -574,6 +592,7 @@ export async function openaiModelFacts(
       return parsed
     }),
   )
+  const slugs = new Set(indexed)
   const needed = [
     ...new Set(
       rawIds
@@ -581,33 +600,41 @@ export async function openaiModelFacts(
         .filter((slug): slug is string => slug !== null),
     ),
   ]
-  const searchDoc = await cachedDocs(kv, OPENAI_PRICING_URL, async () => {
-    const markdown = await fetchText(OPENAI_PRICING_URL)
-    const parsed = parseOpenAiSearchPricing(markdown)
-    assertParsed(parsed, 'openai pricing page search rows')
-    return {
-      rates: Object.fromEntries(parsed),
-      hash: await sha256Text(markdown),
-      extractedAt: new Date().toISOString(),
-    }
-  })
-  const pages = await mapConcurrent(needed, 8, async (slug) => {
-    const page = await cachedDocs(kv, OPENAI_MODEL_PAGE(slug), async () => {
-      const markdown = await fetchText(OPENAI_MODEL_PAGE(slug))
-      const parsed = parseModelPage(markdown)
-      if (!parsed) {
-        throw new Error(`openai model page ${slug}: no Model ID`)
-      }
-      // The card's provenance hashes the page as served, so an unchanged
-      // page keeps the stored card (and its `extractedAt`) on re-parse.
+  const searchDoc = await tryDocs(run, OPENAI_PRICING_URL, (cached) =>
+    cached(kv, OPENAI_PRICING_URL, async () => {
+      const markdown = await fetchText(OPENAI_PRICING_URL)
+      const parsed = parseOpenAiSearchPricing(markdown)
+      assertParsed(parsed, 'openai pricing page search rows')
       return {
-        ...parsed,
+        rates: Object.fromEntries(parsed),
         hash: await sha256Text(markdown),
         extractedAt: new Date().toISOString(),
       }
-    })
-    return { slug, page }
+    }),
+  )
+  const pageLoads = await mapConcurrent(needed, 8, async (slug) => {
+    const page = await tryDocs(run, OPENAI_MODEL_PAGE(slug), (cached) =>
+      cached(kv, OPENAI_MODEL_PAGE(slug), async () => {
+        const markdown = await fetchText(OPENAI_MODEL_PAGE(slug))
+        const parsed = parseModelPage(markdown)
+        if (!parsed) {
+          throw new Error(`openai model page ${slug}: no Model ID`)
+        }
+        // The card's provenance hashes the page as served, so an unchanged
+        // page keeps the stored card (and its `extractedAt`) on re-parse.
+        return {
+          ...parsed,
+          hash: await sha256Text(markdown),
+          extractedAt: new Date().toISOString(),
+        }
+      }),
+    )
+    return page ? { slug, page } : null
   })
+  const pages = pageLoads.filter((page) => page !== null)
+  const failedSlugs = new Set(
+    needed.filter((_, index) => pageLoads[index] === null),
+  )
   // A model's own page takes precedence over another alias page that names
   // it as a default snapshot. Listing order must not erase native controls.
   const primaryIds = new Set(pages.map((loaded) => loaded.page.ids[0]))
@@ -655,7 +682,12 @@ export async function openaiModelFacts(
       byId.set(id, { ...facts, pricing: null, factSources: sources })
     }
   }
-  const realtime = await openaiRealtimeEfforts(rawIds, kv)
+  const realtimeListed = rawIds.some(openaiRealtimeSelects)
+  const realtime = realtimeListed
+    ? await tryDocs(run, OPENAI_REALTIME_EFFORT_URL, (cached) =>
+        openaiRealtimeEfforts(rawIds, kv, cached),
+      )
+    : null
   if (realtime) {
     const own = byId.get(realtime.rawId)
     if (own?.reasoning?.mode === 'effort' && !own.reasoning.efforts?.length) {
@@ -771,7 +803,7 @@ export async function openaiModelFacts(
       byId.set(id, facts)
     }
   }
-  if (needed.length > 0) assertParsed(byId, 'openai model pages')
+  if (pages.length > 0) assertParsed(byId, 'openai model pages')
   const familyIds = guides?.[0]?.parsed.rawIds ?? GPT5_GUIDE_FAMILY
   const guideGaps: OpenAiDocsFacts['absent'] = {}
   // The 5.1 sentence only upgrades mandatory. Its failure leaves the family
@@ -779,7 +811,7 @@ export async function openaiModelFacts(
   if (guides && !guides[0]) guideGaps.reasoning = 'unavailable'
   if (guides && !guides[2]) guideGaps.capabilities = 'unavailable'
   return (rawId) => {
-    const facts = docsFacts(rawId)
+    const facts = sourcedFacts(rawId)
     if (!guides || !guideNames(rawId, familyIds)) return facts
     const absent = { ...facts.absent }
     if (guideGaps.reasoning) absent.reasoning = 'unavailable'
@@ -787,6 +819,31 @@ export async function openaiModelFacts(
     return guideGaps.reasoning || guideGaps.capabilities
       ? { ...facts, absent }
       : facts
+  }
+  /** `docsFacts`, with the facts a failed docs load feeds left unavailable. */
+  function sourcedFacts(rawId: string): OpenAiDocsFacts {
+    const slug = indexed ? pageSlugFor(rawId, slugs) : null
+    // A failed page may also have been the alias page that seeds this id.
+    const pageLost =
+      !indexed ||
+      (slug !== null && failedSlugs.has(slug)) ||
+      (failedSlugs.size > 0 && !byId.has(rawId) && !byId.has(undatedId(rawId)))
+    if (pageLost) return { ...NO_FACTS, ...unavailable(...PAGE_FACTS) }
+    const facts = docsFacts(rawId)
+    const gaps: OpenAiDocsFacts['absent'] = { ...facts.absent }
+    if (!searchDoc && !facts.pricing) gaps.pricing = 'unavailable'
+    // The guide only fills efforts an effort-mode page left unlisted.
+    const effortsUnlisted =
+      facts.reasoning?.mode === 'effort' && !facts.reasoning.efforts?.length
+    if (
+      realtimeListed &&
+      !realtime &&
+      openaiRealtimeSelects(rawId) &&
+      effortsUnlisted
+    ) {
+      gaps.reasoning = 'unavailable'
+    }
+    return Object.keys(gaps).length > 0 ? { ...facts, absent: gaps } : facts
   }
   function docsFacts(rawId: string): OpenAiDocsFacts {
     const exact = byId.get(rawId)
@@ -806,6 +863,7 @@ export async function openaiModelFacts(
       }
     }
     if (facts.pricing) return facts
+    if (!searchDoc) return facts
     // Exact id only. A dated snapshot is not the undated search row.
     const rates = searchDoc.rates[rawId]
     if (!rates) return facts
