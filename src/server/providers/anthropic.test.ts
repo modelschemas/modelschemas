@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest'
 
-import { ANTHROPIC_THINKING_URL } from './anthropic-features.ts'
+import {
+  ANTHROPIC_THINKING_URL,
+  anthropicServerTools,
+} from './anthropic-features.ts'
 import { ANTHROPIC_PRICING_URL } from './anthropic-pricing.ts'
 import { anthropicProvider } from './anthropic.ts'
 import { ANTHROPIC_MODELS_OVERVIEW_URL } from './provider-aliases.ts'
@@ -32,16 +35,22 @@ it('keeps the poll when the docs host serves pages with no tables', async () => 
     const result = await anthropicProvider.listModels({
       ANTHROPIC_API_KEY: 'test-key',
     })
+    expect(result.models).toHaveLength(1)
     const model = result.models[0]
     expect(model?.rawId).toBe('claude-opus-5-5')
     expect(model?.pricing).toBeUndefined()
     expect(model?.reasoning).toBeNull()
-    expect(model?.serverTools).toContain('computer_toolset_20260801')
+    const tools = anthropicServerTools('claude-opus-5-5').serverTools
+    expect(tools.length).toBeGreaterThan(0)
+    expect(model?.serverTools).toEqual(tools)
     expect(model?.absent).toEqual({
       pricing: 'unavailable',
       reasoning: 'unavailable',
       aliases: 'unavailable',
     })
+    for (const failure of result.docsFailures?.first ?? []) {
+      expect(failure.error).toMatch(/parsed 0 model rows$/)
+    }
     expect(
       result.docsFailures?.first.map((failure) => failure.source).sort(),
     ).toEqual(
