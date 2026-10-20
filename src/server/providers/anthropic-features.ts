@@ -259,8 +259,11 @@ export function anthropicServerTools(rawId: string): {
 }
 
 /** Reasoning + server tools for one listed model, with provenance. */
-export async function anthropicModelFeatures(kv?: KVNamespace) {
-  const doc = await cachedDocs(kv, ANTHROPIC_THINKING_URL, async () => {
+export async function anthropicModelFeatures(
+  kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
+) {
+  const doc = await cached(kv, ANTHROPIC_THINKING_URL, async () => {
     const markdown = await fetchText(ANTHROPIC_THINKING_URL)
     const parsed = parseThinkingTable(markdown)
     assertParsed(parsed, 'anthropic thinking table')

@@ -87,8 +87,9 @@ type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 /** Card lookup by `display_name`; models off the table get nothing. */
 export async function anthropicModelPricing(
   kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
 ): Promise<(displayName: string | null | undefined) => PricedFacts> {
-  const doc = await cachedDocs(kv, ANTHROPIC_PRICING_URL, async () => {
+  const doc = await cached(kv, ANTHROPIC_PRICING_URL, async () => {
     const markdown = await fetchText(ANTHROPIC_PRICING_URL)
     const parsed = parseAnthropicPricing(markdown)
     assertParsed(parsed, 'anthropic pricing page')
