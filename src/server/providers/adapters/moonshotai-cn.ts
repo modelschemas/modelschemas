@@ -112,12 +112,15 @@ const OTHER_COLUMNS = new Set(['模型', UNIT_COLUMN, '上下文窗口'])
 
 /**
  * Model id → yuan per token, by lever, from the `### … 系列模型` tables
- * of `## 模型定价` (`parseKimiDocTables`). Columns are read by title. A row is priced only when
- * its unit is `1M tokens` and every price cell is a bare `¥12.50`. Any
- * other row naming the model leaves it unpriced: a unit suffix, a struck
- * price, a range, a table with a title this does not know, a table under
- * another heading (a batch price), or a second row for the same id.
- * Throws when no row is priced.
+ * of `## 模型定价` (`parseKimiDocTables`). Columns are read by title. A
+ * row is priced only when its unit is `1M tokens` and every price cell is
+ * a bare `¥12.50`. Any other row naming the model leaves it unpriced: a
+ * unit suffix, a cell that is not plain text (a struck price), a range, a
+ * cell count that differs from the column count, a table with a title this
+ * does not know, a table under another `###` of `## 模型定价` (a batch
+ * price), or a second row for the same id. Tables outside `## 模型定价` are
+ * ignored. Throws when a row there has no readable id, or when no row is
+ * priced.
  */
 export function parseMoonshotCnPricing(
   tables: Array<KimiDocTable>,
@@ -133,6 +136,9 @@ export function parseMoonshotCnPricing(
       )
     for (const cells of rows) {
       const id = cells[0]
+      // An unreadable id could be a second row for a priced one.
+      if (id === null)
+        throw new Error('moonshotai-cn: a price row has no readable id')
       if (!id) continue
       const rates: Record<string, number> = {}
       titles.forEach((title, index) => {

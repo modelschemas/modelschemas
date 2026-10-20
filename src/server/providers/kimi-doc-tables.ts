@@ -1,16 +1,19 @@
 /**
  * `<DocTable>` tables from a Kimi docs page (platform.kimi.com and
- * platform.kimi.ai, both Mintlify). Since 2026-10-20 the `.md` export of a
+ * platform.kimi.ai, both Mintlify). As of 2026-10-20 the `.md` export of a
  * page renders each `<DocTable>` as an empty `<table>`, so the pricing
- * tables are read from the HTML page instead. It embeds the page's compiled
- * MDX: `_jsx(Heading,{level:`2`,…,children:`…`})` for each heading and
+ * tables are read from the HTML page instead. Its RSC payload embeds the
+ * page's compiled MDX: `_jsx(Heading,{level:`2`,…,children:`…`})` (or
+ * `_components.h2`) for each heading and
  * `_jsx(DocTable,{columns:[…],rows:[[…]]})` for each table, with every
- * string a template literal. The body appears twice (server render and
- * client payload); only the first copy is read.
+ * string a template literal. The payload carries the body twice: first
+ * with a rendering `DocTable`, then with `DocTable=()=>null` (on
+ * platform.kimi.ai that copy has no `rows`). Only the first copy, up to its
+ * `_provideComponents(`, is read.
  */
 
 export interface KimiDocTable {
-  /** Text of the `##` heading above the table; null when not plain text. */
+  /** Text of the nearest level-1/2 heading above the table; null when not plain text. */
   section: string | null
   /** Text of the `###` heading under that section; null when none or not plain text. */
   subsection: string | null
@@ -18,7 +21,8 @@ export interface KimiDocTable {
   titles: Array<string | null>
   /**
    * A cell is its text: a template literal, or a fragment of them joined
-   * (`<>{"$"}0.16</>` compiles to [`$`,`0.16`]). Anything else is null.
+   * (`<>{"$"}0.16</>` compiles to `_jsxs(_Fragment,{children:[`$`,`0.16`]})`,
+   * read as `$0.16`). Anything else is null.
    */
   rows: Array<Array<string | null>>
 }
@@ -26,14 +30,10 @@ export interface KimiDocTable {
 /** A template literal with no escape or `${`: its text is the source text. */
 const LITERAL = '`((?:[^`\\\\$]|\\$(?!\\{))*)`'
 const TEXT = new RegExp(`^${LITERAL}$`)
-const FRAGMENT = /^_jsxs?\(_Fragment,\{children:(\[[\s\S]*\])\}\)$/
-const HEADING = new RegExp(
-  `_jsxs?\\((?:Heading,\\{level:\`(\\d)\`|_components\\.h(\\d),\\{)` +
-    `(?:,?id:${LITERAL})?,?(?:children:${LITERAL}\\}\\))?`,
-  'g',
-)
+const FRAGMENT = /^_jsxs?\(_Fragment,\{children:([\s\S]*)\}\)$/
+const HEADING = /_jsxs?\((?:Heading|_components\.h(\d)),\{/g
 const TITLE = new RegExp(`^\\{title:${LITERAL}`)
-const TABLE = /_jsxs?\(DocTable,\{columns:\[/g
+const TABLE = /_jsxs?\(DocTable,\{/g
 
 /** Index of the backtick closing the template literal opened at `open`. */
 function literalEnd(source: string, open: number): number {
@@ -86,17 +86,30 @@ function cell(item: string): string | null {
   if (text) return text[1] ?? ''
   const children = FRAGMENT.exec(item)?.[1]
   if (children === undefined) return null
-  const texts = items(children, 0).map((part) => TEXT.exec(part)?.[1])
+  const parts = children.startsWith('[') ? items(children, 0) : [children]
+  const texts = parts.map((part) => TEXT.exec(part)?.[1])
   return texts.every((part) => part !== undefined) ? texts.join('') : null
+}
+
+/** `key:value` props of the object literal opened at `open`. */
+function props(source: string, open: number): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const prop of items(source, open)) {
+    const colon = prop.indexOf(':')
+    if (colon > 0) out.set(prop.slice(0, colon), prop.slice(colon + 1))
+  }
+  return out
 }
 
 /**
  * Every DocTable on the page, in order, under the headings above it.
- * Throws when the page has no compiled MDX body or no DocTable, or when a
- * DocTable's props are not `columns` then `rows`.
+ * Throws when the page has no compiled MDX body or no DocTable, when a
+ * heading's level is unreadable, when a DocTable's props are not exactly
+ * `columns` then `rows` or a row is not an array, or when the body is
+ * malformed.
  */
 export function parseKimiDocTables(html: string): Array<KimiDocTable> {
-  const start = html.search(/_jsxs?\((?:Heading|DocTable),/)
+  const start = html.search(/_jsxs?\((?:Heading|DocTable|_components\.h\d),/)
   const end = start < 0 ? -1 : html.indexOf('_provideComponents(', start)
   if (end < 0) throw new Error('kimi docs: page has no compiled MDX body')
   const body = html.slice(start, end)
@@ -106,24 +119,40 @@ export function parseKimiDocTables(html: string): Array<KimiDocTable> {
     | { at: number; table: KimiDocTable }
   > = []
   for (const match of body.matchAll(HEADING)) {
-    const level = Number(match[1] ?? match[2])
-    marks.push({ at: match.index, level, text: match[4] ?? null })
+    const heading = props(body, match.index + match[0].length - 1)
+    const level = Number(
+      match[1] ?? TEXT.exec(heading.get('level') ?? '')?.[1] ?? NaN,
+    )
+    if (!Number.isInteger(level)) {
+      throw new Error('kimi docs: heading level is unreadable')
+    }
+    const children = heading.get('children')
+    const text =
+      children === undefined ? null : (TEXT.exec(children)?.[1] ?? null)
+    marks.push({ at: match.index, level, text })
   }
   for (const match of body.matchAll(TABLE)) {
-    const columnsOpen = match.index + match[0].length - 1
-    const columnsClose = closing(body, columnsOpen)
-    if (!body.startsWith(',rows:[', columnsClose + 1)) {
+    const table = [...props(body, match.index + match[0].length - 1)]
+    const [columns, rows] = table.map(([, value]) => value)
+    if (
+      table.map(([key]) => key).join() !== 'columns,rows' ||
+      !columns?.startsWith('[') ||
+      !rows?.startsWith('[')
+    ) {
       throw new Error('kimi docs: DocTable props are not columns, rows')
     }
-    const titles = items(body, columnsOpen).map(
+    const titles = items(columns, 0).map(
       (column) => TITLE.exec(column)?.[1] ?? null,
     )
-    const rows = items(body, columnsClose + 7).map((row) =>
-      row.startsWith('[') ? items(row, 0).map(cell) : [null],
-    )
+    const cells = items(rows, 0).map((row) => {
+      if (!row.startsWith('[')) {
+        throw new Error('kimi docs: DocTable row is not an array')
+      }
+      return items(row, 0).map(cell)
+    })
     marks.push({
       at: match.index,
-      table: { section: null, subsection: null, titles, rows },
+      table: { section: null, subsection: null, titles, rows: cells },
     })
   }
   marks.sort((a, b) => a.at - b.at)

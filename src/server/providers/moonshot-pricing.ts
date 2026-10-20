@@ -1,8 +1,12 @@
 /**
  * Kimi prices from the international pricing page (issue #109). Amounts
  * are USD per 1M tokens. K2 rows are cache-hit / cache-miss / output.
- * K3 rows add cache-write TTLs. A zero-row parse throws. The tables are
- * read from the HTML page: its `.md` export renders them empty.
+ * K3 rows add cache-write TTLs, by position. A row is priced only when
+ * every cell between its unit and its context window is a bare `$0.16`,
+ * so a struck or footnoted price leaves the row unpriced rather than
+ * shifting the others into its lever. `moonshotModelPricing` throws on a
+ * zero-row parse. The tables are read from the HTML page: its `.md`
+ * export renders them empty.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 
@@ -22,11 +26,12 @@ export interface MoonshotRates {
   cacheWrite1h?: number
 }
 
-function dollars(cells: Array<string | null>): Array<number> {
-  return cells.flatMap((cell) => {
-    const amount = cell?.match(/^\$([\d.]+)$/)?.[1]
-    return amount === undefined ? [] : [Number(amount)]
-  })
+/** The amounts, or null when any cell is not a bare dollar amount. */
+function dollars(cells: Array<string | null>): Array<number> | null {
+  const amounts = cells.map((cell) => cell?.match(/^\$(\d+(?:\.\d+)?)$/)?.[1])
+  return amounts.every((amount) => amount !== undefined)
+    ? amounts.map(Number)
+    : null
 }
 
 /** Model id → USD per million tokens. */
@@ -35,8 +40,14 @@ export function parseMoonshotPricing(
 ): Map<string, MoonshotRates> {
   const out = new Map<string, MoonshotRates>()
   for (const [id, unit, ...cells] of tables.flatMap((table) => table.rows)) {
-    const amounts = dollars(cells)
-    if (!id?.startsWith('kimi-') || unit !== '1M tokens' || out.has(id)) {
+    const context = /^[\d,]+ tokens$/.test(cells.at(-1) ?? '')
+    const amounts = dollars(context ? cells.slice(0, -1) : cells)
+    if (
+      !id?.startsWith('kimi-') ||
+      unit !== '1M tokens' ||
+      out.has(id) ||
+      amounts === null
+    ) {
       continue
     }
     if (amounts.length === 3) {

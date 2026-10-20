@@ -145,8 +145,29 @@ describe('moonshot pricing page', () => {
       input: 0.95,
       output: 4,
     })
-    expect(parsed.get('kimi-k3')?.cacheWrite).toBe(3)
-    expect(parsed.get('kimi-k3')?.cacheWrite1h).toBe(6)
+    expect(parsed.get('kimi-k3')).toEqual({
+      cacheWrite: 3,
+      cacheWrite1h: 6,
+      cacheRead: 0.3,
+      input: 3,
+      output: 15,
+    })
+  })
+
+  it('leaves a row unpriced when a price cell is not plain text', () => {
+    // Struck cache-hit and cache-miss cells must not shift the K3 output
+    // and cache writes into the input levers.
+    const struck = (amount: string) =>
+      `_jsx(_components.del,{children:\`$${amount}\`})`
+    const page = MOONSHOT_PAGE.replace(
+      '_jsxs(_Fragment,{children:[`$`,`0.30`]}),_jsxs(_Fragment,{children:[`$`,`3.00`]}),_jsxs(_Fragment,{children:[`$`,`15.00`]})',
+      () =>
+        `${struck('0.30')},${struck('3.00')},_jsxs(_Fragment,{children:[\`$\`,\`15.00\`]})`,
+    )
+    expect(page).not.toBe(MOONSHOT_PAGE)
+    const parsed = parseMoonshotPricing(parseKimiDocTables(page))
+    expect(parsed.has('kimi-k3')).toBe(false)
+    expect(parsed.has('kimi-k2.6')).toBe(true)
   })
 })
 

@@ -340,7 +340,7 @@ describe('parseMoonshotCnPricing', () => {
       '`¥6.50`,`¥27.00`,`262,144 tokens`],[`kimi-unmapped`',
       '`¥6.50/千`,`¥27.00`,`262,144 tokens`],[`kimi-unmapped`',
     ],
-    ['a struck price', '`¥1.10`', '`~~¥2.20~~ ¥1.10`'],
+    ['two prices in one cell', '`¥1.10`', '`¥2.20 ¥1.10`'],
     ['a dollar price', '`¥1.10`', '`$1.10`'],
     [
       'a cell that is not text',
@@ -392,6 +392,15 @@ describe('parseMoonshotCnPricing', () => {
   it('refuses an id two rows price', () => {
     const page = PRICING.replace('`kimi-unmapped`', '`kimi-k3`')
     expect(prices(page).has('kimi-k3')).toBe(false)
+  })
+
+  it('throws on a price row whose id is not plain text', () => {
+    const page = PRICING.replace(
+      '[`kimi-unmapped`',
+      '[_jsx(_components.code,{children:`kimi-k3`})',
+    )
+    expect(page).not.toBe(PRICING)
+    expect(() => prices(page)).toThrow('a price row has no readable id')
   })
 
   it('throws when nothing is priced', () => {

@@ -11,7 +11,7 @@ const page = (name: string) =>
 const CN = page('platform.kimi.com-pricing-chat.html.txt')
 const INTL = page('platform.kimi.ai-pricing-chat.html.txt')
 
-/** platform.kimi.com/docs/pricing/chat.md as served from 2026-10-20. */
+/** platform.kimi.com/docs/pricing/chat.md as served on 2026-10-20. */
 const EMPTY_MD_EXPORT = `## 模型定价
 
 ### K3 系列模型
@@ -96,6 +96,27 @@ describe('parseKimiDocTables', () => {
     expect(tables[1]?.rows[2]?.[3]).toBe('¥6.50')
   })
 
+  it('reads a single-child fragment and heading props in any order', () => {
+    const tables = parseKimiDocTables(
+      CN.replace('`¥1.10`', '_jsx(_Fragment,{children:`¥1.10`})').replace(
+        '_jsx(Heading,{level:`3`,id:`k2-系列模型`,children:`K2 系列模型`})',
+        '_jsx(Heading,{id:`k2-系列模型`,children:`K2 系列模型`,level:`3`})',
+      ),
+    )
+    expect(tables[1]?.subsection).toBe('K2 系列模型')
+    expect(tables[1]?.rows[2]?.[2]).toBe('¥1.10')
+  })
+
+  it('reads a markdown heading the page compiles to _components.h2', () => {
+    const tables = parseKimiDocTables(
+      CN.replace(
+        '_jsx(Heading,{level:`2`,id:`模型定价`,children:`模型定价`})',
+        '_jsx(_components.h2,{id:`模型定价`,children:`模型定价`})',
+      ),
+    )
+    expect(tables[0]?.section).toBe('模型定价')
+  })
+
   it('throws on the empty markdown export and on unknown table props', () => {
     expect(() => parseKimiDocTables(EMPTY_MD_EXPORT)).toThrow(
       'page has no compiled MDX body',
@@ -108,5 +129,23 @@ describe('parseKimiDocTables', () => {
         CN.replace('}],rows:[[`kimi-k3`', '}],data:[[`kimi-k3`'),
       ),
     ).toThrow('DocTable props are not columns, rows')
+    expect(() =>
+      parseKimiDocTables(
+        CN.replace(
+          '_jsx(DocTable,{columns:',
+          '_jsx(DocTable,{caption:`x`,columns:',
+        ),
+      ),
+    ).toThrow('DocTable props are not columns, rows')
+    expect(() =>
+      parseKimiDocTables(
+        CN.replace('rows:[[`kimi-k3`', 'rows:[...more,[`kimi-k3`'),
+      ),
+    ).toThrow('DocTable row is not an array')
+    expect(() =>
+      parseKimiDocTables(
+        CN.replace('_jsx(Heading,{level:`3`,', '_jsx(Heading,{level:three,'),
+      ),
+    ).toThrow('heading level is unreadable')
   })
 })
