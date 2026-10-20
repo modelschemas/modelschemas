@@ -10,20 +10,40 @@ import {
 } from './baseten.ts'
 
 const REASONING = `
-## Control reasoning depth
+## Control reasoning
+
+| Model | Slug | Reasoning | Control |
+| - | - | - | - |
+| Beam | \`reflection/Beam-1.0\` | Always on | None |
+| GLM 5.3 | \`zai-org/GLM-5.3\` | On by default | \`reasoning_effort\` |
+| Nemotron Ultra | \`nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B\` | Off by default | \`chat_template_args\` |
+| OpenAI GPT 120B | \`openai/gpt-oss-120b\` | On by default | \`reasoning_effort\` |
+
+<span id="control-reasoning-depth" />
+
+### Set reasoning depth
+
+| Model | Supported values | Effective depth |
+| - | - | - |
+| Beam | \`minimal\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, \`max\` | As sent |
+| GLM 5.3 | \`none\`, \`low\`, \`high\` (default), \`max\` | \`none\` runs at \`low\` |
+| OpenAI GPT 120B | \`none\`, \`low\`, \`medium\` (default), \`high\` | \`none\` can still reason; other values as sent |
+
+## Parse the response
 
 | Model | Supported values |
 | - | - |
-| GLM 5.3 | \`none\`, \`low\`, \`high\` (default), \`max\` |
-| OpenAI GPT 120B | \`none\`, \`low\`, \`medium\` (default), \`high\` |
-
-Thinking is always on for the GLM 5.3 family, so \`none\` does not turn it off.
-
-## Set a reasoning token budget
+| Nemotron Ultra | \`none\`, \`high\` |
 `
 
 const PAYLOAD = {
   data: [
+    {
+      id: 'reflection/Beam-1.0',
+      name: 'Beam',
+      output_modalities: ['text'],
+      pricing: { prompt: '0.000001', completion: '0.000004' },
+    },
     {
       id: 'zai-org/GLM-5.3',
       name: 'GLM 5.3',
@@ -146,6 +166,35 @@ describe('baseten', () => {
     )
   })
 
+  it('reads always-on from the Reasoning column and none from effective depth', () => {
+    const models = parseBasetenModels(PAYLOAD, REASONING, SOURCE, HASH)
+    const reasoning = new Map(
+      models.map((model) => [model.rawId, model.reasoning]),
+    )
+
+    expect(reasoning.get('reflection/Beam-1.0')).toEqual({
+      mode: 'effort',
+      mandatory: true,
+      efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+    expect(reasoning.get('openai/gpt-oss-120b')).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['none', 'low', 'medium', 'high'],
+    })
+  })
+
+  it('throws when the reasoning page has no effort table', () => {
+    expect(() =>
+      parseBasetenModels(
+        PAYLOAD,
+        REASONING.replace('### Set reasoning depth', '### Depth'),
+        SOURCE,
+        HASH,
+      ),
+    ).toThrow(/no effort table/)
+  })
+
   it('throws when the payload has no ids', () => {
     expect(() =>
       parseBasetenModels({ data: [] }, REASONING, SOURCE, HASH),
@@ -184,7 +233,7 @@ describe('baseten', () => {
     const spec = await provider.fetchSpec({})
 
     expect(listed.skipped).toBeUndefined()
-    expect(listed.models).toHaveLength(3)
+    expect(listed.models).toHaveLength(4)
     expect(headers).toEqual(['Bearer test-key'])
     expect(spec.sources.map((source) => source.url)).toEqual([
       BASETEN_CHAT_OPENAPI_URL,

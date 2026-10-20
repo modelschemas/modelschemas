@@ -74,15 +74,23 @@ function positiveInt(value: unknown): number | null {
     : null
 }
 
-function parseEfforts(markdown: string): Map<string, Array<string>> {
-  const start = markdown.search(/^## Control reasoning depth/m)
-  if (start < 0) {
+interface EffortRow {
+  values: Array<string>
+  /** The effective-depth column says `none` still runs at a depth. */
+  noneReasons: boolean
+}
+
+const DEPTH_HEADING = /^(#{2,3}) (?:Control|Set) reasoning depth[ \t]*$/m
+
+function parseEfforts(markdown: string): Map<string, EffortRow> {
+  const heading = DEPTH_HEADING.exec(markdown)
+  if (!heading) {
     throw new Error('baseten: reasoning page has no effort table')
   }
-  const rest = markdown.slice(start)
-  const next = rest.slice(1).search(/^## /m)
-  const section = next < 0 ? rest : rest.slice(0, next + 1)
-  const efforts = new Map<string, Array<string>>()
+  const rest = markdown.slice(heading.index + heading[0].length)
+  const next = rest.search(new RegExp(`^#{1,${heading[1]?.length ?? 2}} `, 'm'))
+  const section = next < 0 ? rest : rest.slice(0, next)
+  const efforts = new Map<string, EffortRow>()
   for (const line of section.split('\n')) {
     const row = cells(line)
     if (!row || row.length < 2 || row[0] === 'Model') continue
@@ -92,7 +100,10 @@ function parseEfforts(markdown: string): Map<string, Array<string>> {
       .map((value) => value.replace(/`/g, '').trim())
       .filter((value) => value.length > 0)
     if (values.length === 0) continue
-    efforts.set(row[0] ?? '', values)
+    efforts.set(row[0] ?? '', {
+      values,
+      noneReasons: /`none`[^;]*\bruns? at `/.test(row[2] ?? ''),
+    })
   }
   if (efforts.size === 0) {
     throw new Error('baseten: reasoning page listed no efforts')
@@ -100,28 +111,38 @@ function parseEfforts(markdown: string): Map<string, Array<string>> {
   return efforts
 }
 
-function alwaysOnPrefixes(markdown: string): Array<string> {
-  const match = /Thinking is always on for the ([^,\n]+?) family/i.exec(
-    markdown,
-  )
-  const prefix = match?.[1]?.trim()
-  return prefix ? [prefix] : []
+/** Names whose `Reasoning` cell in the supported-models table is `Always on`. */
+function alwaysOnModels(markdown: string): Set<string> {
+  const before = markdown.slice(0, Math.max(0, markdown.search(DEPTH_HEADING)))
+  let column = -1
+  const names = new Set<string>()
+  for (const line of before.split('\n')) {
+    const row = cells(line)
+    if (!row) continue
+    if (row[0] === 'Model') {
+      column = row.indexOf('Reasoning')
+      continue
+    }
+    if (column >= 0 && row[column] === 'Always on') names.add(row[0] ?? '')
+  }
+  if (column < 0) {
+    throw new Error('baseten: reasoning page has no supported-models table')
+  }
+  return names
 }
 
 function reasoningFor(
   name: string,
-  efforts: Map<string, Array<string>>,
-  families: Array<string>,
+  efforts: Map<string, EffortRow>,
+  alwaysOn: Set<string>,
 ): ModelReasoning | null {
-  const values = efforts.get(name)
-  if (!values) return null
-  const alwaysOn = families.some(
-    (family) => name === family || name.startsWith(`${family} `),
-  )
+  const row = efforts.get(name)
+  if (!row) return null
   return {
     mode: 'effort',
-    mandatory: alwaysOn || !values.includes('none'),
-    efforts: values,
+    mandatory:
+      alwaysOn.has(name) || row.noneReasons || !row.values.includes('none'),
+    efforts: row.values,
   }
 }
 
@@ -152,7 +173,7 @@ export function parseBasetenModels(
     throw new Error('baseten: models payload has no data array')
   }
   const efforts = parseEfforts(reasoningMarkdown)
-  const families = alwaysOnPrefixes(reasoningMarkdown)
+  const alwaysOn = alwaysOnModels(reasoningMarkdown)
   const models: Array<ModelInfo> = []
   for (const row of payload.data) {
     if (!isRecord(row) || typeof row.id !== 'string' || row.id.length === 0) {
@@ -171,7 +192,7 @@ export function parseBasetenModels(
           source,
         )
       : null
-    const reasoning = name ? reasoningFor(name, efforts, families) : null
+    const reasoning = name ? reasoningFor(name, efforts, alwaysOn) : null
     const input = stringList(row.input_modalities)
     const output = stringList(row.output_modalities)
     const reasoningSource: FactSource | undefined = reasoning
