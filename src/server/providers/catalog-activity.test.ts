@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import { price } from '@modelschemas/rate-card'
@@ -15,6 +17,7 @@ import { provider as perplexity } from './adapters/perplexity.ts'
 import { provider as sambanova } from './adapters/sambanova.ts'
 import { parseDeepseekPricing } from './deepseek-pricing.ts'
 import { parseFireworksPricing } from './fireworks-pricing.ts'
+import { parseKimiDocTables } from './kimi-doc-tables.ts'
 import { parseMoonshotPricing } from './moonshot-pricing.ts'
 import { DEEPSEEK_THINKING_URL, KIMI_THINKING_URL } from './provider-replay.ts'
 import {
@@ -48,10 +51,11 @@ const FIREWORKS_MD = `
 | Less than 4B parameters | $0.10 |
 `
 
-const MOONSHOT_MD = `
-["kimi-k2.6", "1M tokens", <>{"$"}0.16</>, <>{"$"}0.95</>, <>{"$"}4.00</>, "262,144 tokens"],
-["kimi-k3", "1M tokens", <>{"$"}3.00</>, <>{"$"}6.00</>, <>{"$"}0.30</>, <>{"$"}3.00</>, <>{"$"}15.00</>, "1,048,576 tokens"],
-`
+// The compiled MDX body of platform.kimi.ai/docs/pricing/chat (2026-10-20).
+const MOONSHOT_PAGE = readFileSync(
+  new URL('./fixtures/platform.kimi.ai-pricing-chat.html.txt', import.meta.url),
+  'utf8',
+)
 
 const CEREBRAS_CATALOG = `
 | [OpenAI GPT OSS](/models/openai-oss) | \`gpt-oss-120b\` | 120 billion |
@@ -135,14 +139,35 @@ describe('fireworks pricing page', () => {
 
 describe('moonshot pricing page', () => {
   it('reads K2 cache columns and K3 cache-write columns', () => {
-    const parsed = parseMoonshotPricing(MOONSHOT_MD)
+    const parsed = parseMoonshotPricing(parseKimiDocTables(MOONSHOT_PAGE))
     expect(parsed.get('kimi-k2.6')).toEqual({
       cacheRead: 0.16,
       input: 0.95,
       output: 4,
     })
-    expect(parsed.get('kimi-k3')?.cacheWrite).toBe(3)
-    expect(parsed.get('kimi-k3')?.cacheWrite1h).toBe(6)
+    expect(parsed.get('kimi-k3')).toEqual({
+      cacheWrite: 3,
+      cacheWrite1h: 6,
+      cacheRead: 0.3,
+      input: 3,
+      output: 15,
+    })
+  })
+
+  it('leaves a row unpriced when a price cell is not plain text', () => {
+    // Struck cache-hit and cache-miss cells must not shift the K3 output
+    // and cache writes into the input levers.
+    const struck = (amount: string) =>
+      `_jsx(_components.del,{children:\`$${amount}\`})`
+    const page = MOONSHOT_PAGE.replace(
+      '_jsxs(_Fragment,{children:[`$`,`0.30`]}),_jsxs(_Fragment,{children:[`$`,`3.00`]}),_jsxs(_Fragment,{children:[`$`,`15.00`]})',
+      () =>
+        `${struck('0.30')},${struck('3.00')},_jsxs(_Fragment,{children:[\`$\`,\`15.00\`]})`,
+    )
+    expect(page).not.toBe(MOONSHOT_PAGE)
+    const parsed = parseMoonshotPricing(parseKimiDocTables(page))
+    expect(parsed.has('kimi-k3')).toBe(false)
+    expect(parsed.has('kimi-k2.6')).toBe(true)
   })
 })
 
@@ -332,8 +357,8 @@ describe('issue #109 listModels', () => {
             ],
           })
         }
-        if (url.includes('pricing/chat.md')) {
-          return new Response(MOONSHOT_MD, { status: 200 })
+        if (url.includes('pricing/chat')) {
+          return new Response(MOONSHOT_PAGE, { status: 200 })
         }
         if (url === KIMI_THINKING_URL) return new Response(KIMI_REPLAY_FIXTURE)
         return new Response('missing', { status: 404 })

@@ -6,6 +6,9 @@ import specFixture from '../fixtures/moonshotai-cn-openapi.json' with { type: 'j
 import { provider } from './moonshot.ts'
 
 const SPEC_URL = 'https://platform.kimi.ai/docs/openapi.json'
+/** One compiled-MDX DocTable row, as the HTML pricing page embeds it. */
+const OTHER_PRICES =
+  '_jsx(DocTable,{columns:[{title:`Model`}],rows:[[`kimi-other`,`1M tokens`,`$0.1`,`$0.2`,`$0.3`]]})_provideComponents()'
 
 const FIXTURE_SPEC = {
   openapi: '3.1.0',
@@ -53,9 +56,7 @@ describe('moonshot adapter', () => {
       if (String(url) === KIMI_THINKING_URL)
         return Promise.resolve(new Response(KIMI_REPLAY_FIXTURE))
       if (String(url).includes('platform.kimi.ai')) {
-        return Promise.resolve(
-          new Response('["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'),
-        )
+        return Promise.resolve(new Response(OTHER_PRICES))
       }
       return Promise.resolve(
         new Response(
@@ -104,7 +105,7 @@ describe('moonshot adapter', () => {
               : String(url) === SPEC_URL
                 ? body
                 : String(url).includes('platform.kimi.ai')
-                  ? '["kimi-other","1M tokens",{"$"}0.1,{"$"}0.2,{"$"}0.3]'
+                  ? OTHER_PRICES
                   : JSON.stringify({
                       data: [
                         { id: 'kimi-k3' },
