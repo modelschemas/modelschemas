@@ -334,8 +334,9 @@ export const MINIMAX_CN_PRICING_PAGE = [
 ].join('\n')
 
 /**
- * platform.minimax.io/docs/pricing/overview.md (2026-10-14): the title, the
- * opening `<div>`, then the LLM section through the first table of Audio.
+ * The pricing overview's MDX as platform.minimax.io/docs/pricing/overview.md
+ * served it on 2026-10-14, before that export flattened tabs (#379). The
+ * page in llms-full.txt is the same MDX: the title, the opening `<div>`, then the LLM section through the first table of Audio.
  * The navigation block between them is left out. Each `## ` section sits
  * indented in a `<section>`.
  */
@@ -402,8 +403,10 @@ export const MINIMAX_PRICING_OVERVIEW_PAGE = [
 ].join('\n')
 
 /**
- * platform.minimax.cn/docs/pricing/overview.md (2026-10-14), the redirect
- * target of platform.minimaxi.com: cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
+ * The China pricing overview's MDX as platform.minimax.cn/docs/pricing/
+ * overview.md served it (2026-10-14). llms-full.txt redirects to that host
+ * too, yet names the page `Source: https://platform.minimaxi.com/docs/
+ * pricing/overview`. Cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
  * through the first table of `## 语音`. Prices are yuan.
  */
 export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
@@ -467,3 +470,26 @@ export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
   '    | :- | :- | :- | :-: |',
   '    | 语音识别 | Speech-to-Text | 音频转文本，支持流式返回、说话人分离与字幕（srt/vtt）导出。 | 2.50 |',
 ].join('\n')
+
+/**
+ * `page` as one page of a Mintlify `llms-full.txt`: its `# <title>` line,
+ * then `Source: <url>`, between two other pages.
+ */
+export function minimaxLlmsFull(url: string, page: string): string {
+  const [title = '', ...body] = page.split('\n')
+  return [
+    '# Quick Start',
+    'Source: https://platform.minimax.io/docs/guides/quickstart',
+    '',
+    'Get an API key.',
+    '',
+    title,
+    `Source: ${url}`,
+    ...body,
+    '',
+    '# Rate Limits',
+    'Source: https://platform.minimax.io/docs/guides/rate-limits',
+    '',
+    'Requests per minute by tier.',
+  ].join('\n')
+}

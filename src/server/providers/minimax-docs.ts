@@ -4,6 +4,10 @@
  * states the output cap. The pricing overview page has the token prices,
  * USD per 1M tokens. A parse that finds no rows throws.
  *
+ * The pricing page is read from the site's `llms-full.txt`, which still
+ * carries its MDX source. Its `.md` export renders `<Tab>` titles as bold
+ * lines (#379), which leaves no tab boundary to tell the tiers apart.
+ *
  * The China platform (platform.minimaxi.com) publishes the same pages in
  * Chinese: `MINIMAX_CN` holds its URLs and wording. Its prices are yuan
  * per 1M tokens, stored as CNY cards.
@@ -15,6 +19,7 @@ import { tagDocsFacts } from './fact-sources.ts'
 import {
   assertParsed,
   cachedDocs,
+  llmsFullPage,
   markdownSection,
   markdownTableRows,
   tokenCount,
@@ -25,7 +30,8 @@ import type { ModelReasoning } from './types.ts'
 
 const DOCS = 'https://platform.minimax.io/docs'
 export const MINIMAX_SDK_URL = `${DOCS}/api-reference/text-anthropic-api.md`
-export const MINIMAX_PRICING_URL = `${DOCS}/pricing/overview.md`
+export const MINIMAX_PRICING_URL = `${DOCS}/pricing/overview`
+export const MINIMAX_LLMS_FULL_URL = `${DOCS}/llms-full.txt`
 export const MINIMAX_CHAT_SPEC_URL = `${DOCS}/api-reference/text/api/openapi-chat-openai.json`
 export const MINIMAX_MESSAGES_SPEC_URL = `${DOCS}/api-reference/text/api/openapi-chat-anthropic.json`
 
@@ -39,7 +45,10 @@ export interface MinimaxPlatform {
   hosts: Array<string>
   sdkUrl: string
   chatSpecUrl: string
+  /** The pricing page, as `llms-full.txt` names it in a `Source:` line. */
   pricingUrl: string
+  /** The site's `llms-full.txt`, which holds the pricing page's MDX. */
+  llmsFullUrl: string
   /** ISO-4217 code of the pricing page's amounts; absent for USD. */
   currency?: string
   /** `## <heading>` of the token-price tables. */
@@ -90,6 +99,7 @@ export const MINIMAX: MinimaxPlatform = {
   sdkUrl: MINIMAX_SDK_URL,
   chatSpecUrl: MINIMAX_CHAT_SPEC_URL,
   pricingUrl: MINIMAX_PRICING_URL,
+  llmsFullUrl: MINIMAX_LLMS_FULL_URL,
   priceSection: 'LLM',
   standardTab: 'Standard',
   legacyAccordion: 'Legacy Models',
@@ -124,7 +134,8 @@ export const MINIMAX_CN: MinimaxPlatform = {
   hosts: ['platform.minimaxi.com', 'platform.minimax.cn'],
   sdkUrl: `${DOCS_CN}/api-reference/text-anthropic-api.md`,
   chatSpecUrl: `${DOCS_CN}/api-reference/text/api/openapi-chat-openai.json`,
-  pricingUrl: `${DOCS_CN}/pricing/overview.md`,
+  pricingUrl: `${DOCS_CN}/pricing/overview`,
+  llmsFullUrl: `${DOCS_CN}/llms-full.txt`,
   currency: 'CNY',
   priceSection: '语言模型',
   standardTab: '标准',
@@ -542,14 +553,15 @@ export async function minimaxModelFacts(
   kv?: KVNamespace,
   platform: MinimaxPlatform = MINIMAX,
 ): Promise<(rawId: string) => Partial<ModelFacts>> {
-  const { label, sdkUrl, chatSpecUrl, pricingUrl } = platform
+  const { label, sdkUrl, chatSpecUrl, pricingUrl, llmsFullUrl } = platform
   const fetchPage = (url: string) => fetchMinimaxPage(url, platform)
   const doc = await cachedDocs(kv, sdkUrl, async () => {
-    const [sdk, pricingPage, specText] = await Promise.all([
+    const [sdk, llmsFull, specText] = await Promise.all([
       fetchPage(sdkUrl),
-      fetchPage(pricingUrl),
+      fetchPage(llmsFullUrl),
       fetchPage(chatSpecUrl),
     ])
+    const pricingPage = llmsFullPage(llmsFull, pricingUrl)
     const windows = parseMinimaxContextWindows(sdk, platform)
     assertParsed(windows, `${label} context windows`)
     const ids = [...windows.keys()]

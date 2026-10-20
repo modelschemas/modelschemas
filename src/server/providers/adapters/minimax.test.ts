@@ -4,9 +4,11 @@ import {
   MINIMAX_MAX_COMPLETION_TOKENS,
   MINIMAX_PRICING_OVERVIEW_PAGE,
   MINIMAX_SDK_PAGE,
+  minimaxLlmsFull,
 } from '../fixtures/minimax-docs.ts'
 import {
   MINIMAX_CHAT_SPEC_URL,
+  MINIMAX_LLMS_FULL_URL,
   MINIMAX_MESSAGES_SPEC_URL,
   MINIMAX_PRICING_URL,
   MINIMAX_SDK_URL,
@@ -57,7 +59,10 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_MODELS_URL]: FIXTURE,
   [MINIMAX_SDK_URL]: MINIMAX_SDK_PAGE,
-  [MINIMAX_PRICING_URL]: MINIMAX_PRICING_OVERVIEW_PAGE,
+  [MINIMAX_LLMS_FULL_URL]: minimaxLlmsFull(
+    MINIMAX_PRICING_URL,
+    MINIMAX_PRICING_OVERVIEW_PAGE,
+  ),
   [MINIMAX_CHAT_SPEC_URL]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',
@@ -125,8 +130,51 @@ describe('minimax', () => {
     )
   })
 
+  it('prices from llms-full.txt when the .md export renders tabs as labels', async () => {
+    // platform.minimax.io/docs/pricing/overview.md (2026-10-20): `<Tab>`
+    // titles are bold lines, so the standard tier has no boundary (#379).
+    const rendered = [
+      '# Pricing Overview',
+      '',
+      '## LLM',
+      '',
+      '**Standard**',
+      '',
+      '| Model | Input | Output | Prompt caching Read |',
+      '| :- | :- | :- | :- |',
+      '| **MiniMax-M3** | \\$0.30 / M tokens | \\$1.20 / M tokens | \\$0.06 / M tokens |',
+      '',
+      '**Priority**\\*',
+      '',
+      '| Model | Input | Output | Prompt caching Read |',
+      '| :- | :- | :- | :- |',
+      '| **MiniMax-M3** | \\$0.45 / M tokens | \\$1.80 / M tokens | \\$0.09 / M tokens |',
+    ].join('\n')
+    mockFetch({
+      ...PAGES,
+      'https://platform.minimax.io/docs/pricing/overview.md': rendered,
+      'https://platform.minimax.io/docs/llms-full.txt': minimaxLlmsFull(
+        'https://platform.minimax.io/docs/pricing/overview',
+        MINIMAX_PRICING_OVERVIEW_PAGE,
+      ),
+    })
+
+    const listed = await provider.listModels({})
+
+    const m3 = listed.models.find((model) => model.rawId === 'MiniMax-M3')
+    expect(m3?.pricing).toMatchObject({
+      tables: { rate: { base: { input_tokens: 0.3 / 1e6 } } },
+    })
+  })
+
   it('throws when a docs page parses nothing', async () => {
-    mockFetch({ ...PAGES, [MINIMAX_PRICING_URL]: '# Pay as You Go\n' })
+    mockFetch({
+      ...PAGES,
+      [MINIMAX_LLMS_FULL_URL]: minimaxLlmsFull(
+        MINIMAX_PRICING_URL,
+        '# Pay as You Go\n',
+      ),
+    })
     await expect(provider.listModels({})).rejects.toThrow(
       'minimax pricing page: parsed 0 model rows',
     )
