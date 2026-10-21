@@ -11,6 +11,9 @@
  * platform.kimi.ai that copy has no `rows`). Only the first copy, up to its
  * `_provideComponents(`, is read.
  */
+import { closing, literalEnd } from './compiled-mdx.ts'
+
+const LABEL = 'kimi docs'
 
 export interface KimiDocTable {
   /** Text of the nearest level-1/2 heading above the table; null when not plain text. */
@@ -35,43 +38,17 @@ const HEADING = /_jsxs?\((?:Heading|_components\.h(\d)),\{/g
 const TITLE = new RegExp(`^\\{title:${LITERAL}`)
 const TABLE = /_jsxs?\(DocTable,\{/g
 
-/** Index of the backtick closing the template literal opened at `open`. */
-function literalEnd(source: string, open: number): number {
-  for (let i = open + 1; i < source.length; i++) {
-    if (source[i] === '\\') i++
-    else if (source[i] === '`') return i
-  }
-  throw new Error('kimi docs: unterminated template literal')
-}
-
-/** Index of the bracket closing the one at `open`, skipping literals. */
-function closing(source: string, open: number): number {
-  let depth = 0
-  for (let i = open; i < source.length; i++) {
-    const char = source[i]
-    if (char === '`') {
-      i = literalEnd(source, i)
-    } else if (char === '[' || char === '{' || char === '(') {
-      depth++
-    } else if (char === ']' || char === '}' || char === ')') {
-      depth--
-      if (depth === 0) return i
-    }
-  }
-  throw new Error('kimi docs: unbalanced DocTable')
-}
-
 /** The comma-separated items between `open` and its closing bracket. */
 function items(source: string, open: number): Array<string> {
-  const close = closing(source, open)
+  const close = closing(source, open, LABEL)
   const out: Array<string> = []
   let start = open + 1
   for (let i = start; i < close; i++) {
     const char = source[i]
     if (char === '`') {
-      i = literalEnd(source, i)
+      i = literalEnd(source, i, LABEL)
     } else if (char === '[' || char === '{' || char === '(') {
-      i = closing(source, i)
+      i = closing(source, i, LABEL)
     } else if (char === ',') {
       out.push(source.slice(start, i))
       start = i + 1
