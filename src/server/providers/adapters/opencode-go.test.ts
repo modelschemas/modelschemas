@@ -42,7 +42,9 @@ const CATALOG = {
 }
 
 /** go.mdx Endpoints table excerpt (2026-10-21), Gemini row included. */
-const ROUTE_DOCS = `## Endpoints
+const ROUTE_DOCS = `# Go
+
+## Endpoints
 
 | Model  | Model ID | Endpoint                                                       |
 | ------ | -------- | -------------------------------------------------------------- |

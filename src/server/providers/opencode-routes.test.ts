@@ -8,7 +8,9 @@ import {
 } from './opencode-routes.ts'
 
 /** inference.mdx excerpt (2026-10-21). */
-const ZEN_DOCS = `## Endpoints
+const ZEN_DOCS = `# Inference API
+
+## Endpoints
 
 | API                     | Path                                                      |
 | ----------------------- | --------------------------------------------------------- |
@@ -25,7 +27,9 @@ curl -X POST "https://opencode.ai/inference/google/v1beta/models/gemini-3.1-pro:
 `
 
 /** go.mdx excerpt (2026-10-21). */
-const GO_DOCS = `## Endpoints
+const GO_DOCS = `# Go
+
+## Endpoints
 
 | Model  | Model ID | Endpoint                                                       | AI SDK Package              |
 | ------ | -------- | -------------------------------------------------------------- | --------------------------- |
@@ -128,6 +132,7 @@ it.each([
   ['inference/go/openai/v1/chat/completions', false],
   ['inference/v1/messages', false],
   ['v1/chat/completions', true],
+  ['v1/embeddings', true],
 ])('rejects %s, a route the docs do not list', async (id, go) => {
   serve(go ? GO_DOCS : ZEN_DOCS)
   await expect(
@@ -136,18 +141,7 @@ it.each([
       { url: 'docs', text: 'docs' },
       go,
     ),
-  ).rejects.toThrow('documents no /inference/')
-})
-it('rejects a Go id with no protocol tail before it fetches', async () => {
-  serve(GO_DOCS)
-  await expect(
-    openCodeRouteSpec(
-      [{ schemaEndpointId: 'v1/embeddings', activity: 'chat' }],
-      { url: 'docs', text: 'docs' },
-      true,
-    ),
-  ).rejects.toThrow('opencode-go: v1/embeddings names no native route')
-  expect(globalThis.fetch).not.toHaveBeenCalled()
+  ).rejects.toThrow(`documents no /${id} route`)
 })
 it('rejects a failed docs source', async () => {
   globalThis.fetch = vi.fn(async () => new Response('gone', { status: 404 }))

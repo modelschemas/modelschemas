@@ -1,4 +1,5 @@
 /** Native OpenCode routes, with unpublished request/response schemas absent. */
+import { markdownSection, markdownTableRows } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { OpenApiDocument, SpecFetchResult } from './types.ts'
 
@@ -17,54 +18,32 @@ interface RouteRow {
   activity?: string | null
 }
 
-/** Allowed tails for each public protocol prefix. */
-const PROTOCOL_ROUTES: Record<string, RegExp> = {
-  'openai/v1/': /^(?:chat\/completions|responses)$/,
-  'anthropic/v1/': /^messages$/,
-  'google/v1beta/': /^models\/[^/]+$/,
-}
-
 /** Paths the page's `## Endpoints` table lists. Throws when it lists none. */
-export function documentedRoutes(text: string, url: string): Set<string> {
-  const section = /^## Endpoints[ \t]*$([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(
-    text,
-  )?.[1]
-  const routes = new Set<string>()
-  for (const line of section?.split('\n') ?? []) {
-    if (!line.trimStart().startsWith('|')) continue
-    for (const [, cell = ''] of line.matchAll(/`([^`]+)`/g)) {
-      const path = cell.startsWith(ORIGIN) ? cell.slice(ORIGIN.length) : cell
-      if (path.startsWith('/inference/')) routes.add(path)
+export function documentedRoutes(text: string, url: string): Array<string> {
+  const routes: Array<string> = []
+  for (const cells of markdownTableRows(markdownSection(text, 'Endpoints'))) {
+    for (const cell of cells) {
+      const code = /^`([^`]+)`$/.exec(cell)?.[1] ?? ''
+      const path = code.startsWith(ORIGIN) ? code.slice(ORIGIN.length) : code
+      if (path.startsWith('/inference/')) routes.push(path)
     }
   }
-  if (routes.size === 0)
+  if (routes.length === 0)
     throw new Error(`opencode: ${url} documents no endpoint paths`)
   return routes
 }
 
 /**
- * Docs path for a stored id. Zen ids are the docs path. Go ids stay
- * `v1/<tail>` (opencode-catalog.ts); the docs serve each tail under
- * `/inference/go/<protocol>/`.
+ * A documented path as a matcher for a stored path. A `<placeholder>` matches
+ * one path segment. Go ids stay `v1/<tail>` (opencode-catalog.ts), so Go
+ * drops the `/inference/go/<protocol>` prefix the docs put before `/v1/`.
  */
-function docsPath(schemaEndpointId: string, go: boolean): string {
-  const id = schemaEndpointId.replace(/^\//, '')
-  if (!go) return `/${id}`
-  const tail = id.startsWith('v1/') ? id.slice('v1/'.length) : ''
-  const prefix = Object.keys(PROTOCOL_ROUTES).find((p) =>
-    PROTOCOL_ROUTES[p]?.test(tail),
-  )
-  if (!prefix)
-    throw new Error(`opencode-go: ${schemaEndpointId} names no native route`)
-  return `/inference/go/${prefix}${tail}`
-}
-
-function isDocumented(path: string, routes: Set<string>): boolean {
-  // inference.mdx writes the Gemini row as `.../models/<model>:generateContent`.
-  return (
-    routes.has(path) ||
-    routes.has(path.replace(/\/models\/[^/:]+/, '/models/<model>'))
-  )
+function routePattern(documented: string, go: boolean): RegExp {
+  const local = go
+    ? documented.replace(/^\/inference\/go\/[^/]+(?=\/v1\/)/, '')
+    : documented
+  const escaped = local.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escaped.replace(/<[^>]+>/g, '[^/:]+')}$`)
 }
 
 export async function openCodeRouteSpec(
@@ -72,22 +51,23 @@ export async function openCodeRouteSpec(
   docs: { url: string; text?: string; hash?: string },
   go: boolean,
 ): Promise<SpecFetchResult> {
-  const routes = new Map<string, string>()
-  for (const row of rows) {
-    if (!row.schemaEndpointId || row.activity !== 'chat') continue
-    const path = `/${row.schemaEndpointId.replace(/^\//, '')}`
-    routes.set(path, docsPath(row.schemaEndpointId, go))
-  }
-  if (routes.size === 0)
+  const routes = rows.flatMap((row) =>
+    row.schemaEndpointId && row.activity === 'chat'
+      ? [`/${row.schemaEndpointId.replace(/^\//, '')}`]
+      : [],
+  )
+  if (routes.length === 0)
     throw new Error('opencode: catalog names no verified chat routes')
   const url = go ? OPENCODE_GO_ROUTE_DOCS_URL : OPENCODE_ROUTE_DOCS_URL
   const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
-  const documented = documentedRoutes(text, url)
+  const documented = documentedRoutes(text, url).map((path) =>
+    routePattern(path, go),
+  )
   const method = { url, hash: await sha256Text(text) }
   const paths: NonNullable<OpenApiDocument['paths']> = {}
-  for (const [path, docPath] of routes) {
-    if (!isDocumented(docPath, documented))
-      throw new Error(`opencode: ${url} documents no ${docPath} route`)
+  for (const path of routes) {
+    if (!documented.some((pattern) => pattern.test(path)))
+      throw new Error(`opencode: ${url} documents no ${path} route`)
     paths[path] = {
       post: {
         [ROUTE_ONLY_MARKER]: true,

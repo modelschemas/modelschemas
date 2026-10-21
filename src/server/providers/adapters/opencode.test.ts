@@ -90,7 +90,9 @@ const PAGE = `## Endpoints
 `
 
 /** inference.mdx Endpoints table, listing the paths CATALOG's api yields. */
-const ROUTE_DOCS = `## Endpoints
+const ROUTE_DOCS = `# Inference API
+
+## Endpoints
 
 | API       | Path                                               |
 | --------- | -------------------------------------------------- |
