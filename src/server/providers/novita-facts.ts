@@ -1,11 +1,15 @@
 /**
  * Novita chat facts the keyed `/models` row does not state.
  *
- * Request wire and sampling flags: the chat-completion markdown.
+ * Request wire and sampling flags: the chat-completion page. As of
+ * 2026-10-21 its `.md` export renders each `<ParamField>` as flat markdown
+ * with no nesting (issue #387), so the HTML page is read: it embeds the
+ * compiled MDX, `_jsx(ParamField,{body:`…`,children:…})`, nested as written.
  * `enable_thinking` ids the chat spec omits: the LLM FAQ.
  * Per-model reasoning close, tool_choice, and JSON modes: the public
  * product catalog the docs site loads (`features_v2`).
  */
+import { closing, literalEnd } from './compiled-mdx.ts'
 import { tryDocs } from './model-facts.ts'
 import type { DocsRun } from './model-facts.ts'
 import { overlayModelFacts } from './reasoning-config.ts'
@@ -19,7 +23,7 @@ import type {
 } from './types.ts'
 
 export const NOVITA_CHAT_DOC_URL =
-  'https://docs.novita.ai/api-reference/model-apis-llm-create-chat-completion.md'
+  'https://docs.novita.ai/api-reference/model-apis-llm-create-chat-completion'
 export const NOVITA_FAQ_URL = 'https://docs.novita.ai/guides/LLM-FAQ.md'
 export const NOVITA_PRODUCT_MODELS_URL =
   'https://api-server.novita.ai/v1/product/model/list'
@@ -51,7 +55,8 @@ export interface NovitaChatDoc {
   flags: Array<string>
   /**
    * Ids the spec names under `enable_thinking`. Null when the field is
-   * published with no supported-model list (every chat model).
+   * published with no supported-model list and no restriction (every chat
+   * model); empty when it states a restriction but lists no ids.
    */
   enableThinkingIds: Array<string> | null
 }
@@ -86,14 +91,15 @@ export interface NovitaDocs {
 
 interface ParamField {
   name: string
-  indent: number
+  top: boolean
+  /** The field's compiled children as text: `code` in backticks, `li` as `* `. */
   body: string
 }
 
 export function parseNovitaChatDoc(text: string, hash: string): NovitaChatDoc {
   const fields = paramFields(text)
   const top = new Set(
-    fields.filter((field) => field.indent === 0).map((field) => field.name),
+    fields.filter((field) => field.top).map((field) => field.name),
   )
   if (!top.has('max_tokens')) {
     throw new Error('novita chat doc: max_tokens is missing')
@@ -475,7 +481,9 @@ function optionalBool(
 
 function thinkingIds(field: ParamField | undefined): Array<string> | null {
   if (!field) return []
-  if (!/Supported models\s*:/.test(field.body)) return null
+  if (!/Supported models\s*:/.test(field.body)) {
+    return /\bOnly applies to\b/.test(field.body) ? [] : null
+  }
   const lines = field.body.split('\n')
   const start = lines.findIndex((line) => /Supported models\s*:/.test(line))
   const ids: Array<string> = []
@@ -499,25 +507,39 @@ function roleEnum(body: string): Array<string> {
   return tokens
 }
 
-function paramFields(text: string): Array<ParamField> {
-  const lines = text.split('\n')
-  const fields: Array<ParamField> = []
-  for (let i = 0; i < lines.length; i++) {
-    const open = /^( *)<ParamField body="([^"]+)"/.exec(lines[i] ?? '')
-    if (!open) continue
-    const indent = open[1]?.length ?? 0
-    const name = open[2] ?? ''
-    let end = lines.length - 1
-    for (let j = i + 1; j < lines.length; j++) {
-      const close = /^( *)<\/ParamField>/.exec(lines[j] ?? '')
-      if (close && (close[1]?.length ?? 0) === indent) {
-        end = j
-        break
-      }
+function paramFields(page: string): Array<ParamField> {
+  const spans = [...page.matchAll(/_jsxs?\(ParamField,\{/g)].flatMap((call) => {
+    const open = call.index + call[0].length - 1
+    const end = closing(page, open, 'novita chat doc')
+    const props = page.slice(open, end + 1)
+    const name = /^\{body:`([^`]+)`/.exec(props)?.[1]
+    return name ? [{ name, open, end, props }] : []
+  })
+  return spans.map((span) => ({
+    name: span.name,
+    top: !spans.some((outer) => outer.open < span.open && span.end < outer.end),
+    body: compiledText(span.props),
+  }))
+}
+
+/** Children literals in order; prop literals (`type:`, `id:`, `href:`) are skipped. */
+function compiledText(block: string): string {
+  let text = ''
+  for (let i = 0; i < block.length; i++) {
+    if (block.startsWith('_components.li,', i)) text += '\n* '
+    else if (block.startsWith('_components.p,', i)) text += '\n'
+    if (block[i] !== '`') continue
+    const end = literalEnd(block, i, 'novita chat doc')
+    const before = block.slice(Math.max(0, i - 40), i)
+    if (/(?:children:|[[,])$/.test(before)) {
+      const value = block.slice(i + 1, end).replaceAll('\\n', '\n')
+      text += /_components\.code,\{children:$/.test(before)
+        ? `\`${value}\``
+        : value
     }
-    fields.push({ name, indent, body: lines.slice(i, end + 1).join('\n') })
+    i = end
   }
-  return fields
+  return text
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
