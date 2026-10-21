@@ -401,6 +401,20 @@ describe('extractRateCardWithGrok', () => {
     }
   })
 
+  it('returns the thrown message when the call throws (#394)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockRejectedValue(new Error('network down')),
+    )
+    try {
+      await expect(extractRateCardWithGrok(args)).resolves.toEqual({
+        error: 'network down',
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('returns the xAI status and body when the call fails (#394)', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

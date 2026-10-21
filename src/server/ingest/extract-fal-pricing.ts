@@ -100,7 +100,7 @@ export interface FalPricingExtractOutcome {
   error?: string
 }
 
-/** `{ error }` = no card this run, and why (HTTP, throw, or two rejections). */
+/** `{ error }` = no card this run, and why (xAI HTTP error or empty reply, a throw, or two rejections). */
 export type ExtractedCard = RateCard | 'unverified' | { error: string }
 
 export interface ExtractCardArgs {
@@ -981,7 +981,11 @@ async function extractFalPricingScoped(
         ingestFailedEvent(
           'fal-pricing-extract',
           providerId,
-          [`leftover retry: ${failed.size}`, ...reasons].join(' | '),
+          [
+            `leftover retry: ${failed.size}`,
+            ...[...reasons].slice(0, 3),
+            ...(reasons.size > 3 ? [`+${reasons.size - 3} more`] : []),
+          ].join(' | '),
         ),
       )
       const held = await loadCursor(deps.db, heldKey)
