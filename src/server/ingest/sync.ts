@@ -509,11 +509,12 @@ export async function syncProvider(
         },
         createdAt: now,
       })
-      // The KV blob is content-addressed, so writing it first is harmless.
+      // Content-addressed, so a blob left by a failed batch is unreferenced,
+      // never wrong.
       await putJson(kv, schemaKey(hash), schema)
       // One batch, so a run that dies here never leaves two current rows,
-      // nor a current row with no change: the next run finds the hash
-      // current and skips it, so a change missed here is never written.
+      // nor a current row with no change, which no later run would write:
+      // the next run finds the hash current and skips it.
       if (current) {
         await db.batch([
           db

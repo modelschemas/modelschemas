@@ -231,32 +231,41 @@ describe('syncProvider', () => {
     expect(payload.previousHash).toBe(inputVersion?.contentHash)
   })
 
-  it('never commits a new version whose change row failed to write', async () => {
-    const id = 'stub-atomic'
-    const deps = await freshDeps(id)
-    const db = deps.db
-    await syncProvider(deps, stubProvider(id, fixtureSpec(false)))
+  it.each([
+    ['endpoint.added', false],
+    ['schema.added', false],
+    ['schema.updated', true],
+  ] as const)(
+    'rolls back the write whose %s change failed, so the next run records it',
+    async (type, mutate) => {
+      const id = `stub-atomic-${type.replace('.', '-')}`
+      const trigger = `fail_${id.replaceAll('-', '_')}`
+      const deps = await freshDeps(id)
+      const db = deps.db
+      if (mutate) await syncProvider(deps, stubProvider(id, fixtureSpec(false)))
 
-    // A storage failure on the change insert alone (prod hit a D1
-    // "Network connection lost" there).
-    await env.DB.prepare(
-      `CREATE TRIGGER fail_${id.replace('-', '_')} BEFORE INSERT ON changes
-       WHEN NEW.provider_id = '${id}' AND NEW.type = 'schema.updated'
-       BEGIN SELECT RAISE(ABORT, 'injected'); END`,
-    ).run()
-    await expect(
-      syncProvider(deps, stubProvider(id, fixtureSpec(true))),
-    ).rejects.toThrow()
-    await env.DB.prepare(`DROP TRIGGER fail_${id.replace('-', '_')}`).run()
+      // Fails only this change insert, as the D1 error on the grok sync did.
+      await env.DB.prepare(
+        `CREATE TRIGGER ${trigger} BEFORE INSERT ON changes
+         WHEN NEW.provider_id = '${id}' AND NEW.type = '${type}'
+         BEGIN SELECT RAISE(ABORT, 'injected'); END`,
+      ).run()
+      try {
+        await expect(
+          syncProvider(deps, stubProvider(id, fixtureSpec(mutate))),
+        ).rejects.toThrow('injected')
+      } finally {
+        await env.DB.prepare(`DROP TRIGGER IF EXISTS ${trigger}`).run()
+      }
 
-    // The next run still sees the change, so it is written exactly once.
-    const retry = await syncProvider(deps, stubProvider(id, fixtureSpec(true)))
-    expect(retry.versionsAdded).toBe(1)
-    const updated = (await providerChanges(db, id)).filter(
-      (c) => c.type === 'schema.updated',
-    )
-    expect(updated).toHaveLength(1)
-  })
+      // The next run still sees the change, so it is written exactly once.
+      await syncProvider(deps, stubProvider(id, fixtureSpec(mutate)))
+      const written = (await providerChanges(db, id)).filter(
+        (c) => c.type === type,
+      )
+      expect(written).toHaveLength(type === 'schema.added' ? 2 : 1)
+    },
+  )
 
   it('revives the superseded version when upstream reverts to prior content', async () => {
     const id = 'stub-revert'
