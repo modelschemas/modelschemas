@@ -194,7 +194,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v31: the Gemini pricing entry gained `named`; a v30 entry has none.
 // v32: OpenAI "only supports" a non-none effort is mandatory true. A v31
 // model-page entry would keep gpt-5-pro at mandatory null for six hours.
-const DOCS_CACHE_VERSION = 'v32'
+// v33: Vertex Claude card titles drop a leading "Anthropic's" (#390). A v32
+// entry keeps every row unpriced, so the poll refuses the clear for six hours.
+const DOCS_CACHE_VERSION = 'v33'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
