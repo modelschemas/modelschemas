@@ -9,6 +9,7 @@ import { errorMessage } from '#/server/errors.ts'
 import type { FactAbsence } from '#/server/providers/types.ts'
 
 export const POSTHOG_CAPTURE_URL = 'https://us.i.posthog.com/batch/'
+export const CF_TRACE_URL = 'https://www.cloudflare.com/cdn-cgi/trace'
 const DISTINCT_ID = 'modelschemas'
 
 export type IngestJob =
@@ -26,6 +27,8 @@ export type IngestEvent =
         error: string
         /** The docs source that failed; absent when the whole job failed. */
         source?: string
+        /** The Cloudflare colo the job ran in; added at capture. */
+        colo?: string
       }
     }
   | {
@@ -185,17 +188,46 @@ export function posthogBatch(
   }
 }
 
+/**
+ * The colo this invocation runs in, or null when the trace cannot be read
+ * (issue #356). Cron Triggers run wherever Cloudflare has capacity, and
+ * some providers refuse requests from some regions.
+ */
+async function traceColo(
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  try {
+    const response = await fetchImpl(CF_TRACE_URL, {
+      signal: AbortSignal.timeout(2_000),
+    })
+    if (!response.ok) return null
+    return /^colo=([A-Z]+)$/m.exec(await response.text())?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function captureIngestEvents(
   apiKey: string | undefined,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const events = takeIngestEvents()
   if (!apiKey || events.length === 0) return
+  const colo = events.some((event) => event.event === 'ingest_failed')
+    ? await traceColo(fetchImpl)
+    : null
+  const stamped = colo
+    ? events.map((event) =>
+        event.event === 'ingest_failed'
+          ? { ...event, properties: { ...event.properties, colo } }
+          : event,
+      )
+    : events
   try {
     const response = await fetchImpl(POSTHOG_CAPTURE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(posthogBatch(events, apiKey)),
+      body: JSON.stringify(posthogBatch(stamped, apiKey)),
       signal: AbortSignal.timeout(5_000),
     })
     if (!response.ok) {
