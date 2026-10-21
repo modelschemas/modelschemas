@@ -100,7 +100,8 @@ export interface FalPricingExtractOutcome {
   error?: string
 }
 
-export type ExtractedCard = RateCard | 'unverified' | null
+/** `{ error }` = no card this run, and why (HTTP, throw, or two rejections). */
+export type ExtractedCard = RateCard | 'unverified' | { error: string }
 
 export interface ExtractCardArgs {
   pricingText: string
@@ -342,7 +343,7 @@ type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 async function grokChat(
   apiKey: string,
   messages: Array<ChatMessage>,
-): Promise<string | null> {
+): Promise<string | { error: string }> {
   const response = await fetch(XAI_CHAT_URL, {
     method: 'POST',
     headers: {
@@ -356,14 +357,21 @@ async function grokChat(
       messages,
     }),
   })
-  if (!response.ok) return null
-  return chatContent((await response.json()) as unknown)
+  if (!response.ok) {
+    const body = (await response.text()).slice(0, 200)
+    return { error: `xai ${response.status}: ${body}` }
+  }
+  return (
+    chatContent((await response.json()) as unknown) ?? {
+      error: 'xai reply has no message content',
+    }
+  )
 }
 
 /**
  * One model, at most two turns: a rejected card goes back once with the
- * reason (same model — not a fallback). `null` = no card this run; the
- * caller holds the cursor so the next shard retries it.
+ * reason (same model — not a fallback). `{ error }` = no card this run; the
+ * caller holds the cursor so the next shard retries it, and reports why.
  */
 export async function extractRateCardWithGrok(
   args: ExtractCardArgs & { apiKey: string },
@@ -376,11 +384,13 @@ export async function extractRateCardWithGrok(
     },
   ]
   try {
+    let rejected = ''
     for (let turn = 0; turn < 2; turn++) {
       const content = await grokChat(args.apiKey, messages)
-      if (content === null) return null
+      if (typeof content !== 'string') return content
       const checked = checkExtractedCard(content, args)
       if (checked === 'unverified' || !('error' in checked)) return checked
+      rejected = checked.error
       messages.push(
         { role: 'assistant', content },
         {
@@ -389,9 +399,9 @@ export async function extractRateCardWithGrok(
         },
       )
     }
-    return null
-  } catch {
-    return null
+    return { error: `rejected twice: ${rejected.slice(0, 200)}` }
+  } catch (error) {
+    return { error: errorMessage(error) }
   }
 }
 
@@ -892,6 +902,7 @@ async function extractFalPricingScoped(
     // Everything the parser could not stand behind: one extract call per
     // distinct Pricing section, then copied onto every row sharing it.
     const failed = new Set<string>()
+    const reasons = new Set<string>()
     if (leftovers.size > 0 && extract === null) {
       outcome.skipped = 'XAI_API_KEY not set — leftovers skipped'
     } else if (leftovers.size > 0 && extract !== null) {
@@ -913,7 +924,12 @@ async function extractFalPricingScoped(
 
       for (const [index, [hash, group]] of groups.entries()) {
         const result = results[index]
-        if (result === 'unverified' || result?.examples.length === 0) {
+        if (
+          result === 'unverified' ||
+          (result !== undefined &&
+            !('error' in result) &&
+            result.examples.length === 0)
+        ) {
           for (const row of group.rows) {
             outcome.unverified++
             logRefusal(providerId, row.rawId, 'unverified')
@@ -927,13 +943,15 @@ async function extractFalPricingScoped(
           }
           continue
         }
-        if (result) byHash.set(hash, result)
+        const card = result === undefined || 'error' in result ? null : result
+        if (result !== undefined && 'error' in result) reasons.add(result.error)
+        if (card) byHash.set(hash, card)
         for (const row of group.rows) {
           const sourceUrl = falLlmsTxtUrl(row.rawId)
-          if (result && (await applyCard(row, result, sourceUrl, hash))) {
+          if (card && (await applyCard(row, card, sourceUrl, hash))) {
             continue
           }
-          if (!result) {
+          if (!card) {
             outcome.refused++
             logRefusal(providerId, row.rawId, 'uncompilable')
           }
@@ -963,7 +981,7 @@ async function extractFalPricingScoped(
         ingestFailedEvent(
           'fal-pricing-extract',
           providerId,
-          `leftover retry: ${failed.size}`,
+          [`leftover retry: ${failed.size}`, ...reasons].join(' | '),
         ),
       )
       const held = await loadCursor(deps.db, heldKey)

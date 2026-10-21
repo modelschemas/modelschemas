@@ -235,6 +235,13 @@ describe('isRetryableLlmsStatus', () => {
   })
 })
 
+async function extractError(
+  args: Parameters<typeof extractRateCardWithGrok>[0],
+): Promise<string | null> {
+  const result = await extractRateCardWithGrok(args)
+  return typeof result === 'object' && 'error' in result ? result.error : null
+}
+
 describe('extractRateCardWithGrok', () => {
   const args = {
     pricingText: pricingSection(NANO_LLMS),
@@ -263,9 +270,9 @@ describe('extractRateCardWithGrok', () => {
     vi.stubGlobal('fetch', fetchMock)
     try {
       const card = await extractRateCardWithGrok(args)
-      expect(card).not.toBeNull()
       expect(card).not.toBe('unverified')
-      if (card === null || card === 'unverified') return
+      expect(card).not.toHaveProperty('error')
+      if (card === 'unverified' || 'error' in card) return
       expect(card.source.hash).toBe(args.sourceHash)
       expect(card.source.url).toBe(args.sourceUrl)
       expect(fetchMock.mock.calls[0]?.[0]).toBe(
@@ -324,13 +331,15 @@ describe('extractRateCardWithGrok', () => {
     }
   })
 
-  it('returns null when a priced section is refused twice', async () => {
+  it('returns the rejection when a priced section is refused twice', async () => {
     const { source: _source, ...body } = NANO_BANANA_2
     for (const reply of [{ unverified: true }, { ...body, examples: [] }]) {
       const fetchMock = grokReplies(reply, reply)
       vi.stubGlobal('fetch', fetchMock)
       try {
-        await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
+        expect(await extractError(args)).toMatch(
+          /^rejected twice: the section names/,
+        )
         expect(fetchMock).toHaveBeenCalledTimes(2)
       } finally {
         vi.unstubAllGlobals()
@@ -338,7 +347,7 @@ describe('extractRateCardWithGrok', () => {
     }
   })
 
-  it('returns null when verifyExamples fails on both turns', async () => {
+  it('returns the rejection when verifyExamples fails on both turns', async () => {
     const { source: _source, examples, ...body } = NANO_BANANA_2
     const first = examples[0]
     const bad = {
@@ -350,7 +359,9 @@ describe('extractRateCardWithGrok', () => {
     const fetchMock = grokReplies(bad, bad)
     vi.stubGlobal('fetch', fetchMock)
     try {
-      await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
+      expect(await extractError(args)).toMatch(
+        /^rejected twice: verifyExamples failed/,
+      )
       const retry = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
         messages: Array<{ content: string }>
       }
@@ -371,7 +382,9 @@ describe('extractRateCardWithGrok', () => {
     }
     vi.stubGlobal('fetch', grokReplies(invented, invented))
     try {
-      await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
+      expect(await extractError(args)).toMatch(
+        /^rejected twice: a request-bound/,
+      )
     } finally {
       vi.unstubAllGlobals()
     }
@@ -380,7 +393,26 @@ describe('extractRateCardWithGrok', () => {
   it('fails closed on a non-card payload', async () => {
     vi.stubGlobal('fetch', grokReplies({ nope: true }, 'not json'))
     try {
-      await expect(extractRateCardWithGrok(args)).resolves.toBeNull()
+      await expect(extractRateCardWithGrok(args)).resolves.toEqual({
+        error: 'rejected twice: reply is not JSON',
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('returns the xAI status and body when the call fails (#394)', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response('{"error":"rate limited"}', { status: 429 }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await expect(extractRateCardWithGrok(args)).resolves.toEqual({
+        error: 'xai 429: {"error":"rate limited"}',
+      })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.unstubAllGlobals()
     }

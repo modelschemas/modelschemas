@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
 
@@ -15,6 +15,8 @@ import {
 } from '../../db/schema.ts'
 import { falLlmsTxtUrl } from '../providers/fal.ts'
 import { modelDbId } from './poll-models.ts'
+import { POSTHOG_CAPTURE_URL } from './ingest-signals.ts'
+import type { PostHogBatch } from './ingest-signals.ts'
 import {
   extractFalPricing,
   FAL_PRICING_FETCH_CONCURRENCY,
@@ -1129,7 +1131,7 @@ describe('extractFalPricing failed leftovers (#88)', () => {
       },
       extractCard: async (): Promise<ExtractedCard> => {
         extracts++
-        return null
+        return { error: 'xai 503: unavailable' }
       },
     }
 
@@ -1194,5 +1196,52 @@ describe('extractFalPricing failed leftovers (#88)', () => {
       }),
     })
     expect(outcome).toMatchObject({ refused: 1, cursor: 'fal-ai/a' })
+  })
+})
+
+describe('extractFalPricing failure reasons (#394)', () => {
+  it('puts why the extract failed on the leftover retry event', async () => {
+    const providerId = 'extract-fail-reason'
+    await seedProvider(providerId)
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/a',
+      properties: { num_images: { type: 'integer' } },
+    })
+    const batches: Array<PostHogBatch> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input, init) => {
+        if (String(input) === POSTHOG_CAPTURE_URL) {
+          batches.push(JSON.parse(String(init?.body)) as PostHogBatch)
+        }
+        return new Response('', { status: 200 })
+      }),
+    )
+    try {
+      await extractFalPricing({
+        db: getDb(env),
+        kv: env.SCHEMA_CACHE,
+        secrets: { POSTHOG_PROJECT_KEY: 'phc_test' },
+        now: () => NOW,
+        providerId,
+        fetchText: () => Promise.resolve(NANO_LLMS),
+        extractCard: async (): Promise<ExtractedCard> => ({
+          error: 'xai 429: rate limited',
+        }),
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    const failed = batches
+      .flatMap((batch) => batch.batch)
+      .filter((event) => event.event === 'ingest_failed')
+    expect(failed.map((event) => event.properties)).toEqual([
+      expect.objectContaining({
+        job: 'fal-pricing-extract',
+        providerId,
+        error: 'leftover retry: 1 | xai 429: rate limited',
+      }),
+    ])
   })
 })
