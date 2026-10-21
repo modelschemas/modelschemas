@@ -6,6 +6,7 @@ import {
   claudeCardPaths,
   claudeGlobalPrices,
 } from './vertex-claude.ts'
+import { normModelName } from './vertex-text.ts'
 
 const fixture = (name: string) =>
   readFileSync(
@@ -49,6 +50,11 @@ describe('Google native Claude sources', () => {
       'hash',
     )
     expect(row?.displayName).toBe('Claude Sonnet 4.6')
+    // vertexClaudeModels joins cards to prices on this key.
+    const key = normModelName(
+      (row?.displayName ?? '').replace(/^Claude\s+/i, ''),
+    )
+    expect(claudeGlobalPrices(prices, source).get(key)).toBeDefined()
   })
   it('does not turn unreadable identity or token limits into a successful empty listing', () => {
     expect(() =>
