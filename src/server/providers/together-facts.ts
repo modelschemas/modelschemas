@@ -229,8 +229,8 @@ export function parseTogetherNamedHybrid(
     /^Additional reasoning models,[^\n]* and (DeepSeek V[\d.]+) \(hybrid\), are available for \[dedicated model inference\]/m,
   )?.[1]
   if (!supported) return null
-  // The .md export once kept this note in an indented <Info>; it now
-  // renders it as a `> [!NOTE]` blockquote.
+  // The note was a line inside <Info> tags; the .md export now renders it
+  // as a `> [!NOTE]` blockquote. Both forms match.
   const operational = prose.match(
     /^\s*(?:>\s*)?For (DeepSeek V[\d.]+), function calling only works in non-reasoning mode \(`reasoning=\{"enabled": False\}`\)\./m,
   )?.[1]

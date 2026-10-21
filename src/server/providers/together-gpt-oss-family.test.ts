@@ -93,7 +93,9 @@ it('reads the disable contract from the blockquoted [!NOTE] the .md export rende
     /^<Info>\n\s*(For DeepSeek V3\.1[^\n]*)\n<\/Info>$/m,
     '> [!NOTE]\n>\n> $1',
   )
-  expect(quoted).not.toBe(docs.markdown)
+  expect(quoted).toContain(
+    '> [!NOTE]\n>\n> For DeepSeek V3.1, function calling only works',
+  )
   expect(parseTogetherNamedHybrid(quoted)).toEqual({
     nativeBasename: 'DeepSeek-V3.1',
     reasoning: { mode: 'toggle', mandatory: false },
