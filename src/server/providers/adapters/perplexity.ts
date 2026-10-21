@@ -62,14 +62,19 @@ function addFlags(out: StatedFlags, id: string, flags: Array<string>): void {
   out.set(id, [...new Set([...(out.get(id) ?? []), ...flags])])
 }
 
-/** Tab and accordion bodies are indented; rows and bullets start the line. */
-function dedent(text: string): string {
-  return text.replace(/^[ \t]+/gm, '')
+/**
+ * The markdown export renders cards, callouts and accordions as `>`
+ * blockquotes; unquoted, their sentences and bullets start the line.
+ */
+function unquote(text: string): string {
+  return text.replace(/^> ?/gm, '')
 }
 
 /**
- * Flags the Agent API models page states, per model id. Each provider tab
- * holds a card, a model table and, for some models, an `<Info>` sentence.
+ * Flags the Agent API models page states, per model id. Under "Available
+ * Models" each provider tab is a bold title line, then a `> **Title**`
+ * card blockquote, a model table and, for some models, a `> [!NOTE]`
+ * sentence; the tab runs to the next title line.
  *
  * - "Kimi K3 accepts `minimal`, … and `max` reasoning effort." gives
  *   `reasoning` and `reasoning_effort` to the row whose link text is the
@@ -97,15 +102,22 @@ export function parsePerplexityModelsPage(markdown: string): {
     new Error(`perplexity: models page states ${what} in an unread shape`)
   let rows = 0
   let sentences = 0
-  for (const chunk of markdown.split('<Tab title="').slice(1)) {
-    const tab = dedent(chunk.split('</Tab>')[0] ?? '')
+  const section = /^## Available Models\n([^]*?)(?=^## |(?![^]))/m.exec(
+    markdown,
+  )?.[1]
+  for (const chunk of (section ?? '').split(/^(?=\*\*[^*\n]+\*\*$)/m)) {
+    const title = /^\*\*([^*\n]+)\*\*\n/.exec(chunk)?.[1]
+    if (title === undefined) continue
+    const tab = unquote(chunk)
     const table = markdownTableRows(tab).filter((row) =>
       /^`[^`]+`$/.test(row[0] ?? ''),
     )
     const ids = table.map((row) => (row[0] ?? '').slice(1, -1))
     rows += ids.length
 
-    const card = /<Card title="[^"]*">\n([^]*?)\n<\/Card>/.exec(tab)?.[1] ?? ''
+    const quoted = /^> \*\*([^*\n]+)\*\*\n>\n((?:>.*(?:\n|$))+)/m.exec(chunk)
+    if (quoted && quoted[1] !== title) throw unread('a card for another tab')
+    const card = unquote(quoted?.[2] ?? '').trim()
     if (/reasoning models?\b/i.test(card)) {
       const parts = card.split(/(?<=\.)\s+/)
       const said = parts.filter((s) => /reasoning models?\b/i.test(s))
@@ -172,10 +184,12 @@ export function parsePerplexityModelsPage(markdown: string): {
  */
 export function parsePerplexityPresets(markdown: string): StatedFlags {
   const stated: StatedFlags = new Map()
-  // Not cut by `## ` heading: the preset prompts hold headings of their own.
-  for (const chunk of markdown.split('<Accordion title="').slice(1)) {
-    if (!/^[^"\n]* — current preset values">/.test(chunk)) continue
-    const body = dedent(chunk.split('</Accordion>')[0] ?? '')
+  // Each accordion is one `> **name — current preset values**` blockquote;
+  // its prompt's `## ` headings stay inside the quote.
+  for (const [, quoted] of markdown.matchAll(
+    /^> \*\*[^*\n]* — current preset values\*\*\n((?:>.*(?:\n|$))*)/gm,
+  )) {
+    const body = unquote(quoted ?? '')
     const bullet = (label: string): string | null => {
       const lines = [
         ...body.matchAll(new RegExp(`^\\* \\*\\*${label}:\\*\\* (.*)$`, 'gm')),
