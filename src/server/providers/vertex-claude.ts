@@ -115,7 +115,9 @@ export function claudeCardModels(
     article.match(
       /<h1\b[^>]*>([\s\S]*?)<devsite-|<h1\b[^>]*>([\s\S]*?)<\/h1>/i,
     )?.[1] ?? '',
-  ).replace(/ on Google Cloud$/, '')
+  )
+    .replace(/^Anthropic['’]s /, '')
+    .replace(/ on Google Cloud$/, '')
   const versionsAt = text.indexOf('Versions')
   const versions =
     versionsAt < 0
