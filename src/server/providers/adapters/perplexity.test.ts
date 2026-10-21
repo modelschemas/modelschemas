@@ -17,7 +17,8 @@ const HEADER = [
 
 // Five tabs of the Agent API models page, as served on 2026-10-07, in the
 // markdown export's shape since 2026-10-20: a bold tab title, the card as
-// a blockquote, the table, and `<Info>` as a `> [!NOTE]` callout.
+// a `> **Title**` blockquote, the table, and the effort note as a
+// `> [!NOTE]` callout.
 const MODELS_DOC = [
   '## Available Models',
   '',
@@ -203,6 +204,14 @@ describe('parsePerplexityModelsPage', () => {
       'is an open-weight reasoning model with a chain-of-thought you cannot skip.',
     ],
     ['a card titled for another tab', '> **NVIDIA**', '> **Nemotron**'],
+    ['a card with no spacer line', '> **Z.AI**\n>\n', '> **Z.AI**\n'],
+    ['a tab title in another shape', '**Z.AI**\n', '**Z.AI** \n'],
+    [
+      'a card split by a blank line',
+      '> Nemotron 3 Ultra is',
+      '> NVIDIA Nemotron.\n\n> Nemotron 3 Ultra is',
+    ],
+    ['a table before the first tab title', '**xAI**\n\n', ''],
     [
       'a card that goes on with a clause other than "with"',
       'is an open-weight reasoning model.',
@@ -214,6 +223,13 @@ describe('parsePerplexityModelsPage', () => {
     expect(() => parsePerplexityModelsPage(mutated)).toThrow('unread shape')
   })
 
+  it('reads only the Available Models section', () => {
+    const later = `${MODELS_DOC}\n\n**Extra**\n\n> **Extra**\n>\n> Extra is a reasoning model.\n\n${HEADER.join('\n')}\n| \`perplexity/extra\` | 1 | 1 | 1 | — | — |\n`
+    expect(parsePerplexityModelsPage(later).flags.has('perplexity/extra')).toBe(
+      false,
+    )
+  })
+
   it('throws on a page with no model table, such as an HTML error page', () => {
     expect(() => parsePerplexityModelsPage('<html>Not found</html>')).toThrow(
       'lists no models',
@@ -221,10 +237,10 @@ describe('parsePerplexityModelsPage', () => {
   })
 })
 
-// Three of the five presets, bullets as served on 2026-10-07, in the
-// markdown export's shape since 2026-10-20: each accordion is one
-// blockquote. The prompt blocks are cut to one line each; the real ones
-// hold `## ` headings.
+// Three of the five presets as served on 2026-10-07, in the markdown
+// export's shape since 2026-10-20: each accordion is one blockquote.
+// Bullets are trimmed, and only `fast` keeps its prompt block, cut to one
+// `## ` heading; the real blocks also hold SDK code samples.
 const PRESETS_DOC = [
   '## Current preset values',
   '',
@@ -300,6 +316,16 @@ describe('parsePerplexityPresets', () => {
       '> * **Model:** `openai/gpt-6-sol`',
     ],
     ['a page with no preset accordions', / — current preset values/g, ''],
+    [
+      'an accordion split by a blank line',
+      '> * **Reasoning effort:** `high`\n',
+      '> * **Reasoning effort:** `high`\n\n',
+    ],
+    [
+      'an accordion title in another shape',
+      '> **xhigh — current preset values**',
+      '> **xhigh — current preset values (beta)**',
+    ],
   ])('throws on %s', (_case, from, to) => {
     const mutated = PRESETS_DOC.replace(from, to)
     expect(mutated).not.toBe(PRESETS_DOC)
