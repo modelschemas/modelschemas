@@ -1,18 +1,21 @@
 /**
  * The price section of a MiniMax pricing overview, read from the HTML page.
- * As of 2026-10-21 both `llms-full.txt` and the `.md` export render each
- * `<Tab>` title as a bold line and drop the struck list price and its
- * badge (#399), which leaves no way to tell the tiers apart or a standing
+ * The `.md` export (#379) and, since 2026-10-21, `llms-full.txt` (#399)
+ * render each `<Tab>` title as a bold line and drop the struck list price
+ * and its badge, which leaves no way to tell the tiers apart or a standing
  * price from a promotion. The HTML page's RSC payload still embeds the
  * compiled MDX: `self.__next_f.push([1,"…"])`, a JSON string holding the
- * module source, whose `_createMdxContent` returns a JSX tree with every
- * string a template literal.
+ * module source, whose `_createMdxContent` returns a JSX tree: values are
+ * template literals with no `${…}`, and a key that is not an identifier is
+ * a double-quoted string.
  *
  * This parses that tree and renders the `## <heading>` section back to the
  * MDX `parseMinimaxPricing` reads: tabs, accordions, callouts, and headings
  * as themselves, tables as `|` rows, `del` as `~~`, a badge `<span>` with
- * its class. An element it does not know, or a value it cannot read,
- * throws: nothing is guessed about a component it has not seen.
+ * its class. An element it does not know, a prop or prop value it does not
+ * know (a style or class can strike or hide a price), a block inside inline
+ * content, or a value it cannot read throws: nothing is guessed about a
+ * component it has not seen.
  */
 import { literalEnd } from './compiled-mdx.ts'
 
@@ -56,7 +59,10 @@ class MdxReader {
   ) {}
 
   private fail(what: string): never {
-    throw new Error(`${this.label}: ${what} in the compiled MDX`)
+    const near = JSON.stringify(this.source.slice(this.at, this.at + 40))
+    throw new Error(
+      `${this.label}: ${what} in the compiled MDX at ${String(this.at)} (${near})`,
+    )
   }
 
   private skip(): void {
@@ -187,7 +193,13 @@ function mdxModule(html: string, label: string): string {
   while (close < html.length && html[close] !== '"') {
     close += html[close] === '\\' ? 2 : 1
   }
-  return JSON.parse(html.slice(open, close + 1)) as string
+  try {
+    return JSON.parse(html.slice(open, close + 1)) as string
+  } catch (error) {
+    throw new Error(`${label}: RSC payload string does not parse`, {
+      cause: error,
+    })
+  }
 }
 
 function isElement(value: MdxValue, type?: string): value is MdxElement {
@@ -232,74 +244,171 @@ const CALLOUTS = new Set([
   'Callout',
 ])
 
-/** The MDX for one value of the section; throws on what it does not read. */
-function render(value: MdxValue, label: string): string {
+/** Elements that open a block: never read inside a cell, a line, or a run of text. */
+const BLOCKS = new Set([
+  'p',
+  'ol',
+  'ul',
+  'Table',
+  'Tabs',
+  'Tab',
+  'Accordion',
+  'Heading',
+  ...CALLOUTS,
+])
+
+/** A prop check: the prop's value is one this renderer knows the meaning of. */
+type PropCheck = (value: MdxValue) => boolean
+
+const anyText: PropCheck = (value) =>
+  typeof value === 'string' && !/["\n]/.test(value)
+/** `style:{key:`value`}` with exactly these keys, each value allowed. */
+const style =
+  (allowed: Record<string, RegExp>): PropCheck =>
+  (value) =>
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    value.kind === 'object' &&
+    Object.entries(value.props).every(([key, prop]) => {
+      const pattern = allowed[key]
+      return (
+        pattern !== undefined && typeof prop === 'string' && pattern.test(prop)
+      )
+    })
+
+/**
+ * The props each element may carry beside `children`. Any other prop, or
+ * a known one with a value not listed, throws: a style or class can strike
+ * or hide what the text alone would show as a billed price.
+ */
+const PROPS: Record<string, Record<string, PropCheck>> = {
+  _Fragment: {},
+  p: {},
+  strong: {},
+  em: {},
+  del: {},
+  code: {},
+  br: {},
+  ol: {},
+  ul: {},
+  li: {},
+  a: { href: anyText },
+  Tabs: {},
+  Tab: { title: anyText, id: anyText },
+  Accordion: { title: anyText, id: anyText },
+  Heading: {
+    level: (value) => typeof value === 'string' && /^[1-6]$/.test(value),
+    id: anyText,
+  },
+  Table: {},
+  thead: {},
+  tbody: {},
+  tr: {},
+  th: { style: style({ textAlign: /^(?:left|center|right)$/ }) },
+  td: {
+    style: style({ textAlign: /^(?:left|center|right)$/ }),
+    'data-numeric': (value) => value === 'true',
+  },
+  ...Object.fromEntries([...CALLOUTS].map((type) => [type, {}])),
+}
+
+/** Throws unless every prop of `element` is one `PROPS` allows for its type. */
+function checkProps(element: MdxElement, label: string): void {
+  const allowed = PROPS[element.type]
+  if (allowed === undefined) {
+    throw new Error(
+      `${label}: <${element.type}> in the price section is not read`,
+    )
+  }
+  for (const [key, value] of Object.entries(element.props)) {
+    if (key === 'children') continue
+    const check = allowed[key]
+    if (check === undefined || !check(value)) {
+      throw new Error(
+        `${label}: <${element.type}> ${key} in the price section is not read`,
+      )
+    }
+  }
+}
+
+/**
+ * The MDX for one value of the section; throws on what it does not read.
+ * `inline` is true inside a cell, a paragraph, a list item, or inline
+ * markup, where a block element would be flattened into the wrong place.
+ */
+function render(value: MdxValue, label: string, inline = false): string {
   const fail = (what: string): never => {
     throw new Error(`${label}: ${what} in the price section is not read`)
   }
-  if (typeof value === 'string') return value.replace(/\*/g, '\\*')
+  // `~~` is the parser's strike and `<span` its badge: text that could
+  // spell either is not read.
+  if (typeof value === 'string') {
+    return /[~<]/.test(value)
+      ? fail('a `~` or `<` in text')
+      : value.replace(/\*/g, '\\*')
+  }
   if (Array.isArray(value)) {
-    return value.map((item) => render(item, label)).join('')
+    return value.map((item) => render(item, label, inline)).join('')
   }
-  if (!isElement(value)) return fail(`the value ${JSON.stringify(value)}`)
+  if (!isElement(value)) return fail(`a ${typeof value} value`)
   const { type, props } = value
-  const children = () =>
-    props.children === undefined ? '' : render(props.children, label)
-  const text = (key: string): string => {
-    const prop = props[key]
-    if (typeof prop !== 'string' || /["\n]/.test(prop)) {
-      return fail(`<${type}> ${key}`)
+  if (type === 'span') {
+    // A `white-space: nowrap` span is layout; a span with only a class is
+    // a badge, kept so the parser can read its text.
+    const keys = Object.keys(props).filter((key) => key !== 'children')
+    const content = render(props.children ?? '', label, true)
+    if (
+      keys.join() === 'style' &&
+      style({ whiteSpace: /^nowrap$/ })(props.style ?? null)
+    ) {
+      return content
     }
-    return prop
+    if (keys.join() === 'className' && anyText(props.className ?? null)) {
+      return `<span className="${String(props.className)}">${content}</span>`
+    }
+    return fail('<span> props')
   }
+  checkProps(value, label)
+  if (inline && BLOCKS.has(type)) return fail(`<${type}> inside inline content`)
+  const children = (asInline: boolean) =>
+    props.children === undefined ? '' : render(props.children, label, asInline)
+  const prop = (key: string) => String(props[key])
   switch (type) {
     case '_Fragment':
-      return children()
+      return children(inline)
     case 'p':
-      return `\n\n${children()}\n\n`
+      return `\n\n${children(true)}\n\n`
     case 'a':
-      return `[${children()}](${text('href')})`
+      return `[${children(true)}](${prop('href')})`
     case 'strong':
-      return `**${children()}**`
+      return `**${children(true)}**`
     case 'em':
-      return `*${children()}*`
+      return `*${children(true)}*`
     case 'del':
-      return `~~${children()}~~`
+      return `~~${children(true)}~~`
     case 'code':
-      return `\`${children()}\``
+      return `\`${children(true)}\``
     case 'br':
       return '<br />'
-    case 'span': {
-      // A span with only a style is layout (`white-space: nowrap`); one
-      // with a class is a badge, kept so the parser can read its text.
-      const keys = Object.keys(props).filter((key) => key !== 'children')
-      if (keys.every((key) => key === 'style')) return children()
-      if (keys.join() !== 'className') return fail('<span> props')
-      return `<span className="${text('className')}">${children()}</span>`
-    }
     case 'ol':
     case 'ul':
-      return `\n\n${children()}\n\n`
+      return `\n\n${children(false)}\n\n`
     case 'li':
-      return `\n- ${children()}`
+      return `\n- ${children(true)}`
     case 'Table':
       return `\n\n${table(value, label).join('\n')}\n\n`
     case 'Tabs':
-      return `\n\n<Tabs>\n${children()}\n</Tabs>\n\n`
+      return `\n\n<Tabs>\n${children(false)}\n</Tabs>\n\n`
     case 'Tab':
-      return `\n<Tab title="${text('title')}">\n${children()}\n</Tab>\n`
+      return `\n<Tab title="${prop('title')}">\n${children(false)}\n</Tab>\n`
     case 'Accordion':
-      return `\n\n<Accordion title="${text('title')}">\n${children()}\n</Accordion>\n\n`
+      return `\n\n<Accordion title="${prop('title')}">\n${children(false)}\n</Accordion>\n\n`
     case 'Heading':
-      return `\n\n${'#'.repeat(Number(text('level')))} ${children()}\n\n`
-    case 'section':
-    case 'div':
-      return `\n\n<${type}>\n${children()}\n</${type}>\n\n`
+      return `\n\n${'#'.repeat(Number(prop('level')))} ${children(true)}\n\n`
     default:
-      if (CALLOUTS.has(type)) {
-        return `\n\n<${type}>\n${children()}\n</${type}>\n\n`
-      }
-      return fail(`<${type}>`)
+      // A callout: `checkProps` admits no other type.
+      return `\n\n<${type}>\n${children(false)}\n</${type}>\n\n`
   }
 }
 
@@ -315,17 +424,21 @@ function table(element: MdxElement, label: string): Array<string> {
     if (!isElement(part) || (part.type !== 'thead' && part.type !== 'tbody')) {
       return fail('a table part')
     }
+    checkProps(part, label)
     for (const row of list(part.props.children)) {
       if (!isElement(row, 'tr')) return fail('a table row')
+      checkProps(row, label)
       const cells = list(row.props.children).map((cell) => {
         if (!isElement(cell) || (cell.type !== 'th' && cell.type !== 'td')) {
           return fail('a table cell')
         }
+        checkProps(cell, label)
         const content =
           cell.props.children === undefined
             ? ''
-            : render(cell.props.children, label).trim()
-        return /[\n|]/.test(content) ? fail('a multi-line cell') : content
+            : render(cell.props.children, label, true).trim()
+        if (content.includes('|')) return fail('a `|` in a cell')
+        return content.includes('\n') ? fail('a multi-line cell') : content
       })
       lines.push(`| ${cells.join(' | ')} |`)
       if (part.type === 'thead') {

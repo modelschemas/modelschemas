@@ -386,8 +386,9 @@ export function parseMinimaxPricing(
   markdown: string,
   platform: MinimaxPlatform = MINIMAX,
 ): Map<string, MinimaxRates> {
-  // The page nests each `## ` section in a `<section>` element, which
+  // MDX text nests each `## ` section in a `<section>` element, which
   // closes the section even when the next heading is not `## `.
+  // `minimaxPricingSection` output already ends where the section does.
   const tabbed = markdownSection(dedent(markdown), platform.priceSection)
     .replace(/<\/section>[\s\S]*/i, '')
     .replace(

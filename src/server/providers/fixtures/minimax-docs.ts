@@ -410,10 +410,9 @@ export const MINIMAX_PRICING_OVERVIEW_PAGE = [
 
 /**
  * The China pricing overview's MDX as platform.minimax.cn/docs/pricing/
- * overview.md served it (2026-10-14). llms-full.txt redirects to that host
- * too, yet names the page `Source: https://platform.minimaxi.com/docs/
- * pricing/overview`. Cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
- * through the first table of `## 语音`. Prices are yuan.
+ * overview.md served it (2026-10-14), the redirect target of
+ * platform.minimaxi.com. Cut as `MINIMAX_PRICING_OVERVIEW_PAGE`, through
+ * the first table of `## 语音`. Prices are yuan.
  */
 export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
   '# 定价概览',

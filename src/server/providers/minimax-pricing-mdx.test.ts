@@ -90,12 +90,28 @@ describe('minimaxPricingSection', () => {
 
   it('stops at the next level-2 heading', () => {
     expect(section(EN)).not.toContain('MiniMax-M9')
+    // A heading in the same parent, not a sibling <section>, ends it too.
+    const batch = MINIMAX_PRICING_AUDIO_MDX.replace(
+      /^_jsxs\(`section`,\{id:`models\/speech`,className:`pricing-section`,children:\[/,
+      '',
+    ).replace(/\]\}\)$/, '')
+    const inline = minimaxPricingHtml(
+      MINIMAX_PRICING_LLM_MDX.replace(/\]\}\)$/, `,${batch}]})`),
+    )
+    expect(inline).not.toBe(minimaxPricingHtml(MINIMAX_PRICING_LLM_MDX))
+    expect(inline).toContain('MiniMax-M9')
+    expect(section(inline)).not.toContain('MiniMax-M9')
+    expect(prices(inline).size).toBe(2)
   })
 
   it('refuses a section that loses its tabs', () => {
     // Without the tab boundary both tiers would price M3 twice.
-    const flat = EN.replaceAll('(Tab,{title:', '(_Fragment,{title:')
+    const flat = EN.replace(
+      /\(Tab,\{title:`[^`]*`,id:`[^`]*`,/g,
+      '(_Fragment,{',
+    )
     expect(flat).not.toBe(EN)
+    expect(flat).not.toContain('(Tab,')
     expect(prices(flat).has('MiniMax-M3')).toBe(false)
   })
 
@@ -103,6 +119,52 @@ describe('minimaxPricingSection', () => {
     const custom = EN.replace('_jsxs(Tabs,', '_jsxs(PriceTabs,')
     expect(custom).not.toBe(EN)
     expect(() => section(custom)).toThrow('minimax: <PriceTabs>')
+  })
+
+  it('throws on a row a style could strike or hide', () => {
+    const struck = EN.replace(
+      '_jsxs(_components.tr,{children:',
+      '_jsxs(_components.tr,{style:{textDecoration:`line-through`},children:',
+    )
+    expect(struck).not.toBe(EN)
+    expect(() => section(struck)).toThrow('minimax: <tr> style')
+    const span = EN.replace(
+      'style:{whiteSpace:`nowrap`}',
+      'style:{textDecoration:`line-through`}',
+    )
+    expect(span).not.toBe(EN)
+    expect(() => section(span)).toThrow('<span> props')
+  })
+
+  it('throws on a table inside a list item, where its rows would lose their place', () => {
+    const start = EN.indexOf('_jsxs(Table,{children:[')
+    const end = EN.indexOf(',_jsxs(Tabs,')
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const table = EN.slice(start, end)
+    const listed = EN.replace(
+      table,
+      `_jsx(_components.ul,{children:_jsx(_components.li,{children:${table}})})`,
+    )
+    expect(listed).not.toBe(EN)
+    expect(() => section(listed)).toThrow('<Table> inside inline content')
+  })
+
+  it('throws on a `|` in a cell, which would shift the columns', () => {
+    const piped = EN.replace('children:`$0.15`', 'children:`$0.15 | $0.10`')
+    expect(piped).not.toBe(EN)
+    expect(() => section(piped)).toThrow('a `|` in a cell')
+  })
+
+  it('throws on a heading level it cannot render', () => {
+    const level = minimaxPricingHtml(
+      MINIMAX_PRICING_LLM_MDX.replace(
+        '_jsx(_components.p,',
+        '_jsx(Heading,{level:`0`,id:`batch`,children:`Batch`}),_jsx(_components.p,',
+      ),
+    )
+    expect(level).toContain('level:`0`')
+    expect(() => section(level)).toThrow('<Heading> level')
   })
 
   it('throws on a span that is neither layout nor a badge', () => {
