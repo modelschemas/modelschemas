@@ -88,6 +88,28 @@ it('requires exact native named hybrid identity and operational disable proof', 
   ).toThrow()
 })
 
+it('reads the disable contract from the blockquoted [!NOTE] the .md export renders', () => {
+  const quoted = docs.markdown.replace(
+    /^<Info>\n\s*(For DeepSeek V3\.1[^\n]*)\n<\/Info>$/m,
+    '> [!NOTE]\n>\n> $1',
+  )
+  expect(quoted).toContain(
+    '> [!NOTE]\n>\n> For DeepSeek V3.1, function calling only works',
+  )
+  expect(parseTogetherNamedHybrid(quoted)).toEqual({
+    nativeBasename: 'DeepSeek-V3.1',
+    reasoning: { mode: 'toggle', mandatory: false },
+  })
+  expect(() =>
+    parseTogetherNamedHybrid(
+      quoted.replace(
+        '> For DeepSeek V3.1',
+        '> Do not assume For DeepSeek V3.1',
+      ),
+    ),
+  ).toThrow('named hybrid enable/disable contract missing')
+})
+
 it('extracts own normative effort and hybrid wire fields without generic fallbacks', () => {
   expect(parseTogetherFamilyThinking(docs.markdown)).toEqual({
     effort: { on: { reasoning_effort: 'high' }, off: null, levels: null },
