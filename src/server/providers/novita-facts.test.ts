@@ -163,11 +163,6 @@ function perMillion(card: RateCard, tokens: number): number {
   )
 }
 
-/** The fixture with its `enable_thinking` list items removed. */
-function withoutModelList(doc: string): string {
-  return doc.replace(/_jsx\(_components\.li[\s\S]*?\}\)\}\)/g, '')
-}
-
 describe('novita chat doc', () => {
   it('reads max_tokens, the role enum, and the enable_thinking list', () => {
     const doc = parseNovitaChatDoc(CHAT_DOC, HASH)
@@ -191,23 +186,23 @@ describe('novita chat doc', () => {
     ])
   })
 
-  it('treats enable_thinking with no model list as unrestricted', () => {
-    const doc = parseNovitaChatDoc(
-      withoutModelList(CHAT_DOC).replace('Supported models:', 'Defaults on.'),
-      HASH,
-    )
-    expect(doc.enableThinkingIds).toBeNull()
-  })
-
-  it('names no ids when enable_thinking states a restriction with no list', () => {
-    const doc = parseNovitaChatDoc(
-      withoutModelList(CHAT_DOC).replace(
-        'Supported models:',
-        'Only applies to hybrid reasoning models that support switching thinking off.',
-      ),
-      HASH,
-    )
-    expect(doc.enableThinkingIds).toEqual([])
+  it('names no ids when enable_thinking has no model list', () => {
+    // The live field, 2026-10-21: ids in its prose are examples, not a list.
+    const field = `_jsxs(ParamField,{body:\`enable_thinking\`,type:\`boolean | null\`,default:true,id:\`param-enable-thinking\`,children:[_jsxs(_components.p,{children:[\`Turns thinking (reasoning) on or off for this request. Set to \`,_jsx(_components.code,{children:\`false\`}),\` to make the model answer directly without producing reasoning tokens.\`]}),_jsxs(_components.p,{children:[\`Only applies to hybrid reasoning models that support switching thinking off, for example \`,_jsx(_components.code,{children:\`moonshotai/kimi-k2.5\`}),\` and \`,_jsx(_components.code,{children:\`qwen/qwen3.8-flash\`}),\`. Models whose reasoning is always on, such as \`,_jsx(_components.code,{children:\`zai-org/glm-5.3\`}),\`, ignore this parameter. Check the model page on \`,_jsx(_components.a,{href:\`https://novita.ai/models\`,children:\`novita.ai/models\`}),\` for the model’s reasoning behavior.\`]})]})`
+    const withField = (text: string) =>
+      CHAT_DOC.slice(
+        0,
+        CHAT_DOC.indexOf('_jsxs(ParamField,{body:`enable_thinking'),
+      ) + text
+    expect(
+      parseNovitaChatDoc(withField(field), HASH).enableThinkingIds,
+    ).toEqual([])
+    expect(
+      parseNovitaChatDoc(
+        withField(field.replace('Only applies to', 'Applies only to')),
+        HASH,
+      ).enableThinkingIds,
+    ).toEqual([])
   })
 
   it('does not read a nested max_tokens as the top-level field', () => {
@@ -499,6 +494,12 @@ describe('applyNovitaDocs', () => {
     })
     expect(kept.requestMap).toBeUndefined()
     expect(kept.capabilities).toEqual(['tools'])
+
+    const noFaq = applied(
+      chatModel({ rawId: 'zai-org/glm-4.5-air', capabilities: ['tools'] }),
+      { faqIds: null },
+    )
+    expect(noFaq.absent?.requestMap).toBe('unavailable')
 
     const image = applied({ rawId: 'pic', activity: 'image' })
     expect(image.requestMap).toBeUndefined()

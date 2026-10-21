@@ -1,10 +1,10 @@
 /**
  * Novita chat facts the keyed `/models` row does not state.
  *
- * Request wire and sampling flags: the chat-completion page. As of
- * 2026-10-21 its `.md` export renders each `<ParamField>` as flat markdown
+ * Request wire and sampling flags: the chat-completion page. Since
+ * 2026-10-20 its `.md` export renders each `<ParamField>` as flat markdown
  * with no nesting (issue #387), so the HTML page is read: it embeds the
- * compiled MDX, `_jsx(ParamField,{body:`…`,children:…})`, nested as written.
+ * compiled MDX, `_jsxs(ParamField,{body:`…`,children:…})`, nested as written.
  * `enable_thinking` ids the chat spec omits: the LLM FAQ.
  * Per-model reasoning close, tool_choice, and JSON modes: the public
  * product catalog the docs site loads (`features_v2`).
@@ -54,11 +54,11 @@ export interface NovitaChatDoc {
   developerRole: boolean
   flags: Array<string>
   /**
-   * Ids the spec names under `enable_thinking`. Null when the field is
-   * published with no supported-model list and no restriction (every chat
-   * model); empty when it states a restriction but lists no ids.
+   * Ids the spec lists under `enable_thinking`'s "Supported models:". Empty
+   * when it has no such list: ids its prose names "for example" are not a
+   * list, so only the FAQ names ids then.
    */
-  enableThinkingIds: Array<string> | null
+  enableThinkingIds: Array<string>
 }
 
 export interface NovitaFaqIds {
@@ -98,9 +98,13 @@ interface ParamField {
 
 export function parseNovitaChatDoc(text: string, hash: string): NovitaChatDoc {
   const fields = paramFields(text)
-  const top = new Set(
-    fields.filter((field) => field.top).map((field) => field.name),
-  )
+  const topNames = fields
+    .filter((field) => field.top)
+    .map((field) => field.name)
+  const top = new Set(topNames)
+  if (top.size !== topNames.length) {
+    throw new Error('novita chat doc: a top-level field repeats')
+  }
   if (!top.has('max_tokens')) {
     throw new Error('novita chat doc: max_tokens is missing')
   }
@@ -226,7 +230,8 @@ export function applyNovitaDocs(model: ModelInfo, docs: NovitaDocs): ModelInfo {
   }
 
   const absent: NonNullable<ModelInfo['absent']> = {}
-  if (!docs.chat) absent.requestMap = 'unavailable'
+  // The FAQ is the only list of thinking ids when the spec has none.
+  if (!docs.chat || docs.faqIds === null) absent.requestMap = 'unavailable'
   if (!docs.product) absent.reasoning = 'unavailable'
   if (Object.keys(absent).length > 0)
     patch.absent = { ...model.absent, ...absent }
@@ -296,9 +301,7 @@ function thinkingBody(
 ): ThinkingRequest | null {
   const listed = docs.chat?.enableThinkingIds
   const named =
-    listed === null ||
-    listed?.includes(rawId) === true ||
-    docs.faqIds?.includes(rawId) === true
+    listed?.includes(rawId) === true || docs.faqIds?.includes(rawId) === true
   if (!named) return null
   const close = product?.reasoning?.close
   return {
@@ -479,11 +482,8 @@ function optionalBool(
   return value
 }
 
-function thinkingIds(field: ParamField | undefined): Array<string> | null {
-  if (!field) return []
-  if (!/Supported models\s*:/.test(field.body)) {
-    return /\bOnly applies to\b/.test(field.body) ? [] : null
-  }
+function thinkingIds(field: ParamField | undefined): Array<string> {
+  if (!field || !/Supported models\s*:/.test(field.body)) return []
   const lines = field.body.split('\n')
   const start = lines.findIndex((line) => /Supported models\s*:/.test(line))
   const ids: Array<string> = []
