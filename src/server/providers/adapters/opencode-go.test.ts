@@ -1,4 +1,5 @@
 import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
+import { OPENCODE_GO_ROUTE_DOCS_URL } from '../opencode-routes.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -40,6 +41,17 @@ const CATALOG = {
   },
 }
 
+/** go.mdx Endpoints table excerpt (2026-10-21), Gemini row included. */
+const ROUTE_DOCS = `## Endpoints
+
+| Model  | Model ID | Endpoint                                                       |
+| ------ | -------- | -------------------------------------------------------------- |
+| GPT    | gpt      | \`https://opencode.ai/inference/go/openai/v1/responses\`         |
+| Mini   | mini     | \`https://opencode.ai/inference/go/anthropic/v1/messages\`       |
+| Gemini | gemini   | \`https://opencode.ai/inference/go/google/v1beta/models/gemini\` |
+| Kimi   | kimi     | \`https://opencode.ai/inference/go/openai/v1/chat/completions\`  |
+`
+
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
@@ -56,14 +68,8 @@ function stubFetch() {
     if (String(url) === OPENCODE_CATALOG_URL) {
       return Promise.resolve(new Response(JSON.stringify(CATALOG)))
     }
-    if (
-      String(url).startsWith(
-        'https://raw.githubusercontent.com/anomalyco/opencode/dev/',
-      )
-    ) {
-      return Promise.resolve(
-        new Response('export function POST(input: APIEvent) {}'),
-      )
+    if (String(url) === OPENCODE_GO_ROUTE_DOCS_URL) {
+      return Promise.resolve(new Response(ROUTE_DOCS))
     }
     return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
   }) as typeof fetch
@@ -123,20 +129,14 @@ describe('opencode-go', () => {
       'x-modelschemas-route-only': true,
     })
     expect(spec.specs[0]?.paths?.['/inference/go/v1/messages']).toBeUndefined()
-    expect(urls.some((url) => url.includes('/docs/'))).toBe(false)
+    expect(urls.filter((url) => url.includes('/docs/'))).toEqual([
+      OPENCODE_GO_ROUTE_DOCS_URL,
+    ])
     expect(urls).toContain(OPENCODE_GO_MODELS_URL)
     expect(urls).toContain(OPENCODE_CATALOG_URL)
   })
 
-  it('binds no route to a Gemini row, which the Go tree does not serve', async () => {
-    // Handler files under routes/zen/go/v1 on anomalyco/opencode `dev`
-    // (2026-10-15). There is no models/[model].ts, and
-    // /zen/go/v1/models/{id} answers 404. Unlike stubFetch, any other source
-    // file 404s here.
-    const goRoutes = ['chat/completions', 'messages', 'responses'].map(
-      (file) =>
-        `https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/console/app/src/routes/zen/go/v1/${file}.ts`,
-    )
+  it('binds no route to a Gemini row, even where the Go docs list one', async () => {
     const catalog = {
       'opencode-go': {
         ...CATALOG['opencode-go'],
@@ -164,10 +164,8 @@ describe('opencode-go', () => {
       if (String(url) === OPENCODE_CATALOG_URL) {
         return Promise.resolve(new Response(JSON.stringify(catalog)))
       }
-      if (goRoutes.includes(String(url))) {
-        return Promise.resolve(
-          new Response('export function POST(input: APIEvent) {}'),
-        )
+      if (String(url) === OPENCODE_GO_ROUTE_DOCS_URL) {
+        return Promise.resolve(new Response(ROUTE_DOCS))
       }
       return Promise.resolve(new Response('404: Not Found', { status: 404 }))
     }) as typeof fetch
