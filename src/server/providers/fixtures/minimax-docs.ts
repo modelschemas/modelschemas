@@ -105,7 +105,11 @@ export const MINIMAX_SDK_PAGE = [
   '| `type="thinking"` | Fully supported | Reasoning content. Return the block unchanged in multi-turn thinking conversations |',
 ].join('\n')
 
-/** guides/pricing-paygo.md: the LLM section and the start of Audio. */
+/**
+ * guides/pricing-paygo.md: the LLM section and the start of Audio. The
+ * price cells are written as the HTML page's compiled MDX has them since
+ * 2026-10-21 (#399): the unit in the header, a bare `$0.30` in the cell.
+ */
 export const MINIMAX_PRICING_PAGE = [
   '# Pay as You Go',
   '',
@@ -115,35 +119,35 @@ export const MINIMAX_PRICING_PAGE = [
   '',
   '<Tabs>',
   '  <Tab title="Standard">',
-  '    | Model | Input | Output | Prompt caching Read |',
+  '    | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens |',
   '    | :- | :- | :- | :- |',
-  '    | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$0.60~~ \\$0.30 / M tokens | ~~\\$2.40~~ \\$1.20 / M tokens | ~~\\$0.12~~ \\$0.06 / M tokens |',
-  '    | **MiniMax-M3**<br />> 512k input tokens\\* <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$1.20~~ \\$0.60 / M tokens | ~~\\$4.80~~ \\$2.40 / M tokens | ~~\\$0.24~~ \\$0.12 / M tokens |',
+  '    | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$0.60~~ $0.30 | ~~$2.40~~ $1.20 | ~~$0.12~~ $0.06 |',
+  '    | **MiniMax-M3**<br />> 512k input tokens\\* <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$1.20~~ $0.60 | ~~$4.80~~ $2.40 | ~~$0.24~~ $0.12 |',
   '  </Tab>',
   '',
   '  <Tab title="Priority*">',
-  '    | Model | Input | Output | Prompt caching Read |',
+  '    | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens |',
   '    | :- | :- | :- | :- |',
-  '    | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$0.90~~ \\$0.45 / M tokens | ~~\\$3.60~~ \\$1.80 / M tokens | ~~\\$0.18~~ \\$0.09 / M tokens |',
-  '    | **MiniMax-M3**<br />> 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$1.80~~ \\$0.90 / M tokens | ~~\\$7.20~~ \\$3.60 / M tokens | ~~\\$0.36~~ \\$0.18 / M tokens |',
+  '    | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$0.90~~ $0.45 | ~~$3.60~~ $1.80 | ~~$0.18~~ $0.09 |',
+  '    | **MiniMax-M3**<br />> 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$1.80~~ $0.90 | ~~$7.20~~ $3.60 | ~~$0.36~~ $0.18 |',
   '',
   '    \\* Priority provides priority admission for faster response times and improved request reliability. Set `service_tier` to `priority` to enable it. Pricing is 1.5x standard.',
   '  </Tab>',
   '</Tabs>',
   '',
-  '| Model | Input | Output | Prompt caching Read | Prompt caching Write |',
+  '| **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens | **Prompt caching Write**<br />$ / M tokens |',
   '| :- | :- | :- | :- | :- |',
-  '| **MiniMax-M2.7** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
-  '| **MiniMax-M2.7-highspeed** | \\$0.6 / M tokens | \\$2.4 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
+  '| **MiniMax-M2.7** | $0.3 | $1.2 | $0.06 | $0.375 |',
+  '| **MiniMax-M2.7-highspeed** | $0.6 | $2.4 | $0.06 | $0.375 |',
   '',
   '<Accordion title="Legacy Models">',
-  '  | Model | Input | Output | Prompt caching Read | Prompt caching Write |',
+  '  | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens | **Prompt caching Write**<br />$ / M tokens |',
   '  | :- | :- | :- | :- | :- |',
-  '  | **MiniMax-M2.5** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '  | **MiniMax-M2.5-highspeed** | \\$0.6 / M tokens | \\$2.4 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '  | **MiniMax-M2.1** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '  | **MiniMax-M2.1-highspeed** | \\$0.6 / M tokens | \\$2.4 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '  | **MiniMax-M2** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
+  '  | **MiniMax-M2.5** | $0.3 | $1.2 | $0.03 | $0.375 |',
+  '  | **MiniMax-M2.5-highspeed** | $0.6 | $2.4 | $0.03 | $0.375 |',
+  '  | **MiniMax-M2.1** | $0.3 | $1.2 | $0.03 | $0.375 |',
+  '  | **MiniMax-M2.1-highspeed** | $0.6 | $2.4 | $0.03 | $0.375 |',
+  '  | **MiniMax-M2** | $0.3 | $1.2 | $0.03 | $0.375 |',
   '</Accordion>',
   '',
   '<Info>',
@@ -335,8 +339,10 @@ export const MINIMAX_CN_PRICING_PAGE = [
 
 /**
  * The pricing overview's MDX as platform.minimax.io/docs/pricing/overview.md
- * served it on 2026-10-14, before that export flattened tabs (#379). The
- * page in llms-full.txt is the same MDX: the title, the opening `<div>`, then the LLM section through the first table of Audio.
+ * served it on 2026-10-14, before that export flattened tabs (#379), with
+ * the price cells in the 2026-10-21 wording (unit in the header): the
+ * title, the opening `<div>`, then the LLM section through the first table
+ * of Audio.
  * The navigation block between them is left out. Each `## ` section sits
  * indented in a `<section>`.
  */
@@ -351,35 +357,35 @@ export const MINIMAX_PRICING_OVERVIEW_PAGE = [
   '',
   '    <Tabs>',
   '      <Tab title="Standard">',
-  '        | Model | Input | Output | Prompt caching Read |',
+  '        | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens |',
   '        | :- | :- | :- | :- |',
-  '        | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$0.60~~ \\$0.30 / M tokens | ~~\\$2.40~~ \\$1.20 / M tokens | ~~\\$0.12~~ \\$0.06 / M tokens |',
-  '        | **MiniMax-M3**<br />> 512k input tokens\\* <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$1.20~~ \\$0.60 / M tokens | ~~\\$4.80~~ \\$2.40 / M tokens | ~~\\$0.24~~ \\$0.12 / M tokens |',
+  '        | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$0.60~~ $0.30 | ~~$2.40~~ $1.20 | ~~$0.12~~ $0.06 |',
+  '        | **MiniMax-M3**<br />> 512k input tokens\\* <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$1.20~~ $0.60 | ~~$4.80~~ $2.40 | ~~$0.24~~ $0.12 |',
   '      </Tab>',
   '',
   '      <Tab title="Priority*">',
-  '        | Model | Input | Output | Prompt caching Read |',
+  '        | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens |',
   '        | :- | :- | :- | :- |',
-  '        | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$0.90~~ \\$0.45 / M tokens | ~~\\$3.60~~ \\$1.80 / M tokens | ~~\\$0.18~~ \\$0.09 / M tokens |',
-  '        | **MiniMax-M3**<br />> 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~\\$1.80~~ \\$0.90 / M tokens | ~~\\$7.20~~ \\$3.60 / M tokens | ~~\\$0.36~~ \\$0.18 / M tokens |',
+  '        | **MiniMax-M3**<br />≤ 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$0.90~~ $0.45 | ~~$3.60~~ $1.80 | ~~$0.18~~ $0.09 |',
+  '        | **MiniMax-M3**<br />> 512k input tokens <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">Permanent 50% off</span> | ~~$1.80~~ $0.90 | ~~$7.20~~ $3.60 | ~~$0.36~~ $0.18 |',
   '',
   '        \\* Priority provides priority admission for faster response times and improved request reliability. Set `service_tier` to `priority` to enable it. Pricing is 1.5x standard.',
   '      </Tab>',
   '    </Tabs>',
   '',
-  '    | Model | Input | Output | Prompt caching Read | Prompt caching Write |',
+  '    | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens | **Prompt caching Write**<br />$ / M tokens |',
   '    | :- | :- | :- | :- | :- |',
-  '    | **MiniMax-M2.7** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
-  '    | **MiniMax-M2.7-highspeed** | \\$0.6 / M tokens | \\$2.4 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
+  '    | **MiniMax-M2.7** | $0.3 | $1.2 | $0.06 | $0.375 |',
+  '    | **MiniMax-M2.7-highspeed** | $0.6 | $2.4 | $0.06 | $0.375 |',
   '',
   '    <Accordion title="Legacy Models">',
-  '      | Model | Input | Output | Prompt caching Read | Prompt caching Write |',
+  '      | **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens | **Prompt caching Write**<br />$ / M tokens |',
   '      | :- | :- | :- | :- | :- |',
-  '      | **MiniMax-M2.5** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '      | **MiniMax-M2.5-highspeed** | \\$0.6 / M tokens | \\$2.4 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '      | **MiniMax-M2.1** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '      | **MiniMax-M2.1-highspeed** | \\$0.6 / M tokens | \\$2.4 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
-  '      | **MiniMax-M2** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.03 / M tokens | \\$0.375 / M tokens |',
+  '      | **MiniMax-M2.5** | $0.3 | $1.2 | $0.03 | $0.375 |',
+  '      | **MiniMax-M2.5-highspeed** | $0.6 | $2.4 | $0.03 | $0.375 |',
+  '      | **MiniMax-M2.1** | $0.3 | $1.2 | $0.03 | $0.375 |',
+  '      | **MiniMax-M2.1-highspeed** | $0.6 | $2.4 | $0.03 | $0.375 |',
+  '      | **MiniMax-M2** | $0.3 | $1.2 | $0.03 | $0.375 |',
   '    </Accordion>',
   '',
   '    <Info>',
@@ -404,10 +410,9 @@ export const MINIMAX_PRICING_OVERVIEW_PAGE = [
 
 /**
  * The China pricing overview's MDX as platform.minimax.cn/docs/pricing/
- * overview.md served it (2026-10-14). llms-full.txt redirects to that host
- * too, yet names the page `Source: https://platform.minimaxi.com/docs/
- * pricing/overview`. Cut as `MINIMAX_PRICING_OVERVIEW_PAGE`,
- * through the first table of `## 语音`. Prices are yuan.
+ * overview.md served it (2026-10-14), the redirect target of
+ * platform.minimaxi.com. Cut as `MINIMAX_PRICING_OVERVIEW_PAGE`, through
+ * the first table of `## 语音`. Prices are yuan.
  */
 export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
   '# 定价概览',
@@ -472,24 +477,35 @@ export const MINIMAX_CN_PRICING_OVERVIEW_PAGE = [
 ].join('\n')
 
 /**
- * `page` as one page of a Mintlify `llms-full.txt`: its `# <title>` line,
- * then `Source: <url>`, between two other pages.
+ * The `## LLM` `<section>` of platform.minimax.io/docs/pricing/overview's
+ * compiled MDX (the HTML page's RSC payload), as served 2026-10-21: the
+ * M3.1-Flash table, then the Standard and Priority tabs for M3.
  */
-export function minimaxLlmsFull(url: string, page: string): string {
-  const [title = '', ...body] = page.split('\n')
+export const MINIMAX_PRICING_LLM_MDX =
+  '_jsxs(`section`,{id:`models/text`,className:`pricing-section`,"data-pricing-title":`LLM`,children:[_jsx(Heading,{level:`2`,id:`llm`,children:`LLM`}),_jsx(_components.p,{children:_jsx(_components.a,{href:`https://platform.minimax.io/user-center/payment/balance`,children:`Recharge Now`})}),_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`Model`})}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Input`}),_jsx(`br`,{}),`$ / M tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Output`}),_jsx(`br`,{}),`$ / M tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Prompt caching Read`}),_jsx(`br`,{}),`$ / M tokens`]})]})}),_jsx(_components.tbody,{children:_jsxs(_components.tr,{children:[_jsx(_components.td,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`MiniMax-M3.1-Flash`})}),_jsx(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:`$0.15`}),_jsx(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:`$0.60`}),_jsx(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:`$0.015`})]})})]}),_jsxs(Tabs,{children:[_jsx(Tab,{title:`Standard`,id:`standard`,children:_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`Model`})}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Input`}),_jsx(`br`,{}),`$ / M tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Output`}),_jsx(`br`,{}),`$ / M tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Prompt caching Read`}),_jsx(`br`,{}),`$ / M tokens`]})]})}),_jsxs(_components.tbody,{children:[_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`≤ 512k input tokens`,_jsx(`br`,{}),_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`Permanent 50% off`})]}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$0.60`}),` $0.30`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$2.40`}),` $1.20`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$0.12`}),` $0.06`]})})]}),_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`> 512k input tokens*`,_jsx(`br`,{}),_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`Permanent 50% off`})]}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$1.20`}),` $0.60`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$4.80`}),` $2.40`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$0.24`}),` $0.12`]})})]})]})]})}),_jsxs(Tab,{title:`Priority*`,id:`priority`,children:[_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`Model`})}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Input`}),_jsx(`br`,{}),`$ / M tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Output`}),_jsx(`br`,{}),`$ / M tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`Prompt caching Read`}),_jsx(`br`,{}),`$ / M tokens`]})]})}),_jsxs(_components.tbody,{children:[_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`≤ 512k input tokens`,_jsx(`br`,{}),_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`Permanent 50% off`})]}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$0.90`}),` $0.45`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$3.60`}),` $1.80`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$0.18`}),` $0.09`]})})]}),_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`> 512k input tokens`,_jsx(`br`,{}),_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`Permanent 50% off`})]}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$1.80`}),` $0.90`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$7.20`}),` $3.60`]})}),_jsx(_components.td,{style:{textAlign:`center`},children:_jsxs(`span`,{style:{whiteSpace:`nowrap`},children:[_jsx(_components.del,{children:`$0.36`}),` $0.18`]})})]})]})]}),_jsxs(_components.p,{children:[`* Priority provides priority admission for faster response times and improved request reliability. Set `,_jsx(_components.code,{children:`service_tier`}),` to `,_jsx(_components.code,{children:`priority`}),` to enable it. Pricing is 1.5x standard.`]})]})]}),_jsxs(Info,{children:[_jsx(_components.p,{children:`Note:`}),_jsxs(_components.ol,{children:[`\n`,_jsx(_components.li,{children:`The billing item is token count; the token-to-character ratio varies slightly depending on the usage scenario, subject to actual consumption`}),`\n`,_jsx(_components.li,{children:`Token to English word ratio (estimate): approximately 750 English words consume 1000 tokens`}),`\n`]})]})]})'
+
+/** The China page's `## 语言模型` section, cut the same way (2026-10-21). */
+export const MINIMAX_CN_PRICING_LLM_MDX =
+  '_jsxs(`section`,{id:`models/text`,className:`pricing-section`,"data-pricing-title":`语言模型`,children:[_jsx(Heading,{level:`2`,id:`语言模型`,children:`语言模型`}),_jsx(_components.p,{children:_jsx(_components.a,{href:`https://platform.minimax.cn/user-center/payment/balance`,children:`立即充值`})}),_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`模型`})}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`输入价格`}),_jsx(`br`,{}),` 元/百万 tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`输出价格`}),_jsx(`br`,{}),` 元/百万 tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`缓存读取`}),_jsx(`br`,{}),` 元/百万 tokens`]})]})}),_jsx(_components.tbody,{children:_jsxs(_components.tr,{children:[_jsx(_components.td,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`MiniMax-M3.1-Flash`})}),_jsx(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:`1.00`}),_jsx(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:`4.00`}),_jsx(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:`0.10`})]})})]}),_jsxs(Tabs,{children:[_jsx(Tab,{title:`标准`,id:`%E6%A0%87%E5%87%86`,children:_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`模型`})}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`输入价格`}),_jsx(`br`,{}),` 元/百万 tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`输出价格`}),_jsx(`br`,{}),` 元/百万 tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`缓存读取`}),_jsx(`br`,{}),` 元/百万 tokens`]})]})}),_jsxs(_components.tbody,{children:[_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`≤ 512k 输入 tokens `,_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`永久五折`})]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`4.20`}),` 2.10`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`16.80`}),` 8.40`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`0.84`}),` 0.42`]})]}),_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`> 512k 输入 tokens* `,_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`永久五折`})]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`8.40`}),` 4.20`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`33.60`}),` 16.80`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`1.68`}),` 0.84`]})]})]})]})}),_jsxs(Tab,{title:`优先*`,id:`%E4%BC%98%E5%85%88`,children:[_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{style:{textAlign:`left`},children:_jsx(_components.strong,{children:`模型`})}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`输入价格`}),_jsx(`br`,{}),` 元/百万 tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`输出价格`}),_jsx(`br`,{}),` 元/百万 tokens`]}),_jsxs(_components.th,{style:{textAlign:`center`},children:[_jsx(_components.strong,{children:`缓存读取`}),_jsx(`br`,{}),` 元/百万 tokens`]})]})}),_jsxs(_components.tbody,{children:[_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`≤ 512k 输入 tokens `,_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`永久五折`})]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`6.30`}),` 3.15`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`25.20`}),` 12.60`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`1.26`}),` 0.63`]})]}),_jsxs(_components.tr,{children:[_jsxs(_components.td,{style:{textAlign:`left`},children:[_jsx(_components.strong,{children:`MiniMax-M3`}),_jsx(`br`,{}),`> 512k 输入 tokens `,_jsx(`span`,{className:`mint-inline-flex mint-items-center mint-rounded-full mint-bg-red-50 mint-px-2 mint-py-0.5 mint-text-xs mint-font-semibold mint-text-red-700 dark:mint-bg-red-900/30 dark:mint-text-red-300`,children:`永久五折`})]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`12.60`}),` 6.30`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`50.40`}),` 25.20`]}),_jsxs(_components.td,{"data-numeric":`true`,style:{textAlign:`center`},children:[_jsx(_components.del,{children:`2.52`}),` 1.26`]})]})]})]}),_jsxs(_components.p,{children:[`* 优先服务可让请求获得优先准入，从而更快响应并降低失败率。调用时将 `,_jsx(_components.code,{children:`service_tier`}),` 设为 `,_jsx(_components.code,{children:`priority`}),` 即可启用。该层级按标准价格的 1.5 倍计费。`]})]})]}),_jsxs(Info,{children:[_jsx(_components.p,{children:`请注意：`}),_jsxs(_components.ol,{children:[`\n`,_jsx(_components.li,{children:`计费项是token数；tokens字符比值根据使用场景的不同略有浮动，以实际消耗为准，字符数包括标点等`}),`\n`,_jsx(_components.li,{children:`Token与字符比（估算）：1600 中文字符约消耗 1000 tokens`}),`\n`]})]})]})'
+
+/** A compiled `## Audio` section with one price table, to end the LLM one. */
+export const MINIMAX_PRICING_AUDIO_MDX =
+  '_jsxs(`section`,{id:`models/speech`,className:`pricing-section`,children:[_jsx(Heading,{level:`2`,id:`audio`,children:`Audio`}),_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{children:_jsx(_components.strong,{children:`Model`})}),_jsx(_components.th,{children:`Price`})]})}),_jsx(_components.tbody,{children:_jsxs(_components.tr,{children:[_jsx(_components.td,{children:_jsx(_components.strong,{children:`MiniMax-M9`})}),_jsx(_components.td,{children:`$9`})]})})]})]})'
+
+/**
+ * A Mintlify page whose RSC payload carries a compiled MDX module, its
+ * body a `<div>` around `sections` (compiled JSX source, joined by commas).
+ */
+export function minimaxPricingHtml(...sections: Array<string>): string {
+  const source = [
+    '"use strict";const{jsx:_jsx,jsxs:_jsxs}=arguments[0];',
+    'function _createMdxContent(props){const _components={a:`a`,code:`code`,del:`del`,li:`li`,ol:`ol`,p:`p`,strong:`strong`,tbody:`tbody`,td:`td`,th:`th`,thead:`thead`,tr:`tr`,ul:`ul`,...props.components},{Accordion,Heading,Info,Tab,Table,Tabs}=_components;',
+    `return _jsxs(\`div\`,{id:\`pricing-document\`,children:[${sections.join(',')}]})}`,
+    'return{default:_createMdxContent};',
+  ].join('')
   return [
-    '# Quick Start',
-    'Source: https://platform.minimax.io/docs/guides/quickstart',
-    '',
-    'Get an API key.',
-    '',
-    title,
-    `Source: ${url}`,
-    ...body,
-    '',
-    '# Rate Limits',
-    'Source: https://platform.minimax.io/docs/guides/rate-limits',
-    '',
-    'Requests per minute by tier.',
-  ].join('\n')
+    '<!DOCTYPE html><html><head><title>Pricing Overview</title></head><body>',
+    `<script>self.__next_f.push([1,${JSON.stringify(source)}])</script>`,
+    '</body></html>',
+  ].join('')
 }
