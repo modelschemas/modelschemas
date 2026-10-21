@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_CN_MAX_COMPLETION_TOKENS,
-  MINIMAX_CN_PRICING_OVERVIEW_PAGE,
+  MINIMAX_CN_PRICING_LLM_MDX,
   MINIMAX_CN_SDK_PAGE,
-  MINIMAX_PRICING_OVERVIEW_PAGE,
-  minimaxLlmsFull,
+  MINIMAX_PRICING_LLM_MDX,
+  minimaxPricingHtml,
 } from '../fixtures/minimax-docs.ts'
 import { MINIMAX_CN, MINIMAX_CN_MESSAGES_SPEC_URL } from '../minimax-docs.ts'
 import { MINIMAX_CN_MODELS_URL, provider } from './minimax-cn.ts'
@@ -62,10 +62,7 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_CN_MODELS_URL]: FIXTURE,
   [MINIMAX_CN.sdkUrl]: MINIMAX_CN_SDK_PAGE,
-  [MINIMAX_CN.llmsFullUrl]: minimaxLlmsFull(
-    MINIMAX_CN.pricingUrl,
-    MINIMAX_CN_PRICING_OVERVIEW_PAGE,
-  ),
+  [MINIMAX_CN.pricingUrl]: minimaxPricingHtml(MINIMAX_CN_PRICING_LLM_MDX),
   [MINIMAX_CN.chatSpecUrl]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_CN_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',
@@ -178,7 +175,7 @@ describe('minimax-cn', () => {
       [
         MINIMAX_CN_MODELS_URL,
         MINIMAX_CN.sdkUrl,
-        MINIMAX_CN.llmsFullUrl,
+        MINIMAX_CN.pricingUrl,
         MINIMAX_CN.chatSpecUrl,
       ].sort(),
     )
@@ -198,14 +195,16 @@ describe('minimax-cn', () => {
   })
 
   it('throws rather than store a price off a page that is not yuan', async () => {
-    // The international page's content filed under the China Source line:
-    // the yuan check refuses it.
+    // The international page's tables under the China heading: the yuan
+    // headers refuse them.
+    const retitled = MINIMAX_PRICING_LLM_MDX.replace(
+      'children:`LLM`',
+      'children:`语言模型`',
+    )
+    expect(retitled).not.toBe(MINIMAX_PRICING_LLM_MDX)
     mockFetch({
       ...PAGES,
-      [MINIMAX_CN.llmsFullUrl]: minimaxLlmsFull(
-        MINIMAX_CN.pricingUrl,
-        MINIMAX_PRICING_OVERVIEW_PAGE,
-      ),
+      [MINIMAX_CN.pricingUrl]: minimaxPricingHtml(retitled),
     })
     await expect(provider.listModels({})).rejects.toThrow(
       'minimax-cn pricing page: parsed 0 model rows',
