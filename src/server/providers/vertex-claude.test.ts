@@ -6,6 +6,7 @@ import {
   claudeCardPaths,
   claudeGlobalPrices,
 } from './vertex-claude.ts'
+import { normModelName } from './vertex-text.ts'
 
 const fixture = (name: string) =>
   readFileSync(
@@ -38,6 +39,22 @@ describe('Google native Claude sources', () => {
       schemaEndpointId: null,
     })
     expect(row?.factSources?.maxOutput?.sourceHash).toBe('hash')
+  })
+  it('reads the model name from a card title that leads with the vendor', () => {
+    const [row] = claudeCardModels(
+      card.replace(
+        'Claude Sonnet 4.6 on Google Cloud<devsite-actions',
+        'Anthropic&#39;s Claude Sonnet 4.6 on Google Cloud<devsite-actions',
+      ),
+      'https://docs.cloud.google.com/card',
+      'hash',
+    )
+    expect(row?.displayName).toBe('Claude Sonnet 4.6')
+    // vertexClaudeModels joins cards to prices on this key.
+    const key = normModelName(
+      (row?.displayName ?? '').replace(/^Claude\s+/i, ''),
+    )
+    expect(claudeGlobalPrices(prices, source).get(key)).toBeDefined()
   })
   it('does not turn unreadable identity or token limits into a successful empty listing', () => {
     expect(() =>
