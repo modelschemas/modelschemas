@@ -28,13 +28,7 @@ import {
 import type { Expr, RateCard } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
-import {
-  assertParsed,
-  cachedDocs,
-  mapConcurrent,
-  unavailable,
-} from './model-facts.ts'
-import { MISTRAL_OPENAPI_URL } from './mistral-request.ts'
+import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
 import { parseMistralPageTools } from './server-tools.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { FactSource, ModelInfo } from './types.ts'
@@ -914,7 +908,7 @@ export function indexMistralApiIds(
 
 type PricedFacts = Pick<
   ModelInfo,
-  'pricing' | 'factSources' | 'serverTools' | 'modalities' | 'absent'
+  'pricing' | 'factSources' | 'serverTools' | 'modalities'
 >
 
 interface MistralStatedModalities {
@@ -1074,33 +1068,47 @@ export interface MistralPricingLookup {
   seen: ReadonlySet<string>
 }
 
-/**
- * Built-in tools a model page's features admit (#409): the Conversations
- * API's server-side tool types for a model that lists
- * `agents-conversations`, and `connector` only when it also lists
- * `connectors`. Mistral's tool guides scope `web_search`,
- * `web_search_premium` and `code_interpreter` to `/v1/conversations`.
- */
-export function mistralConversationTools(
-  features: Array<string> | null | undefined,
-  accepted: ReadonlyArray<string>,
-): Array<string> {
-  if (!features?.includes('agents-conversations')) return []
-  return accepted.filter(
-    (type) => type !== 'connector' || features.includes('connectors'),
-  )
-}
+export const MISTRAL_WEBSEARCH_URL =
+  'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md'
 
 /**
- * Card lookup by API model id. `conversationTools` is the Conversations
- * API's tool union from the spec; null or omitted when it could not be
- * read, so a row whose page lists `agents-conversations` keeps its stored
- * tools.
+ * The web search guide's tool ids (#409). It states the tool "allows any
+ * of our models to access the web" and that it works with the
+ * Conversations API (`/v1/conversations`), not Chat Completions; the ids
+ * are the bullets under "There are two versions:". Without the any-model
+ * sentence, the Conversations scope, or an id, it throws. Mistral's other
+ * built-in tools (code interpreter, image generation, libraries) make no
+ * any-model statement, so they are not read.
  */
+export function parseMistralWebSearchTools(markdown: string): Array<string> {
+  if (!/allows any of our models to access the web/.test(markdown)) {
+    throw new Error('mistral websearch guide: no any-model statement')
+  }
+  if (!/work with the \[Conversations API\]/.test(markdown)) {
+    throw new Error('mistral websearch guide: no Conversations API scope')
+  }
+  const versions = markdown.split(/^There are two versions:$/m)[1] ?? ''
+  const ids = [...versions.matchAll(/^- `([a-z][a-z0-9_]*)`:/gm)].map(
+    (match) => match[1] ?? '',
+  )
+  if (ids.length === 0) {
+    throw new Error('mistral websearch guide: names no tool id')
+  }
+  return ids
+}
+
+/** The guide's tools for a page that lists `agents-conversations`. */
+export function mistralConversationTools(
+  features: Array<string> | null | undefined,
+  webSearch: ReadonlyArray<string>,
+): Array<string> {
+  return features?.includes('agents-conversations') ? [...webSearch] : []
+}
+
+/** Card lookup by API model id. */
 export async function mistralModelPricing(
   kv?: KVNamespace,
   listedIds: ReadonlyArray<string> = [],
-  conversationTools: ReadonlyArray<string> | null = null,
 ): Promise<MistralPricingLookup> {
   const table = await cachedDocs(kv, MISTRAL_PRICING_URL, async () => {
     const [html, changelog] = await Promise.all([
@@ -1186,6 +1194,13 @@ export async function mistralModelPricing(
   const maxOutput = indexPageField(pages, (page) => page.maxOutput)
   const pageRates = indexPageField(pages, (page) => page.pagePrice)
   const featured = indexPageField(pages, (page) => page.features)
+  const webSearch = await cachedDocs(kv, MISTRAL_WEBSEARCH_URL, async () => {
+    const markdown = await fetchText(MISTRAL_WEBSEARCH_URL)
+    return {
+      tools: parseMistralWebSearchTools(markdown),
+      hash: await sha256Text(markdown),
+    }
+  })
   const seen = new Set(pages.flatMap((page) => page.ids))
   const lookup = (rawId: string): PricedFacts => {
     const tableRow = byId.get(rawId)
@@ -1220,11 +1235,7 @@ export async function mistralModelPricing(
         )
       : {}
     const features = featured.get(rawId)
-    const conversational =
-      features?.value.includes('agents-conversations') === true
-    const builtIn = conversationTools
-      ? mistralConversationTools(features?.value, conversationTools)
-      : []
+    const builtIn = mistralConversationTools(features?.value, webSearch.tools)
     const serverTools = [
       ...new Set([...(hosted?.tools ?? []), ...builtIn]),
     ].sort()
@@ -1234,7 +1245,7 @@ export async function mistralModelPricing(
         derivation: 'docs-derived',
         sourceUrl: features?.url,
         sourceHash: features?.hash,
-        path: `Features.agents-conversations; Conversations API (/v1/conversations) tools[].type in ${MISTRAL_OPENAPI_URL}`,
+        path: `Features.agents-conversations; ${MISTRAL_WEBSEARCH_URL} (any model, Conversations API /v1/conversations only)`,
       }
     }
     for (const tool of hosted?.tools ?? []) {
@@ -1246,9 +1257,6 @@ export async function mistralModelPricing(
       }
     }
     const toolFacts = serverTools.length > 0 ? { serverTools: toolSources } : {}
-    // The page says the model runs the Conversations API, but its tool
-    // union could not be read: keep what is stored.
-    const toolsUnknown = conversational && !conversationTools
     const stated = modalities.get(rawId)
     const modalityFacts = stated
       ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
@@ -1263,19 +1271,12 @@ export async function mistralModelPricing(
       ...modalityFacts,
       ...maxFacts,
     }
-    if (
-      !pricing &&
-      serverTools.length === 0 &&
-      !toolsUnknown &&
-      !stated &&
-      !cap
-    ) {
+    if (!pricing && serverTools.length === 0 && !stated && !cap) {
       return {}
     }
     return {
       ...(pricing ? { pricing } : {}),
       ...(serverTools.length > 0 ? { serverTools } : {}),
-      ...(toolsUnknown ? unavailable('serverTools') : {}),
       ...(stated ? { modalities: stated.modalities } : {}),
       ...(cap ? { maxOutput: cap.value } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),

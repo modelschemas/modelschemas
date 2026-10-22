@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { mistralModelPage, tip } from '../fixtures/mistral-model-page.ts'
+import {
+  MISTRAL_WEBSEARCH_GUIDE,
+  mistralModelPage,
+  tip,
+} from '../fixtures/mistral-model-page.ts'
 import { provider } from './mistral.ts'
 
 describe('mistral classify', () => {
@@ -124,6 +128,8 @@ describe('mistral listModels modalities', () => {
 <tr><td><a href="/models/mistral-small-4-0-26-03">Small</a></td><td>$0.1</td><td>—</td><td>$0.3</td></tr>
 </table>`,
       'https://docs.mistral.ai/resources/changelogs': '',
+      'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md':
+        MISTRAL_WEBSEARCH_GUIDE,
       'https://docs.mistral.ai/models/mistral-small-4-0-26-03':
         mistralModelPage(
           ['mistral-small-2603', 'mistral-small-latest'],

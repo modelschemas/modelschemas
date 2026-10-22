@@ -126,52 +126,43 @@ function listingMaxOutput(m: GrokExtrasModel): number | null {
   return null
 }
 
-/** Server-side tool ids (the "Tool Invocation Costs" table). */
-export const GROK_PRICING_DOC_URL = 'https://docs.x.ai/developers/pricing.md'
-/** Names the models that run server-side tools ("Agentic models only"). */
+/**
+ * The files page: attached files run the `attachment_search` server-side
+ * tool, and its "Agentic models only" bullet names the models that can.
+ * xAI's other server-side tools (web_search, x_search, code_execution, …)
+ * are documented per provider, with no per-model list, so they are not
+ * assigned (#409).
+ */
 export const GROK_FILES_DOC_URL = 'https://docs.x.ai/developers/files.md'
 
 /**
- * Server-side tool type ids from the pricing page's "Tool Invocation Costs"
- * table: the first backticked id of each row's Tool Name cell (later ones
- * are aliases). A row whose description carries the `*` footnote (a
- * sub-tool of search) or names no id (MCP, "Set by MCP server") adds none.
- * No table, or a table that yields no id, throws.
+ * The files page's statement: the tool id it says attachments activate,
+ * and the models its "**Agentic models only**" bullet names. Either one
+ * missing, or the page naming two different tool ids, throws.
  */
-export function parseGrokServerTools(markdown: string): Array<string> {
-  const section = markdown.split(/^### Tool Invocation Costs$/m)[1]
-  const table = section?.split(/^#{2,3} /m)[0] ?? ''
-  const rows = markdownTableRows(table)
-  const header = rows[0] ?? []
-  const nameAt = header.findIndex((cell) => /^tool name$/i.test(cell.trim()))
-  const descAt = header.findIndex((cell) => /^description$/i.test(cell.trim()))
-  if (nameAt < 0 || descAt < 0) {
-    throw new Error('xai pricing page: no Tool Invocation Costs table')
-  }
-  const tools = rows.slice(1).flatMap((row) => {
-    if (/\\\*|\*$/.test(row[descAt]?.trim() ?? '')) return []
-    const id = /^`([a-z][a-z0-9_]*)`/.exec(row[nameAt]?.trim() ?? '')?.[1]
-    return id ? [id] : []
-  })
-  if (tools.length === 0) {
-    throw new Error('xai pricing page: Tool Invocation Costs names no tool')
-  }
-  return [...new Set(tools)]
-}
-
-/**
- * Model ids the files page names as able to run server-side tools: the
- * "**Agentic models only**" bullet's backticked list. Missing, it throws.
- */
-export function parseGrokAgenticModels(markdown: string): Array<string> {
+export function parseGrokFileTool(markdown: string): {
+  tool: string
+  models: Array<string>
+} {
+  const tools = new Set(
+    [
+      ...markdown.matchAll(
+        /activates the `([a-z][a-z0-9_]*)` (?:\[?server-side tool|tool)/g,
+      ),
+    ].map((match) => match[1] ?? ''),
+  )
   const line = /^\* \*\*Agentic models only\*\*:(.*)$/m.exec(markdown)?.[1]
-  const ids = [...(line ?? '').matchAll(/`([a-z0-9][a-z0-9.-]*)`/g)].map(
+  const models = [...(line ?? '').matchAll(/`([a-z0-9][a-z0-9.-]*)`/g)].map(
     (match) => match[1] ?? '',
   )
-  if (ids.length === 0) {
+  const [tool] = tools
+  if (!tool || tools.size !== 1) {
+    throw new Error('xai files page: no single attachment tool id')
+  }
+  if (models.length === 0) {
     throw new Error('xai files page: no Agentic models only list')
   }
-  return ids
+  return { tool, models }
 }
 
 /**
@@ -445,22 +436,16 @@ interface GrokHostedTools {
   hash: string
 }
 
-/** Both pages, or null (a failure is in `docsFailures`). */
+/** The files page, or null (a failure is in `docsFailures`). */
 function grokHostedTools(
   kv: KVNamespace | undefined,
   run: DocsRun,
 ): Promise<GrokHostedTools | null> {
   return tryDocs(run, GROK_FILES_DOC_URL, (cached) =>
     cached(kv, GROK_FILES_DOC_URL, async () => {
-      const [pricing, files] = await Promise.all([
-        fetchText(GROK_PRICING_DOC_URL),
-        fetchText(GROK_FILES_DOC_URL),
-      ])
-      return {
-        tools: parseGrokServerTools(pricing),
-        models: parseGrokAgenticModels(files),
-        hash: await sha256Text(files),
-      }
+      const markdown = await fetchText(GROK_FILES_DOC_URL)
+      const { tool, models } = parseGrokFileTool(markdown)
+      return { tools: [tool], models, hash: await sha256Text(markdown) }
     }),
   )
 }
@@ -629,7 +614,7 @@ async function grokModelFacts(
             derivation: 'docs-derived' as const,
             sourceUrl: GROK_FILES_DOC_URL,
             sourceHash: hosted.hash,
-            path: `Agentic models only; tool id from ${GROK_PRICING_DOC_URL} Tool Invocation Costs`,
+            path: 'Limitations: Agentic models only',
           },
         ]),
       )

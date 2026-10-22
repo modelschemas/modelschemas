@@ -198,8 +198,8 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // entry keeps every row unpriced, so the poll refuses the clear for six hours.
 // v34: OpenAI pages add `file` input from `file_uploads` and Mistral pages from
 // `document-qna` (#407). A v33 entry would keep them without it for six hours.
-// v35: Mistral pages cache their Features and the spec entry its Conversations
-// tool union; Gemini caches probed pages; Perplexity caches stated limits
+// v35: Mistral pages cache their Features (and the web search guide is read);
+// Gemini caches probed pages; Perplexity caches stated limits
 // (#408, #409). A v34 entry has none of them for six hours.
 const DOCS_CACHE_VERSION = 'v35'
 
