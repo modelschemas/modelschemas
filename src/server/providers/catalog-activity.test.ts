@@ -537,9 +537,9 @@ describe('issue #109 listModels', () => {
       (url) =>
         url.endsWith('/models.md')
           ? new Response('<Tab title="x">\n| `perplexity/sonar` | — |\n</Tab>')
-          : url.endsWith('/presets.md')
+          : url.endsWith('/effort.md')
             ? new Response(
-                '<Accordion title="x — current preset values">\n* **Model:** `a/b`\n* **Tools:** `web_search`\n</Accordion>',
+                '<Accordion title="x — current effort level values">\n* **Model:** `a/b`\n* **Tools:** `web_search`\n</Accordion>',
               )
             : json({
                 data: [

@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   parsePerplexityModelsPage,
-  parsePerplexityPresets,
+  parsePerplexityEffortLevels,
   provider,
 } from './perplexity.ts'
 
 const MODELS_URL = 'https://api.perplexity.ai/v1/models'
 const DOC_URL = 'https://docs.perplexity.ai/docs/agent-api/models.md'
-const PRESETS_URL = 'https://docs.perplexity.ai/docs/agent-api/presets.md'
+const EFFORT_URL = 'https://docs.perplexity.ai/docs/agent-api/effort.md'
 
 const HEADER = [
   '| Model | Input (\\$/1M) | Output (\\$/1M) | Cache read (\\$/1M) | Service tiers | Docs |',
@@ -244,14 +244,14 @@ describe('parsePerplexityModelsPage', () => {
   })
 })
 
-// Three of the five presets as served on 2026-10-07, in the markdown
-// export's shape since 2026-10-20: each accordion is one blockquote.
+// Three of the five effort levels as served on 2026-10-22, when the
+// presets page became the effort page: each accordion is one blockquote.
 // Bullets are trimmed, and only `fast` keeps its prompt block, cut to one
 // `## ` heading; the real blocks also hold SDK code samples.
-const PRESETS_DOC = [
-  '## Current preset values',
+const EFFORT_DOC = [
+  '## Current effort level values',
   '',
-  '> **fast — current preset values**',
+  '> **fast — current effort level values**',
   '>',
   '> Quick factual lookups with minimal latency and inline citations for search-backed claims.',
   '>',
@@ -268,13 +268,13 @@ const PRESETS_DOC = [
   '> ## Role',
   '> ```',
   '',
-  '> **low — current preset values**',
+  '> **low — current effort level values**',
   '>',
   '> * **Model:** `openai/gpt-6-luna`',
   '> * **Reasoning effort:** `minimal`',
   '> * **Tools:** `web_search`, `fetch_url` (`max_urls: 1`)',
   '',
-  '> **xhigh — current preset values**',
+  '> **xhigh — current effort level values**',
   '>',
   '> * **Model:** `anthropic/claude-opus-5-5`',
   '> * **Max steps:** 100',
@@ -286,27 +286,27 @@ const PRESETS_DOC = [
   '> **[Agent API Models](/docs/agent-api/models)**',
 ].join('\n')
 
-describe('parsePerplexityPresets', () => {
-  it('reads each preset model with the effort and tools it runs with', () => {
-    expect([...parsePerplexityPresets(PRESETS_DOC)]).toEqual([
+describe('parsePerplexityEffortLevels', () => {
+  it('reads each effort level model with the effort and tools it runs with', () => {
+    expect([...parsePerplexityEffortLevels(EFFORT_DOC)]).toEqual([
       ['openai/gpt-6-luna', ['reasoning', 'reasoning_effort', 'tools']],
       ['anthropic/claude-opus-5-5', ['reasoning', 'reasoning_effort', 'tools']],
     ])
   })
 
-  it('gives a preset with no tools or effort bullet neither flag', () => {
-    const bare = PRESETS_DOC.replace(
+  it('gives a level with no tools or effort bullet neither flag', () => {
+    const bare = EFFORT_DOC.replace(
       '> * **Reasoning effort:** `high`\n> * **Tools:** `web_search`, `finance_search`, `sandbox`\n',
       '',
     )
-    expect(parsePerplexityPresets(bare).has('anthropic/claude-opus-5-5')).toBe(
-      false,
-    )
+    expect(
+      parsePerplexityEffortLevels(bare).has('anthropic/claude-opus-5-5'),
+    ).toBe(false)
   })
 
   it.each([
     [
-      'a preset with no model bullet',
+      'a level with no model bullet',
       '* **Model:** `openai',
       '* **LLM:** `openai',
     ],
@@ -322,7 +322,16 @@ describe('parsePerplexityPresets', () => {
       '> * **Max steps:** 100',
       '> * **Model:** `openai/gpt-6-sol`',
     ],
-    ['a page with no preset accordions', / — current preset values/g, ''],
+    [
+      'a page with no effort level accordions',
+      / — current effort level values/g,
+      '',
+    ],
+    [
+      'the accordion title the presets page used before 2026-10-22',
+      / — current effort level values/g,
+      ' — current preset values',
+    ],
     [
       'an accordion split by a blank line',
       '> * **Reasoning effort:** `high`\n',
@@ -330,13 +339,15 @@ describe('parsePerplexityPresets', () => {
     ],
     [
       'an accordion title in another shape',
-      '> **xhigh — current preset values**',
-      '> **xhigh — current preset values (beta)**',
+      '> **xhigh — current effort level values**',
+      '> **xhigh — current effort level values (beta)**',
     ],
   ])('throws on %s', (_case, from, to) => {
-    const mutated = PRESETS_DOC.replace(from, to)
-    expect(mutated).not.toBe(PRESETS_DOC)
-    expect(() => parsePerplexityPresets(mutated)).toThrow('perplexity: preset')
+    const mutated = EFFORT_DOC.replace(from, to)
+    expect(mutated).not.toBe(EFFORT_DOC)
+    expect(() => parsePerplexityEffortLevels(mutated)).toThrow(
+      'perplexity: effort',
+    )
   })
 })
 
@@ -404,8 +415,8 @@ describe('perplexity listModels', () => {
       if (String(url) === DOC_URL) {
         return Promise.resolve(new Response(MODELS_DOC))
       }
-      if (String(url) === PRESETS_URL) {
-        return Promise.resolve(new Response(PRESETS_DOC))
+      if (String(url) === EFFORT_URL) {
+        return Promise.resolve(new Response(EFFORT_DOC))
       }
       expect(
         new Headers(init?.headers).get('Authorization')?.startsWith('Bearer '),
@@ -426,7 +437,7 @@ describe('perplexity listModels', () => {
     const result = await provider.listModels({
       PERPLEXITY_API_KEY: 'test-key',
     })
-    expect(urls.sort()).toEqual([MODELS_URL, DOC_URL, PRESETS_URL])
+    expect(urls.sort()).toEqual([MODELS_URL, EFFORT_URL, DOC_URL])
     expect(result.skipped).toBeUndefined()
     const source = (sourceUrl: string, path: string) => ({
       derivation: 'docs-derived',
@@ -462,9 +473,9 @@ describe('perplexity listModels', () => {
         capabilities: ['reasoning', 'reasoning_effort', 'tools'],
         factSources: {
           capabilities: {
-            reasoning: source(PRESETS_URL, 'reasoning'),
-            reasoning_effort: source(PRESETS_URL, 'reasoning_effort'),
-            tools: source(PRESETS_URL, 'tools'),
+            reasoning: source(EFFORT_URL, 'reasoning'),
+            reasoning_effort: source(EFFORT_URL, 'reasoning_effort'),
+            tools: source(EFFORT_URL, 'tools'),
           },
         },
       },
@@ -501,7 +512,7 @@ describe('perplexity listModels', () => {
           ? Response.json({
               data: [{ id: nemotron }, { id: 'perplexity/sonar' }],
             })
-          : new Response(String(url) === DOC_URL ? nvidia : PRESETS_DOC),
+          : new Response(String(url) === DOC_URL ? nvidia : EFFORT_DOC),
       )) as typeof fetch
     const { models } = await provider.listModels({
       PERPLEXITY_API_KEY: 'test-key',
@@ -530,7 +541,7 @@ describe('perplexity listModels', () => {
       Promise.resolve(
         String(url) === MODELS_URL
           ? Response.json({ data: [{ id: 'perplexity/kimi-k3' }] })
-          : new Response(String(url) === DOC_URL ? withNone : PRESETS_DOC),
+          : new Response(String(url) === DOC_URL ? withNone : EFFORT_DOC),
       )) as typeof fetch
     const result = await provider.listModels({ PERPLEXITY_API_KEY: 'test-key' })
     expect(result.models[0]?.reasoning).toEqual({
@@ -572,8 +583,8 @@ describe('perplexity listModels', () => {
         skipped: 0,
         first: [
           {
-            source: PRESETS_URL,
-            error: 'perplexity: presets page lists no preset models',
+            source: EFFORT_URL,
+            error: 'perplexity: effort page lists no effort levels',
             elapsedMs: expect.any(Number) as number,
           },
         ],
@@ -586,7 +597,7 @@ describe('perplexity listModels', () => {
       Promise.resolve(
         String(url) === MODELS_URL
           ? new Response('down', { status: 503 })
-          : new Response(String(url) === DOC_URL ? MODELS_DOC : PRESETS_DOC),
+          : new Response(String(url) === DOC_URL ? MODELS_DOC : EFFORT_DOC),
       )) as typeof fetch
     await expect(
       provider.listModels({ PERPLEXITY_API_KEY: 'test-key' }),

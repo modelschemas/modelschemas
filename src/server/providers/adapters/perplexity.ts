@@ -35,8 +35,8 @@ const PERPLEXITY_OPENAPI_URL = 'https://docs.perplexity.ai/openapi.json'
 const PERPLEXITY_MODELS_URL = 'https://api.perplexity.ai/v1/models'
 const PERPLEXITY_MODELS_DOC_URL =
   'https://docs.perplexity.ai/docs/agent-api/models.md'
-const PERPLEXITY_PRESETS_DOC_URL =
-  'https://docs.perplexity.ai/docs/agent-api/presets.md'
+const PERPLEXITY_EFFORT_DOC_URL =
+  'https://docs.perplexity.ai/docs/agent-api/effort.md'
 const FETCH_TIMEOUT_MS = 20_000
 
 function classify(path: string): Activity | null {
@@ -207,26 +207,29 @@ export function parsePerplexityModelsPage(markdown: string): {
 }
 
 /**
- * Flags the presets page states in its "current preset values" accordions:
- * each preset names its model, the `reasoning.effort` it sends, and its tools. A model
- * a preset runs with an effort takes `reasoning.effort`; one it runs with
- * tools takes `tools`. The page says nothing of `tool_choice`.
+ * Flags the effort page (named "presets" before 2026-10-22) states in its
+ * "current effort level values" accordions: each effort level names its
+ * model, the `reasoning.effort` it sends, and its tools. A model a level
+ * runs with an effort takes `reasoning.effort`; one it runs with tools
+ * takes `tools`. The page says nothing of `tool_choice`.
  */
-export function parsePerplexityPresets(markdown: string): StatedFlags {
+export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
   const stated: StatedFlags = new Map()
-  // Each accordion is one `> **name — current preset values**` blockquote,
+  // Each accordion is one `> **name — current effort level values**` blockquote,
   // and they run back to back up to the next unquoted `## ` heading (the
   // prompts' own `## ` headings stay inside the quote). Any other block in
   // that run, or a blank line splitting an accordion, throws.
-  const start = markdown.search(/^> \*\*[^\n]*current preset values/m)
+  const start = markdown.search(/^> \*\*[^\n]*current effort level values/m)
   const run = start < 0 ? '' : (markdown.slice(start).split(/^## /m)[0] ?? '')
   for (const block of run === '' ? [] : run.trim().split(/\n\n+/)) {
     const quoted =
-      /^> \*\*[^*\n]* — current preset values\*\*\n((?:>.*(?:\n|$))*)$/.exec(
+      /^> \*\*[^*\n]* — current effort level values\*\*\n((?:>.*(?:\n|$))*)$/.exec(
         block,
       )?.[1]
     if (quoted === undefined) {
-      throw new Error('perplexity: preset accordion is in an unread shape')
+      throw new Error(
+        'perplexity: effort level accordion is in an unread shape',
+      )
     }
     const body = unquote(quoted)
     const bullet = (label: string): string | null => {
@@ -234,29 +237,31 @@ export function parsePerplexityPresets(markdown: string): StatedFlags {
         ...body.matchAll(new RegExp(`^\\* \\*\\*${label}:\\*\\* (.*)$`, 'gm')),
       ]
       if (lines.length > 1) {
-        throw new Error(`perplexity: preset states ${label} twice`)
+        throw new Error(`perplexity: effort level states ${label} twice`)
       }
       return lines[0]?.[1] ?? null
     }
     const model = /^`([^`\s]+)`$/.exec(bullet('Model') ?? '')?.[1]
-    if (!model) throw new Error('perplexity: preset names no model')
+    if (!model) throw new Error('perplexity: effort level names no model')
     const effort = bullet('Reasoning effort')
     const tools = bullet('Tools')
     if (effort !== null) {
       if (!/^`[a-z]+`$/.test(effort)) {
-        throw new Error('perplexity: preset effort is in an unread shape')
+        throw new Error(
+          "perplexity: effort level's reasoning effort is in an unread shape",
+        )
       }
       addFlags(stated, model, ['reasoning', 'reasoning_effort'])
     }
     if (tools !== null) {
       if (!/^`[a-z_]+`/.test(tools)) {
-        throw new Error('perplexity: preset tools are in an unread shape')
+        throw new Error('perplexity: effort level tools are in an unread shape')
       }
       addFlags(stated, model, ['tools'])
     }
   }
   if (stated.size === 0) {
-    throw new Error('perplexity: presets page lists no preset models')
+    throw new Error('perplexity: effort page lists no effort levels')
   }
   return stated
 }
@@ -264,9 +269,9 @@ export function parsePerplexityPresets(markdown: string): StatedFlags {
 interface StatedDoc {
   hash: string
   flags: Array<[string, Array<string>]>
-  /** Absent on the presets page, and on an entry cached before efforts were kept. */
+  /** Absent on the effort page, and on an entry cached before efforts were kept. */
   efforts?: Array<[string, Array<string>]>
-  /** Absent on the presets page, and on an entry cached before limits were kept. */
+  /** Absent on the effort page, and on an entry cached before limits were kept. */
   limits?: Array<[string, StatedLimits]>
 }
 
@@ -402,7 +407,7 @@ async function listModels(
     return { models: [], ...skippedResult('perplexity', 'PERPLEXITY_API_KEY') }
   }
   const run = docsRun()
-  const [body, modelsPage, presets] = await Promise.all([
+  const [body, modelsPage, effortPage] = await Promise.all([
     fetchJson(PERPLEXITY_MODELS_URL, {
       headers: { Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -410,18 +415,18 @@ async function listModels(
     tryDocs(run, PERPLEXITY_MODELS_DOC_URL, () =>
       statedDoc(kv, PERPLEXITY_MODELS_DOC_URL, parsePerplexityModelsPage),
     ),
-    tryDocs(run, PERPLEXITY_PRESETS_DOC_URL, () =>
-      statedDoc(kv, PERPLEXITY_PRESETS_DOC_URL, (text) => ({
-        flags: parsePerplexityPresets(text),
+    tryDocs(run, PERPLEXITY_EFFORT_DOC_URL, () =>
+      statedDoc(kv, PERPLEXITY_EFFORT_DOC_URL, (text) => ({
+        flags: parsePerplexityEffortLevels(text),
       })),
     ),
   ])
   // Both pages or neither: one page's flags alone would drop the other's.
   const docs =
-    modelsPage && presets
+    modelsPage && effortPage
       ? [
           { url: PERPLEXITY_MODELS_DOC_URL, doc: modelsPage },
-          { url: PERPLEXITY_PRESETS_DOC_URL, doc: presets },
+          { url: PERPLEXITY_EFFORT_DOC_URL, doc: effortPage },
         ]
       : null
   const models: Array<ModelInfo> = []
