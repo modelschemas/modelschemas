@@ -602,6 +602,57 @@ describe('gemini features (issue #77)', () => {
       })
     })
 
+    it('binds a looked-up page to its own id, not the siblings it repeats', async () => {
+      const index = [
+        '| [Gemini Robotics ER 2](https://ai.google.dev/gemini-api/docs/robotics-overview) | ``` gemini-robotics-er-2-preview ``` |',
+        `${INDEX}/gemini-2.5-flash`,
+      ].join('\n')
+      const section = (id: string, types: string) =>
+        `### ${id}\n| Model code | \`${id}\` |\n| Supported data types | ${types} |\n`
+      const overview = section(
+        'gemini-robotics-er-2-preview',
+        '**Inputs** Text, images **Output** Text',
+      )
+      // Google's family page repeats the sibling's table above its own.
+      const streaming = [
+        section(
+          'gemini-robotics-er-2-preview',
+          '**Inputs** Text, images **Output** Text',
+        ),
+        section(
+          'gemini-robotics-er-2-streaming-preview',
+          '**Inputs** Audio **Output** Text',
+        ),
+      ].join('\n')
+      const { features } = await withPages(
+        {},
+        () =>
+          geminiModelFeatures([
+            'gemini-robotics-er-2-preview',
+            'gemini-robotics-er-2-streaming-preview',
+          ]),
+        {
+          index,
+          extras: {
+            '/robotics-overview.md.txt': overview,
+            '/models/gemini-robotics-er-2-streaming-preview.md.txt': streaming,
+          },
+        },
+      )
+      expect(features('gemini-robotics-er-2-preview', false)).toMatchObject({
+        modalities: { input: ['text', 'image'], output: ['text'] },
+        factSources: {
+          modalities: {
+            sourceUrl:
+              'https://ai.google.dev/gemini-api/docs/robotics-overview.md.txt',
+          },
+        },
+      })
+      expect(
+        features('gemini-robotics-er-2-streaming-preview', false).modalities,
+      ).toEqual({ input: ['audio'], output: ['text'] })
+    })
+
     it('refuses a model id that two pages both document', async () => {
       const documented = (id: string) =>
         `## ${id}\n| Model code | \`${id}\` |\n| Supported data types | **Inputs** Text **Output** Text |\n`

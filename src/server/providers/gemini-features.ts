@@ -547,7 +547,8 @@ export async function geminiModelFeatures(
   // Google serves some model pages the index does not link (gemini-3.5-flash,
   // #409). A listed id no index page covers is looked up at its own
   // `/models/{id}` path. A 404 there is no page. Such a page names no ids
-  // for the index, so only the model codes it states bind.
+  // for the index, and binds only the id it was looked up for: a family page
+  // repeats its siblings' tables, and those siblings have their own source.
   const unindexed: Array<GeminiIndexDoc> = rawIds
     .filter(
       (id) =>
@@ -764,9 +765,22 @@ function pagePlacements(
   index: Array<GeminiIndexDoc>,
   bySlug: Map<string, BoundSection>,
 ): Array<Placement> {
-  const named = page.sections.filter((section) => section.ids.length > 0)
   const doc = index.find((item) => pageUrl(item.url) === page.url)
   const slug = modelSlug(page.url)
+  const placements = sectionPlacements(page, doc, slug, bySlug)
+  // A page the index does not link was looked up for its own id.
+  return doc || !slug
+    ? placements
+    : placements.filter((place) => familyOf(place.id, [slug]) === slug)
+}
+
+function sectionPlacements(
+  page: LoadedPage,
+  doc: GeminiIndexDoc | undefined,
+  slug: string | null,
+  bySlug: Map<string, BoundSection>,
+): Array<Placement> {
+  const named = page.sections.filter((section) => section.ids.length > 0)
   const out: Array<Placement> = []
   const add = (
     ids: Array<string>,
