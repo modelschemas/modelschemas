@@ -8,7 +8,11 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { rateCardSchema, verifyExamples } from '@modelschemas/rate-card'
+import {
+  cardParams,
+  rateCardSchema,
+  verifyExamples,
+} from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { cacheMeta, changes, models, schemaVersions } from '#/db/schema.ts'
@@ -328,13 +332,18 @@ export function checkExtractedCard(
         'a request-bound input param is not an allowed request property; bind it to an allowed property or make it "bound": "usage"',
     }
   }
-  // The caller states a usage quantity; a default would price a guess (#304).
+  // A usage-bound choice (output resolution) is the caller's to state; a
+  // default would price a guess (#304). Number defaults (an add-on's 0)
+  // stay legal, as on compiled token cards.
   const usageDefaults = Object.entries(card.inputs)
-    .filter(([, input]) => input.bound === 'usage' && 'default' in input)
+    .filter(
+      ([, input]) =>
+        input.bound === 'usage' && input.kind === 'enum' && 'default' in input,
+    )
     .map(([name]) => name)
   if (usageDefaults.length > 0) {
     return {
-      error: `usage-bound inputs have a default (${usageDefaults.join(', ')}); the caller states them — remove the default`,
+      error: `usage-bound enums have a default (${usageDefaults.join(', ')}); the caller states them — remove the default`,
     }
   }
   const failed = verifyExamples(card).filter((result) => !result.ok)
@@ -871,11 +880,16 @@ async function extractFalPricingScoped(
         continue
       }
 
-      const known = byHash
-        .get(sectionHash)
-        ?.find((card) =>
+      // Of the cards that fit, the one reading the most from the request:
+      // a sibling's usage-bound `resolution` must not shadow this row's
+      // request field.
+      const known = (byHash.get(sectionHash) ?? [])
+        .filter((card) =>
           cardRequestParamsOk(card, requestPropertiesOf(candidate)),
         )
+        .sort(
+          (a, b) => cardParams(b).request.length - cardParams(a).request.length,
+        )[0]
       if (known) {
         outcome.deduped++
         await applyCard(candidate, known, sourceUrl, sectionHash)
@@ -971,6 +985,11 @@ async function extractFalPricingScoped(
           const sourceUrl = falLlmsTxtUrl(row.rawId)
           if (card && (await applyCard(row, card, sourceUrl, hash))) {
             continue
+          }
+          if (card) {
+            reasons.add(
+              `card extracted for ${(group.rows[0] as Candidate).rawId} refused for ${row.rawId}`,
+            )
           }
           if (!card) {
             outcome.refused++

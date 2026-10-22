@@ -1029,6 +1029,56 @@ describe('extractFalPricing', () => {
     }
   })
 
+  it('prefers the fitting card that reads the most from the request', async () => {
+    const providerId = 'extract-dedup-prefer'
+    await seedProvider(providerId)
+    const hash = await pricingSectionHash(pricingSection(NANO_LLMS))
+    const usage = perImageCard(falLlmsTxtUrl('fal-ai/a-usage'))
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/a-usage',
+      properties: { prompt: { type: 'string' } },
+      pricing: {
+        ...usage,
+        inputs: {
+          num_images: { param: 'num_images', kind: 'number', bound: 'usage' },
+        },
+        examples: [{ ...usage.examples[0]!, params: { num_images: 1 } }],
+        source: { ...usage.source, hash },
+      },
+    })
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/b-request',
+      properties: { num_images: { type: 'integer' } },
+      pricing: {
+        ...perImageCard(falLlmsTxtUrl('fal-ai/b-request')),
+        source: { ...dummySource(falLlmsTxtUrl('fal-ai/b-request')), hash },
+      },
+    })
+    const freshId = await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/c-fresh',
+      properties: { num_images: { type: 'integer' } },
+    })
+    await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+    })
+    const fresh = await getDb(env).query.models.findFirst({
+      where: eq(models.id, freshId),
+    })
+    expect((fresh?.pricing as RateCard | null)?.inputs.num_images).toEqual({
+      param: 'num_images',
+      kind: 'number',
+      default: 1,
+    })
+  })
+
   it('re-extracts next run for a group row the shared card does not fit', async () => {
     const providerId = 'extract-group-schema'
     await seedProvider(providerId)

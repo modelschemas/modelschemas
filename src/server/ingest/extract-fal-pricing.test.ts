@@ -540,7 +540,7 @@ For more details, see [fal.ai pricing](https://fal.ai/pricing).`
     })
     expect(
       typeof refused === 'object' && 'error' in refused && refused.error,
-    ).toContain('usage-bound inputs have a default (resolution)')
+    ).toContain('usage-bound enums have a default (resolution)')
     const { default: _default, ...resolution } = reply.inputs.resolution
     const card = checkExtractedCard(
       JSON.stringify({ ...reply, inputs: { ...reply.inputs, resolution } }),
