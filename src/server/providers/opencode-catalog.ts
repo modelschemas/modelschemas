@@ -87,8 +87,8 @@ function schemaEndpointId(
 ): string | null {
   const suffix = PACKAGE_SUFFIX[npm]?.(id) ?? null
   if (!suffix) return null
-  // routes/zen/go/v1 has no models/[model].ts (/zen/go/v1/models/{id} is a
-  // 404). Bind Go Gemini rows again if the Go tree adds one.
+  // /zen/go/v1/models/{id} is a 404. go.mdx now lists Go Gemini under
+  // /inference/go/google/v1beta; binding it waits on issue #393.
   if (provider === 'opencode-go' && npm === '@ai-sdk/google') return null
   if (id.includes('/'))
     throw new Error(`${provider}: unreadable model id ${id}`)

@@ -2,13 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   MINIMAX_MAX_COMPLETION_TOKENS,
-  MINIMAX_PRICING_OVERVIEW_PAGE,
+  MINIMAX_PRICING_LLM_MDX,
   MINIMAX_SDK_PAGE,
-  minimaxLlmsFull,
+  minimaxPricingHtml,
 } from '../fixtures/minimax-docs.ts'
 import {
   MINIMAX_CHAT_SPEC_URL,
-  MINIMAX_LLMS_FULL_URL,
   MINIMAX_MESSAGES_SPEC_URL,
   MINIMAX_PRICING_URL,
   MINIMAX_SDK_URL,
@@ -59,10 +58,7 @@ const CHAT_SPEC = {
 const PAGES: Record<string, string> = {
   [MINIMAX_MODELS_URL]: FIXTURE,
   [MINIMAX_SDK_URL]: MINIMAX_SDK_PAGE,
-  [MINIMAX_LLMS_FULL_URL]: minimaxLlmsFull(
-    MINIMAX_PRICING_URL,
-    MINIMAX_PRICING_OVERVIEW_PAGE,
-  ),
+  [MINIMAX_PRICING_URL]: minimaxPricingHtml(MINIMAX_PRICING_LLM_MDX),
   [MINIMAX_CHAT_SPEC_URL]: JSON.stringify(CHAT_SPEC),
   [MINIMAX_MESSAGES_SPEC_URL]: JSON.stringify({
     openapi: '3.1.0',
@@ -130,11 +126,12 @@ describe('minimax', () => {
     )
   })
 
-  it('prices from llms-full.txt when the .md export renders tabs as labels', async () => {
-    // platform.minimax.io/docs/pricing/overview.md (2026-10-20): `<Tab>`
-    // titles are bold lines, so the standard tier has no boundary (#379).
-    const rendered = [
+  it('prices from the HTML page when llms-full.txt renders tabs as labels', async () => {
+    // platform.minimax.io/docs/llms-full.txt (2026-10-21): `<Tab>` titles
+    // are bold lines and the struck price is gone (#399). Nothing reads it.
+    const flattened = [
       '# Pricing Overview',
+      'Source: https://platform.minimax.io/docs/pricing/overview',
       '',
       '## LLM',
       '',
@@ -142,37 +139,31 @@ describe('minimax', () => {
       '',
       '| Model | Input | Output | Prompt caching Read |',
       '| :- | :- | :- | :- |',
-      '| **MiniMax-M3** | \\$0.30 / M tokens | \\$1.20 / M tokens | \\$0.06 / M tokens |',
-      '',
-      '**Priority**\\*',
-      '',
-      '| Model | Input | Output | Prompt caching Read |',
-      '| :- | :- | :- | :- |',
-      '| **MiniMax-M3** | \\$0.45 / M tokens | \\$1.80 / M tokens | \\$0.09 / M tokens |',
+      '| **MiniMax-M3** ≤ 512k input tokens | \\$0.30 / M tokens | \\$1.20 / M tokens | \\$0.06 / M tokens |',
     ].join('\n')
     mockFetch({
       ...PAGES,
-      'https://platform.minimax.io/docs/pricing/overview.md': rendered,
-      'https://platform.minimax.io/docs/llms-full.txt': minimaxLlmsFull(
-        'https://platform.minimax.io/docs/pricing/overview',
-        MINIMAX_PRICING_OVERVIEW_PAGE,
-      ),
+      'https://platform.minimax.io/docs/llms-full.txt': flattened,
     })
 
     const listed = await provider.listModels({})
 
     const m3 = listed.models.find((model) => model.rawId === 'MiniMax-M3')
     expect(m3?.pricing).toMatchObject({
-      tables: { rate: { base: { input_tokens: 0.3 / 1e6 } } },
+      tables: {
+        rate: {
+          base: { input_tokens: 0.3 / 1e6 },
+          '512000': { input_tokens: 0.6 / 1e6 },
+        },
+      },
     })
   })
 
   it('throws when a docs page parses nothing', async () => {
     mockFetch({
       ...PAGES,
-      [MINIMAX_LLMS_FULL_URL]: minimaxLlmsFull(
-        MINIMAX_PRICING_URL,
-        '# Pay as You Go\n',
+      [MINIMAX_PRICING_URL]: minimaxPricingHtml(
+        MINIMAX_PRICING_LLM_MDX.replaceAll('`Input`', '`Input (batch)`'),
       ),
     })
     await expect(provider.listModels({})).rejects.toThrow(

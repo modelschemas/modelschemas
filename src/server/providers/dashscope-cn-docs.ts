@@ -110,13 +110,33 @@ function ownSource(doc: CnDoc, path: string): FactSource {
     path,
   }
 }
-function amount(cell: string): number {
-  const text = cnText(cell)
+function amount(text: string): number {
   const match = /^(\d+(?:\.\d+)?)元$/.exec(text)
   if (!match) fail(`unreadable RMB token quote: ${text}`)
   const value = Number(match[1]) / 1e6
   if (!Number.isFinite(value) || value < 0) fail('invalid RMB token quote')
   return value
+}
+/**
+ * One quote per prompt-size floor. A cell may tier itself, as MiniMax-M3's
+ * does: "输入不超过 512k Token：2.1元 输入超过 512k Token：4.2元".
+ */
+function amounts(cell: string): Map<number, number> {
+  const text = cnText(cell)
+  if (!/Token：/.test(text)) return new Map([[0, amount(text)]])
+  const match =
+    /^输入不超过\s*(\d+(?:\.\d+)?)([KM])\s*Token：(\S+)\s+输入超过\s*(\d+(?:\.\d+)?)([KM])\s*Token：(\S+)$/i.exec(
+      text,
+    )
+  if (!match || match[1] !== match[4] || match[2] !== match[5])
+    fail(`unreadable tiered RMB token quote: ${text}`)
+  const bound = Number(match[1]) * (match[2]!.toUpperCase() === 'M' ? 1e6 : 1e3)
+  if (!Number.isSafeInteger(bound) || bound <= 0)
+    fail('invalid tiered token bound')
+  return new Map([
+    [0, amount(match[3]!)],
+    [bound, amount(match[6]!)],
+  ])
 }
 function floor(cell: string): number {
   const text = cnText(cell).replace(/\s+/g, '')
@@ -239,17 +259,28 @@ export function cnPriceModels(doc: CnDoc): ModelInfo[] {
           )
         )
           continue
-        const rates: Record<string, number> = {
-          input_tokens: amount(row[inputAt]!),
+        const input = amounts(row[inputAt]!)
+        const output = outputAt >= 0 ? amounts(row[outputAt]!) : null
+        if (
+          output &&
+          JSON.stringify([...input.keys()]) !==
+            JSON.stringify([...output.keys()])
+        )
+          fail(`mismatched input and output price tiers ${ids.join(',')}`)
+        if (input.size > 1 && rangeAt >= 0)
+          fail(`tiered price cell inside a token range row ${ids.join(',')}`)
+        for (const [cellFloor, inputRate] of input) {
+          const rates: Record<string, number> = { input_tokens: inputRate }
+          if (output) rates.output_tokens = output.get(cellFloor)!
+          const quote: Quoted = {
+            models: ids,
+            mode: modeAt >= 0 ? cnText(row[modeAt]!) : '',
+            floor: rangeAt >= 0 ? floor(row[rangeAt]!) : cellFloor,
+            rates,
+          }
+          for (const id of ids)
+            quoted.set(id, [...(quoted.get(id) ?? []), quote])
         }
-        if (outputAt >= 0) rates.output_tokens = amount(row[outputAt]!)
-        const quote: Quoted = {
-          models: ids,
-          mode: modeAt >= 0 ? cnText(row[modeAt]!) : '',
-          floor: rangeAt >= 0 ? floor(row[rangeAt]!) : 0,
-          rates,
-        }
-        for (const id of ids) quoted.set(id, [...(quoted.get(id) ?? []), quote])
       }
     }
   }

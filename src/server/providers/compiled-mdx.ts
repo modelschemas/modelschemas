@@ -2,8 +2,9 @@
  * Bracket scanning over a docs page's compiled MDX, where every string is a
  * template literal with no `${…}` (`_jsx(Component,{key:`value`,…})`).
  * Shared by readers of pages whose `.md` export renders a component
- * without its values (Kimi `<DocTable>`, Cerebras `<ModelInfo>`) or
- * without its nesting (Novita `<ParamField>`).
+ * without its values (Kimi `<DocTable>`, Cerebras `<ModelInfo>`, MiniMax
+ * `<Tab>` or without its nesting (Novita `<ParamField>`).
+
  */
 
 /** Index of the backtick closing the template literal opened at `open`. */

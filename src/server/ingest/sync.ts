@@ -420,22 +420,27 @@ export async function syncProvider(
   for (const endpoint of classified) {
     const existing = existingById.get(endpoint.dbId)
     if (!existing) {
-      await db.insert(endpoints).values({
-        id: endpoint.dbId,
-        providerId: provider.id,
-        activity: endpoint.activity,
-        method: endpoint.method,
-        path: endpoint.path,
-        description: endpoint.description,
-      })
-      await db.insert(changes).values({
-        id: newChangeId(),
-        type: 'endpoint.added',
-        providerId: provider.id,
-        subjectId: endpoint.dbId,
-        summary: `Endpoint ${endpoint.path} added (${endpoint.activity})`,
-        createdAt: now,
-      })
+      // The row and its change in one batch: a run that dies between them
+      // would otherwise leave an endpoint whose `endpoint.added` is never
+      // written, since later runs find the row and skip it.
+      await db.batch([
+        db.insert(endpoints).values({
+          id: endpoint.dbId,
+          providerId: provider.id,
+          activity: endpoint.activity,
+          method: endpoint.method,
+          path: endpoint.path,
+          description: endpoint.description,
+        }),
+        db.insert(changes).values({
+          id: newChangeId(),
+          type: 'endpoint.added',
+          providerId: provider.id,
+          subjectId: endpoint.dbId,
+          summary: `Endpoint ${endpoint.path} added (${endpoint.activity})`,
+          createdAt: now,
+        }),
+      ])
       outcome.changesWritten++
     } else if (
       existing.activity !== endpoint.activity ||
@@ -491,21 +496,7 @@ export async function syncProvider(
             createdAt: now,
           },
         })
-      // One batch, so a run that dies here never leaves two current rows.
-      if (current) {
-        await db.batch([
-          db
-            .update(schemaVersions)
-            .set({ supersededAt: now })
-            .where(eq(schemaVersions.id, current.id)),
-          insert,
-        ])
-      } else {
-        await insert
-      }
-      outcome.versionsAdded++
-      await putJson(kv, schemaKey(hash), schema)
-      await db.insert(changes).values({
+      const change = db.insert(changes).values({
         id: newChangeId(),
         type: current ? 'schema.updated' : 'schema.added',
         providerId: provider.id,
@@ -518,6 +509,25 @@ export async function syncProvider(
         },
         createdAt: now,
       })
+      // Content-addressed, so a blob left by a failed batch is unreferenced,
+      // never wrong.
+      await putJson(kv, schemaKey(hash), schema)
+      // One batch, so a run that dies here never leaves two current rows,
+      // nor a current row with no change, which no later run would write:
+      // the next run finds the hash current and skips it.
+      if (current) {
+        await db.batch([
+          db
+            .update(schemaVersions)
+            .set({ supersededAt: now })
+            .where(eq(schemaVersions.id, current.id)),
+          insert,
+          change,
+        ])
+      } else {
+        await db.batch([insert, change])
+      }
+      outcome.versionsAdded++
       outcome.changesWritten++
     }
   }

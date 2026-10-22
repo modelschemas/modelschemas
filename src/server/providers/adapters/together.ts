@@ -394,6 +394,8 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'together',
+  // LLM Gateway route name (providers[].providerId).
+  modelNamespaces: ['together-ai'],
   displayName: 'Together AI',
   authEnvVar: 'TOGETHER_API_KEY',
   specSourceUrl: TOGETHER_OPENAPI_URL,

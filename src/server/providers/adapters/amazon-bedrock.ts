@@ -57,6 +57,8 @@ async function listModels(
 
 export const provider: ProviderConfig = {
   id: 'amazon-bedrock',
+  // LLM Gateway route name (providers[].providerId).
+  modelNamespaces: ['aws-bedrock'],
   displayName: 'Amazon Bedrock',
   specSourceUrl: BEDROCK_SDK_MODEL_URL,
   modelsEndpoint: BEDROCK_CARDS_URL,

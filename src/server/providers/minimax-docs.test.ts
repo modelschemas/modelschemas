@@ -9,7 +9,9 @@ import {
   MINIMAX_PRICING_OVERVIEW_PAGE,
   MINIMAX_PRICING_PAGE,
   MINIMAX_SDK_PAGE,
-  minimaxLlmsFull,
+  MINIMAX_CN_PRICING_LLM_MDX,
+  MINIMAX_PRICING_LLM_MDX,
+  minimaxPricingHtml,
 } from './fixtures/minimax-docs.ts'
 import {
   fetchMinimaxPage,
@@ -284,9 +286,9 @@ describe.each([
     overview: MINIMAX_PRICING_OVERVIEW_PAGE,
     next: '## Audio',
     table: [
-      '| Model | Input | Output |',
+      '| **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens |',
       '| :- | :- | :- |',
-      '| **MiniMax-M4** | \\$0.1 / M tokens | \\$0.5 / M tokens |',
+      '| **MiniMax-M4** | $0.1 | $0.5 |',
     ],
   },
   {
@@ -359,13 +361,12 @@ describe.each([
       '> 51.2万 input tokens',
     ],
     priority: '<Tab title="Priority*">',
-    row: '| **MiniMax-M2.7** | \\$0.3 / M tokens | \\$1.2 / M tokens | \\$0.06 / M tokens | \\$0.375 / M tokens |',
-    batchRow:
-      '| **MiniMax-M2.7** | \\$0.15 / M tokens | \\$0.6 / M tokens | \\$0.03 / M tokens | \\$0.1875 / M tokens |',
+    row: '| **MiniMax-M2.7** | $0.3 | $1.2 | $0.06 | $0.375 |',
+    batchRow: '| **MiniMax-M2.7** | $0.15 | $0.6 | $0.03 | $0.1875 |',
     header:
-      '| Model | Input | Output | Prompt caching Read | Prompt caching Write |',
-    cacheHeader: 'Prompt caching Read',
-    cacheCell: ['\\$0.06 / M tokens | \\$0.375', 'free | \\$0.375'],
+      '| **Model** | **Input**<br />$ / M tokens | **Output**<br />$ / M tokens | **Prompt caching Read**<br />$ / M tokens | **Prompt caching Write**<br />$ / M tokens |',
+    cacheHeader: '**Prompt caching Read**<br />$ / M tokens',
+    cacheCell: ['$0.06 | $0.375', 'free | $0.375'],
     base: { input_tokens: 0.3 / 1e6, output_tokens: 1.2 / 1e6 },
   },
   {
@@ -910,13 +911,13 @@ describe('a maximum equal to the context window is not an output cap', () => {
     {
       platform: MINIMAX,
       sdk: MINIMAX_SDK_PAGE,
-      pricing: MINIMAX_PRICING_PAGE,
+      pricing: MINIMAX_PRICING_LLM_MDX,
       description: MINIMAX_MAX_COMPLETION_TOKENS,
     },
     {
       platform: MINIMAX_CN,
       sdk: MINIMAX_CN_SDK_PAGE,
-      pricing: MINIMAX_CN_PRICING_PAGE,
+      pricing: MINIMAX_CN_PRICING_LLM_MDX,
       description: MINIMAX_CN_MAX_COMPLETION_TOKENS,
     },
   ]
@@ -925,7 +926,7 @@ describe('a maximum equal to the context window is not an output cap', () => {
     const facts = (text: string) => {
       const pages: Record<string, string> = {
         [platform.sdkUrl]: sdk,
-        [platform.llmsFullUrl]: minimaxLlmsFull(platform.pricingUrl, pricing),
+        [platform.pricingUrl]: minimaxPricingHtml(pricing),
         [platform.chatSpecUrl]: JSON.stringify({
           max_completion_tokens: { description: text },
         }),
