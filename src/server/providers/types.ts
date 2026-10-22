@@ -1,5 +1,6 @@
 import type { Activity } from '#/db/schema.ts'
 import type { ChatRequestMap } from './request-map.ts'
+import type { Fetcher } from './us-egress.ts'
 
 /**
  * Provider registry types — ported from TanStack AI PR #622's
@@ -133,6 +134,8 @@ export interface ProviderSecrets {
 export interface ProviderEnvironment extends ProviderSecrets {
   /** Cloudflare Browser Rendering reads native public documents; no AI extraction. */
   BROWSER?: Pick<BrowserRun, 'quickAction'>
+  /** US-pinned egress for location-gated APIs (`usEgressFetch`, issue #356). */
+  US_EGRESS?: DurableObjectNamespace
 }
 
 /**
@@ -711,8 +714,9 @@ export async function fetchOpenApi(url: string): Promise<{
 export async function fetchJson(
   url: string,
   init?: RequestInit,
+  fetcher: Fetcher = fetch,
 ): Promise<unknown> {
-  const response = await fetch(url, init)
+  const response = await fetcher(url, init)
   if (!response.ok) throw await fetchFailure(url, response)
   return response.json()
 }

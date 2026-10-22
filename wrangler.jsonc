@@ -49,6 +49,13 @@
       "name": "EMAIL",
     },
   ],
+  // Keyed Anthropic/Gemini listing calls egress through this object, placed
+  // in eastern North America: cron invocations run in any region and those
+  // APIs refuse some (issue #356). See src/server/providers/us-egress.ts.
+  "durable_objects": {
+    "bindings": [{ "name": "US_EGRESS", "class_name": "UsEgress" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UsEgress"] }],
   "kv_namespaces": [
     {
       "binding": "SCHEMA_CACHE",

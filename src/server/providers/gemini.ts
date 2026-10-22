@@ -20,10 +20,12 @@ import {
   geminiIdSuffixDate,
 } from './release-dates.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
+import { usEgressFetch } from './us-egress.ts'
 import type {
   ListModelsResult,
   OpenApiDocument,
   ProviderConfig,
+  ProviderEnvironment,
   ProviderSecrets,
   SpecFetchResult,
 } from './types.ts'
@@ -301,7 +303,7 @@ export function geminiCapabilities(
 }
 
 async function listModels(
-  env: ProviderSecrets,
+  env: ProviderEnvironment,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const key = env.GEMINI_API_KEY
@@ -317,9 +319,11 @@ async function listModels(
     url.searchParams.set('pageSize', '1000')
     if (pageToken) url.searchParams.set('pageToken', pageToken)
     // Header, not `?key=`: fetchJson errors quote the URL into telemetry.
-    const body = (await fetchJson(url.toString(), {
-      headers: { 'x-goog-api-key': key },
-    })) as GeminiModelList
+    const body = (await fetchJson(
+      url.toString(),
+      { headers: { 'x-goog-api-key': key } },
+      usEgressFetch(env),
+    )) as GeminiModelList
     listed.push(...(body.models ?? []))
     pageToken = body.nextPageToken
   } while (pageToken)

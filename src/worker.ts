@@ -29,6 +29,9 @@ import { recordRowShape } from '#/server/row-shape.ts'
 import { runWebhookTick } from '#/server/webhooks.ts'
 import type { SyncDeps } from '#/server/ingest/sync.ts'
 
+// Durable Object class for the US_EGRESS binding (issue #356).
+export { UsEgress } from '#/server/us-egress-object.ts'
+
 // Not exported: workerd treats named exports of the entry module as
 // entrypoints and requires them to be functions/ExportedHandlers.
 const MODELS_POLL_CRON = '*/15 * * * *'
