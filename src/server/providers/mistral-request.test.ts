@@ -39,6 +39,20 @@ components:
               mapping:
                 function: '#/components/schemas/Tool'
                 web_search: '#/components/schemas/WebSearchTool'
+    ConversationRequestBase:
+      properties:
+        tools:
+          anyOf:
+            - type: array
+              items:
+                discriminator:
+                  propertyName: type
+                  mapping:
+                    code_interpreter: '#/components/schemas/CodeInterpreterTool'
+                    connector: '#/components/schemas/CustomConnector'
+                    function: '#/components/schemas/FunctionTool'
+                    web_search: '#/components/schemas/WebSearchTool'
+            - type: 'null'
     ReasoningEffort:
       enum: [none, minimal, low, medium, high, xhigh]
 `
@@ -49,7 +63,17 @@ describe('parseMistralChatWire', () => {
       maxTokensField: 'max_tokens',
       developerRole: false,
       reasoningEffort: true,
+      // The Conversations union only; chat `tools` is not it.
+      conversationTools: ['code_interpreter', 'connector', 'web_search'],
     })
+    expect(
+      parseMistralChatWire(
+        SPEC.replace(
+          / {4}ConversationRequestBase:[^]*?(?= {4}ReasoningEffort:)/,
+          '',
+        ),
+      ).conversationTools,
+    ).toBeNull()
     expect(() => parseMistralChatWire('components: {}')).toThrow(
       /ChatCompletionRequest missing/,
     )

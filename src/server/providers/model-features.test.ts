@@ -272,7 +272,7 @@ describe('gemini features (issue #77)', () => {
       run: () => Promise<T>,
       options?: {
         index?: string
-        extras?: Record<string, string | null>
+        extras?: Record<string, string | null | 404>
       },
     ): Promise<T> => {
       const original = globalThis.fetch
@@ -296,7 +296,9 @@ describe('gemini features (issue #77)', () => {
         return Promise.resolve(
           typeof body === 'string'
             ? new Response(body)
-            : new Response('upstream down', { status: 503 }),
+            : body === 404
+              ? new Response('not found', { status: 404 })
+              : new Response('upstream down', { status: 503 }),
         )
       }) as typeof fetch
       try {
@@ -356,6 +358,46 @@ describe('gemini features (issue #77)', () => {
           () => geminiModelFeatures(['gemini-2.5-flash', 'gemini-2.5-pro']),
         ),
       ).rejects.toThrow('gemini model pages: 0 of 2 state modalities')
+    })
+
+    it('reads a model page the index does not link, by its own id (#409)', async () => {
+      const own = (code: string) =>
+        `## ${code}\n\n| Model code | \`${code}\` |\n${page('**Inputs** Text **Output** Text')}`
+      const { features, docsFailures } = await withPages(
+        { 'gemini-2.5-flash': page('**Inputs** Text **Output** Text') },
+        () =>
+          geminiModelFeatures([
+            'gemini-2.5-flash',
+            'gemini-3.5-flash',
+            'gemini-3.7-flash',
+            'gemini-flash-latest',
+          ]),
+        {
+          extras: {
+            '/models/gemini-3.5-flash.md.txt': own('gemini-3.5-flash'),
+            // A page that names another model binds nothing to this id.
+            '/models/gemini-3.7-flash.md.txt': own('gemini-9-flash'),
+            '/models/gemini-flash-latest.md.txt': 404,
+          },
+        },
+      )
+      expect(features('gemini-3.5-flash', false)).toMatchObject({
+        serverTools: ['googleSearch'],
+        factSources: {
+          serverTools: {
+            googleSearch: {
+              sourceUrl: `${INDEX}/gemini-3.5-flash.md.txt`,
+              path: 'Capabilities',
+            },
+          },
+        },
+      })
+      expect(features('gemini-3.7-flash', false).serverTools).toBeNull()
+      expect(features('gemini-flash-latest', false)).toMatchObject({
+        serverTools: null,
+        modalities: null,
+      })
+      expect(docsFailures.failed).toBe(0)
     })
 
     it('maps Supported capabilities to generateContent tool fields', () => {

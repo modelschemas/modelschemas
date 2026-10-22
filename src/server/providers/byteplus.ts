@@ -43,6 +43,7 @@ import {
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
 import { byteplusModelPricing } from './byteplus-pricing.ts'
+import { byteplusServerTools } from './byteplus-tools.ts'
 import { docsReport, docsRun } from './model-facts.ts'
 import {
   byteplusModelReasoning,
@@ -484,18 +485,40 @@ async function listModels(
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const docs = docsRun()
-  const [pricing, reasoning] = await Promise.all([
+  const [pricing, reasoning, tools] = await Promise.all([
     byteplusModelPricing(docs, kv),
     byteplusModelReasoning(kv),
+    byteplusServerTools(docs, kv),
   ])
   const withPricing = (models: Array<ModelInfo>): Array<ModelInfo> =>
-    models.map((model) =>
-      overlayModelFacts(
+    models.map((model) => {
+      const priced = pricing(model.rawId)
+      const hosted = tools(model.rawId)
+      // Both pages may name tools for one row; keep every one of them.
+      const merged = [
+        ...new Set([
+          ...(priced.serverTools ?? []),
+          ...(hosted.serverTools ?? []),
+        ]),
+      ].sort()
+      return overlayModelFacts(
         model,
-        pricing(model.rawId),
+        priced,
+        hosted,
+        merged.length > 0
+          ? {
+              serverTools: merged,
+              factSources: {
+                serverTools: {
+                  ...priced.factSources?.serverTools,
+                  ...hosted.factSources?.serverTools,
+                },
+              },
+            }
+          : {},
         reasoning(model.rawId, listsReasoning(model.capabilities)),
-      ),
-    )
+      )
+    })
   const key = env.ARK_API_KEY
   // No key: the embedded catalog is still a real answer, so serve it rather
   // than reporting the provider skipped.

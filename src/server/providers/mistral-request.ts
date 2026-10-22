@@ -21,6 +21,12 @@ export interface MistralChatWire {
   maxTokensField: 'max_completion_tokens' | 'max_tokens' | null
   developerRole: boolean | null
   reasoningEffort: boolean | null
+  /**
+   * Server-side tool types the Conversations API accepts (`tools[].type`
+   * of ConversationRequestBase, `function` dropped). Null when the spec no
+   * longer has that union; absent on an entry cached before it was read.
+   */
+  conversationTools?: Array<string> | null
   hash: string
 }
 
@@ -28,7 +34,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function roleNames(messages: unknown): Array<string> {
+function discriminatorKeys(root: unknown, property: string): Array<string> {
   const names: Array<string> = []
   const visit = (node: unknown) => {
     if (Array.isArray(node)) {
@@ -37,13 +43,13 @@ function roleNames(messages: unknown): Array<string> {
     }
     if (!isRecord(node)) return
     const discriminator = node.discriminator
-    if (isRecord(discriminator) && discriminator.propertyName === 'role') {
+    if (isRecord(discriminator) && discriminator.propertyName === property) {
       const mapping = discriminator.mapping
       if (isRecord(mapping)) names.push(...Object.keys(mapping))
     }
     for (const value of Object.values(node)) visit(value)
   }
-  visit(messages)
+  visit(root)
   return names
 }
 
@@ -72,14 +78,21 @@ export function parseMistralChatWire(
   } else if (has('max_completion_tokens') && !has('max_tokens')) {
     maxTokensField = 'max_completion_tokens'
   }
-  const roles = roleNames(properties.messages)
+  const roles = discriminatorKeys(properties.messages, 'role')
   const developerRole = roles.length === 0 ? null : roles.includes('developer')
   const reasoningEffort = has('reasoning_effort')
     ? true
     : chat?.additionalProperties === false
       ? false
       : null
-  return { maxTokensField, developerRole, reasoningEffort }
+  const base = isRecord(schemas) ? schemas.ConversationRequestBase : null
+  const tools =
+    isRecord(base) && isRecord(base.properties)
+      ? discriminatorKeys(base.properties.tools, 'type')
+      : []
+  const conversationTools =
+    tools.length > 0 ? tools.filter((type) => type !== 'function') : null
+  return { maxTokensField, developerRole, reasoningEffort, conversationTools }
 }
 
 export async function mistralChatWire(

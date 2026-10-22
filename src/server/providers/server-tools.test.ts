@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { grokServerTools } from './grok.ts'
+import { parseGrokAgenticModels, parseGrokServerTools } from './grok.ts'
 import { openrouterServerTools } from './openrouter.ts'
 import {
   parseByteplusServerTools,
@@ -82,9 +82,49 @@ describe('server tools from docs (issue #123)', () => {
     expect(tools.has('seedream-5-0-pro-260115')).toBe(false)
   })
 
-  it('leaves Grok and OpenRouter null', () => {
-    const page = `# Grok\n\n## Capabilities\n\n- **Web search:** Yes\n- **tools:** web_search\n`
-    expect(grokServerTools(page)).toBeNull()
+  it('reads xAI tool ids from the pricing table, first name per row', () => {
+    // docs.x.ai/developers/pricing.md as served on 2026-10-22, cut down.
+    const pricing = [
+      '### Tool Invocation Costs',
+      '',
+      '| Tool | Tool Name | Description | Cost / 1k Calls |',
+      '| --- | --- | --- | --- |',
+      '| Web Search | `web_search` | Search the internet and browse web pages | $5 |',
+      '| Code Execution | `code_execution`, `code_interpreter`† | Run Python code in a sandboxed environment | $5 |',
+      '| Collections Search | `collections_search`, `file_search`† | Query your uploaded document collections (RAG) | $2.50 |',
+      '| Image Understanding | `view_image` | Analyze images found during Web Search and X Search\\* | Token-based |',
+      '| Remote MCP Tools | Set by MCP server | Connect and use custom MCP tool servers | Token-based |',
+      '† All tool names work in the Responses API.',
+      '',
+      '## Other',
+      '| Tool | Tool Name | Description |',
+      '| X | `not_a_tool` | elsewhere |',
+    ].join('\n')
+    expect(parseGrokServerTools(pricing)).toEqual([
+      'web_search',
+      'code_execution',
+      'collections_search',
+    ])
+    expect(() => parseGrokServerTools('# Pricing')).toThrow(
+      'no Tool Invocation Costs table',
+    )
+  })
+
+  it('reads the files page list of agentic models, or throws', () => {
+    const files =
+      '* **Agentic models only**: Requires models that support agentic tool calling (e.g., `grok-4.20`, `grok-4.5`, `grok-4.6`, `grok-4.7`)'
+    expect(parseGrokAgenticModels(`## Limitations\n\n${files}\n`)).toEqual([
+      'grok-4.20',
+      'grok-4.5',
+      'grok-4.6',
+      'grok-4.7',
+    ])
+    expect(() => parseGrokAgenticModels('## Limitations')).toThrow(
+      'no Agentic models only list',
+    )
+  })
+
+  it('leaves OpenRouter null', () => {
     expect(
       openrouterServerTools({
         supported_parameters: ['tools', 'tool_choice', 'web_search'],

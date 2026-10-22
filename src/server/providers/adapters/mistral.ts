@@ -120,13 +120,15 @@ export const provider: ProviderConfig = {
     })
     if (listed.models.length === 0) return listed
     const chat = listed.models.some((model) => model.activity === 'chat')
-    const [pricing, reasoning, wire] = await Promise.all([
+    // The spec's Conversations tool union feeds the pages' tool lists.
+    const wire = chat ? await mistralChatWire(kv) : null
+    const [pricing, reasoning] = await Promise.all([
       mistralModelPricing(
         kv,
         listed.models.map((model) => model.rawId),
+        wire?.conversationTools ?? null,
       ),
       mistralModelReasoning(kv),
-      chat ? mistralChatWire(kv) : Promise.resolve(null),
     ])
     const models = listed.models.map((model) =>
       overlayModelFacts(

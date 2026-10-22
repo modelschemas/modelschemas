@@ -28,10 +28,16 @@ import {
 import type { Expr, RateCard } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
-import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  mapConcurrent,
+  unavailable,
+} from './model-facts.ts'
+import { MISTRAL_OPENAPI_URL } from './mistral-request.ts'
 import { parseMistralPageTools } from './server-tools.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { ModelInfo } from './types.ts'
+import type { FactSource, ModelInfo } from './types.ts'
 
 export const MISTRAL_PRICING_URL = 'https://docs.mistral.ai/inference/pricing'
 export const MISTRAL_CHANGELOG_URL =
@@ -868,6 +874,7 @@ export interface MistralModelPage {
   modalities?: MistralModalities | null
   maxOutput?: number | null
   pagePrice?: MistralListedPrice | null
+  features?: Array<string> | null
   extractedAt?: string
 }
 
@@ -907,7 +914,7 @@ export function indexMistralApiIds(
 
 type PricedFacts = Pick<
   ModelInfo,
-  'pricing' | 'factSources' | 'serverTools' | 'modalities'
+  'pricing' | 'factSources' | 'serverTools' | 'modalities' | 'absent'
 >
 
 interface MistralStatedModalities {
@@ -1067,10 +1074,33 @@ export interface MistralPricingLookup {
   seen: ReadonlySet<string>
 }
 
-/** Card lookup by API model id. */
+/**
+ * Built-in tools a model page's features admit (#409): the Conversations
+ * API's server-side tool types for a model that lists
+ * `agents-conversations`, and `connector` only when it also lists
+ * `connectors`. Mistral's tool guides scope `web_search`,
+ * `web_search_premium` and `code_interpreter` to `/v1/conversations`.
+ */
+export function mistralConversationTools(
+  features: Array<string> | null | undefined,
+  accepted: ReadonlyArray<string>,
+): Array<string> {
+  if (!features?.includes('agents-conversations')) return []
+  return accepted.filter(
+    (type) => type !== 'connector' || features.includes('connectors'),
+  )
+}
+
+/**
+ * Card lookup by API model id. `conversationTools` is the Conversations
+ * API's tool union from the spec; null or omitted when it could not be
+ * read, so a row whose page lists `agents-conversations` keeps its stored
+ * tools.
+ */
 export async function mistralModelPricing(
   kv?: KVNamespace,
   listedIds: ReadonlyArray<string> = [],
+  conversationTools: ReadonlyArray<string> | null = null,
 ): Promise<MistralPricingLookup> {
   const table = await cachedDocs(kv, MISTRAL_PRICING_URL, async () => {
     const [html, changelog] = await Promise.all([
@@ -1092,6 +1122,7 @@ export async function mistralModelPricing(
     const page = await cachedDocs(kv, url, async () => {
       const body = await fetchText(url)
       const ids = parseMistralApiIds(body, slug)
+      const features = parseMistralPageFeatures(body)
       if (ids.length === 0) {
         throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
       }
@@ -1101,8 +1132,9 @@ export async function mistralModelPricing(
         serverTools: parseMistralPageTools(body),
         modalities: withDocumentInput(
           parseMistralPageModalities(body),
-          parseMistralPageFeatures(body),
+          features,
         ),
+        features,
         maxOutput: parseMistralPageMaxOutput(body),
         pagePrice: parseMistralPagePrice(body),
         extractedAt: new Date().toISOString(),
@@ -1153,6 +1185,7 @@ export async function mistralModelPricing(
   const modalities = indexMistralModalities(pages)
   const maxOutput = indexPageField(pages, (page) => page.maxOutput)
   const pageRates = indexPageField(pages, (page) => page.pagePrice)
+  const featured = indexPageField(pages, (page) => page.features)
   const seen = new Set(pages.flatMap((page) => page.ids))
   const lookup = (rawId: string): PricedFacts => {
     const tableRow = byId.get(rawId)
@@ -1186,9 +1219,36 @@ export async function mistralModelPricing(
           tableRow ? table.hash : pageRow?.hash,
         )
       : {}
-    const toolFacts = hosted
-      ? tagDocsFacts({ serverTools: hosted.tools }, hosted.url, hosted.hash)
-      : {}
+    const features = featured.get(rawId)
+    const conversational =
+      features?.value.includes('agents-conversations') === true
+    const builtIn = conversationTools
+      ? mistralConversationTools(features?.value, conversationTools)
+      : []
+    const serverTools = [
+      ...new Set([...(hosted?.tools ?? []), ...builtIn]),
+    ].sort()
+    const toolSources: Record<string, FactSource> = {}
+    for (const tool of builtIn) {
+      toolSources[tool] = {
+        derivation: 'docs-derived',
+        sourceUrl: features?.url,
+        sourceHash: features?.hash,
+        path: `Features.agents-conversations; Conversations API (/v1/conversations) tools[].type in ${MISTRAL_OPENAPI_URL}`,
+      }
+    }
+    for (const tool of hosted?.tools ?? []) {
+      toolSources[tool] = {
+        derivation: 'docs-derived',
+        sourceUrl: hosted?.url,
+        sourceHash: hosted?.hash,
+        path: `serverTools.${tool}`,
+      }
+    }
+    const toolFacts = serverTools.length > 0 ? { serverTools: toolSources } : {}
+    // The page says the model runs the Conversations API, but its tool
+    // union could not be read: keep what is stored.
+    const toolsUnknown = conversational && !conversationTools
     const stated = modalities.get(rawId)
     const modalityFacts = stated
       ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
@@ -1203,10 +1263,19 @@ export async function mistralModelPricing(
       ...modalityFacts,
       ...maxFacts,
     }
-    if (!pricing && !hosted && !stated && !cap) return {}
+    if (
+      !pricing &&
+      serverTools.length === 0 &&
+      !toolsUnknown &&
+      !stated &&
+      !cap
+    ) {
+      return {}
+    }
     return {
       ...(pricing ? { pricing } : {}),
-      ...(hosted ? { serverTools: hosted.tools } : {}),
+      ...(serverTools.length > 0 ? { serverTools } : {}),
+      ...(toolsUnknown ? unavailable('serverTools') : {}),
       ...(stated ? { modalities: stated.modalities } : {}),
       ...(cap ? { maxOutput: cap.value } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),

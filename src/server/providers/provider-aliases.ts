@@ -214,7 +214,8 @@ function deprecationsUrl(overview: string): string | null {
   return match[0].endsWith('.md') ? match[0] : `${match[0]}.md`
 }
 
-async function fetchOptional(url: string): Promise<string | null> {
+/** The page, or null when the server answers 404. Any other failure throws. */
+export async function fetchOptional(url: string): Promise<string | null> {
   const response = await fetch(url)
   if (response.status === 404) return null
   if (!response.ok) {

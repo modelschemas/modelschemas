@@ -17,15 +17,20 @@ import {
   NO_FACTS,
   assertParsed,
   cachedDocs,
+  docsReport,
+  docsRun,
   mapConcurrent,
   markdownSection,
   markdownTableRows,
   tokenCount,
+  tryDocs,
+  unavailable,
 } from './model-facts.ts'
-import type { ModelFacts } from './model-facts.ts'
+import type { DocsRun, ModelFacts } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   ModelReasoning,
   OpenApiDocument,
   ProviderConfig,
@@ -121,12 +126,52 @@ function listingMaxOutput(m: GrokExtrasModel): number | null {
   return null
 }
 
+/** Server-side tool ids (the "Tool Invocation Costs" table). */
+export const GROK_PRICING_DOC_URL = 'https://docs.x.ai/developers/pricing.md'
+/** Names the models that run server-side tools ("Agentic models only"). */
+export const GROK_FILES_DOC_URL = 'https://docs.x.ai/developers/files.md'
+
 /**
- * xAI publishes no per-model tool type list (issue #123). A capabilities
- * page that mentions search still does not name `tools[].type` ids.
+ * Server-side tool type ids from the pricing page's "Tool Invocation Costs"
+ * table: the first backticked id of each row's Tool Name cell (later ones
+ * are aliases). A row whose description carries the `*` footnote (a
+ * sub-tool of search) or names no id (MCP, "Set by MCP server") adds none.
+ * No table, or a table that yields no id, throws.
  */
-export function grokServerTools(_markdown: string): null {
-  return null
+export function parseGrokServerTools(markdown: string): Array<string> {
+  const section = markdown.split(/^### Tool Invocation Costs$/m)[1]
+  const table = section?.split(/^#{2,3} /m)[0] ?? ''
+  const rows = markdownTableRows(table)
+  const header = rows[0] ?? []
+  const nameAt = header.findIndex((cell) => /^tool name$/i.test(cell.trim()))
+  const descAt = header.findIndex((cell) => /^description$/i.test(cell.trim()))
+  if (nameAt < 0 || descAt < 0) {
+    throw new Error('xai pricing page: no Tool Invocation Costs table')
+  }
+  const tools = rows.slice(1).flatMap((row) => {
+    if (/\\\*|\*$/.test(row[descAt]?.trim() ?? '')) return []
+    const id = /^`([a-z][a-z0-9_]*)`/.exec(row[nameAt]?.trim() ?? '')?.[1]
+    return id ? [id] : []
+  })
+  if (tools.length === 0) {
+    throw new Error('xai pricing page: Tool Invocation Costs names no tool')
+  }
+  return [...new Set(tools)]
+}
+
+/**
+ * Model ids the files page names as able to run server-side tools: the
+ * "**Agentic models only**" bullet's backticked list. Missing, it throws.
+ */
+export function parseGrokAgenticModels(markdown: string): Array<string> {
+  const line = /^\* \*\*Agentic models only\*\*:(.*)$/m.exec(markdown)?.[1]
+  const ids = [...(line ?? '').matchAll(/`([a-z0-9][a-z0-9.-]*)`/g)].map(
+    (match) => match[1] ?? '',
+  )
+  if (ids.length === 0) {
+    throw new Error('xai files page: no Agentic models only list')
+  }
+  return ids
 }
 
 /**
@@ -394,13 +439,40 @@ export function parseGrokContextWindows(markdown: string): Map<string, number> {
   return out
 }
 
+interface GrokHostedTools {
+  tools: Array<string>
+  models: Array<string>
+  hash: string
+}
+
+/** Both pages, or null (a failure is in `docsFailures`). */
+function grokHostedTools(
+  kv: KVNamespace | undefined,
+  run: DocsRun,
+): Promise<GrokHostedTools | null> {
+  return tryDocs(run, GROK_FILES_DOC_URL, (cached) =>
+    cached(kv, GROK_FILES_DOC_URL, async () => {
+      const [pricing, files] = await Promise.all([
+        fetchText(GROK_PRICING_DOC_URL),
+        fetchText(GROK_FILES_DOC_URL),
+      ])
+      return {
+        tools: parseGrokServerTools(pricing),
+        models: parseGrokAgenticModels(files),
+        hash: await sha256Text(files),
+      }
+    }),
+  )
+}
+
 async function grokModelFacts(
   headers: HeadersInit,
   kv: KVNamespace | undefined,
-): Promise<(rawId: string) => ModelFacts> {
+  run: DocsRun,
+): Promise<(rawId: string) => ModelFacts & Pick<ModelInfo, 'absent'>> {
   const extras = (url: string) =>
     fetchJson(url, { headers }) as Promise<{ models?: Array<GrokExtrasModel> }>
-  const [language, image, video, docs] = await Promise.all([
+  const [language, image, video, docs, hosted] = await Promise.all([
     extras(GROK_LANGUAGE_MODELS_URL),
     extras(GROK_IMAGE_MODELS_URL),
     extras(GROK_VIDEO_MODELS_URL),
@@ -413,6 +485,7 @@ async function grokModelFacts(
         videoPerSecond: Object.fromEntries(parseGrokVideoPrices(markdown)),
       }
     }),
+    grokHostedTools(kv, run),
   ])
   const byId = new Map<string, GrokExtrasModel>()
   const listedAt = new Map<string, string>()
@@ -489,6 +562,13 @@ async function grokModelFacts(
       pricing: cards.get(rawId) ?? null,
       reasoning: page?.value ?? null,
     }
+    // Only a language model the files page names (by id or alias) runs
+    // the server-side tools; any other row is left unknown.
+    const agentic =
+      hosted !== null &&
+      language.models?.includes(m) === true &&
+      [m.id, ...(m.aliases ?? [])].some((id) => hosted.models.includes(id))
+    if (agentic) facts.serverTools = hosted.tools
     const sources: ModelFacts['factSources'] = {}
     if (modalities) {
       // No `file`: xAI reads attached files through the `attachment_search`
@@ -541,7 +621,21 @@ async function grokModelFacts(
         },
       }
     }
+    if (agentic) {
+      sources.serverTools = Object.fromEntries(
+        hosted.tools.map((tool) => [
+          tool,
+          {
+            derivation: 'docs-derived' as const,
+            sourceUrl: GROK_FILES_DOC_URL,
+            sourceHash: hosted.hash,
+            path: `Agentic models only; tool id from ${GROK_PRICING_DOC_URL} Tool Invocation Costs`,
+          },
+        ]),
+      )
+    }
     if (Object.keys(sources).length > 0) facts.factSources = sources
+    if (hosted === null) return { ...facts, ...unavailable('serverTools') }
     return facts
   }
 }
@@ -555,9 +649,10 @@ async function listModels(
     return { models: [], ...skippedResult('grok', 'XAI_API_KEY') }
   }
   const headers = { Authorization: `Bearer ${key}` }
+  const run = docsRun()
   const [body, facts] = await Promise.all([
     fetchJson(GROK_MODELS_URL, { headers }) as Promise<GrokModelList>,
-    grokModelFacts(headers, kv),
+    grokModelFacts(headers, kv, run),
   ])
   return {
     models: (body.data ?? []).map((m) => ({
@@ -567,6 +662,7 @@ async function listModels(
       releasedAt: m.created ?? null,
       ...facts(m.id),
     })),
+    docsFailures: docsReport(run),
   }
 }
 

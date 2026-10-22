@@ -28,6 +28,7 @@ import {
   tryDocs,
   unavailable,
 } from './model-facts.ts'
+import { fetchOptional } from './provider-aliases.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type {
   DocsFailures,
@@ -40,6 +41,7 @@ import type {
 
 export const GEMINI_MODELS_INDEX_URL =
   'https://ai.google.dev/gemini-api/docs/models.md.txt'
+const GEMINI_MODEL_PAGE_BASE = 'https://ai.google.dev/gemini-api/docs/models/'
 export const GEMINI_THINKING_URL =
   'https://ai.google.dev/gemini-api/docs/generate-content/thinking.md.txt'
 
@@ -542,14 +544,32 @@ export async function geminiModelFeatures(
     const slug = modelSlug(doc.url)
     return slug ? [slug] : []
   })
-  const needed = index.filter((doc) => rawIds.some((id) => docMatches(id, doc)))
+  // Google serves some model pages the index does not link (gemini-3.5-flash,
+  // #409). A listed id no index page covers is looked up at its own
+  // `/models/{id}` path. A 404 there is no page. Such a page names no ids
+  // for the index, so only the model codes it states bind.
+  const unindexed: Array<GeminiIndexDoc> = rawIds
+    .filter(
+      (id) =>
+        /^[a-z0-9][a-z0-9.-]*$/.test(id) &&
+        !index.some((doc) => docMatches(id, doc)),
+    )
+    .map((id) => ({ url: `${GEMINI_MODEL_PAGE_BASE}${id}`, ids: [] }))
+  const docs = [...index, ...unindexed]
+  const needed = [
+    ...index.filter((doc) => rawIds.some((id) => docMatches(id, doc))),
+    ...unindexed,
+  ]
   const run = docsRun()
   const pages = await mapConcurrent(needed, 8, (doc) => {
     const url = pageUrl(doc.url)
+    const optional = unindexed.includes(doc)
     return tryDocs(run, url, (cached) =>
       cached(kv, url, async () => {
-        const markdown = await fetchText(url)
-        const sections = parsePageSections(markdown)
+        const markdown = optional
+          ? ((await fetchOptional(url)) ?? '')
+          : await fetchText(url)
+        const sections = markdown === '' ? [] : parsePageSections(markdown)
         const named = sections.filter((section) => section.ids.length > 0)
         return {
           url,
@@ -634,7 +654,7 @@ export async function geminiModelFeatures(
         path: 'Thinking; exact native audio model; thinkingBudget disables at zero',
       }
     }
-    const failed = index
+    const failed = docs
       .filter((doc) => docMatches(rawId, doc))
       .some((doc) => !loadedUrls.has(pageUrl(doc.url)))
     if (failed) {

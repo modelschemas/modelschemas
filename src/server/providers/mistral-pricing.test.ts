@@ -6,6 +6,7 @@ import {
   copyMistralAliasFacts,
   indexMistralApiIds,
   indexMistralModalities,
+  mistralConversationTools,
   mistralIndexSlugFor,
   mistralModelPricing,
   mistralRateCard,
@@ -769,5 +770,26 @@ describe('mistral model page features', () => {
     expect(withDocumentInput(text, ['function-calling'])).toBe(text)
     expect(withDocumentInput(text, null)).toBe(text)
     expect(withDocumentInput(null, ['document-qna'])).toBeNull()
+  })
+})
+
+describe('mistral conversation tools', () => {
+  const accepted = ['code_interpreter', 'connector', 'web_search']
+
+  it('gives the Conversations tools to a page that lists agents-conversations', () => {
+    expect(
+      mistralConversationTools(
+        ['agents-conversations', 'connectors'],
+        accepted,
+      ),
+    ).toEqual(accepted)
+    // `connector` needs the page's own `connectors` feature.
+    expect(
+      mistralConversationTools(['agents-conversations'], accepted),
+    ).toEqual(['code_interpreter', 'web_search'])
+    expect(
+      mistralConversationTools(['chat-completions', 'connectors'], accepted),
+    ).toEqual([])
+    expect(mistralConversationTools(null, accepted)).toEqual([])
   })
 })
