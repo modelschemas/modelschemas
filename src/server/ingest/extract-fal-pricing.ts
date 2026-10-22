@@ -8,7 +8,11 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
-import { rateCardSchema, verifyExamples } from '@modelschemas/rate-card'
+import {
+  cardParams,
+  rateCardSchema,
+  verifyExamples,
+} from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { cacheMeta, changes, models, schemaVersions } from '#/db/schema.ts'
@@ -251,6 +255,7 @@ Return JSON only: {"inputs": {...}, "tables": {...}, "price": <JSONLogic>, "exam
 inputs: name → {"param": <field>, "kind": "number"|"enum"|"boolean"|"count", "bound": "request"|"usage", "default"?: ..., "values"?: [...] (enum only)}.
 - A request-bound param MUST be one of the allowed request properties (or a dotted child of one). Give it a default when the request may omit it.
 - A quantity the request cannot state (seconds of output, megapixels, characters, tokens) is "bound": "usage" — never invent a request field.
+- So is a priced choice no allowed property sets (an output resolution the request has no field for): a "bound": "usage" enum the caller states, with no default.
 tables: name → nested {key: number}, read with {"lookup": {"table": name, "keys": [{"var": input}]}}.
 price: JSONLogic over var, +, -, *, /, max, min, if, ==, !=, <, <=, >, >=, and, or, ceil, floor, lookup. {"var": x} reads the input named x. "==" is strict: compare enum inputs to strings.
 examples: [{"params": {param: value}, "usd": number, "quote": text copied verbatim from the section}]. The card is rejected unless evaluating price on each example's params reproduces usd within 1%.
@@ -325,6 +330,20 @@ export function checkExtractedCard(
     return {
       error:
         'a request-bound input param is not an allowed request property; bind it to an allowed property or make it "bound": "usage"',
+    }
+  }
+  // A usage-bound choice (output resolution) is the caller's to state; a
+  // default would price a guess (#304). Number defaults (an add-on's 0)
+  // stay legal, as on compiled token cards.
+  const usageDefaults = Object.entries(card.inputs)
+    .filter(
+      ([, input]) =>
+        input.bound === 'usage' && input.kind === 'enum' && 'default' in input,
+    )
+    .map(([name]) => name)
+  if (usageDefaults.length > 0) {
+    return {
+      error: `usage-bound enums have a default (${usageDefaults.join(', ')}); the caller states them — remove the default`,
     }
   }
   const failed = verifyExamples(card).filter((result) => !result.ok)
@@ -690,8 +709,15 @@ async function extractFalPricingScoped(
 
     // Cards already stored against a Pricing-section hash — reused across
     // rows in this run and across nights, so the model is never asked
-    // twice for the same text.
-    const byHash = new Map<string, RateCard>()
+    // twice for the same text. Several per hash: endpoints sharing one
+    // section can have different request schemas (#304), and a card is only
+    // copied onto a row whose schema has every request param it binds.
+    const byHash = new Map<string, Array<RateCard>>()
+    const remember = (hash: string, card: RateCard): void => {
+      const cards = byHash.get(hash)
+      if (cards) cards.push(card)
+      else byHash.set(hash, [card])
+    }
     for (const row of candidates) {
       const card = parseStoredRateCard(row.pricing)
       // A promo card past its expiresAt must be re-read, not copied on.
@@ -700,7 +726,7 @@ async function extractFalPricingScoped(
       if (expiresAt !== undefined && Date.parse(expiresAt) <= now * 1000) {
         continue
       }
-      byHash.set(card.source.hash, card)
+      remember(card.source.hash, card)
     }
 
     const requestPropertiesOf = (candidate: Candidate): ReadonlySet<string> =>
@@ -854,7 +880,16 @@ async function extractFalPricingScoped(
         continue
       }
 
-      const known = byHash.get(sectionHash)
+      // Of the cards that fit, the one reading the most from the request:
+      // a sibling's usage-bound `resolution` must not shadow this row's
+      // request field.
+      const known = (byHash.get(sectionHash) ?? [])
+        .filter((card) =>
+          cardRequestParamsOk(card, requestPropertiesOf(candidate)),
+        )
+        .sort(
+          (a, b) => cardParams(b).request.length - cardParams(a).request.length,
+        )[0]
       if (known) {
         outcome.deduped++
         await applyCard(candidate, known, sourceUrl, sectionHash)
@@ -873,7 +908,7 @@ async function extractFalPricingScoped(
       )
       if (compiled) {
         outcome.compiled++
-        byHash.set(sectionHash, compiled)
+        remember(sectionHash, compiled)
         await applyCard(candidate, compiled, sourceUrl, sectionHash)
         mark()
         continue
@@ -945,11 +980,16 @@ async function extractFalPricingScoped(
         }
         const card = result === undefined || 'error' in result ? null : result
         if (result !== undefined && 'error' in result) reasons.add(result.error)
-        if (card) byHash.set(hash, card)
+        if (card) remember(hash, card)
         for (const row of group.rows) {
           const sourceUrl = falLlmsTxtUrl(row.rawId)
           if (card && (await applyCard(row, card, sourceUrl, hash))) {
             continue
+          }
+          if (card) {
+            reasons.add(
+              `card extracted for ${(group.rows[0] as Candidate).rawId} refused for ${row.rawId}`,
+            )
           }
           if (!card) {
             outcome.refused++

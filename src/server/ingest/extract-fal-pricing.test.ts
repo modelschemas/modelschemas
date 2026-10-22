@@ -502,6 +502,53 @@ For more details, see [fal.ai pricing](https://fal.ai/pricing).`
     })
   })
 
+  // #304: live grok-4-fast reply for xai/grok-imagine-video/extend-video,
+  // whose request has no resolution field.
+  it('refuses a usage-bound input with a default', () => {
+    const reply = {
+      inputs: {
+        resolution: {
+          param: 'resolution',
+          bound: 'usage',
+          kind: 'enum',
+          values: ['480p', '720p'],
+          default: '480p',
+        },
+        seconds: { param: 'seconds', bound: 'usage', kind: 'number' },
+      },
+      tables: { rate: { '480p': 0.05, '720p': 0.07 } },
+      price: {
+        '*': [
+          { var: 'seconds' },
+          { lookup: { table: 'rate', keys: [{ var: 'resolution' }] } },
+        ],
+      },
+      examples: [
+        {
+          params: { resolution: '480p', seconds: 1 },
+          usd: 0.05,
+          quote: 'Cost is **$0.05** per second of 480p output video',
+        },
+      ],
+    }
+    const pricingText =
+      '## Pricing\n\nCost is **$0.05** per second of 480p output video (**$0.07** at 720p).'
+    const refused = checkExtractedCard(JSON.stringify(reply), {
+      ...base,
+      requestProperties: new Set(['prompt']),
+      pricingText,
+    })
+    expect(
+      typeof refused === 'object' && 'error' in refused && refused.error,
+    ).toContain('usage-bound enums have a default (resolution)')
+    const { default: _default, ...resolution } = reply.inputs.resolution
+    const card = checkExtractedCard(
+      JSON.stringify({ ...reply, inputs: { ...reply.inputs, resolution } }),
+      { ...base, requestProperties: new Set(['prompt']), pricingText },
+    )
+    expect(typeof card === 'object' && 'inputs' in card).toBe(true)
+  })
+
   it('refuses unverified for the table but allows it for a zero-price stub', () => {
     const refused = checkExtractedCard('{"unverified":true}', {
       ...base,
