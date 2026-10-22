@@ -153,6 +153,9 @@ function fragment(
   if (cell === '' || /^(not available|free of charge)$/i.test(cell)) return []
   // Cache storage is quoted per token-hour, not per request.
   if (/per hour|storage price/i.test(cell)) return []
+  // "Implicit caching only (explicit caching is not supported)." scopes the
+  // caching rate above it and quotes no amount.
+  if (!first && /^implicit caching only\b[^$]*$/i.test(cell)) return []
   // A price in a unit other than the column's tokens: after the first
   // fragment it restates the token rate ("Equivalent to $0.134 per 1K/2K
   // image", "and $0.24 per 4K image"); as the first, it *is* the price and
