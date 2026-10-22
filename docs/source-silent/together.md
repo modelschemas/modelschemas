@@ -48,3 +48,11 @@
 - together/google/gemma-4-26B-A4B-it: reasoning — Own native supported-models metadata publishes reasoning capability, while the host reasoning guide and model-specific hosted quickstarts do not publish a caller mode for this exact hosted ID; sibling or maker controls are not copied, https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-09
 - together/moonshotai/Kimi-K2.6: reasoning — Own native supported-models metadata publishes reasoning capability, while the host reasoning guide and model-specific hosted quickstarts do not publish a caller mode for this exact hosted ID; sibling or maker controls are not copied, https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-09
 - together/moonshotai/Kimi-K2.7-Code: reasoning — Own native supported-models metadata publishes reasoning capability, while the host reasoning guide and model-specific hosted quickstarts do not publish a caller mode for this exact hosted ID; sibling or maker controls are not copied, https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-09
+
+- `together/deepseek-ai/DeepSeek-V4.1-Flash-1017`: reasoning — The listing flags reasoning, but neither the reasoning guide nor any model quickstart names this id or a control for it (#323), https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-22
+
+- `together/meta-models/Muse-Spark-Open-816B-A42B`: reasoning — The listing flags reasoning, but neither the reasoning guide nor any model quickstart names this id or a control for it (#323), https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-22
+
+- `together/nvidia/NVIDIA-Nemotron-3.5-Super-VL`: reasoning — The listing flags reasoning, but neither the reasoning guide nor any model quickstart names this id or a control for it (#323), https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-22
+
+- `together/reflection/Beam-1.0-501B-A23B`: reasoning — The listing flags reasoning, but neither the reasoning guide nor any model quickstart names this id or a control for it (#323), https://docs.together.ai/docs/inference/chat/reasoning.md, checked 2026-10-22
