@@ -11,6 +11,7 @@ import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 import type { CapabilityMap } from '#/lib/capabilities.ts'
 import type { PricingRange } from '#/server/rate-card.ts'
+import type { ModelDeprecation } from '#/server/providers/types.ts'
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -358,6 +359,7 @@ export const changeTypes = [
   'model.removed',
   'model.updated',
   'catalog.shape_changed',
+  'model.deprecated',
   'schema.added',
   'schema.updated',
   'endpoint.added',
@@ -465,6 +467,12 @@ export const models = sqliteTable(
     firstSeenAt: integer('first_seen_at').notNull(),
     lastSeenAt: integer('last_seen_at').notNull(),
     deprecatedAt: integer('deprecated_at'),
+    // The provider's deprecations page entry (issue #410), as it states it.
+    // Set means deprecatedAt is set too; null = the page names no such row
+    // or this provider has no page we read.
+    deprecation: text('deprecation', {
+      mode: 'json',
+    }).$type<ModelDeprecation | null>(),
   },
   (table) => [
     index('models_providerId_idx').on(table.providerId),

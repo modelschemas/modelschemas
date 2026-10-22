@@ -185,6 +185,7 @@ function toApiModel(
     firstSeenAt: row.firstSeenAt,
     lastSeenAt: row.lastSeenAt,
     deprecatedAt: row.deprecatedAt,
+    deprecation: row.deprecation,
     ...(opts.includeFactSources !== false
       ? {
           factSources: withSourceSilentEvidence(

@@ -31,6 +31,7 @@ const TYPE_FILTERS: Array<[string, ChangeType | undefined]> = [
   ['removed models', 'model.removed'],
   ['updated models', 'model.updated'],
   ['row shape', 'catalog.shape_changed'],
+  ['deprecated models', 'model.deprecated'],
 ]
 
 interface ChangeRow {

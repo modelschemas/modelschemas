@@ -19,6 +19,7 @@ const changeTypeEnum = [
   'model.removed',
   'model.updated',
   'catalog.shape_changed',
+  'model.deprecated',
   'schema.added',
   'schema.updated',
   'endpoint.added',
@@ -180,7 +181,38 @@ const modelFields = {
       'The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.',
     type: 'integer',
   },
-  deprecatedAt: { type: ['integer', 'null'] },
+  deprecatedAt: {
+    description:
+      'When the model was deprecated, epoch seconds: the date its provider states (deprecation.deprecatedAt) when stated, otherwise when this service first saw it deprecated or gone from the listing (for a retired model never listed, when its deprecations page entry was first read; that can fall after deprecation.retiresAt). null on a live model.',
+    type: ['integer', 'null'],
+  },
+  deprecation: {
+    description:
+      "The provider's deprecations page entry for this model, exactly as stated: deprecatedAt and retiresAt (shutdown) are epoch seconds at 00:00 UTC of the stated day, null when the page gives none; replacedBy lists the ids the provider recommends instead, null when it names none. null when the provider's page does not list the model or this service reads no such page for the provider. A retired model stays in the catalog (GET /v1/models?deprecated=true); one that was never in a listing has only these facts, and its firstSeenAt and lastSeenAt are when this service first read the entry. Every change to this entry is a model.deprecated change.",
+    oneOf: [
+      {
+        type: 'object',
+        required: [
+          'rawId',
+          'deprecatedAt',
+          'retiresAt',
+          'replacedBy',
+          'sourceUrl',
+        ],
+        properties: {
+          rawId: { type: 'string' },
+          deprecatedAt: { type: ['integer', 'null'] },
+          retiresAt: { type: ['integer', 'null'] },
+          replacedBy: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+          },
+          sourceUrl: { type: 'string' },
+        },
+      },
+      { type: 'null' },
+    ],
+  },
 } as const
 
 /** On every row; factSources is omitted when provenance=0. */
@@ -209,6 +241,7 @@ const modelRequired = [
   'weightsUrl',
   'firstSeenAt',
   'deprecatedAt',
+  'deprecation',
 ] as const
 
 export const openApiDocument = {
@@ -964,7 +997,7 @@ export const openApiDocument = {
                     deprecated: {
                       type: 'integer',
                       description:
-                        'Models no longer listed upstream (GET /v1/models?deprecated=true).',
+                        'Models deprecated by their provider or no longer listed upstream (GET /v1/models?deprecated=true).',
                     },
                     priced: {
                       type: 'integer',

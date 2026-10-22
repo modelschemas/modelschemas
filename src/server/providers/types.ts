@@ -559,6 +559,20 @@ export interface DocsFailures {
   first: Array<DocsFailure>
 }
 
+/**
+ * One entry of a provider deprecations page, as the page states it (issue
+ * #410). Dates are epoch seconds at 00:00 UTC of the stated day; null when
+ * the page states none. `replacedBy` is the ids the provider recommends,
+ * in its order; null when it names none.
+ */
+export interface ModelDeprecation {
+  rawId: string
+  deprecatedAt: number | null
+  retiresAt: number | null
+  replacedBy: Array<string> | null
+  sourceUrl: string
+}
+
 export interface ListModelsResult {
   models: Array<ModelInfo>
   /**
@@ -569,6 +583,13 @@ export interface ListModelsResult {
    * the provider's `docs-failing` record.
    */
   docsFailures?: DocsFailures
+  /**
+   * The provider's deprecations page, read this poll (issue #410). Rows on
+   * it are written deprecated with these facts, listed or not; an id with
+   * no row gets a retired row. Absent when the adapter reads no such page
+   * or the page failed (`tryDocs`): stored deprecation facts are kept.
+   */
+  deprecations?: Array<ModelDeprecation>
   /** Set when the provider was skipped (e.g. missing secret); models will be empty. */
   skipped?: string
 }

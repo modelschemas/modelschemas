@@ -41,6 +41,7 @@ const row: Model = {
   firstSeenAt: 1,
   lastSeenAt: 1,
   deprecatedAt: null,
+  deprecation: null,
   _links: { provider: link, schemas: link },
 }
 

@@ -12,6 +12,11 @@ import {
 import { GROQ_PRICING_URL, groqModelPricing } from '../groq-pricing.ts'
 import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import {
+  GROQ_DEPRECATIONS_URL,
+  loadDeprecations,
+  parseGroqDeprecations,
+} from '../deprecations.ts'
+import {
   groqModelReasoning,
   listsReasoning,
   overlayModelFacts,
@@ -73,6 +78,12 @@ async function listModels(
     groqModelReasoning(kv),
     groqModelServerTools(kv),
   ])
+  const deprecations = await loadDeprecations(
+    docs,
+    kv,
+    GROQ_DEPRECATIONS_URL,
+    parseGroqDeprecations,
+  )
   return {
     ...listed,
     models: listed.models.map((model) =>
@@ -83,6 +94,7 @@ async function listModels(
         tools(model.rawId),
       ),
     ),
+    ...(deprecations ? { deprecations } : {}),
     docsFailures: docsReport(docs),
   }
 }

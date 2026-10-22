@@ -41,9 +41,11 @@ import type {
   DocsFailures,
   ModelFact,
   ModelFactSources,
+  ModelDeprecation,
   ModelInfo,
   ProviderConfig,
 } from '#/server/providers/types.ts'
+import { applyDeprecations, rowDeprecation } from './deprecations.ts'
 import { providerRegistry } from '#/server/providers/index.ts'
 import { storedAliases } from '#/server/providers/provider-aliases.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
@@ -719,6 +721,15 @@ export async function pollProviderModels(
     .from(models)
     .where(eq(models.providerId, provider.id))
   const existingById = new Map(existingRows.map((m) => [m.id, m]))
+  // Row id → deprecations page entry; the first spelling of an id wins.
+  let deprecationIndex: Map<string, ModelDeprecation> | null = null
+  if (listed.deprecations) {
+    deprecationIndex = new Map()
+    for (const entry of listed.deprecations) {
+      const id = modelDbId(provider.id, entry.rawId)
+      if (!deprecationIndex.has(id)) deprecationIndex.set(id, entry)
+    }
+  }
   const listedModels = listed.models.map((info) =>
     resolveAbsent(info, existingById.get(modelDbId(provider.id, info.rawId))),
   )
@@ -853,6 +864,10 @@ export async function pollProviderModels(
       vocabulary,
       now,
     )
+    // On the provider's deprecations page → deprecated (issue #410).
+    if (rowDeprecation(deprecationIndex, id, existing?.deprecation)) {
+      info.deprecated = true
+    }
     const identity =
       info.upstream !== undefined
         ? info.upstream
@@ -1075,6 +1090,9 @@ export async function pollProviderModels(
       createdAt: now,
     })
     outcome.removed++
+  }
+  if (deprecationIndex) {
+    await applyDeprecations(db, provider.id, deprecationIndex, now)
   }
 
   const live = existingRows.filter((row) => row.deprecatedAt === null).length
