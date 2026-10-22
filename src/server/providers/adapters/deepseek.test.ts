@@ -124,6 +124,9 @@ it('sources DeepSeek effort and replay without losing other native capabilities'
       mandatory: null,
       efforts: ['high', 'max'],
     })
+    // A guide that names no model's non-thinking mode changed shape: the
+    // stored `mandatory` is kept rather than overwritten with null.
+    expect(model?.absent?.reasoning).toBe('unavailable')
     expect(model?.capabilities).toEqual(
       expect.arrayContaining(['tools', 'reasoning']),
     )
@@ -136,6 +139,45 @@ it('sources DeepSeek effort and replay without losing other native capabilities'
       DEEPSEEK_THINKING_URL,
     )
     expect(model?.pricing).not.toBeNull()
+  } finally {
+    globalThis.fetch = original
+  }
+})
+
+it('reads mandatory false only for a model whose own top_p bullet names its non-thinking mode', async () => {
+  // Shape of https://api-docs.deepseek.com/guides/thinking_mode/ (2026-10-22).
+  const guide = `${DEEPSEEK_REPLAY_FIXTURE}
+    <p>Thinking mode does not support the temperature parameter. top_p behavior depends on the model:</p>
+    <ul><li><code>deepseek-v4-pro</code>: in thinking mode your value is ignored; in non-thinking mode it takes effect.</li></ul>`
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) => {
+    if (String(url) === DEEPSEEK_THINKING_URL)
+      return Promise.resolve(new Response(guide))
+    if (String(url).includes('api-docs.deepseek.com'))
+      return Promise.resolve(new Response('MODEL\nPRICING\nConcurrency'))
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          data: ['deepseek-v4-pro', 'deepseek-flash'].map((id) => ({
+            id,
+            effort: { supported_levels: ['low', 'high', 'max'] },
+          })),
+        }),
+      ),
+    )
+  }) as typeof fetch
+  try {
+    const [pro, flash] = (
+      await provider.listModels({ DEEPSEEK_API_KEY: 'test-key' })
+    ).models
+    expect(pro?.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: false,
+      efforts: ['low', 'high', 'max'],
+    })
+    expect(pro?.factSources?.reasoning?.sourceUrl).toBe(DEEPSEEK_THINKING_URL)
+    expect(flash?.reasoning?.mandatory).toBeNull()
+    expect(flash?.absent?.reasoning).toBeUndefined()
   } finally {
     globalThis.fetch = original
   }
@@ -232,6 +274,7 @@ it('keeps the poll when the whole docs host serves a page with no table', async 
     expect(model?.absent).toEqual({
       pricing: 'unavailable',
       requestMap: 'unavailable',
+      reasoning: 'unavailable',
     })
     expect(model?.factSources?.requestMapFields).toBeUndefined()
     expect(result.docsFailures?.first.map((failure) => failure.source)).toEqual(

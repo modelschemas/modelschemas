@@ -92,6 +92,20 @@ export function parseDeepseekReplay(text: string): true {
   return true
 }
 
+/**
+ * Models the thinking guide gives a non-thinking mode of their own: the
+ * `top_p` bullet that names the model says what happens "in non-thinking
+ * mode". The toggle table is shared by every model, so it binds none.
+ */
+export function parseDeepseekNonThinking(text: string): Array<string> {
+  const ids = [
+    ...plain(text).matchAll(
+      /\b(deepseek-[a-z0-9.-]*[a-z0-9])\s*:[^:]*?\bin non-thinking mode\b/gi,
+    ),
+  ].map((match) => (match[1] ?? '').toLowerCase())
+  return [...new Set(ids)]
+}
+
 /** Only explicitly named models are bound; no inferred model-family membership. */
 export function parseGlmReplay(text: string): Array<string> {
   const prose = plain(text)
