@@ -151,34 +151,18 @@ describe('novita adapter', () => {
   })
 })
 
-const CHAT_DOC = `
-<ParamField body="messages" type="object[]" required={true}>
-    <ParamField body="role" type="string" required={true}>
-      Enum: \`system\`, \`user\`, \`assistant\`
-    </ParamField>
-</ParamField>
-<ParamField body="max_tokens" type="integer" required={true}>
-</ParamField>
-<ParamField body="temperature" type="number | null">
-</ParamField>
-<ParamField body="top_p" type="number | null">
-</ParamField>
-<ParamField body="top_k" type="integer | null">
-</ParamField>
-<ParamField body="stop" type="string | null">
-</ParamField>
-<ParamField body="seed" type="integer | null">
-</ParamField>
-<ParamField body="frequency_penalty" type="number | null">
-</ParamField>
-<ParamField body="presence_penalty" type="number | null">
-</ParamField>
-<ParamField body="enable_thinking" type="boolean | null">
-  Supported models:
-
-  * zai-org/glm-4.5
-</ParamField>
-`
+const CHAT_DOC = `self.__next_f.push([1,"
+_jsxs(ParamField,{body:\`messages\`,type:\`object[]\`,id:\`param-messages\`,children:[_jsxs(ParamField,{body:\`role\`,type:\`string\`,id:\`param-role\`,children:[_jsxs(_components.p,{children:[\`Enum: \`,_jsx(_components.code,{children:\`system\`}),\`, \`,_jsx(_components.code,{children:\`user\`}),\`, \`,_jsx(_components.code,{children:\`assistant\`})]})]})]}),\`\\n\`,
+_jsx(ParamField,{body:\`max_tokens\`,type:\`integer\`,id:\`param-max_tokens\`}),\`\\n\`,
+_jsx(ParamField,{body:\`temperature\`,type:\`number | null\`,id:\`param-temperature\`}),\`\\n\`,
+_jsx(ParamField,{body:\`top_p\`,type:\`number | null\`,id:\`param-top_p\`}),\`\\n\`,
+_jsx(ParamField,{body:\`top_k\`,type:\`integer | null\`,id:\`param-top_k\`}),\`\\n\`,
+_jsx(ParamField,{body:\`stop\`,type:\`string | null\`,id:\`param-stop\`}),\`\\n\`,
+_jsx(ParamField,{body:\`seed\`,type:\`integer | null\`,id:\`param-seed\`}),\`\\n\`,
+_jsx(ParamField,{body:\`frequency_penalty\`,type:\`number | null\`,id:\`param-frequency_penalty\`}),\`\\n\`,
+_jsx(ParamField,{body:\`presence_penalty\`,type:\`number | null\`,id:\`param-presence_penalty\`}),\`\\n\`,
+_jsxs(ParamField,{body:\`enable_thinking\`,type:\`boolean | null\`,id:\`param-enable_thinking\`,children:[_jsxs(_components.p,{children:[\`Supported models:\`]}),_jsxs(_components.ul,{children:[_jsx(_components.li,{children:_jsx(_components.code,{children:\`zai-org/glm-4.5\`})})]})]})
+"])`
 
 const FAQ = `
 * **moonshotai/kimi-k2-instruct** and **zai-org/glm-4.5-air**: Add \`"enable_thinking": false\` to your request body.

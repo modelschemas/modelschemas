@@ -17,45 +17,20 @@ import type { ModelInfo } from './types.ts'
 const HASH = 'a'.repeat(64)
 const MODELS_URL = 'https://api.novita.ai/openai/v1/models'
 
-/** Excerpt of docs.novita.ai chat-completion markdown, 2026-10-08. */
-const CHAT_DOC = `
-<ParamField body="messages" type="object[]" required={true}>
-    <ParamField body="role" type="string" required={true}>
-      The role of the messages author. One of system, user, or assistant.
-      Enum: \`system\`, \`user\`, \`assistant\`
-    </ParamField>
-</ParamField>
-<ParamField body="max_tokens" type="integer" required={true}>
-</ParamField>
-<ParamField body="temperature" type="number | null" default={1}>
-</ParamField>
-<ParamField body="top_p" type="number | null">
-</ParamField>
-<ParamField body="top_k" type="integer | null">
-</ParamField>
-<ParamField body="stop" type="string | null">
-</ParamField>
-<ParamField body="seed" type="integer | null">
-</ParamField>
-<ParamField body="frequency_penalty" type="number | null" default={0}>
-</ParamField>
-<ParamField body="presence_penalty" type="number | null" default={0}>
-</ParamField>
-<ParamField body="tools" type="object[] | null">
-    <ParamField body="type" type="string" required={true}>
-    </ParamField>
-</ParamField>
-<ParamField body="enable_thinking" type="boolean | null" default={true}>
-  Controls the switches between thinking and non-thinking modes.
-
-  Supported models:
-
-  * zai-org/glm-4.5
-  * deepseek/deepseek-v3.1
-  * deepseek/deepseek-v3.1-terminus
-  * deepseek/deepseek-v3.2-exp
-</ParamField>
-`
+/** Compiled MDX excerpt of the docs.novita.ai chat-completion page, 2026-10-21. */
+const CHAT_DOC = `self.__next_f.push([1,"
+_jsxs(ParamField,{body:\`messages\`,type:\`object[]\`,id:\`param-messages\`,children:[_jsxs(ParamField,{body:\`role\`,type:\`string\`,id:\`param-role\`,children:[_jsxs(_components.p,{children:[\`The role of the messages author. One of system, user, or assistant.\`]}),_jsxs(_components.p,{children:[\`Enum: \`,_jsx(_components.code,{children:\`system\`}),\`, \`,_jsx(_components.code,{children:\`user\`}),\`, \`,_jsx(_components.code,{children:\`assistant\`})]})]})]}),\`\\n\`,
+_jsx(ParamField,{body:\`max_tokens\`,type:\`integer\`,id:\`param-max_tokens\`}),\`\\n\`,
+_jsx(ParamField,{body:\`temperature\`,type:\`number | null\`,id:\`param-temperature\`}),\`\\n\`,
+_jsx(ParamField,{body:\`top_p\`,type:\`number | null\`,id:\`param-top_p\`}),\`\\n\`,
+_jsx(ParamField,{body:\`top_k\`,type:\`integer | null\`,id:\`param-top_k\`}),\`\\n\`,
+_jsx(ParamField,{body:\`stop\`,type:\`string | null\`,id:\`param-stop\`}),\`\\n\`,
+_jsx(ParamField,{body:\`seed\`,type:\`integer | null\`,id:\`param-seed\`}),\`\\n\`,
+_jsx(ParamField,{body:\`frequency_penalty\`,type:\`number | null\`,id:\`param-frequency_penalty\`}),\`\\n\`,
+_jsx(ParamField,{body:\`presence_penalty\`,type:\`number | null\`,id:\`param-presence_penalty\`}),\`\\n\`,
+_jsxs(ParamField,{body:\`tools\`,type:\`object[] | null\`,id:\`param-tools\`,children:[_jsx(ParamField,{body:\`type\`,type:\`string\`,id:\`param-type\`})]}),\`\\n\`,
+_jsxs(ParamField,{body:\`enable_thinking\`,type:\`boolean | null\`,id:\`param-enable_thinking\`,children:[_jsxs(_components.p,{children:[\`Controls the switches between thinking and non-thinking modes.\`]}),_jsxs(_components.p,{children:[\`Supported models:\`]}),_jsxs(_components.ul,{children:[_jsx(_components.li,{children:_jsx(_components.code,{children:\`zai-org/glm-4.5\`})}),_jsx(_components.li,{children:_jsx(_components.code,{children:\`deepseek/deepseek-v3.1\`})}),_jsx(_components.li,{children:_jsx(_components.code,{children:\`deepseek/deepseek-v3.1-terminus\`})}),_jsx(_components.li,{children:_jsx(_components.code,{children:\`deepseek/deepseek-v3.2-exp\`})})]})]})
+"])`
 
 /** Excerpt of docs.novita.ai/guides/LLM-FAQ.md, 2026-10-08. */
 const FAQ = `
@@ -182,6 +157,18 @@ const QWEN3_MAX_TIERS = [
   },
 ]
 
+// The live enable_thinking field, 2026-10-21: ids in its prose are examples, not a list.
+const LIVE_THINKING_FIELD = `_jsxs(ParamField,{body:\`enable_thinking\`,type:\`boolean | null\`,default:true,id:\`param-enable-thinking\`,children:[_jsxs(_components.p,{children:[\`Turns thinking (reasoning) on or off for this request. Set to \`,_jsx(_components.code,{children:\`false\`}),\` to make the model answer directly without producing reasoning tokens.\`]}),_jsxs(_components.p,{children:[\`Only applies to hybrid reasoning models that support switching thinking off, for example \`,_jsx(_components.code,{children:\`moonshotai/kimi-k2.5\`}),\` and \`,_jsx(_components.code,{children:\`qwen/qwen3.8-flash\`}),\`. Models whose reasoning is always on, such as \`,_jsx(_components.code,{children:\`zai-org/glm-5.3\`}),\`, ignore this parameter. Check the model page on \`,_jsx(_components.a,{href:\`https://novita.ai/models\`,children:\`novita.ai/models\`}),\` for the model’s reasoning behavior.\`]})]})`
+
+function withThinkingField(text: string): string {
+  return (
+    CHAT_DOC.slice(
+      0,
+      CHAT_DOC.indexOf('_jsxs(ParamField,{body:`enable_thinking'),
+    ) + text
+  )
+}
+
 function perMillion(card: RateCard, tokens: number): number {
   return (
     (price(card, {}, { input_tokens: tokens, output_tokens: 0 }) * 1e6) / tokens
@@ -211,24 +198,51 @@ describe('novita chat doc', () => {
     ])
   })
 
-  it('treats enable_thinking with no model list as unrestricted', () => {
-    const doc = parseNovitaChatDoc(
-      CHAT_DOC.replace(
-        /Supported models:[\s\S]*<\/ParamField>/,
-        '</ParamField>',
-      ),
+  it('names no ids when enable_thinking has no model list', () => {
+    const live = parseNovitaChatDoc(
+      withThinkingField(LIVE_THINKING_FIELD),
       HASH,
     )
-    expect(doc.enableThinkingIds).toBeNull()
+    expect(live.enableThinkingIds).toEqual([])
+    expect(live.enableThinkingFollowsClose).toBe(true)
+    expect(
+      parseNovitaChatDoc(
+        withThinkingField(
+          LIVE_THINKING_FIELD.replace('Only applies to', 'Applies only to'),
+        ),
+        HASH,
+      ).enableThinkingIds,
+    ).toEqual([])
+    expect(parseNovitaChatDoc(CHAT_DOC, HASH).enableThinkingFollowsClose).toBe(
+      false,
+    )
+    expect(() =>
+      parseNovitaChatDoc(
+        withThinkingField(
+          LIVE_THINKING_FIELD.replace(
+            'support switching thinking off',
+            'can turn thinking off',
+          ),
+        ),
+        HASH,
+      ),
+    ).toThrow(/neither a model list nor the switch-off rule/)
+  })
+
+  it('does not read a nested max_tokens as the top-level field', () => {
+    const nested = CHAT_DOC.replace(
+      'body:`max_tokens`',
+      'body:`max_completion_tokens`',
+    ).replace('body:`type`', 'body:`max_tokens`')
+    expect(() => parseNovitaChatDoc(nested, HASH)).toThrow(
+      /max_tokens is missing/,
+    )
   })
 
   it('throws when the spec names no ids or drops max_tokens', () => {
     expect(() =>
       parseNovitaChatDoc(
-        CHAT_DOC.replace(
-          /\* zai-org[\s\S]*\* deepseek\/deepseek-v3\.2-exp/,
-          '',
-        ),
+        CHAT_DOC.replace(/_jsx\(_components\.li[\s\S]*?\}\)\}\)/g, ''),
         HASH,
       ),
     ).toThrow(/lists no models/)
@@ -493,6 +507,39 @@ describe('applyNovitaDocs', () => {
     expect(disabled.capabilities).not.toContain('structured_outputs')
   })
 
+  it('sends enable_thinking where the catalog states close, once the spec defers to it', () => {
+    const live = parseNovitaChatDoc(
+      withThinkingField(LIVE_THINKING_FIELD),
+      HASH,
+    )
+    // zai-org/glm-4.5-air is in no list here; the catalog states close: true.
+    const switchable = applied(chatModel({ rawId: 'zai-org/glm-4.5-air' }), {
+      chat: live,
+      faqIds: [],
+    })
+    expect(switchable.requestMap?.thinking).toEqual({
+      on: { enable_thinking: true },
+      off: { enable_thinking: false },
+      levels: null,
+    })
+    // close: false is always-on reasoning, which the spec says ignores it.
+    const locked = applied(chatModel({ rawId: 'zai-org/glm-5.3' }), {
+      chat: live,
+      faqIds: [],
+    })
+    expect(locked.requestMap?.thinking).toBeNull()
+    // A spec that does not defer to the catalog names only its own list.
+    const listOnly = applied(chatModel({ rawId: 'zai-org/glm-4.5-air' }), {
+      faqIds: [],
+    })
+    expect(listOnly.requestMap?.thinking).toBeNull()
+    const noCatalog = applied(chatModel({ rawId: 'zai-org/glm-4.5-air' }), {
+      chat: live,
+      product: null,
+    })
+    expect(noCatalog.absent?.requestMap).toBe('unavailable')
+  })
+
   it('keeps a stored fact when its source fails and skips non-chat rows', () => {
     const kept = applied(
       chatModel({ rawId: 'zai-org/glm-4.5-air', capabilities: ['tools'] }),
@@ -504,6 +551,12 @@ describe('applyNovitaDocs', () => {
     })
     expect(kept.requestMap).toBeUndefined()
     expect(kept.capabilities).toEqual(['tools'])
+
+    const noFaq = applied(
+      chatModel({ rawId: 'zai-org/glm-4.5-air', capabilities: ['tools'] }),
+      { faqIds: null },
+    )
+    expect(noFaq.absent?.requestMap).toBe('unavailable')
 
     const image = applied({ rawId: 'pic', activity: 'image' })
     expect(image.requestMap).toBeUndefined()
