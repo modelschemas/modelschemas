@@ -184,6 +184,12 @@ describe('cerebras model pages', () => {
     expect(cerebrasCatalogRows(CEREBRAS_CATALOG)).toEqual([
       { slug: 'openai-oss', id: 'gpt-oss-120b' },
     ])
+    // As of 2026-10-22 the catalog links the .md export (issue #437).
+    expect(
+      cerebrasCatalogRows(
+        '| [Qwen 3.8 27B](/models/qwen-3.8-27b.md) | `qwen-3.8-27b` | 27 billion |',
+      ),
+    ).toEqual([{ slug: 'qwen-3.8-27b', id: 'qwen-3.8-27b' }])
     const facts = parseCerebrasModelPage(CEREBRAS_PAGE)
     expect(facts?.inputPerMillion).toBe(0.35)
     expect(facts?.outputPerMillion).toBe(0.75)
