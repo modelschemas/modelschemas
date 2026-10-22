@@ -157,6 +157,18 @@ const QWEN3_MAX_TIERS = [
   },
 ]
 
+// The live enable_thinking field, 2026-10-21: ids in its prose are examples, not a list.
+const LIVE_THINKING_FIELD = `_jsxs(ParamField,{body:\`enable_thinking\`,type:\`boolean | null\`,default:true,id:\`param-enable-thinking\`,children:[_jsxs(_components.p,{children:[\`Turns thinking (reasoning) on or off for this request. Set to \`,_jsx(_components.code,{children:\`false\`}),\` to make the model answer directly without producing reasoning tokens.\`]}),_jsxs(_components.p,{children:[\`Only applies to hybrid reasoning models that support switching thinking off, for example \`,_jsx(_components.code,{children:\`moonshotai/kimi-k2.5\`}),\` and \`,_jsx(_components.code,{children:\`qwen/qwen3.8-flash\`}),\`. Models whose reasoning is always on, such as \`,_jsx(_components.code,{children:\`zai-org/glm-5.3\`}),\`, ignore this parameter. Check the model page on \`,_jsx(_components.a,{href:\`https://novita.ai/models\`,children:\`novita.ai/models\`}),\` for the model’s reasoning behavior.\`]})]})`
+
+function withThinkingField(text: string): string {
+  return (
+    CHAT_DOC.slice(
+      0,
+      CHAT_DOC.indexOf('_jsxs(ParamField,{body:`enable_thinking'),
+    ) + text
+  )
+}
+
 function perMillion(card: RateCard, tokens: number): number {
   return (
     (price(card, {}, { input_tokens: tokens, output_tokens: 0 }) * 1e6) / tokens
@@ -187,22 +199,23 @@ describe('novita chat doc', () => {
   })
 
   it('names no ids when enable_thinking has no model list', () => {
-    // The live field, 2026-10-21: ids in its prose are examples, not a list.
-    const field = `_jsxs(ParamField,{body:\`enable_thinking\`,type:\`boolean | null\`,default:true,id:\`param-enable-thinking\`,children:[_jsxs(_components.p,{children:[\`Turns thinking (reasoning) on or off for this request. Set to \`,_jsx(_components.code,{children:\`false\`}),\` to make the model answer directly without producing reasoning tokens.\`]}),_jsxs(_components.p,{children:[\`Only applies to hybrid reasoning models that support switching thinking off, for example \`,_jsx(_components.code,{children:\`moonshotai/kimi-k2.5\`}),\` and \`,_jsx(_components.code,{children:\`qwen/qwen3.8-flash\`}),\`. Models whose reasoning is always on, such as \`,_jsx(_components.code,{children:\`zai-org/glm-5.3\`}),\`, ignore this parameter. Check the model page on \`,_jsx(_components.a,{href:\`https://novita.ai/models\`,children:\`novita.ai/models\`}),\` for the model’s reasoning behavior.\`]})]})`
-    const withField = (text: string) =>
-      CHAT_DOC.slice(
-        0,
-        CHAT_DOC.indexOf('_jsxs(ParamField,{body:`enable_thinking'),
-      ) + text
-    expect(
-      parseNovitaChatDoc(withField(field), HASH).enableThinkingIds,
-    ).toEqual([])
+    const live = parseNovitaChatDoc(
+      withThinkingField(LIVE_THINKING_FIELD),
+      HASH,
+    )
+    expect(live.enableThinkingIds).toEqual([])
+    expect(live.enableThinkingFollowsClose).toBe(true)
     expect(
       parseNovitaChatDoc(
-        withField(field.replace('Only applies to', 'Applies only to')),
+        withThinkingField(
+          LIVE_THINKING_FIELD.replace('Only applies to', 'Applies only to'),
+        ),
         HASH,
       ).enableThinkingIds,
     ).toEqual([])
+    expect(parseNovitaChatDoc(CHAT_DOC, HASH).enableThinkingFollowsClose).toBe(
+      false,
+    )
   })
 
   it('does not read a nested max_tokens as the top-level field', () => {
@@ -481,6 +494,39 @@ describe('applyNovitaDocs', () => {
     expect(disabled.capabilities).not.toContain('tool_choice')
     expect(disabled.capabilities).not.toContain('response_format')
     expect(disabled.capabilities).not.toContain('structured_outputs')
+  })
+
+  it('sends enable_thinking where the catalog states close, once the spec defers to it', () => {
+    const live = parseNovitaChatDoc(
+      withThinkingField(LIVE_THINKING_FIELD),
+      HASH,
+    )
+    // zai-org/glm-4.5-air is in no list here; the catalog states close: true.
+    const switchable = applied(chatModel({ rawId: 'zai-org/glm-4.5-air' }), {
+      chat: live,
+      faqIds: [],
+    })
+    expect(switchable.requestMap?.thinking).toEqual({
+      on: { enable_thinking: true },
+      off: { enable_thinking: false },
+      levels: null,
+    })
+    // close: false is always-on reasoning, which the spec says ignores it.
+    const locked = applied(chatModel({ rawId: 'zai-org/glm-5.3' }), {
+      chat: live,
+      faqIds: [],
+    })
+    expect(locked.requestMap?.thinking).toBeNull()
+    // A spec that does not defer to the catalog names only its own list.
+    const listOnly = applied(chatModel({ rawId: 'zai-org/glm-4.5-air' }), {
+      faqIds: [],
+    })
+    expect(listOnly.requestMap?.thinking).toBeNull()
+    const noCatalog = applied(chatModel({ rawId: 'zai-org/glm-4.5-air' }), {
+      chat: live,
+      product: null,
+    })
+    expect(noCatalog.absent?.requestMap).toBe('unavailable')
   })
 
   it('keeps a stored fact when its source fails and skips non-chat rows', () => {

@@ -59,6 +59,12 @@ export interface NovitaChatDoc {
    * list, so only the FAQ names ids then.
    */
   enableThinkingIds: Array<string>
+  /**
+   * True when `enable_thinking` states it applies to models "that support
+   * switching thinking off" and defers to the model page. That page is the
+   * product catalog, whose `reasoning.subFeatures.close` states the switch.
+   */
+  enableThinkingFollowsClose: boolean
 }
 
 export interface NovitaFaqIds {
@@ -117,6 +123,9 @@ export function parseNovitaChatDoc(text: string, hash: string): NovitaChatDoc {
     developerRole: roles.includes('developer'),
     flags: CHAT_FLAGS.filter((flag) => top.has(flag)),
     enableThinkingIds: thinkingIds(thinking),
+    enableThinkingFollowsClose:
+      thinking?.top === true &&
+      /support switching thinking off/.test(thinking.body),
   }
 }
 
@@ -230,8 +239,9 @@ export function applyNovitaDocs(model: ModelInfo, docs: NovitaDocs): ModelInfo {
   }
 
   const absent: NonNullable<ModelInfo['absent']> = {}
-  // The FAQ is the only list of thinking ids when the spec has none.
-  if (!docs.chat || docs.faqIds === null) absent.requestMap = 'unavailable'
+  // Thinking ids also come from the FAQ and the catalog's close switch.
+  if (!docs.chat || docs.faqIds === null || !docs.product)
+    absent.requestMap = 'unavailable'
   if (!docs.product) absent.reasoning = 'unavailable'
   if (Object.keys(absent).length > 0)
     patch.absent = { ...model.absent, ...absent }
@@ -300,10 +310,12 @@ function thinkingBody(
   product: NovitaProductModel | undefined,
 ): ThinkingRequest | null {
   const listed = docs.chat?.enableThinkingIds
+  const close = product?.reasoning?.enabled ? product.reasoning.close : null
   const named =
-    listed?.includes(rawId) === true || docs.faqIds?.includes(rawId) === true
+    listed?.includes(rawId) === true ||
+    docs.faqIds?.includes(rawId) === true ||
+    (docs.chat?.enableThinkingFollowsClose === true && close === true)
   if (!named) return null
-  const close = product?.reasoning?.close
   return {
     on: { enable_thinking: true },
     off: close === false ? null : { enable_thinking: false },
