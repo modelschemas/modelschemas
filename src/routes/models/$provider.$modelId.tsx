@@ -217,6 +217,17 @@ function ModelDetail() {
                       {shortDate(model.deprecatedAt)}
                     </span>,
                   ],
+                  ...(model.deprecation?.retiresAt
+                    ? [['retires', shortDate(model.deprecation.retiresAt)]]
+                    : []),
+                  ...(model.deprecation?.replacedBy
+                    ? [
+                        [
+                          'replaced by',
+                          model.deprecation.replacedBy.join(' or '),
+                        ],
+                      ]
+                    : []),
                 ] as Array<[string, React.ReactNode]>)
               : []),
           ]}

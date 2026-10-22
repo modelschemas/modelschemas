@@ -406,6 +406,16 @@ The next spec sync emits `endpoint.removed` for the old ids. Until it runs,
 polls leave Go models unbound; run `POST /v1/admin/sync/opencode-go` after
 deploy.
 
+**Deprecations:** for Groq and Mistral the poll reads the provider's own
+deprecations page. A model it lists carries `deprecation: { deprecatedAt,
+retiresAt, replacedBy, sourceUrl }` exactly as stated (null where the page
+states nothing) and is deprecated: `deprecatedAt` is set, so it leaves the
+default `GET /v1/models` list (`?deprecated=true` includes it) even while
+it still answers before `retiresAt`. An id the page names that was never in
+a listing gets a retired row with only those facts. Each change to an entry
+is a `model.deprecated` change in `/v1/changes`. Other providers'
+`deprecatedAt` is still when the row was flagged or left the listing.
+
 **Currencies:** rate cards may be in a currency other than USD.
 `moonshotai-cn` and `minimax-cn` are priced in CNY. A USD card is unchanged;
 a card in another currency wraps its price as

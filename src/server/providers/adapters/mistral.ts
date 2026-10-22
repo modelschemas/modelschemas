@@ -5,6 +5,12 @@
 import type { Activity } from '#/db/schema.ts'
 import { listOpenAiCompatibleModels } from '../openai-compat.ts'
 import {
+  MISTRAL_DEPRECATIONS_URL,
+  loadDeprecations,
+  parseMistralDeprecations,
+} from '../deprecations.ts'
+import { docsReport, docsRun } from '../model-facts.ts'
+import {
   mistralGenerationEndpointId,
   mistralModelActivity,
 } from '../model-meta.ts'
@@ -120,6 +126,13 @@ export const provider: ProviderConfig = {
     })
     if (listed.models.length === 0) return listed
     const chat = listed.models.some((model) => model.activity === 'chat')
+    const docs = docsRun()
+    const deprecations = await loadDeprecations(
+      docs,
+      kv,
+      MISTRAL_DEPRECATIONS_URL,
+      parseMistralDeprecations,
+    )
     const [pricing, reasoning, wire] = await Promise.all([
       mistralModelPricing(
         kv,
@@ -152,7 +165,12 @@ export const provider: ProviderConfig = {
       }
     }
     clearUnpriced(models, pricing.seen, aliases)
-    return { ...listed, models }
+    return {
+      ...listed,
+      models,
+      ...(deprecations ? { deprecations } : {}),
+      docsFailures: docsReport(docs),
+    }
   },
   classify,
   generationEndpointId: ({ rawId, activity }) =>
