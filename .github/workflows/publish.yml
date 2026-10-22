@@ -9,10 +9,15 @@
 #   workflow filename: publish.yml
 #   environment: npm
 #   allowed action: npm stage publish only
+#
+# On main, changesets keeps a Version Packages PR open while `.changeset/`
+# holds changesets. Merging it leaves none and a version npm lacks, so the
+# same run packs and stages that version.
 name: Publish
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v[0-9]*'
   workflow_dispatch:
@@ -29,13 +34,60 @@ concurrency:
 permissions: {}
 
 jobs:
+  version:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # github-api commits are signed; main requires signed commits.
+      - id: changesets
+        uses: changesets/action@v1
+        with:
+          version: bunx changeset version
+          commitMode: github-api
+          title: Version Packages
+          commit: Version Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run CI on the Version Packages PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run ci.yml --ref changeset-release/main
+
+      - id: check
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: |
+          v=$(jq -r .version packages/rate-card/package.json)
+          if npm view "@modelschemas/rate-card@$v" version >/dev/null 2>&1; then
+            echo "$v is already on npm"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   ci:
+    needs: version
+    if: ${{ !cancelled() && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || needs.version.outputs.release == 'true') }}
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
   pack:
     needs: ci
+    if: ${{ !cancelled() && needs.ci.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,7 +118,7 @@ jobs:
 
   stage:
     needs: pack
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    if: ${{ !cancelled() && needs.pack.result == 'success' && (github.event_name == 'push' || !inputs.dry_run) }}
     runs-on: ubuntu-latest
     environment: npm
     permissions:
