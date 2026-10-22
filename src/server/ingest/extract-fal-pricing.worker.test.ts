@@ -968,6 +968,123 @@ describe('extractFalPricing', () => {
       url: falLlmsTxtUrl('fal-ai/bfresh'),
     })
   })
+
+  // #304: grok-imagine-video edit-video and extend-video share one Pricing
+  // section, but only edit-video has `resolution`. Copying its card onto
+  // extend-video was refused as invented_param on every lap.
+  it('extracts its own card when the shared-hash card binds a param the row lacks', async () => {
+    const providerId = 'extract-dedup-schema'
+    await seedProvider(providerId)
+    const hash = await pricingSectionHash(pricingSection(NANO_LLMS))
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/apriced',
+      properties: { num_images: { type: 'integer' } },
+      pricing: {
+        ...perImageCard(falLlmsTxtUrl('fal-ai/apriced')),
+        source: { ...dummySource(falLlmsTxtUrl('fal-ai/apriced')), hash },
+      },
+    })
+    const ids = []
+    for (const rawId of ['fal-ai/bfresh', 'fal-ai/cfresh']) {
+      ids.push(
+        await seedCandidate({
+          providerId,
+          rawId,
+          properties: { prompt: { type: 'string' } },
+        }),
+      )
+    }
+    const asked: Array<Array<string>> = []
+    const outcome = await extractFalPricing({
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: (args: ExtractCardArgs): Promise<ExtractedCard> => {
+        asked.push([...args.requestProperties].sort())
+        const card = perImageCard(args.sourceUrl)
+        return Promise.resolve({
+          ...card,
+          inputs: {
+            num_images: { param: 'num_images', kind: 'number', bound: 'usage' },
+          },
+          examples: [{ ...card.examples[0]!, params: { num_images: 1 } }],
+        })
+      },
+    })
+    expect(asked).toEqual([['prompt']])
+    expect(outcome).toMatchObject({ extracted: 1, refused: 0, written: 2 })
+    for (const id of ids) {
+      const row = await getDb(env).query.models.findFirst({
+        where: eq(models.id, id),
+      })
+      expect((row?.pricing as RateCard | null)?.inputs.num_images).toEqual({
+        param: 'num_images',
+        kind: 'number',
+        bound: 'usage',
+      })
+    }
+  })
+
+  it('re-extracts next run for a group row the shared card does not fit', async () => {
+    const providerId = 'extract-group-schema'
+    await seedProvider(providerId)
+    await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/a',
+      properties: { num_images: { type: 'integer' } },
+    })
+    const bId = await seedCandidate({
+      providerId,
+      rawId: 'fal-ai/b',
+      properties: { prompt: { type: 'string' } },
+    })
+    const asked: Array<Array<string>> = []
+    const deps = {
+      db: getDb(env),
+      kv: env.SCHEMA_CACHE,
+      secrets: {},
+      now: () => NOW,
+      providerId,
+      fetchText: () => Promise.resolve(NANO_LLMS),
+      extractCard: (args: ExtractCardArgs): Promise<ExtractedCard> => {
+        const allowed = [...args.requestProperties].sort()
+        asked.push(allowed)
+        const card = perImageCard(args.sourceUrl)
+        if (allowed.includes('num_images')) return Promise.resolve(card)
+        return Promise.resolve({
+          ...card,
+          inputs: {
+            num_images: { param: 'num_images', kind: 'number', bound: 'usage' },
+          },
+          examples: [{ ...card.examples[0]!, params: { num_images: 1 } }],
+        })
+      },
+    }
+    // One group per section: written for a's schema, refused for b, and b
+    // is held for a retry.
+    expect(await extractFalPricing(deps)).toMatchObject({
+      extracted: 1,
+      refused: 1,
+    })
+    // The retry skips a's card (it binds num_images, which b lacks) and
+    // asks for b's own.
+    expect(await extractFalPricing(deps)).toMatchObject({
+      extracted: 1,
+      refused: 0,
+      deduped: 0,
+    })
+    expect(asked).toEqual([['num_images'], ['prompt']])
+    const b = await getDb(env).query.models.findFirst({
+      where: eq(models.id, bId),
+    })
+    expect((b?.pricing as RateCard | null)?.inputs.num_images).toMatchObject({
+      bound: 'usage',
+    })
+  })
 })
 
 describe('extractFalPricing retries (#84)', () => {
