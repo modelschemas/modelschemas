@@ -8,6 +8,7 @@ import {
   deepseekEffortFacts,
   DEEPSEEK_THINKING_URL,
   loadReplayDoc,
+  parseDeepseekNonThinking,
   parseDeepseekReplay,
 } from '../provider-replay.ts'
 import {
@@ -91,6 +92,9 @@ export const provider: ProviderConfig = {
           return doc
         })
       : null
+    const switchable = new Set(
+      replay ? parseDeepseekNonThinking(replay.text) : [],
+    )
     return {
       ...listed,
       models: listed.models.map((model) => {
@@ -107,9 +111,21 @@ export const provider: ProviderConfig = {
             ? { absent: { ...model.absent, ...unavailable(...lost).absent } }
             : {}),
         }
-        return replay && model.reasoning != null
-          ? applyReplay(row, replay.source)
-          : row
+        if (!replay || model.reasoning == null) return row
+        const replayed = applyReplay(row, replay.source)
+        return switchable.has(model.rawId)
+          ? {
+              ...replayed,
+              reasoning: { ...model.reasoning, mandatory: false },
+              factSources: {
+                ...replayed.factSources,
+                reasoning: {
+                  ...replay.source,
+                  path: 'top_p bullet names its non-thinking mode (mandatory); efforts are the listing',
+                },
+              },
+            }
+          : replayed
       }),
       docsFailures: docsReport(docs),
     }
