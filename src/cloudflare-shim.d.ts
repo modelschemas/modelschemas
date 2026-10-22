@@ -18,7 +18,16 @@ declare module 'cloudflare:workers' {
 
   /** Extends the current request's lifetime past the response (workerd-native). */
   export function waitUntil(promise: Promise<unknown>): void
+
+  /** Durable Object base class (US_EGRESS, `src/server/us-egress-object.ts`). */
+  export const DurableObject: typeof import('@cloudflare/workers-types').CloudflareWorkersModule.DurableObject
 }
+
+type DurableObjectNamespace<
+  T extends
+    | import('@cloudflare/workers-types').Rpc.DurableObjectBranded
+    | undefined = undefined,
+> = import('@cloudflare/workers-types').DurableObjectNamespace<T>
 
 /** Cloudflare Browser Rendering binding; keep runtime globals scoped. */
 type BrowserRun = import('@cloudflare/workers-types').BrowserRun

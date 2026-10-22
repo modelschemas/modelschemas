@@ -477,6 +477,13 @@ is token-auth only and is not used for releases.
    - `error: "fetch failed: <url> → 4xx/5xx"` → the upstream spec/models URL
      moved or is down; check `providers.spec_source_url` (seeded from
      `src/db/seed-providers.ts`) against the provider's docs.
+   - Anthropic `403 forbidden` or Gemini
+     `User location is not supported` on the models poll → the provider
+     refused the caller's region. Their listing calls go through the `US_EGRESS`
+     Durable Object (`src/server/providers/us-egress.ts`), created with
+     `locationHint: 'enam'`. The hint is best effort and an object never
+     moves, so if this persists, change its name (`provider-egress`) so
+     a fresh object is created under the hint.
    - Dangling-`$ref` warnings → the upstream spec changed shape; see
      `src/server/ingest/bundle.ts`.
    - `docsFailing` on a `/v1/status` provider (a `docs` marker on the home

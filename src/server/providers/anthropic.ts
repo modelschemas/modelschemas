@@ -23,10 +23,12 @@ import {
 import { isoToEpochSeconds } from './release-dates.ts'
 import { fetchJson, parseGzippedOpenApi, skippedResult } from './types.ts'
 import { headerApiKeyConnect } from './connect.ts'
+import { usEgressFetch } from './us-egress.ts'
 import type {
   ListModelsResult,
   ModelFact,
   ProviderConfig,
+  ProviderEnvironment,
   ProviderSecrets,
   SpecFetchResult,
 } from './types.ts'
@@ -105,7 +107,7 @@ export function anthropicCapabilities(m: AnthropicModel): Array<string> | null {
 }
 
 async function listModels(
-  env: ProviderSecrets,
+  env: ProviderEnvironment,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const key = env.ANTHROPIC_API_KEY
@@ -138,9 +140,11 @@ async function listModels(
     const url = new URL(ANTHROPIC_MODELS_URL)
     url.searchParams.set('limit', '100')
     if (afterId) url.searchParams.set('after_id', afterId)
-    const body = (await fetchJson(url.toString(), {
-      headers,
-    })) as AnthropicModelList
+    const body = (await fetchJson(
+      url.toString(),
+      { headers },
+      usEgressFetch(env),
+    )) as AnthropicModelList
     for (const m of body.data ?? []) {
       const input = ['text']
       if (m.capabilities?.image_input?.supported) input.push('image')
