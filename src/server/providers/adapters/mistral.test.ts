@@ -1,7 +1,15 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import { mistralModelPage, tip } from '../fixtures/mistral-model-page.ts'
 import { provider } from './mistral.ts'
+import { MISTRAL_DEPRECATIONS_URL } from '../deprecations.ts'
+
+const MODELS_PAGE = readFileSync(
+  new URL('../fixtures/mistral-models.md.txt', import.meta.url),
+  'utf8',
+)
 
 describe('mistral classify', () => {
   it('maps generation paths to the claimed activities', () => {
@@ -50,6 +58,9 @@ describe('mistral listModels', () => {
         url: href,
         auth: new Headers(init?.headers).get('authorization'),
       })
+      if (href === MISTRAL_DEPRECATIONS_URL) {
+        return Promise.resolve(new Response(MODELS_PAGE))
+      }
       if (!href.startsWith('https://api.mistral.ai/')) {
         return original(url, init)
       }
@@ -66,10 +77,14 @@ describe('mistral listModels', () => {
       )
     }) as typeof fetch
     try {
-      const { models, skipped } = await provider.listModels({
+      const { models, skipped, deprecations } = await provider.listModels({
         MISTRAL_API_KEY: 'mistral-test',
       })
       expect(skipped).toBeUndefined()
+      expect(
+        deprecations?.find((entry) => entry.rawId === 'pixtral-12b-2409')
+          ?.replacedBy,
+      ).toEqual(['ministral-14b-2512'])
       expect(calls[0]?.url).toBe('https://api.mistral.ai/v1/models')
       expect(calls[0]?.auth).toBe('Bearer mistral-test')
       expect(
