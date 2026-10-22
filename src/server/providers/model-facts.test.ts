@@ -1188,6 +1188,29 @@ describe('gemini pricing page', () => {
     })
   })
 
+  it('reads a caching rate scoped to implicit caching', () => {
+    // gemini-4-argon, 2026-10-22: the note after the dated pair quotes no
+    // amount and must not refuse the model.
+    const page = section(
+      'gemini-4-argon',
+      `<tr><td>Input price</td><td>Not available</td><td>$2.00 through November 30, 2026.<br>$4.00 starting December 1, 2026.</td></tr>
+       <tr><td>Output price (including thinking tokens)</td><td>Not available</td><td>$10.00 through November 30, 2026.<br>$20.00 starting December 1, 2026.</td></tr>
+       <tr><td>Context caching price</td><td>Not available</td><td>$0.10 through November 30, 2026.<br>$0.20 starting December 1, 2026.<br>Implicit caching only (explicit caching is not supported).</td></tr>`,
+    )
+    expect(parseGeminiPricing(page, NOW).get('gemini-4-argon')).toEqual({
+      base: {
+        input_tokens: 2e-6,
+        output_tokens: 10e-6,
+        cache_read_tokens: 0.1 / 1e6,
+      },
+      tiers: [],
+      expiresAt: '2026-12-01T00:00:00.000Z',
+    })
+    // Any other unpriced note on that row still refuses the model.
+    const other = page.replace('Implicit caching only', 'Billed separately')
+    expect(parseGeminiPricing(other, NOW).has('gemini-4-argon')).toBe(false)
+  })
+
   it('gives a separately priced modality its own lever', () => {
     // Gemini sums text, image and video into one prompt-token count, so a
     // rate covering them all is the input lever; audio is priced apart.
