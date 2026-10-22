@@ -7,8 +7,9 @@
  * Only the standard online-inference table is read (the one that quotes
  * cache storage per hour). Flex and batch tables further down are half of
  * standard and are not levers. Cache storage itself is per token-hour, not
- * per request, so that column is ignored. A peak/off-peak row has no lever
- * for time of day, so that model gets no card. A dated catalog id uses an
+ * per request, so that column is ignored. A model quoted at off-peak and
+ * peak rates gets a card whose required `pricing_period` lever picks one
+ * (#411); the page states the windows, not the request. A dated catalog id uses an
  * undated page row only when exactly one page id is its prefix
  * (`dola-seed-2-1-turbo` → `dola-seed-2-1-turbo-260628`).
  *
@@ -33,7 +34,13 @@ import { errorMessage } from '#/server/errors.ts'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import { parseByteplusServerTools } from './server-tools.ts'
-import { assertParsed, cachedDocs } from './model-facts.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  tryDocs,
+  unavailable,
+} from './model-facts.ts'
+import type { DocsRun } from './model-facts.ts'
 import { fetchByteplusDoc } from './byteplus-docs.ts'
 import { sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
@@ -44,6 +51,13 @@ export const BYTEPLUS_PRICING_URL =
 /** Seedance output sizes and frame rates (the token formula's inputs). */
 export const BYTEPLUS_VIDEO_GUIDE_URL =
   'https://docs.byteplus.com/en/docs/modelark/video-generation-tutorial'
+
+/**
+ * seed-translation's own model page (#411). The pricing page has no row for
+ * it; this page's "Model Price" table quotes the one model it documents.
+ */
+export const BYTEPLUS_SEED_TRANSLATION_URL =
+  'https://docs.byteplus.com/en/docs/ModelArk/recommended-models-seed-translation'
 
 /** "also supports" aliases. Not a price source. */
 export const BYTEPLUS_MODEL_LIST_URL =
@@ -76,6 +90,22 @@ export interface ByteplusDoc {
 export interface ByteplusChatRates {
   base: Record<string, number>
   tiers: Array<TokenRateTier>
+}
+
+/**
+ * A model quoted at off-peak and peak rates (DeepSeek V4.1 Flash, #411).
+ * The page names the peak windows in UTC+8; the card takes the period as a
+ * required `pricing_period` lever, so neither rate is presented as the price.
+ */
+export interface ByteplusPeriodRates {
+  periods: { off_peak: Record<string, number>; peak: Record<string, number> }
+}
+
+export type ByteplusTokenRates = ByteplusChatRates | ByteplusPeriodRates
+
+const PERIOD_LABELS: Record<string, keyof ByteplusPeriodRates['periods']> = {
+  'off-peak hours': 'off_peak',
+  'peak hours': 'peak',
 }
 
 function zoneText(zone: DocZone | undefined): string {
@@ -139,26 +169,58 @@ function tableRows(
   })
 }
 
+/** One row's lever rates; null when a cell is unreadable or input/output is missing. */
+function rowRates(
+  row: Array<string>,
+  levers: Record<string, number>,
+): Record<string, number> | null {
+  const rates: Record<string, number> = {}
+  for (const [key, lever] of Object.entries(LEVERS)) {
+    const at = levers[key]
+    if (at === undefined) continue
+    const value = usdPerMillion(row[at] ?? '')
+    if (value === null) return null
+    if (value !== undefined) rates[lever] = value
+  }
+  if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
+    return null
+  }
+  return rates
+}
+
+/** Exactly one off-peak and one peak row, or null. */
+function periodsFromGroup(
+  rows: Array<Array<string>>,
+  columns: { tier: number; levers: Record<string, number> },
+): ByteplusPeriodRates | null {
+  if (rows.length !== 2) return null
+  const periods: Partial<ByteplusPeriodRates['periods']> = {}
+  for (const row of rows) {
+    const period = PERIOD_LABELS[(row[columns.tier] ?? '').toLowerCase()]
+    const rates = rowRates(row, columns.levers)
+    if (!period || !rates || periods[period]) return null
+    periods[period] = rates
+  }
+  const { off_peak, peak } = periods
+  return off_peak && peak ? { periods: { off_peak, peak } } : null
+}
+
 function ratesFromGroup(
   rows: Array<Array<string>>,
   columns: { tier: number; levers: Record<string, number> },
-): ByteplusChatRates | null {
+): ByteplusTokenRates | null {
+  if (
+    rows.some((row) => (row[columns.tier] ?? '').toLowerCase() in PERIOD_LABELS)
+  ) {
+    return periodsFromGroup(rows, columns)
+  }
   const base: Record<string, number> = {}
   const tiers: Array<TokenRateTier> = []
   for (const [index, row] of rows.entries()) {
     const floor = promptFloorK(row[columns.tier] ?? '')
     if (floor === null) return null
-    const rates: Record<string, number> = {}
-    for (const [key, lever] of Object.entries(LEVERS)) {
-      const at = columns.levers[key]
-      if (at === undefined) continue
-      const value = usdPerMillion(row[at] ?? '')
-      if (value === null) return null
-      if (value !== undefined) rates[lever] = value
-    }
-    if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
-      return null
-    }
+    const rates = rowRates(row, columns.levers)
+    if (!rates) return null
     if (index === 0) {
       if (floor !== 0) return null
       Object.assign(base, rates)
@@ -191,8 +253,8 @@ function tablesWith(
 /** Page model id → standard online-inference rates. */
 export function parseByteplusPricing(
   doc: ByteplusDoc,
-): Map<string, ByteplusChatRates> {
-  const out = new Map<string, ByteplusChatRates>()
+): Map<string, ByteplusTokenRates> {
+  const out = new Map<string, ByteplusTokenRates>()
   const tables = tablesWith(doc, [
     'model id',
     'cache-storage',
@@ -227,6 +289,104 @@ export function parseByteplusPricing(
     }
   }
   return out
+}
+
+/**
+ * Token card priced by the caller-stated `pricing_period` (no default: the
+ * request carries no clock, so the card refuses rather than pick one).
+ */
+export function compilePeriodCard(
+  { periods }: ByteplusPeriodRates,
+  source: RateCard['source'],
+): RateCard {
+  const levers = [
+    ...new Set([
+      ...Object.keys(periods.off_peak),
+      ...Object.keys(periods.peak),
+    ]),
+  ]
+  return {
+    inputs: {
+      pricing_period: {
+        param: 'pricing_period',
+        bound: 'usage',
+        kind: 'enum',
+        values: ['off_peak', 'peak'],
+      },
+      ...Object.fromEntries(
+        levers.map((lever) => [
+          lever,
+          {
+            param: lever,
+            bound: 'usage',
+            kind: 'number',
+            ...(lever !== 'input_tokens' &&
+              lever !== 'output_tokens' && { default: 0 }),
+          },
+        ]),
+      ),
+    },
+    tables: { rate: periods },
+    price: {
+      '+': levers.map(
+        (lever): Expr => ({
+          if: [
+            { '>': [{ var: lever }, 0] },
+            {
+              '*': [
+                { var: lever },
+                {
+                  lookup: {
+                    table: 'rate',
+                    keys: [{ var: 'pricing_period' }, lever],
+                  },
+                },
+              ],
+            },
+            0,
+          ],
+        }),
+      ),
+    },
+    examples: [],
+    source,
+  }
+}
+
+/** Model-page price header (units kept: the cells have no parentheses). */
+const MODEL_PAGE_LEVERS: Record<string, string> = {
+  'input usd/m tokens': 'input_tokens',
+  'input hits cache usd/m tokens': 'cache_read_tokens',
+  'output unit price usd/m tokens': 'output_tokens',
+}
+
+/**
+ * The single price row of a one-model doc page. Throws unless exactly one
+ * table with one row quotes both input and output.
+ */
+export function parseByteplusModelPage(
+  doc: ByteplusDoc,
+): Record<string, number> {
+  const tables = tablesWith(doc, Object.keys(MODEL_PAGE_LEVERS))
+  const row = tables.length === 1 ? tables[0] : undefined
+  if (!row || row.rows.length !== 1) {
+    throw new Error(
+      `byteplus model page: expected one price table row, found ${String(tables.length)} tables`,
+    )
+  }
+  const rates: Record<string, number> = {}
+  for (const [key, lever] of Object.entries(MODEL_PAGE_LEVERS)) {
+    const cell = row.rows[0]?.[row.keys.indexOf(key)] ?? ''
+    const value = usdPerMillion(cell)
+    if (value === null) {
+      throw new Error(`byteplus model page: unreadable ${key} "${cell}"`)
+    }
+    if (value !== undefined) rates[lever] = value
+  }
+  if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
+    throw new Error('byteplus model page: no input or output price')
+  }
+  return rates
 }
 
 /**
@@ -947,7 +1107,7 @@ export function compileSeedanceCard(
 /** Standard-table rates from the pricing page HTML. */
 export function parseByteplusPricingPage(
   html: string,
-): Map<string, ByteplusChatRates> {
+): Map<string, ByteplusTokenRates> {
   return parseByteplusPricing(JSON.parse(pricingContent(html)) as ByteplusDoc)
 }
 
@@ -975,10 +1135,39 @@ export function pricingContent(
   return content
 }
 
-type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'serverTools'>
+type PricedFacts = Pick<
+  ModelInfo,
+  'pricing' | 'factSources' | 'serverTools' | 'absent'
+>
+
+interface CachedModelPage {
+  rates: Record<string, number>
+  hash: string
+  extractedAt: string
+}
+
+/** seed-translation's page, or null (counted in `run`) when it fails. */
+function seedTranslationPage(
+  run: DocsRun,
+  kv?: KVNamespace,
+): Promise<CachedModelPage | null> {
+  return tryDocs(run, BYTEPLUS_SEED_TRANSLATION_URL, (cached) =>
+    cached<CachedModelPage>(kv, BYTEPLUS_SEED_TRANSLATION_URL, async () => {
+      const content = pricingContent(
+        await fetchByteplusDoc(BYTEPLUS_SEED_TRANSLATION_URL),
+        'byteplus seed-translation page',
+      )
+      return {
+        rates: parseByteplusModelPage(JSON.parse(content) as ByteplusDoc),
+        hash: await sha256Text(content),
+        extractedAt: new Date().toISOString(),
+      }
+    }),
+  )
+}
 
 interface CachedPricing {
-  rates: Record<string, ByteplusChatRates>
+  rates: Record<string, ByteplusTokenRates>
   video: Record<string, ByteplusVideoRates>
   images: Record<string, number>
   // Absent on entries cached before #102.
@@ -1054,6 +1243,7 @@ async function modelListContent(): Promise<string | null> {
 
 /** Card lookup by catalog id. Ids no table prices get nothing. */
 export async function byteplusModelPricing(
+  run: DocsRun,
   kv?: KVNamespace,
 ): Promise<(rawId: string) => PricedFacts> {
   const doc = await cachedDocs<CachedPricing>(
@@ -1091,6 +1281,7 @@ export async function byteplusModelPricing(
     },
   )
   const guide = await seedanceGuide(kv)
+  const translation = await seedTranslationPage(run, kv)
   const geometry = new Map(Object.entries(guide?.geometry ?? {}))
   const rates = new Map(Object.entries(doc.rates))
   const video = new Map(Object.entries(doc.video))
@@ -1103,6 +1294,7 @@ export async function byteplusModelPricing(
   }
   const card = (rawId: string): RateCard | null => {
     const chat = byteplusRatesFor(rawId, rates)
+    if (chat && 'periods' in chat) return compilePeriodCard(chat, source)
     if (chat) {
       return compileTokenCard(chat.base, chat.tiers, source, {
         extraPromptLevers: ['audio_tokens', 'audio_cache_tokens'],
@@ -1144,12 +1336,25 @@ export async function byteplusModelPricing(
       source,
     )
   }
+  const translationIds = new Map([['seed-translation', true]])
   return (rawId) => {
-    const pricing = card(rawId)
     const tools = doc.serverTools?.[rawId]
-    const pricingFacts = pricing
-      ? tagDocsFacts({ pricing }, BYTEPLUS_PRICING_URL, doc.hash)
-      : {}
+    const isTranslation = byteplusRatesFor(rawId, translationIds) === true
+    // Page failed this poll: keep the stored card (`tryDocs` counted it).
+    if (isTranslation && !translation) return unavailable('pricing')
+    const page = isTranslation ? translation : null
+    const pricing = page
+      ? compileTokenCard(page.rates, [], {
+          url: BYTEPLUS_SEED_TRANSLATION_URL,
+          hash: page.hash,
+          extractedAt: page.extractedAt,
+        })
+      : card(rawId)
+    const pricingFacts = !pricing
+      ? {}
+      : page
+        ? tagDocsFacts({ pricing }, BYTEPLUS_SEED_TRANSLATION_URL, page.hash)
+        : tagDocsFacts({ pricing }, BYTEPLUS_PRICING_URL, doc.hash)
     const toolFacts =
       tools && tools.length > 0
         ? tagDocsFacts({ serverTools: tools }, BYTEPLUS_PRICING_URL, doc.hash)

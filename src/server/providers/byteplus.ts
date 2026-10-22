@@ -43,6 +43,7 @@ import {
   buildArkSpecFromGo,
 } from './byteplus-ark-build.ts'
 import { byteplusModelPricing } from './byteplus-pricing.ts'
+import { docsReport, docsRun } from './model-facts.ts'
 import {
   byteplusModelReasoning,
   listsReasoning,
@@ -482,8 +483,9 @@ async function listModels(
   env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
+  const docs = docsRun()
   const [pricing, reasoning] = await Promise.all([
-    byteplusModelPricing(kv),
+    byteplusModelPricing(docs, kv),
     byteplusModelReasoning(kv),
   ])
   const withPricing = (models: Array<ModelInfo>): Array<ModelInfo> =>
@@ -497,7 +499,12 @@ async function listModels(
   const key = env.ARK_API_KEY
   // No key: the embedded catalog is still a real answer, so serve it rather
   // than reporting the provider skipped.
-  if (!key) return { models: withPricing(curatedModels()) }
+  if (!key) {
+    return {
+      models: withPricing(curatedModels()),
+      docsFailures: docsReport(docs),
+    }
+  }
 
   const body = (await fetchJson(ARK_MODELS_URL, {
     headers: { Authorization: `Bearer ${key}` },
@@ -508,7 +515,10 @@ async function listModels(
   // Ark serves but does not enumerate.
   const liveIds = new Set(live.map((m) => m.rawId))
   const gapFillers = curatedModels().filter((m) => !liveIds.has(m.rawId))
-  return { models: withPricing([...live, ...gapFillers]) }
+  return {
+    models: withPricing([...live, ...gapFillers]),
+    docsFailures: docsReport(docs),
+  }
 }
 
 export const byteplusProvider: ProviderConfig = {

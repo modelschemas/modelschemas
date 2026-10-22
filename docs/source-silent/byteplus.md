@@ -1,0 +1,1 @@
+- byteplus/seed-translation-250915: cacheRead — The model's own page quotes input 0.20 and output 0.80 USD/M tokens and marks "Input Hits Cache" as "-"; the ModelArk pricing page has no row for this model, so no cached-input price is published (#411), https://docs.byteplus.com/en/docs/ModelArk/recommended-models-seed-translation, checked 2026-10-22

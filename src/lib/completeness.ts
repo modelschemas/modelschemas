@@ -50,7 +50,7 @@ export type ModelRow = {
   maxOutput?: number | null
   modalities?: { input?: unknown; output?: unknown } | null
   pricing?: {
-    tables?: { rate?: { base?: unknown } }
+    tables?: { rate?: Record<string, unknown> }
     source?: { url?: string }
   } | null
   capabilities?: unknown
@@ -120,19 +120,28 @@ function isModelsDev(row: ModelRow): boolean {
   }
 }
 
-/** The base rate row, or null when absent or a models.dev price. */
-function baseRate(row: ModelRow): Record<string, unknown> | null {
-  if (isModelsDev(row)) return null
-  const base = row.pricing?.tables?.rate?.base
-  return typeof base === 'object' && base !== null
-    ? (base as Record<string, unknown>)
-    : null
+/**
+ * The rate rows a lever must appear in: the base row, or, for a card with
+ * no base (BytePlus off-peak/peak, picked by a required lever), every row.
+ * Empty when absent or a models.dev price.
+ */
+function rateRows(row: ModelRow): Array<Record<string, unknown>> {
+  if (isModelsDev(row)) return []
+  const rate = row.pricing?.tables?.rate
+  if (!rate) return []
+  const rows = 'base' in rate ? [rate.base] : Object.values(rate)
+  return rows.every((r) => typeof r === 'object' && r !== null)
+    ? (rows as Array<Record<string, unknown>>)
+    : []
 }
 
 // Listing-compiled cards use OpenRouter's key names, parsed cards ours.
 function hasRate(row: ModelRow, ...keys: Array<string>): boolean {
-  const base = baseRate(row)
-  return base !== null && keys.some((key) => typeof base[key] === 'number')
+  const rows = rateRows(row)
+  return (
+    rows.length > 0 &&
+    rows.every((r) => keys.some((key) => typeof r[key] === 'number'))
+  )
 }
 
 /** `need`: the fact applies to this row. `have`: the row carries it. */
