@@ -110,7 +110,7 @@
 
 - `gemini/nano-banana-pro-preview`: cacheRead — the pricing page prices gemini-3-pro-image (Nano Banana Pro) and names no binding for this id (#411), https://ai.google.dev/gemini-api/docs/pricing, checked 2026-10-22
 
-- `gemini/gemini-3.1-pro-preview`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview.md.txt, checked 2026-10-22
+- `gemini/gemini-3.1-pro-preview`: reasoning — The model page says Thinking "Supported" with no levels, and the generateContent thinking page's `thinkingLevel` table has no column for it. The Interactions API thinking page (https://ai.google.dev/gemini-api/docs/thinking.md.txt) lists "low, medium, high" for its `thinking_level`, but that is a different request surface: the same table gives the 2.5 models levels where generateContent takes `thinkingBudget`, so it is not transferred to this generateContent row (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview.md.txt, checked 2026-10-22
 
 - `gemini/gemini-3.1-pro-preview-customtools`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview.md.txt, checked 2026-10-22
 

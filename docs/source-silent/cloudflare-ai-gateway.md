@@ -188,7 +188,7 @@ Sources: https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production
 
 - `cloudflare-ai-gateway/fireworks/ember-1`: reasoning — The catalog file tags Reasoning but has no request schema and no reasoning metadata (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/fireworks-ember-1.json, checked 2026-10-22
 
-- `cloudflare-ai-gateway/google/gemini-4-argon`: reasoning — The catalog file states only "Default thinking level: medium" and has no request schema; no accepted levels are listed (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/google-gemini-4-argon.json, checked 2026-10-22
+- `cloudflare-ai-gateway/google/gemini-4-argon`: reasoning — The catalog file states only "Default thinking level: medium"; its schema's Gemini-native branch has no `thinkingConfig` and its OpenAI-compatible branch has only the shared untyped `reasoning_effort` ("model-dependent"); no accepted levels are listed (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/google-gemini-4-argon.json, checked 2026-10-22
 
 - `cloudflare-ai-gateway/meta/muse-spark-1.1`: reasoning — The request schema's `reasoning.effort` enum is the shared one ("availability and accepted values are model-dependent") and the metadata names no levels (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/meta-muse-spark-1.1.json, checked 2026-10-22
 
@@ -199,3 +199,5 @@ Sources: https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production
 - `cloudflare-ai-gateway/meta/muse-wonder-1.0`: reasoning — The request schema's `reasoning.effort` enum is the shared one ("availability and accepted values are model-dependent") and the metadata names no levels (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/meta-muse-wonder-1.0.json, checked 2026-10-22
 
 - `cloudflare-ai-gateway/reflection-ai/beam-1.0-501b-a23b`: reasoning — The metadata says "Reasoning: Always on", but the schema's `reasoning_effort` is the shared untyped string ("accepted values are model-dependent") and no levels are listed (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/reflection-ai-beam-1.0-501b-a23b.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/anthropic/claude-haiku-5.5`: reasoning — The catalog file has only the metadata flag "Adaptive Thinking: Yes"; its request schema publishes no `thinking` or `output_config`, and a catalog flag alone binds no control (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/anthropic-claude-haiku-5.5.json, checked 2026-10-22
