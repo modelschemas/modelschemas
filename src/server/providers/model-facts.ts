@@ -201,7 +201,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // v35: Mistral pages cache their Features (and the web search guide is read);
 // Gemini caches probed pages; Perplexity caches stated limits
 // (#408, #409). A v34 entry has none of them for six hours.
-const DOCS_CACHE_VERSION = 'v35'
+// v36: Mistral OCR cells take the unit from their "Prices /1000 Pages"
+// header (#439). A v35 entry would keep OCR rows unpriced for six hours.
+const DOCS_CACHE_VERSION = 'v36'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

@@ -118,6 +118,24 @@ describe('mistral pricing page', () => {
     },
   )
 
+  it('gives bare cells the unit their section header states', () => {
+    const html = `<h2>OCR models</h2>
+<div>Prices /1000 Pages</div>
+<table>
+<tr><td><a href="/models/ocr-4-1">OCR 4.1</a></td><td>$4</td><td>$0.4</td><td>—</td></tr>
+</table>
+<h2>Other models</h2>
+<div>Prices /Furlongs</div>
+<table>
+<tr><td><a href="/models/unknown-unit">Odd</a></td><td>$1</td><td>—</td><td>—</td></tr>
+</table>`
+    const rates = parseMistralPricing(html)
+    expect(rates.get('ocr-4-1')).toEqual(
+      parseMistralPricing(PAGE).get('ocr-4-1'),
+    )
+    expect(rates.has('unknown-unit')).toBe(false)
+  })
+
   it('compiles a unit card from the parsed meters', () => {
     const row = parseMistralPricing(PAGE).get('ocr-4-1')
     expect(row?.kind).toBe('unit')

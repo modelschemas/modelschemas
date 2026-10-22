@@ -3,10 +3,12 @@
  * Sections marked "Prices /M Tokens" are standard per-million rates (input,
  * cached input, output). Batch and priority live in other tabs and are not
  * in that table. A cell with a unit ("$4 /1000 Pages", "$0.003 /Min",
- * "$16 /M Chars") is a unit rate, not a token rate. A row is one unit card
- * when every priced cell names that same unit. Several positive prices of
- * that unit (input and cached pages) are separate usage meters. A zero
- * amount is not a meter. Mixed units, an unknown unit, or "Free" is no card.
+ * "$16 /M Chars") is a unit rate, not a token rate. A section marked with
+ * another unit ("Prices /1000 Pages") gives that unit to its bare "$4"
+ * cells. A row is one unit card when every priced cell names that same
+ * unit. Several positive prices of that unit (input and cached pages) are
+ * separate usage meters. A zero amount is not a meter. Mixed units, an
+ * unknown unit, or "Free" is no card.
  *
  * The table keys docs slugs (`mistral-large-3-25-12`). The model page names
  * the API ids that slug serves (`mistral-large-2512`, `mistral-large-latest`).
@@ -172,6 +174,10 @@ export function parseMistralPricing(
   const out = new Map<string, MistralListedPrice>()
   for (const section of html.split(/<h2\b[^>]*>/i).slice(1)) {
     const tokens = /Prices\s*\/\s*M Tokens/i.test(section)
+    // `Prices /1000 Pages` states the unit once for bare `$4` cells.
+    const unit = tokens
+      ? undefined
+      : section.match(/Prices\s*\/\s*([^<]+?)\s*</i)?.[1]
     const table = section.match(/<table\b[\s\S]*?<\/table>/i)?.[0] ?? ''
     for (const row of table.matchAll(/<tr\b[\s\S]*?<\/tr>/gi)) {
       const slug = row[0].match(/href="\/models\/([^"]+)"/)?.[1]
@@ -193,7 +199,13 @@ export function parseMistralPricing(
         out.set(slug, { kind: 'tokens', rates })
         continue
       }
-      const meters = unitMeters(text)
+      const meters = unitMeters(
+        unit
+          ? text.map((cell) =>
+              /^\$[\d,]+(?:\.\d+)?$/.test(cell) ? `${cell} /${unit}` : cell,
+            )
+          : text,
+      )
       if (!meters) continue
       out.set(slug, { kind: 'unit', meters })
     }
