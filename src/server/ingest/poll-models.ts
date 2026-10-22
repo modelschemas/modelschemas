@@ -145,6 +145,15 @@ function requestMapFor(providerId: string, info: ModelInfo) {
     : chatRequestMap(providerId, info.rawId, info.activity ?? null)
 }
 
+/**
+ * A range only beside no card: a kept prior card (refused clear, docs
+ * extract) is the row's one price, and a range next to it would say
+ * there is none.
+ */
+function storedRange(info: ModelInfo) {
+  return info.pricing ? null : (info.pricingRange ?? null)
+}
+
 /** The fields whose changes constitute a `model.updated` event. */
 function comparable(
   providerId: string,
@@ -170,7 +179,7 @@ function comparable(
     openWeights: info.openWeights ?? null,
     weightsUrl: info.weightsUrl ?? null,
     providerMetadata: info.providerMetadata ?? null,
-    pricingRange: info.pricingRange ?? null,
+    pricingRange: storedRange(info),
   }
 }
 
@@ -862,7 +871,7 @@ export async function pollProviderModels(
         maxOutput: info.maxOutput ?? null,
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
-        pricingRange: info.pricingRange ?? null,
+        pricingRange: storedRange(info),
         capabilities: info.capabilities ?? null,
         providerMetadata: info.providerMetadata ?? null,
         reasoning: info.reasoning ?? null,
@@ -984,7 +993,7 @@ export async function pollProviderModels(
         maxOutput: info.maxOutput ?? null,
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
-        pricingRange: info.pricingRange ?? null,
+        pricingRange: storedRange(info),
         capabilities,
         providerMetadata: info.providerMetadata ?? null,
         reasoning: info.reasoning ?? null,
