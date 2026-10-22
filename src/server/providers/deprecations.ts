@@ -73,6 +73,14 @@ function requireId(id: string, source: string): string {
   return id
 }
 
+/** A replacement id: an id with a digit, `-` or `/`, never a bare word. */
+function requireReplacement(id: string, source: string): string {
+  if (!/[0-9/-]/.test(id)) {
+    throw new Error(`${source}: not a replacement id: ${JSON.stringify(id)}`)
+  }
+  return requireId(id, source)
+}
+
 /**
  * Groq's deprecation history: one `###` section per shutdown, each with a
  * table of Model ID | Shutdown Date (`MM/DD/YY`) | Recommended Replacement
@@ -128,7 +136,7 @@ export function parseGroqDeprecations(
               .replace(/\([^)]*\)/g, ' ')
               .split(/\s+/)
               .filter((word) => word !== '' && word !== 'or')
-              .map((id) => requireId(id, source))
+              .map((id) => requireReplacement(id, source))
       requireId(rawId, source)
       if (out.has(rawId)) continue
       out.set(rawId, {
@@ -168,8 +176,8 @@ const API_NAME = /^`([^`]+)`$/
  * Mistral's Models Overview: the "Deprecated and retired models" table,
  * Model | API name | Status | Context | Summary | Deprecation | Retirement
  * | Replacement. The replacement is a link to a model page; its API name is
- * the one the same page's tables give that link, and null when no table
- * gives one. Rows with no API name name no callable id and are skipped. An
+ * the one the same page's tables give that link; a link no table names
+ * throws. Rows with no API name name no callable id and are skipped. An
  * API name listed twice keeps its first (newest) row.
  */
 export function parseMistralDeprecations(
@@ -222,7 +230,10 @@ export function parseMistralDeprecations(
         throw new Error(`${source}: replacement ${JSON.stringify(replacement)}`)
       }
       const id = apiNameOf.get(path)
-      replacedBy = id ? [id] : null
+      if (!id) {
+        throw new Error(`${source}: replacement ${path} has no API name`)
+      }
+      replacedBy = [id]
     }
     if (out.has(rawId)) continue
     out.set(rawId, {

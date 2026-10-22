@@ -48,13 +48,13 @@ function summary(rawId: string, entry: ModelDeprecation | null): string {
   return parts.join('; ')
 }
 
-/** Apply the page to every row of the provider; returns rows changed. */
+/** Apply the page to every row of the provider. */
 export async function applyDeprecations(
   db: Db,
   providerId: string,
   index: DeprecationIndex,
   now: number,
-): Promise<number> {
+): Promise<void> {
   const rows = await db
     .select({
       id: models.id,
@@ -120,5 +120,4 @@ export async function applyDeprecations(
     const [first, ...rest] = writes.slice(i, i + 40)
     if (first) await db.batch([first, ...rest])
   }
-  return writes.length / 2
 }

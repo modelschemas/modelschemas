@@ -78,6 +78,14 @@ describe('groq deprecations page', () => {
 
   it('throws on a cell it cannot read', () => {
     expect(() =>
+      parseGroqDeprecations(
+        GROQ.replace(
+          '| openai/gpt-oss-safeguard-20b ',
+          '| none                         ',
+        ),
+      ),
+    ).toThrow(/replacement id/)
+    expect(() =>
       parseGroqDeprecations(GROQ.replace('| 08/16/26 ', '| soon     ')),
     ).toThrow(/shutdown date/)
     expect(() => parseGroqDeprecations('# nothing')).toThrow()
@@ -132,5 +140,11 @@ describe('mistral deprecations table', () => {
     expect(() =>
       parseMistralDeprecations(MISTRAL.replace('| 2026-08-31 |', '| soon |')),
     ).toThrow(/date/)
+    expect(() =>
+      parseMistralDeprecations(
+        // The live row stops naming the API id the replacement link needs.
+        MISTRAL.replace('| `ministral-14b-2512` |', '|  |'),
+      ),
+    ).toThrow(/no API name/)
   })
 })

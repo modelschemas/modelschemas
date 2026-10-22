@@ -114,5 +114,22 @@ describe('deprecations page in the models poll (issue #410)', () => {
     expect(await row('old-1')).toEqual(
       expect.objectContaining({ deprecatedAt: null, deprecation: null }),
     )
+
+    // An unlisted row leaves the page: its entry goes, it stays retired.
+    result = { models: [live, old], deprecations: [entry('other-1')] }
+    await pollProviderModels(d, provider)
+    expect(await row('gone-1')).toEqual(
+      expect.objectContaining({
+        deprecatedAt: 1_780_000_000,
+        deprecation: null,
+      }),
+    )
+    const withdrawn = await d.db
+      .select()
+      .from(changes)
+      .where(eq(changes.subjectId, modelDbId(p, 'gone-1')))
+    expect(withdrawn.map((c) => c.summary)).toContain(
+      'Model gone-1 no longer on the deprecations page',
+    )
   })
 })

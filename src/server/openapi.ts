@@ -183,12 +183,12 @@ const modelFields = {
   },
   deprecatedAt: {
     description:
-      'When the model was deprecated, epoch seconds: the date its provider states (deprecation.deprecatedAt) when stated, otherwise when this service first saw it deprecated or gone from the listing. null on a live model.',
+      'When the model was deprecated, epoch seconds: the date its provider states (deprecation.deprecatedAt) when stated, otherwise when this service first saw it deprecated or gone from the listing (for a retired model never listed, when its deprecations page entry was first read; that can fall after deprecation.retiresAt). null on a live model.',
     type: ['integer', 'null'],
   },
   deprecation: {
     description:
-      "The provider's deprecations page entry for this model, exactly as stated: deprecatedAt and retiresAt (shutdown) are epoch seconds at 00:00 UTC of the stated day, null when the page gives none; replacedBy lists the ids the provider recommends instead, null when it names none. null when the provider's page does not list the model or this service reads no such page for the provider. A retired model stays in the catalog (GET /v1/models?deprecated=true), and every change to this entry is a model.deprecated change.",
+      "The provider's deprecations page entry for this model, exactly as stated: deprecatedAt and retiresAt (shutdown) are epoch seconds at 00:00 UTC of the stated day, null when the page gives none; replacedBy lists the ids the provider recommends instead, null when it names none. null when the provider's page does not list the model or this service reads no such page for the provider. A retired model stays in the catalog (GET /v1/models?deprecated=true); one that was never in a listing has only these facts, and its firstSeenAt and lastSeenAt are when this service first read the entry. Every change to this entry is a model.deprecated change.",
     oneOf: [
       {
         type: 'object',
