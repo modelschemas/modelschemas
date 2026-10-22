@@ -508,6 +508,10 @@ function parsedReasoning(
     if (!('reasoning_effort' in schema.properties)) {
       throw fail(rawId, 'Reasoning Effort has no reasoning_effort field')
     }
+    const own = fields.find((field) => field.wire === 'reasoning_effort')
+    if (own && !sameEfforts(own.efforts, levels)) {
+      throw fail(rawId, 'Reasoning Effort does not match the schema enum')
+    }
     return {
       reasoning: effortReasoning({ wire: 'reasoning_effort', efforts: levels }),
       wire: 'reasoning_effort',
