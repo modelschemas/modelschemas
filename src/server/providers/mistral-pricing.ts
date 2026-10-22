@@ -470,6 +470,72 @@ export function parseMistralPageModalities(
     : null
 }
 
+/** The feature ids of a grid that follows a "Features" heading. */
+function featureGrids(
+  rows: RscRows,
+  node: Json,
+  out: Array<Array<string> | null> = [],
+): Array<Array<string> | null> {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => {
+      const heading = rscProps(rscProps(item)?.children ?? null)?.children
+      const grid = rscProps(node[index + 1] ?? null)?.children
+      if (heading === 'Features' && Array.isArray(grid)) {
+        // Each feature is a `div` keyed by its id. Any other child, or one
+        // marked disabled, makes the grid unreadable rather than shorter.
+        const ids = grid.map((ref) => {
+          const child = deref(rows, ref)
+          const key = Array.isArray(child) ? child[2] : null
+          const props = rscProps(child)
+          return typeof key === 'string' &&
+            props?.['aria-disabled'] === '$undefined'
+            ? key
+            : null
+        })
+        out.push(ids.every((id) => id !== null) ? ids : null)
+      }
+      featureGrids(rows, item, out)
+    })
+  } else if (typeof node === 'object' && node !== null) {
+    for (const value of Object.values(node)) featureGrids(rows, value, out)
+  }
+  return out
+}
+
+/**
+ * Feature ids a model page lists under its "Features" heading
+ * (`document-qna`, `function-calling`, …), read from the RSC payload. Null
+ * when the page has no such grid. A grid it cannot fully read, or grids
+ * that disagree, throw: a shorter list would drop `file` from the row.
+ */
+export function parseMistralPageFeatures(html: string): Array<string> | null {
+  const rows = rscRows(html)
+  const grids = [...rows.values()].flatMap((row) => featureGrids(rows, row))
+  if (grids.length === 0) return null
+  const [first] = grids
+  if (
+    !first ||
+    grids.some((grid) => JSON.stringify(grid) !== JSON.stringify(first))
+  ) {
+    throw new Error('mistral model page: Features grid in an unread shape')
+  }
+  return first
+}
+
+/**
+ * A page's modalities with `file` input when it lists `document-qna`: the
+ * Document QnA guide sends PDFs to such a model as `document_url` chat
+ * content (#407). Without stated modalities nothing is added.
+ */
+export function withDocumentInput(
+  modalities: MistralModalities | null,
+  features: Array<string> | null,
+): MistralModalities | null {
+  if (!modalities || !features?.includes('document-qna')) return modalities
+  if (modalities.input.includes('file')) return modalities
+  return { ...modalities, input: [...modalities.input, 'file'] }
+}
+
 /** `128k` → 131072, `1M` → 1048576. Any other spelling is unreadable. */
 function suffixTokens(value: string): number | null {
   const match = /^(\d+(?:\.\d+)?)(k|M)$/.exec(value)
@@ -1033,7 +1099,10 @@ export async function mistralModelPricing(
         ids,
         hash: await sha256Text(body),
         serverTools: parseMistralPageTools(body),
-        modalities: parseMistralPageModalities(body),
+        modalities: withDocumentInput(
+          parseMistralPageModalities(body),
+          parseMistralPageFeatures(body),
+        ),
         maxOutput: parseMistralPageMaxOutput(body),
         pagePrice: parseMistralPagePrice(body),
         extractedAt: new Date().toISOString(),
