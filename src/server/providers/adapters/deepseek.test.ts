@@ -124,6 +124,9 @@ it('sources DeepSeek effort and replay without losing other native capabilities'
       mandatory: null,
       efforts: ['high', 'max'],
     })
+    // A guide that names no model's non-thinking mode changed shape: the
+    // stored `mandatory` is kept rather than overwritten with null.
+    expect(model?.absent?.reasoning).toBe('unavailable')
     expect(model?.capabilities).toEqual(
       expect.arrayContaining(['tools', 'reasoning']),
     )
@@ -174,6 +177,7 @@ it('reads mandatory false only for a model whose own top_p bullet names its non-
     })
     expect(pro?.factSources?.reasoning?.sourceUrl).toBe(DEEPSEEK_THINKING_URL)
     expect(flash?.reasoning?.mandatory).toBeNull()
+    expect(flash?.absent?.reasoning).toBeUndefined()
   } finally {
     globalThis.fetch = original
   }
@@ -270,6 +274,7 @@ it('keeps the poll when the whole docs host serves a page with no table', async 
     expect(model?.absent).toEqual({
       pricing: 'unavailable',
       requestMap: 'unavailable',
+      reasoning: 'unavailable',
     })
     expect(model?.factSources?.requestMapFields).toBeUndefined()
     expect(result.docsFailures?.first.map((failure) => failure.source)).toEqual(

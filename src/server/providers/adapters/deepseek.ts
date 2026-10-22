@@ -21,6 +21,7 @@ import {
   openAiCompatModelFacts,
 } from '../openai-compat.ts'
 import { deepseekModelActivity } from '../model-meta.ts'
+import { ingestFailedEvent, noteIngest } from '../../ingest/ingest-signals.ts'
 import type {
   ListModelsResult,
   ModelFact,
@@ -95,6 +96,17 @@ export const provider: ProviderConfig = {
     const switchable = new Set(
       replay ? parseDeepseekNonThinking(replay.text) : [],
     )
+    // The guide names its models' non-thinking modes; reading none means
+    // the page changed shape, so the stored `mandatory` stays.
+    const unreadMandatory = !replay || switchable.size === 0
+    if (replay && switchable.size === 0)
+      noteIngest(
+        ingestFailedEvent(
+          'models-poll',
+          'deepseek',
+          'thinking guide: no model names its non-thinking mode',
+        ),
+      )
     return {
       ...listed,
       models: listed.models.map((model) => {
@@ -102,6 +114,9 @@ export const provider: ProviderConfig = {
           ...(pricing ? [] : ['pricing' as const]),
           ...(model.reasoning != null && !replay
             ? ['requestMap' as const]
+            : []),
+          ...(model.reasoning != null && unreadMandatory
+            ? ['reasoning' as const]
             : []),
         ]
         const row = {
