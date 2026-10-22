@@ -110,19 +110,25 @@ it('sources Zen protocol paths from the inference docs, with no schema bodies', 
     'https://models.dev/api.json',
   ])
 })
-it('keeps Go ids at v1/<tail> and checks them under /inference/go/<protocol>/', async () => {
+it('checks Go ids against the full documented /inference/go/<protocol>/ path', async () => {
   serve(GO_DOCS)
   const result = await openCodeRouteSpec(
     [
-      { schemaEndpointId: 'v1/responses', activity: 'chat' },
-      { schemaEndpointId: 'v1/messages', activity: 'chat' },
+      {
+        schemaEndpointId: 'inference/go/openai/v1/responses',
+        activity: 'chat',
+      },
+      {
+        schemaEndpointId: 'inference/go/anthropic/v1/messages',
+        activity: 'chat',
+      },
     ],
     { url: 'docs', text: 'docs' },
     true,
   )
   expect(Object.keys(result.specs[0]?.paths ?? {})).toEqual([
-    '/v1/responses',
-    '/v1/messages',
+    '/inference/go/openai/v1/responses',
+    '/inference/go/anthropic/v1/messages',
   ])
   expect(fetched()).toEqual([OPENCODE_GO_ROUTE_DOCS_URL])
 })
@@ -130,8 +136,11 @@ it.each([
   ['inference/openai/v1/messages', false],
   ['inference/anthropic/v1/chat/completions', false],
   ['inference/go/openai/v1/chat/completions', false],
+  ['inference/go/anthropic/v1/chat/completions', true],
+  ['inference/go/google/v1beta/models/gemini:generateContent', true],
   ['inference/v1/messages', false],
   ['v1/chat/completions', true],
+  ['v1/responses', true],
   ['v1/embeddings', true],
 ])('rejects %s, a route the docs do not list', async (id, go) => {
   serve(go ? GO_DOCS : ZEN_DOCS)

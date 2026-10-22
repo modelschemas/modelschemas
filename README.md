@@ -360,6 +360,11 @@ by unit — so `null` on a list row always means no card. `GET
 `GET /v1/status` counts `priced` models per provider. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
 
+**Breaking (0.1.x):** `opencode-go` endpoint ids moved from `v1/<tail>` to
+the documented `inference/go/<protocol>/v1/<tail>` (#393), e.g.
+`/v1/schemas/opencode-go/chat/inference/go/openai/v1/chat/completions`.
+The next spec sync emits `endpoint.removed` for the old ids.
+
 **Currencies:** rate cards may be in a currency other than USD.
 `moonshotai-cn` and `minimax-cn` are priced in CNY. A USD card is unchanged;
 a card in another currency wraps its price as

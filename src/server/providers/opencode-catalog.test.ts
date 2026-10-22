@@ -275,7 +275,7 @@ it('leaves an unmapped package without a route', () => {
   expect(model?.activity).toBeUndefined()
 })
 
-it('routes Go rows on the documented base and ignores a model api', () => {
+it('routes Go rows on the model api, like Zen', () => {
   const data = {
     'opencode-go': {
       npm: '@ai-sdk/openai-compatible',
@@ -293,10 +293,10 @@ it('routes Go rows on the documented base and ignores a model api', () => {
   }
   const model = parseOpenCodeCatalog(data, 'opencode-go', HASH).synthetic
   expect(model).toMatchObject({
-    schemaEndpointId: 'v1/responses',
+    schemaEndpointId: 'inference/go/openai/v1/responses',
     activity: 'chat',
     factSources: {
-      schemaEndpointId: { path: 'opencode-go.models.synthetic.provider.npm' },
+      schemaEndpointId: { path: 'opencode-go.models.synthetic.provider' },
     },
   })
 })

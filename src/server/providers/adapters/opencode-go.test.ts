@@ -17,12 +17,15 @@ const LISTING = {
 const CATALOG = {
   'opencode-go': {
     npm: '@ai-sdk/openai-compatible',
-    api: 'https://opencode.ai/inference/go/v1',
+    api: 'https://opencode.ai/inference/go/openai/v1',
     models: {
       mini: {
         id: 'mini',
         name: 'Mini',
-        provider: { npm: '@ai-sdk/anthropic' },
+        provider: {
+          npm: '@ai-sdk/anthropic',
+          api: 'https://opencode.ai/inference/go/anthropic/v1',
+        },
         cost: { input: 0.3, output: 1.2, cache_read: 0.06 },
       },
       kimi: { id: 'kimi', name: 'Kimi', cost: { input: 3, output: 15 } },
@@ -98,26 +101,26 @@ describe('opencode-go', () => {
       displayName: 'Mini',
       activity: 'chat',
       pricing: null,
-      schemaEndpointId: 'v1/messages',
+      schemaEndpointId: 'inference/go/anthropic/v1/messages',
     })
     expect(byId.mini?.factSources?.schemaEndpointId).toMatchObject({
       derivation: 'listing',
       sourceUrl: OPENCODE_CATALOG_URL,
-      path: 'opencode-go.models.mini.provider.npm',
+      path: 'opencode-go.models.mini.provider',
     })
     expect(byId.kimi).toMatchObject({
-      schemaEndpointId: 'v1/chat/completions',
+      schemaEndpointId: 'inference/go/openai/v1/chat/completions',
       pricing: null,
     })
     expect(byId.kimi?.factSources?.schemaEndpointId?.path).toBe(
       'opencode-go.npm',
     )
     expect(byId.gpt).toMatchObject({
-      schemaEndpointId: 'v1/responses',
+      schemaEndpointId: 'inference/go/openai/v1/responses',
       pricing: null,
     })
     expect(byId.deepseek).toMatchObject({
-      schemaEndpointId: 'v1/chat/completions',
+      schemaEndpointId: 'inference/go/openai/v1/chat/completions',
       pricing: null,
     })
     expect(byId.absent).toEqual({
@@ -127,10 +130,12 @@ describe('opencode-go', () => {
       absent: { releasedAt: 'cleared' },
     })
     expect(provider.modelsEndpoint).toBe(OPENCODE_GO_MODELS_URL)
-    expect(spec.specs[0]?.paths?.['/v1/messages']?.post).toMatchObject({
+    expect(
+      spec.specs[0]?.paths?.['/inference/go/anthropic/v1/messages']?.post,
+    ).toMatchObject({
       'x-modelschemas-route-only': true,
     })
-    expect(spec.specs[0]?.paths?.['/inference/go/v1/messages']).toBeUndefined()
+    expect(spec.specs[0]?.paths?.['/v1/messages']).toBeUndefined()
     expect(urls.filter((url) => url.includes('/docs/'))).toEqual([
       OPENCODE_GO_ROUTE_DOCS_URL,
     ])
@@ -147,7 +152,10 @@ describe('opencode-go', () => {
           gemini: {
             id: 'gemini',
             name: 'Gemini',
-            provider: { npm: '@ai-sdk/google' },
+            provider: {
+              npm: '@ai-sdk/google',
+              api: 'https://opencode.ai/inference/go/google/v1beta',
+            },
           },
         },
       },
@@ -174,9 +182,9 @@ describe('opencode-go', () => {
 
     const spec = await provider.fetchSpec({})
     expect(Object.keys(spec.specs[0]?.paths ?? {}).sort()).toEqual([
-      '/v1/chat/completions',
-      '/v1/messages',
-      '/v1/responses',
+      '/inference/go/anthropic/v1/messages',
+      '/inference/go/openai/v1/chat/completions',
+      '/inference/go/openai/v1/responses',
     ])
     const [gemini] = (await provider.listModels({})).models
     expect(gemini).toMatchObject({ rawId: 'gemini', activity: 'chat' })
@@ -194,6 +202,7 @@ describe('opencode-go', () => {
           JSON.stringify({
             'opencode-go': {
               npm: '@ai-sdk/openai-compatible',
+              api: 'https://opencode.ai/inference/go/openai/v1',
               models: {
                 mini: {
                   id: 'mini',

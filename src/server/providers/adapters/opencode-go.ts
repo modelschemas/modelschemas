@@ -15,8 +15,9 @@ import type {
 } from '../types.ts'
 import { parseOpencodeModels } from './opencode.ts'
 
-/** Documented base. models.dev also serves `/inference/go/v1`; the console page still says `/zen/go/v1`. */
-export const OPENCODE_GO_MODELS_URL = 'https://opencode.ai/zen/go/v1/models'
+/** The models endpoint go.mdx documents. */
+export const OPENCODE_GO_MODELS_URL =
+  'https://opencode.ai/inference/go/v1/models'
 
 const FETCH_TIMEOUT_MS = 30_000
 

@@ -33,16 +33,9 @@ export function documentedRoutes(text: string, url: string): Array<string> {
   return routes
 }
 
-/**
- * A documented path as a matcher for a stored path. A `<placeholder>` matches
- * one path segment. Go ids stay `v1/<tail>` (opencode-catalog.ts), so Go
- * drops the `/inference/go/<protocol>` prefix the docs put before `/v1/`.
- */
-function routePattern(documented: string, go: boolean): RegExp {
-  const local = go
-    ? documented.replace(/^\/inference\/go\/[^/]+(?=\/v1\/)/, '')
-    : documented
-  const escaped = local.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+/** A documented path as a matcher for a stored path. A `<placeholder>` matches one path segment. */
+function routePattern(documented: string): RegExp {
+  const escaped = documented.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return new RegExp(`^${escaped.replace(/<[^>]+>/g, '[^/:]+')}$`)
 }
 
@@ -60,9 +53,7 @@ export async function openCodeRouteSpec(
     throw new Error('opencode: catalog names no verified chat routes')
   const url = go ? OPENCODE_GO_ROUTE_DOCS_URL : OPENCODE_ROUTE_DOCS_URL
   const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
-  const documented = documentedRoutes(text, url).map((path) =>
-    routePattern(path, go),
-  )
+  const documented = documentedRoutes(text, url).map(routePattern)
   const method = { url, hash: await sha256Text(text) }
   const paths: NonNullable<OpenApiDocument['paths']> = {}
   for (const path of routes) {

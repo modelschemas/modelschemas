@@ -12,10 +12,10 @@ sourced zero prices, not source-silent exceptions. Go subscription-accounting
 rates remain distinct from billed token prices.
 
 The current chat score does not erase unknown activity on other live ids.
-Native live listing: https://opencode.ai/zen/go/v1/models.
-models.dev also publishes https://opencode.ai/inference/go/v1, which serves
-the same ids; the console page https://opencode.ai/v2/docs/console/go/ still
-documents `/zen/go/v1`, so endpoint ids stay on that base. Go `cost` in
+Native live listing: https://opencode.ai/inference/go/v1/models, the one
+https://opencode.ai/v2/docs/console/go/ documents. Endpoint ids are the
+models.dev `api` path plus the package suffix (`inference/go/<protocol>/...`),
+checked against that page's Endpoints table (#393). Go `cost` in
 https://models.dev/api.json is not stored: it is not confirmed as a billed
 token price. The per-row checks below cited https://opencode.ai/docs/go,
 removed upstream on 2026-10-12. Checked 2026-10-09. Among activity-null rows,
