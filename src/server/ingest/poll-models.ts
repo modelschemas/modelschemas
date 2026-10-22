@@ -843,7 +843,10 @@ export async function pollProviderModels(
       vocabulary,
       now,
     )
-    const identity = provider.upstreamModelIdentity?.(info.rawId) ?? null
+    const identity =
+      info.upstream !== undefined
+        ? info.upstream
+        : (provider.upstreamModelIdentity?.(info.rawId) ?? null)
     // Only changed evidence is written: most rows restate it every poll.
     if (!sameEvidence(existing, identity)) identities.push({ id, identity })
 
