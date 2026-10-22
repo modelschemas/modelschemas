@@ -51,25 +51,23 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # github-api commits are signed; main requires signed commits.
+      # Pinned: this step holds a contents/pull-requests write token.
+      # API pushes (the default) are signed; main requires signed commits.
       - id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
         with:
-          version: bunx changeset version
-          commitMode: github-api
-          title: Version Packages
-          commit: Version Packages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          version-script: bunx changeset version
+          pr-title: Version Packages
+          commit-message: Version Packages
 
       - name: Run CI on the Version Packages PR
-        if: steps.changesets.outputs.pullRequestNumber != ''
+        if: steps.changesets.outputs.pr-number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run ci.yml --ref changeset-release/main
 
       - id: check
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         run: |
           v=$(jq -r .version packages/rate-card/package.json)
           if npm view "@modelschemas/rate-card@$v" version >/dev/null 2>&1; then
