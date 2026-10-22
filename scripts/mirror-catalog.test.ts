@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { commitMessage, coveredChanges, mirrorFiles } from './mirror-catalog.ts'
+import {
+  LOOKBACK_SECONDS,
+  commitMessage,
+  mirrorFiles,
+  newChanges,
+  parseExport,
+  parseFeedState,
+  refuseRun,
+} from './mirror-catalog.ts'
 
 const body = {
   latestChange: { id: 'chg-b', createdAt: 20 },
@@ -18,10 +26,6 @@ const change = (id: string, createdAt: number) => ({
   summary: `summary ${id}`,
 })
 
-async function* pages(...list: Array<Array<ReturnType<typeof change>>>) {
-  yield* list
-}
-
 describe('mirrorFiles', () => {
   it('writes one pretty file per entity, the same bytes each run', () => {
     const files = mirrorFiles(body)
@@ -29,7 +33,6 @@ describe('mirrorFiles', () => {
       'providers/fal.json',
       'models/fal/fal-flux-dev.json',
       'schemas/fal/fal-ai/flux/dev.json',
-      'latest-change.json',
     ])
     expect(files.get('providers/fal.json')).toBe(
       '{\n  "id": "fal",\n  "displayName": "FAL"\n}\n',
@@ -52,35 +55,94 @@ describe('mirrorFiles', () => {
   })
 })
 
-describe('coveredChanges', () => {
-  it('keeps (previous, latest], skipping newer rows and stopping at previous', async () => {
-    const covered = await coveredChanges(
-      pages(
-        [change('z-newer', 30), change('chg-b', 20), change('chg-a2', 10)],
-        [change('chg-a1', 10), change('never-read', 5)],
-      ),
-      { id: 'chg-a1', createdAt: 10 },
-      { id: 'chg-b', createdAt: 20 },
+describe('parseExport', () => {
+  it('refuses a body without latestChange, providers, or array sections', () => {
+    const { latestChange: _, ...noLatest } = body
+    expect(() => parseExport(noLatest)).toThrow(/no latestChange/)
+    expect(() => parseExport({ ...body, providers: [] })).toThrow(
+      /no providers/,
     )
-    expect(covered.map((c) => c.id)).toEqual(['chg-b', 'chg-a2'])
+    expect(() => parseExport({ ...body, models: {} })).toThrow(/not an array/)
+    expect(() => parseExport({ ...body, latestChange: { id: 1 } })).toThrow(
+      /latestChange/,
+    )
+  })
+})
+
+describe('refuseRun', () => {
+  const a = { id: 'a', createdAt: 10 }
+  const b = { id: 'b', createdAt: 20 }
+  it('refuses a latestChange that vanished or moved backwards', () => {
+    expect(() => refuseRun(b, null, 10, 10, false)).toThrow(/no latestChange/)
+    expect(() => refuseRun(b, a, 10, 10, false)).toThrow(/moved backwards/)
+    expect(() => refuseRun(a, b, 10, 10, false)).not.toThrow()
+  })
+
+  it('refuses dropping more than half the files unless allowed', () => {
+    expect(() => refuseRun(a, b, 100, 49, false)).toThrow(/MIRROR_ALLOW_SHRINK/)
+    expect(() => refuseRun(a, b, 100, 49, true)).not.toThrow()
+    expect(() => refuseRun(null, b, 0, 3, false)).not.toThrow()
+  })
+})
+
+describe('newChanges', () => {
+  it('lists a change a running poll inserted late with an earlier createdAt and smaller id', () => {
+    // Run 1 saw chg-m at T=100. The poll that started at T=100 then wrote
+    // chg-a (same createdAt, smaller random id): a keyset cursor skips it.
+    const run1 = newChanges(parseFeedState(null), [change('chg-m', 100)], {
+      id: 'chg-m',
+      createdAt: 100,
+    })
+    const run2 = newChanges(
+      run1.state,
+      [change('chg-m', 100), change('chg-a', 100), change('chg-z', 150)],
+      { id: 'chg-z', createdAt: 150 },
+    )
+    expect(run2.listed.map((c) => c.id)).toEqual(['chg-a', 'chg-z'])
+    expect(run2.state.highWater).toBe(150)
+    expect(run2.state.listed).toEqual([
+      { id: 'chg-a', createdAt: 100 },
+      { id: 'chg-m', createdAt: 100 },
+      { id: 'chg-z', createdAt: 150 },
+    ])
+  })
+
+  it('forgets listed ids once they fall behind the window', () => {
+    const later = 100 + LOOKBACK_SECONDS + 1
+    const { state } = newChanges(
+      {
+        latestChange: null,
+        highWater: 100,
+        listed: [{ id: 'old', createdAt: 100 }],
+      },
+      [change('new', later)],
+      null,
+    )
+    expect(state.listed).toEqual([{ id: 'new', createdAt: later }])
+  })
+
+  it('round-trips through feed.json', () => {
+    const { state } = newChanges(parseFeedState(null), [change('x', 5)], null)
+    expect(parseFeedState(JSON.stringify(state))).toEqual(state)
+    expect(() => parseFeedState('{"highWater":1}')).toThrow(/listed/)
   })
 })
 
 describe('commitMessage', () => {
-  it('lists every covered id', () => {
-    const message = commitMessage(
-      { id: 'a', createdAt: 1 },
-      { id: 'c', createdAt: 3 },
-      [change('c', 3), change('b', 2)],
-    )
-    expect(message).toBe(
-      'Catalog: 2 changes up to c\n\n/v1/changes ids covered:\n- c model.updated: summary c\n- b model.updated: summary b\n',
+  it('lists every new id', () => {
+    expect(
+      commitMessage(false, { id: 'c', createdAt: 3 }, [
+        change('c', 3),
+        change('b', 2),
+      ]),
+    ).toBe(
+      'Catalog: 2 changes\n\n/v1/changes ids recorded since the last mirror commit:\n- c model.updated: summary c\n- b model.updated: summary b\n',
     )
   })
 
-  it('names the first snapshot without listing the whole feed', () => {
-    expect(commitMessage(null, { id: 'c', createdAt: 3 }, [])).toBe(
-      'Catalog snapshot up to change c\n',
-    )
+  it('names the first snapshot without listing the feed', () => {
+    expect(
+      commitMessage(true, { id: 'c', createdAt: 3 }, [change('c', 3)]),
+    ).toBe('Catalog snapshot up to change c\n')
   })
 })

@@ -36,7 +36,7 @@ jobs:
         run: bun .modelschemas/scripts/mirror-catalog.ts . > "$RUNNER_TEMP/commit-msg"
       - name: Commit only on change
         run: |
-          git add -A providers models schemas latest-change.json
+          git add -A providers models schemas feed.json
           if git diff --cached --quiet; then
             echo "Catalog unchanged; nothing to commit."
             exit 0
