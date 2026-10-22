@@ -165,6 +165,7 @@ export type Change = {
     | 'model.added'
     | 'model.removed'
     | 'model.updated'
+    | 'catalog.shape_changed'
     | 'schema.added'
     | 'schema.updated'
     | 'endpoint.added'
@@ -173,7 +174,7 @@ export type Change = {
   subjectId: string
   summary: string
   /**
-   * model.updated carries before, after, and changed. changed is the fact paths that differ and is never empty. A source hash, an extract time, the operand order of +, and the order of an input values list are not facts, so they do not appear here and do not produce an event. Schema events carry kind, contentHash, and previousHash instead.
+   * model.updated carries before, after, and changed. changed is the fact paths that differ and is never empty. A source hash, an extract time, the operand order of +, and the order of an input values list are not facts, so they do not appear here and do not produce an event. Schema events carry kind, contentHash, and previousHash instead. catalog.shape_changed means the served model row changed shape: one row per provider, subjectId model-row, carrying version, contentHash (the row-shape hash), previousHash, and notes. Re-read openapi.json and upgrade @modelschemas/client.
    */
   payload?: {
     before?: unknown
@@ -185,6 +186,14 @@ export type Change = {
     kind?: 'input' | 'output'
     contentHash?: string
     previousHash?: string | null
+    /**
+     * catalog.shape_changed: the row shape version.
+     */
+    version?: number
+    /**
+     * catalog.shape_changed: what changed in the row.
+     */
+    notes?: string
   }
   /**
    * Unix epoch seconds.
@@ -344,18 +353,131 @@ export type ChatRequestMap = {
   reasoningEffort?: boolean | null
 }
 
+export type HalLink = {
+  /**
+   * A path, or an RFC 6570 template when templated is true.
+   */
+  href: string
+  method: 'GET' | 'POST' | 'DELETE'
+  contentType: string
+  templated?: true
+  /**
+   * A concrete URL for a GET, or a request body for a POST.
+   */
+  example?:
+    | string
+    | {
+        [key: string]: unknown
+      }
+}
+
+export type ModelLinks = {
+  provider: HalLink
+  schemas: HalLink
+  openapi?: HalLink
+  /**
+   * The bound generation schema. Only on model rows whose schemaEndpointId and activity are set.
+   */
+  schema?: HalLink
+}
+
+export type FactSource = {
+  /**
+   * How the fact was arrived at. source-silent: the provider publishes no value for it (docs/source-silent ledger).
+   */
+  derivation:
+    | 'listing'
+    | 'docs-extracted'
+    | 'upstream-spec'
+    | 'generated'
+    | 'probe-verified'
+    | 'docs-derived'
+    | 'source-silent'
+  sourceUrl?: string
+  sourceHash?: string
+  /**
+   * Epoch seconds.
+   */
+  fetchedAt?: number
+  /**
+   * Bound generation route, when the fact came from its schema.
+   */
+  endpointId?: string
+  /**
+   * JSON pointer or field name in the source document.
+   */
+  path?: string
+  /**
+   * source-silent only: the date the ledger author checked the source (YYYY-MM-DD).
+   */
+  checkedAt?: string
+  /**
+   * sameAs only: the id matched after dots were read as hyphens.
+   */
+  normalized?: true
+}
+
+/**
+ * One source per key (a capability flag or a server tool id), or one source-silent entry for the whole field.
+ */
+export type FactSourceMap =
+  | {
+      [key: string]: FactSource
+    }
+  | FactSource
+
+export type ModelFactSources = {
+  schemaEndpointId?: FactSource
+  sameAs?: FactSource
+  contextWindow?: FactSource
+  maxOutput?: FactSource
+  modalities?: FactSource
+  pricing?: FactSource
+  capabilities?: FactSourceMap
+  knowledgeCutoff?: FactSource
+  /**
+   * Covers openWeights and weightsUrl.
+   */
+  openWeights?: FactSource
+  reasoning?: FactSource
+  requestMap?: FactSource
+  /**
+   * Per-field evidence when a request map combines sources, keyed by ChatRequestMap field.
+   */
+  requestMapFields?: {
+    [key: string]: FactSource
+  }
+  serverTools?: FactSourceMap
+  cacheRead?: FactSource
+  efforts?: FactSource
+} | null
+
+export type FactDiscrepancy = {
+  field: string
+  /**
+   * This row's value.
+   */
+  ours: unknown
+  /**
+   * OpenRouter's value for the same model.
+   */
+  openrouter: unknown
+  oursDerivation: string | null
+  openrouterId: string
+}
+
 export type Model = {
-  id?: string
-  provider?: string
-  rawId?: string
+  id: string
+  provider: string
+  rawId: string
   /**
    * The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.
    */
-  sameAs?: {
+  sameAs: {
     provider: string
     rawId: string
   } | null
-  activity?:
+  activity:
     | 'chat'
     | 'image'
     | 'video'
@@ -363,31 +485,37 @@ export type Model = {
     | 'embeddings'
     | 'moderation'
     | null
-  displayName?: string | null
-  schemaEndpointId?: string | null
-  contextWindow?: number | null
-  maxOutput?: number | null
-  modalities?: unknown
+  displayName: string | null
+  schemaEndpointId: string | null
+  contextWindow: number | null
+  maxOutput: number | null
+  /**
+   * Input and output modalities as the source states them, or null when unknown. A side the source leaves unstated is absent or null.
+   */
+  modalities: {
+    input?: Array<string> | null
+    output?: Array<string> | null
+  } | null
   /**
    * Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.
    */
-  pricing?: RateCard | CompactPricing | null
+  pricing: RateCard | CompactPricing | null
   /**
    * Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.
    */
-  capabilities?: {
+  capabilities: {
     [key: string]: boolean
   } | null
   /**
    * The provider's own listing object for the model, as published: not normalised, and different for every provider (fal category, BytePlus Ark features and task type, ElevenLabs languages, Replicate visibility). null when the provider lists none. Nothing in it is a capability flag; read capabilities for those.
    */
-  providerMetadata?: {
+  providerMetadata: {
     [key: string]: unknown
   } | null
   /**
    * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
    */
-  reasoning?: {
+  reasoning: {
     mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
     mandatory: boolean | null
     efforts?: Array<string>
@@ -395,46 +523,161 @@ export type Model = {
   /**
    * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
    */
-  serverTools?: Array<string> | null
+  serverTools: Array<string> | null
   /**
    * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
    */
-  requestMap?: ChatRequestMap | null
+  requestMap: ChatRequestMap | null
   /**
    * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
    */
-  aliases?: Array<string> | null
+  aliases: Array<string> | null
   /**
    * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
    */
-  factSources?: unknown
+  factSources?: ModelFactSources
   /**
    * The provider's own stated release or creation date, epoch seconds. null when the provider reports none. Unlike firstSeenAt it is never our observation.
    */
-  releasedAt?: number | null
+  releasedAt: number | null
   /**
    * Knowledge (training data) cutoff as the provider states it: YYYY-MM, or YYYY-MM-DD when the provider gives a day. Never padded to a day. null when unknown. factSources.knowledgeCutoff is its source.
    */
-  knowledgeCutoff?: string | null
+  knowledgeCutoff: string | null
   /**
    * true when the provider itself states the weights can be openly downloaded, false when it states they cannot, null when it states neither. Never inferred from a model name. factSources.openWeights is its source.
    */
-  openWeights?: boolean | null
+  openWeights: boolean | null
   /**
    * Where the provider says the weights are. Set only when openWeights is true.
    */
-  weightsUrl?: string | null
+  weightsUrl: string | null
   /**
    * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
    */
-  firstSeenAt?: number
-  lastSeenAt?: number
-  deprecatedAt?: number | null
+  firstSeenAt: number
+  deprecatedAt: number | null
+  lastSeenAt: number
+  _links: ModelLinks
+}
+
+/**
+ * A model row in GET /v1/admin/export: the Model shape without lastSeenAt and _links.
+ */
+export type ExportModel = {
+  id: string
+  provider: string
+  rawId: string
+  /**
+   * The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.
+   */
+  sameAs: {
+    provider: string
+    rawId: string
+  } | null
+  activity:
+    | 'chat'
+    | 'image'
+    | 'video'
+    | 'audio'
+    | 'embeddings'
+    | 'moderation'
+    | null
+  displayName: string | null
+  schemaEndpointId: string | null
+  contextWindow: number | null
+  maxOutput: number | null
+  /**
+   * Input and output modalities as the source states them, or null when unknown. A side the source leaves unstated is absent or null.
+   */
+  modalities: {
+    input?: Array<string> | null
+    output?: Array<string> | null
+  } | null
+  /**
+   * Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.
+   */
+  pricing: RateCard | CompactPricing | null
+  /**
+   * Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.
+   */
+  capabilities: {
+    [key: string]: boolean
+  } | null
+  /**
+   * The provider's own listing object for the model, as published: not normalised, and different for every provider (fal category, BytePlus Ark features and task type, ElevenLabs languages, Replicate visibility). null when the provider lists none. Nothing in it is a capability flag; read capabilities for those.
+   */
+  providerMetadata: {
+    [key: string]: unknown
+  } | null
+  /**
+   * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
+   */
+  reasoning: {
+    mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+    mandatory: boolean | null
+    efforts?: Array<string>
+  } | null
+  /**
+   * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
+   */
+  serverTools: Array<string> | null
+  /**
+   * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
+   */
+  requestMap: ChatRequestMap | null
+  /**
+   * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
+   */
+  aliases: Array<string> | null
+  /**
+   * Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry.
+   */
+  factSources?: ModelFactSources
+  /**
+   * The provider's own stated release or creation date, epoch seconds. null when the provider reports none. Unlike firstSeenAt it is never our observation.
+   */
+  releasedAt: number | null
+  /**
+   * Knowledge (training data) cutoff as the provider states it: YYYY-MM, or YYYY-MM-DD when the provider gives a day. Never padded to a day. null when unknown. factSources.knowledgeCutoff is its source.
+   */
+  knowledgeCutoff: string | null
+  /**
+   * true when the provider itself states the weights can be openly downloaded, false when it states they cannot, null when it states neither. Never inferred from a model name. factSources.openWeights is its source.
+   */
+  openWeights: boolean | null
+  /**
+   * Where the provider says the weights are. Set only when openWeights is true.
+   */
+  weightsUrl: string | null
+  /**
+   * The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.
+   */
+  firstSeenAt: number
+  deprecatedAt: number | null
+}
+
+/**
+ * GET /v1/models/{provider}/{modelId}: a Model with its full RateCard and OpenRouter discrepancies.
+ */
+export type ModelDetail = Model & {
+  discrepancies: Array<FactDiscrepancy>
 }
 
 export type ModelList = {
-  count?: number
-  models?: Array<Model>
+  count: number
+  models: Array<Model>
+  _links: {
+    self: HalLink
+    providers: HalLink
+  }
+}
+
+export type ProviderModelList = {
+  provider: string
+  count: number
+  models: Array<Model>
+  _links: ModelLinks
 }
 
 export type EstimateRequest = {
@@ -578,9 +821,7 @@ export type ListProviderModelsResponses = {
   /**
    * Models for the provider.
    */
-  200: {
-    [key: string]: unknown
-  }
+  200: ProviderModelList
 }
 
 export type ListProviderModelsResponse =
@@ -656,7 +897,7 @@ export type GetModelResponses = {
   /**
    * Model metadata with activity, schemaEndpointId (canonical generation route on grain=provider catalogs), a RateCard or null for pricing, factSources (per-field provenance), OpenRouter discrepancies, and _links.schema when bound.
    */
-  200: Model
+  200: ModelDetail
 }
 
 export type GetModelResponse = GetModelResponses[keyof GetModelResponses]
@@ -944,6 +1185,7 @@ export type ListChangesData = {
       | 'model.added'
       | 'model.removed'
       | 'model.updated'
+      | 'catalog.shape_changed'
       | 'schema.added'
       | 'schema.updated'
       | 'endpoint.added'
@@ -1067,7 +1309,7 @@ export type ExportCatalogResponses = {
       id: string
       createdAt: number
     } | null
-    models: Array<Model>
+    models: Array<ExportModel>
     providers: Array<{
       id: string
       displayName: string

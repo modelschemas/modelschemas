@@ -156,6 +156,32 @@ event. The stored `source` then says when the price last changed.
 rows (and at least 20). The updates are still written; the field only
 marks them, and the next quieter poll clears it.
 
+### API stability (`/v1`)
+
+The model row is typed field by field in [openapi.json](./openapi.json)
+(`Model`, `ModelList`, `ProviderModelList`, `ModelDetail`, `ExportModel`),
+and `@modelschemas/client` types its responses from it.
+
+- **Additive changes** keep `/v1`: a new field, a new key in a map, a new
+  enum value or change type. Ignore keys you do not know, and handle an
+  enum value you do not know.
+- **Any change to the row shape** (additive or not: a field added,
+  removed, renamed, retyped or moved to another field) bumps
+  `MODEL_ROW_SHAPE.version` in `src/server/row-shape.ts` and ships with a
+  `@modelschemas/client` changeset. `row-shape.test.ts` hashes the row
+  schemas (descriptions excluded) and fails until the record matches, so a
+  shape change cannot merge without one.
+- **The feed announces it.** The first models poll after the deploy
+  (within 15 minutes) writes one `catalog.shape_changed` change per
+  provider, `subjectId: "model-row"`, with
+  `payload: { version, contentHash, previousHash, notes }`, and webhooks
+  deliver it. Watch for it with `GET /v1/changes?type=catalog.shape_changed`.
+  The rows of one announcement share `payload.contentHash`: dedupe on it
+  when you read across providers. A provider added later gets the current
+  shape's row on its first poll.
+- A change that is not additive is also listed as **Breaking** under
+  "Releasing on npm" below.
+
 ## Examples
 
 Three TanStack Start apps in [`examples/`](./examples) exercise the

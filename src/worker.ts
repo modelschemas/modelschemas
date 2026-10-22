@@ -25,6 +25,7 @@ import {
   syncAllProviders,
 } from '#/server/ingest/sync.ts'
 import { recordCompleteness } from '#/server/status.ts'
+import { recordRowShape } from '#/server/row-shape.ts'
 import { runWebhookTick } from '#/server/webhooks.ts'
 import type { SyncDeps } from '#/server/ingest/sync.ts'
 
@@ -136,6 +137,24 @@ export default {
             // Score completeness once per poll; requests only read the
             // record. It logs and keeps the old record rather than throw.
             await recordCompleteness(getDb(env))
+            // Announce a new row shape before the drain so webhooks carry
+            // it. A failure is logged and retried next poll; it does not
+            // hold up webhook delivery.
+            await recordRowShape(getDb(env)).then(
+              (written) => {
+                if (written > 0)
+                  console.log(JSON.stringify({ job: 'row-shape', written }))
+              },
+              (error: unknown) => {
+                console.error(
+                  JSON.stringify({
+                    job: 'row-shape',
+                    error: String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                  }),
+                )
+              },
+            )
             // The 15-min cron also drains the webhook queue (task 6.2).
             return runWebhookTick(getDb(env))
           })

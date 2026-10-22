@@ -33,6 +33,7 @@ export {
   listModels,
   listProviderModels,
   type ListedModel,
+  type ListedModelList,
   type ListedModelId,
 } from './listed-model.ts'
 

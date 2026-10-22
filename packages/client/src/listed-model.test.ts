@@ -1,7 +1,11 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
-import { listProviderModels as listProviderModelsRaw } from './generated/sdk.gen'
-import { listProviderModels } from './listed-model.ts'
+import {
+  getModel as getModelRaw,
+  listProviderModels as listProviderModelsRaw,
+} from './generated/sdk.gen'
+import type { Model } from './generated/types.gen'
+import { getModel, listProviderModels } from './listed-model.ts'
 import type { ListedModelId } from './listed-model.ts'
 
 vi.mock('./generated/sdk.gen', () => ({
@@ -10,15 +14,47 @@ vi.mock('./generated/sdk.gen', () => ({
   listProviderModels: vi.fn(),
 }))
 
+const link = { href: '/v1', method: 'GET' as const, contentType: 'json' }
+const row: Model = {
+  id: 'anthropic-claude-sonnet-4-5',
+  provider: 'anthropic',
+  rawId: 'claude-sonnet-4-5',
+  sameAs: null,
+  activity: 'chat',
+  displayName: null,
+  schemaEndpointId: null,
+  contextWindow: null,
+  maxOutput: null,
+  modalities: null,
+  pricing: null,
+  capabilities: { tools: true },
+  providerMetadata: null,
+  reasoning: null,
+  serverTools: null,
+  requestMap: null,
+  aliases: null,
+  releasedAt: null,
+  knowledgeCutoff: null,
+  openWeights: null,
+  weightsUrl: null,
+  firstSeenAt: 1,
+  lastSeenAt: 1,
+  deprecatedAt: null,
+  _links: { provider: link, schemas: link },
+}
+
 describe('listProviderModels', () => {
-  it('mints ListedModelId on rawId', async () => {
+  it('mints ListedModelId on rawId and keeps the typed row', async () => {
     vi.mocked(listProviderModelsRaw).mockResolvedValue({
       data: {
-        models: [
-          { id: 'anthropic-claude-sonnet-4-5', rawId: 'claude-sonnet-4-5' },
-        ],
+        provider: 'anthropic',
+        count: 1,
+        models: [row],
+        _links: { provider: link, schemas: link },
       },
       error: undefined,
+      request: new Request('https://example.com'),
+      response: new Response(),
     })
     const { data } = await listProviderModels({
       path: { provider: 'anthropic' },
@@ -27,5 +63,24 @@ describe('listProviderModels', () => {
     expectTypeOf(data?.models[0]?.rawId).toEqualTypeOf<
       ListedModelId<'anthropic'> | undefined
     >()
+    expectTypeOf(data?.models[0]?.capabilities).toEqualTypeOf<
+      { [key: string]: boolean } | null | undefined
+    >()
+  })
+})
+
+describe('getModel', () => {
+  it('keeps detail discrepancies on the branded row', async () => {
+    vi.mocked(getModelRaw).mockResolvedValue({
+      data: { ...row, discrepancies: [] },
+      error: undefined,
+      request: new Request('https://example.com'),
+      response: new Response(),
+    })
+    const { data } = await getModel({
+      path: { provider: 'anthropic', modelId: 'claude-sonnet-4-5' },
+    })
+    expect(data?.discrepancies).toEqual([])
+    expectTypeOf(data?.provider).toEqualTypeOf<'anthropic' | undefined>()
   })
 })
