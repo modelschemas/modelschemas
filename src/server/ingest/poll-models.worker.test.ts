@@ -2083,6 +2083,59 @@ describe('absent facts (FactAbsence)', () => {
     )
     expect(outcome).toMatchObject({ updated: 5, failures: 0 })
   })
+
+  it('stores a price range beside no card, never beside a kept one (#406)', async () => {
+    const id = 'poll-range'
+    const deps = await freshDeps(id)
+    const range = (max: number) => ({
+      currency: 'USD',
+      routes: [
+        { model: 'a/m', pricing: { currency: 'USD', per: 'token' as const } },
+        { model: 'b/m', pricing: { currency: 'USD', per: 'token' as const } },
+      ],
+      inputPerMillion: { min: 1, max },
+    })
+    const bare = (extra: Partial<ModelInfo>): ModelInfo => ({
+      rawId: 'm',
+      activity: 'chat',
+      ...extra,
+    })
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        bare({ pricingRange: range(2), absent: { pricing: 'cleared' } }),
+      ]),
+    )
+    expect(await storedRow(deps, id, 'm')).toMatchObject({
+      pricing: null,
+      pricingRange: range(2),
+    })
+    // A moved bound is a change to the model.
+    const before = await changesFor(deps, id)
+    const moved = await pollWithEvents(
+      deps,
+      stubProvider(id, [
+        bare({ pricingRange: range(3), absent: { pricing: 'cleared' } }),
+      ]),
+    )
+    expect(moved.outcome).toMatchObject({ updated: 1 })
+    expect(await changesFor(deps, id)).toBe(before + 1)
+    expect((await storedRow(deps, id, 'm')).pricingRange).toEqual(range(3))
+
+    // A card kept from before (here: the listing omits the price) is the
+    // row's one price, so no range is stored beside it.
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [bare({ pricing: listing })]),
+    )
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [bare({ pricingRange: range(2) })]),
+    )
+    const kept = await storedRow(deps, id, 'm')
+    expect(kept.pricing).not.toBeNull()
+    expect(kept.pricingRange).toBeNull()
+  })
 })
 
 describe('docs failures (tryDocs)', () => {

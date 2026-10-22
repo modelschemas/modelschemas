@@ -322,3 +322,53 @@ export function servePricing(
   if (mode === 'full') return card
   return projectTokenPricing(card)
 }
+
+/**
+ * Min/max over the published cards of a routed id's routes (issue #406).
+ * A bound, never the billed price: the gateway picks one route per call.
+ * `routes[].model` is each route's own row (same provider), which holds
+ * the full card. Null unless every route has a linear token card in one
+ * currency: a route with no card leaves the bounds unknown.
+ */
+export type PricingRange = {
+  currency: string
+  routes: Array<{ model: string; pricing: CompactPricing }>
+  inputPerMillion: { min: number; max: number }
+  outputPerMillion?: { min: number; max: number }
+}
+
+export function pricingRange(
+  routes: Array<{ model: string; card: RateCard | null }>,
+): PricingRange | null {
+  if (routes.length < 2) return null
+  const priced: PricingRange['routes'] = []
+  for (const { model, card } of routes) {
+    if (!card) return null
+    const pricing = projectTokenPricing(card)
+    if (pricing.inputPerMillion === undefined || pricing.tiered) return null
+    priced.push({ model, pricing })
+  }
+  const currency = priced[0]?.pricing.currency
+  if (!currency || priced.some((r) => r.pricing.currency !== currency)) {
+    return null
+  }
+  const inputs = priced.map((r) => r.pricing.inputPerMillion ?? 0)
+  const outputs = priced.flatMap((r) =>
+    r.pricing.outputPerMillion === undefined
+      ? []
+      : [r.pricing.outputPerMillion],
+  )
+  // Every route prices output, or none does.
+  if (outputs.length !== 0 && outputs.length !== priced.length) return null
+  return {
+    currency,
+    routes: priced,
+    inputPerMillion: { min: Math.min(...inputs), max: Math.max(...inputs) },
+    ...(outputs.length > 0 && {
+      outputPerMillion: {
+        min: Math.min(...outputs),
+        max: Math.max(...outputs),
+      },
+    }),
+  }
+}

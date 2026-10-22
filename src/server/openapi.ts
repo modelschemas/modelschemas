@@ -96,6 +96,11 @@ const modelFields = {
       { type: 'null' },
     ],
   },
+  pricingRange: {
+    description:
+      'Set on a routed id whose routes bill different prices (pricing is then null): a bound over the routes, not a price. factSources.pricingRange is where the route prices were read. null otherwise.',
+    oneOf: [{ $ref: '#/components/schemas/PricingRange' }, { type: 'null' }],
+  },
   capabilities: {
     description:
       "Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.",
@@ -191,6 +196,7 @@ const modelRequired = [
   'maxOutput',
   'modalities',
   'pricing',
+  'pricingRange',
   'capabilities',
   'providerMetadata',
   'reasoning',
@@ -558,10 +564,15 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored.',
+              'The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored. For a routed model with a pricingRange: min and max over its routes, each naming its route.',
             content: {
               'application/json': {
-                schema: { $ref: '#/components/schemas/EstimateResult' },
+                schema: {
+                  oneOf: [
+                    { $ref: '#/components/schemas/EstimateResult' },
+                    { $ref: '#/components/schemas/EstimateRangeResult' },
+                  ],
+                },
               },
             },
           },
@@ -1110,6 +1121,36 @@ export const openApiDocument = {
           tiered: { type: 'boolean', enum: [true] },
         },
       },
+      PricingRange: {
+        type: 'object',
+        description:
+          'A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. Each route is its own model row under the same provider, with its full card; POST /v1/estimate on this row prices the call on every route and returns min and max.',
+        required: ['currency', 'routes', 'inputPerMillion'],
+        properties: {
+          currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+          routes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['model', 'pricing'],
+              properties: {
+                model: {
+                  type: 'string',
+                  description: "The route's own model id (rawId).",
+                },
+                pricing: { $ref: '#/components/schemas/CompactPricing' },
+              },
+            },
+          },
+          inputPerMillion: { $ref: '#/components/schemas/PriceBounds' },
+          outputPerMillion: { $ref: '#/components/schemas/PriceBounds' },
+        },
+      },
+      PriceBounds: {
+        type: 'object',
+        required: ['min', 'max'],
+        properties: { min: { type: 'number' }, max: { type: 'number' } },
+      },
       RateCardSource: {
         type: 'object',
         required: ['url', 'hash', 'extractedAt'],
@@ -1360,6 +1401,7 @@ export const openApiDocument = {
           maxOutput: { $ref: '#/components/schemas/FactSource' },
           modalities: { $ref: '#/components/schemas/FactSource' },
           pricing: { $ref: '#/components/schemas/FactSource' },
+          pricingRange: { $ref: '#/components/schemas/FactSource' },
           capabilities: { $ref: '#/components/schemas/FactSourceMap' },
           knowledgeCutoff: { $ref: '#/components/schemas/FactSource' },
           openWeights: {
@@ -1525,6 +1567,38 @@ export const openApiDocument = {
             items: { type: 'string' },
             description:
               'Request keys the card does not read. They do not change amount. A usage key the card does not read is a 422 unknown_usage_key instead, because a dropped usage count gives a wrong price.',
+          },
+        },
+      },
+      EstimateRouteResult: {
+        allOf: [
+          { $ref: '#/components/schemas/EstimateResult' },
+          {
+            type: 'object',
+            required: ['model'],
+            properties: {
+              model: {
+                type: 'string',
+                description: 'The route row this amount was priced on.',
+              },
+            },
+          },
+        ],
+      },
+      EstimateRangeResult: {
+        type: 'object',
+        description:
+          "A model with a pricingRange and no single card: the call priced on every route's card. The bill is one route's amount; min and max bound it and neither is the billed price. Any route that cannot be priced refuses the whole estimate.",
+        required: ['currency', 'min', 'max', 'routes'],
+        properties: {
+          currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+          min: { $ref: '#/components/schemas/EstimateRouteResult' },
+          max: { $ref: '#/components/schemas/EstimateRouteResult' },
+          routes: {
+            type: 'array',
+            items: { type: 'string' },
+            description:
+              'Every route priced, as model ids under the same provider.',
           },
         },
       },

@@ -259,6 +259,27 @@ export type CompactPricing = {
   tiered?: true
 }
 
+/**
+ * A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. Each route is its own model row under the same provider, with its full card; POST /v1/estimate on this row prices the call on every route and returns min and max.
+ */
+export type PricingRange = {
+  currency: string
+  routes: Array<{
+    /**
+     * The route's own model id (rawId).
+     */
+    model: string
+    pricing: CompactPricing
+  }>
+  inputPerMillion: PriceBounds
+  outputPerMillion?: PriceBounds
+}
+
+export type PriceBounds = {
+  min: number
+  max: number
+}
+
 export type RateCardSource = {
   url: string
   hash: string
@@ -433,6 +454,7 @@ export type ModelFactSources = {
   maxOutput?: FactSource
   modalities?: FactSource
   pricing?: FactSource
+  pricingRange?: FactSource
   capabilities?: FactSourceMap
   knowledgeCutoff?: FactSource
   /**
@@ -500,6 +522,10 @@ export type Model = {
    * Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.
    */
   pricing: RateCard | CompactPricing | null
+  /**
+   * Set on a routed id whose routes bill different prices (pricing is then null): a bound over the routes, not a price. factSources.pricingRange is where the route prices were read. null otherwise.
+   */
+  pricingRange: PricingRange | null
   /**
    * Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.
    */
@@ -598,6 +624,10 @@ export type ExportModel = {
    * Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.
    */
   pricing: RateCard | CompactPricing | null
+  /**
+   * Set on a routed id whose routes bill different prices (pricing is then null): a bound over the routes, not a price. factSources.pricingRange is where the route prices were read. null otherwise.
+   */
+  pricingRange: PricingRange | null
   /**
    * Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.
    */
@@ -725,6 +755,26 @@ export type EstimateResult = {
    * Request keys the card does not read. They do not change amount. A usage key the card does not read is a 422 unknown_usage_key instead, because a dropped usage count gives a wrong price.
    */
   ignored: Array<string>
+}
+
+export type EstimateRouteResult = EstimateResult & {
+  /**
+   * The route row this amount was priced on.
+   */
+  model: string
+}
+
+/**
+ * A model with a pricingRange and no single card: the call priced on every route's card. The bill is one route's amount; min and max bound it and neither is the billed price. Any route that cannot be priced refuses the whole estimate.
+ */
+export type EstimateRangeResult = {
+  currency: string
+  min: EstimateRouteResult
+  max: EstimateRouteResult
+  /**
+   * Every route priced, as model ids under the same provider.
+   */
+  routes: Array<string>
 }
 
 export type GetServiceIndexData = {
@@ -1164,9 +1214,9 @@ export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors]
 
 export type EstimateCostResponses = {
   /**
-   * The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored.
+   * The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored. For a routed model with a pricingRange: min and max over its routes, each naming its route.
    */
-  200: EstimateResult
+  200: EstimateResult | EstimateRangeResult
 }
 
 export type EstimateCostResponse =

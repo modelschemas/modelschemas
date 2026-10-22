@@ -171,6 +171,7 @@ function toApiModel(
     maxOutput: row.maxOutput,
     modalities: row.modalities,
     pricing: servePricing(row.pricing, opts.pricing ?? 'compact'),
+    pricingRange: row.pricingRange ?? null,
     capabilities: row.capabilities,
     providerMetadata: row.providerMetadata,
     reasoning: row.reasoning,

@@ -5,7 +5,8 @@
  * Each listed model has `providers[]`: the routes it can be served by, each
  * with its own price. A bare id (`gpt-oss-120b`) is routed by a live score
  * (docs.llmgateway.io/features/routing), so its billed price is only known
- * when every route quotes the same one. `provider/model` pins one route
+ * when every route quotes the same one; otherwise it carries a
+ * `pricingRange` over its routes' cards. `provider/model` pins one route
  * ("prefix the model name with the provider name followed by a slash"), so
  * each route is also listed as its own row with that route's price. The
  * listing's top-level `pricing` is undocumented and is not used.
@@ -17,6 +18,7 @@ import { compileOpenRouterPricing } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
+import { pricingRange } from '#/server/rate-card.ts'
 
 import { bearerConnect } from '../connect.ts'
 import { classifyOpenAiCompat } from '../openai-compat.ts'
@@ -303,6 +305,18 @@ export function parseLlmGatewayModels(
         ? first.reasoning
         : null
     const single = routes.length === 1 ? routes[0] : undefined
+    // Routes that disagree: no single billed price, so a range over the
+    // pinned rows' cards. The gateway's own route has no pinned row, so
+    // it leaves the range unknown.
+    const range =
+      bareCard || routes.length < 2
+        ? null
+        : pricingRange(
+            routeFacts.map(({ route, card }) => ({
+              model: `${route.providerId}/${id}`,
+              card: route.providerId === SELF ? null : card,
+            })),
+          )
     models.push(
       rowInfo({
         ...shared,
@@ -310,6 +324,14 @@ export function parseLlmGatewayModels(
         contextWindow: positive(row.context_length),
         maxOutput: activity === 'chat' ? positive(row.max_output) : null,
         pricing: bareCard,
+        pricingRange: range,
+        // Every route priced and they differ: the listing states there is
+        // no one price. A route this cannot read leaves it a plain omission.
+        ...(routes.length > 1 &&
+        !bareCard &&
+        routeFacts.every((r) => r.card !== null)
+          ? { absent: { pricing: 'cleared' as const } }
+          : {}),
         reasoning: bareReasoning,
         aliases: strings(row.aliases),
         upstream: single ? upstreamOf(single, source) : null,
@@ -377,6 +399,9 @@ function rowInfo(
   const { pricePath, flags, params, source, ...model } = info
   const factSources: NonNullable<ModelInfo['factSources']> = {}
   if (model.pricing) factSources.pricing = listed(source, pricePath)
+  if (model.pricingRange) {
+    factSources.pricingRange = listed(source, 'data[].providers[].pricing')
+  }
   const requestMap =
     model.activity === 'chat'
       ? chatRequest(params, model.reasoning ?? null)

@@ -10,6 +10,7 @@ import {
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 
 import type { CapabilityMap } from '#/lib/capabilities.ts'
+import type { PricingRange } from '#/server/rate-card.ts'
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -408,6 +409,11 @@ export const models = sqliteTable(
     maxOutput: integer('max_output'),
     modalities: text('modalities', { mode: 'json' }),
     pricing: text('pricing', { mode: 'json' }),
+    // Min/max over a routed id's per-route cards (issue #406); a bound,
+    // never the billed price. Null on a row with one billed card.
+    pricingRange: text('pricing_range', {
+      mode: 'json',
+    }).$type<PricingRange | null>(),
     // A flag map: `{ tools: true, reasoning: false }`. true = the provider
     // states support, false = it states none, key absent = unknown, null =
     // nothing known. Booleans only.
