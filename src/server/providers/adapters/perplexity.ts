@@ -10,6 +10,7 @@ import {
   docsReport,
   docsRun,
   markdownTableRows,
+  tokenCount,
   tryDocs,
   unavailable,
 } from '../model-facts.ts'
@@ -58,6 +59,12 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
 /** Model id → the capability flags one docs page states for it. */
 type StatedFlags = Map<string, Array<string>>
 
+/** A reasoning card's "N-token context window and up to N output tokens". */
+interface StatedLimits {
+  contextWindow: number
+  maxOutput: number | null
+}
+
 function addFlags(out: StatedFlags, id: string, flags: Array<string>): void {
   out.set(id, [...new Set([...(out.get(id) ?? []), ...flags])])
 }
@@ -86,7 +93,9 @@ function unquote(text: string): string {
  * - A card sentence that ends "… reasoning model(s)." or "… reasoning model
  *   with a N-token context window[ and up to N output tokens]." gives
  *   `reasoning` to every row of its tab, and only when it names as many
- *   models as the tab lists. The card's other sentences are not read, so
+ *   models as the tab lists. Its context window and output tokens, when
+ *   stated, are those rows' `contextWindow` and `maxOutput` (#408). The
+ *   card's other sentences are not read, so
  *   one speaking of reasoning or thinking throws.
  *
  * Any other wording of either statement throws, as does an effort sentence
@@ -97,9 +106,11 @@ function unquote(text: string): string {
 export function parsePerplexityModelsPage(markdown: string): {
   flags: StatedFlags
   efforts: Map<string, Array<string>>
+  limits: Map<string, StatedLimits>
 } {
   const stated: StatedFlags = new Map()
   const levels = new Map<string, Array<string>>()
+  const limits = new Map<string, StatedLimits>()
   const unread = (what: string) =>
     new Error(`perplexity: models page states ${what} in an unread shape`)
   let rows = 0
@@ -133,12 +144,13 @@ export function parsePerplexityModelsPage(markdown: string): {
       const parts = card.split(/(?<=\.)\s+/)
       const said = parts.filter((s) => /reasoning models?\b/i.test(s))
       const rest = parts.filter((s) => !said.includes(s))
-      const subject =
+      const sentence =
         said.length === 1 && !rest.some((s) => /reason|think/i.test(s))
-          ? (/^(.+?) (?:—|is) .*\breasoning models?(?: with an? [\d,]+-token context window(?: and up to [\d,]+ output tokens)?)?\.$/.exec(
+          ? /^(.+?) (?:—|is) .*\breasoning models?(?: with an? ([\d,]+)-token context window(?: and up to ([\d,]+) output tokens)?)?\.$/.exec(
               said[0] ?? '',
-            )?.[1] ?? '')
-          : ''
+            )
+          : null
+      const subject = sentence?.[1] ?? ''
       const names = subject.split(/, and |, | and /)
       if (
         subject === '' ||
@@ -147,7 +159,14 @@ export function parsePerplexityModelsPage(markdown: string): {
       ) {
         throw unread('a reasoning model')
       }
-      for (const id of ids) addFlags(stated, id, ['reasoning'])
+      const contextWindow = tokenCount(sentence?.[2])
+      const maxOutput = tokenCount(sentence?.[3])
+      for (const id of ids) {
+        addFlags(stated, id, ['reasoning'])
+        // The sentence's limits belong to the models it names: every row
+        // of this tab, as checked above.
+        if (contextWindow !== null) limits.set(id, { contextWindow, maxOutput })
+      }
     }
 
     const efforts = [
@@ -184,7 +203,7 @@ export function parsePerplexityModelsPage(markdown: string): {
   if (sentences !== (markdown.match(/reasoning effort/gi) ?? []).length) {
     throw unread('reasoning effort')
   }
-  return { flags: stated, efforts: levels }
+  return { flags: stated, efforts: levels, limits }
 }
 
 /**
@@ -247,6 +266,8 @@ interface StatedDoc {
   flags: Array<[string, Array<string>]>
   /** Absent on the presets page, and on an entry cached before efforts were kept. */
   efforts?: Array<[string, Array<string>]>
+  /** Absent on the presets page, and on an entry cached before limits were kept. */
+  limits?: Array<[string, StatedLimits]>
 }
 
 function statedDoc(
@@ -255,17 +276,19 @@ function statedDoc(
   parse: (markdown: string) => {
     flags: StatedFlags
     efforts?: Map<string, Array<string>>
+    limits?: Map<string, StatedLimits>
   },
 ): Promise<StatedDoc> {
   return cachedDocs(kv, url, async () => {
     const text = await fetchText(url, {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
-    const { flags, efforts } = parse(text)
+    const { flags, efforts, limits } = parse(text)
     return {
       hash: await sha256Text(text),
       flags: [...flags],
       ...(efforts ? { efforts: [...efforts] } : {}),
+      ...(limits ? { limits: [...limits] } : {}),
     }
   })
 }
@@ -277,7 +300,10 @@ function statedDoc(
 function statedFacts(
   id: string,
   docs: Array<{ url: string; doc: StatedDoc }>,
-): Pick<ModelInfo, 'capabilities' | 'reasoning' | 'factSources'> {
+): Pick<
+  ModelInfo,
+  'capabilities' | 'reasoning' | 'contextWindow' | 'maxOutput' | 'factSources'
+> {
   const sources: Record<string, FactSource> = {}
   let reasoning: Pick<ModelInfo, 'reasoning' | 'factSources'> = {}
   for (const { url, doc } of docs) {
@@ -312,12 +338,40 @@ function statedFacts(
       }
     }
   }
+  const limited = docs.flatMap(({ url, doc }) => {
+    const stated = new Map(doc.limits).get(id)
+    return stated ? [{ url, hash: doc.hash, ...stated }] : []
+  })[0]
+  const limitSource = (path: string): FactSource => ({
+    derivation: 'docs-derived',
+    sourceUrl: limited?.url,
+    sourceHash: limited?.hash,
+    path,
+  })
+  const limits: Pick<ModelInfo, 'contextWindow' | 'maxOutput' | 'factSources'> =
+    limited
+      ? {
+          contextWindow: limited.contextWindow,
+          maxOutput: limited.maxOutput,
+          factSources: {
+            contextWindow: limitSource('contextWindow'),
+            ...(limited.maxOutput !== null
+              ? { maxOutput: limitSource('maxOutput') }
+              : {}),
+          },
+        }
+      : {}
   const capabilities = Object.keys(sources)
-  if (capabilities.length === 0) return {}
+  if (capabilities.length === 0) return limits
   return {
     capabilities,
     ...reasoning,
-    factSources: { ...reasoning.factSources, capabilities: sources },
+    ...limits,
+    factSources: {
+      ...reasoning.factSources,
+      ...limits.factSources,
+      capabilities: sources,
+    },
   }
 }
 
@@ -331,6 +385,8 @@ type StatedFact = Exclude<keyof ReturnType<typeof statedFacts>, 'factSources'>
 const STATED_FACTS: Record<StatedFact, true> = {
   capabilities: true,
   reasoning: true,
+  contextWindow: true,
+  maxOutput: true,
 }
 
 interface PerplexityModelList {

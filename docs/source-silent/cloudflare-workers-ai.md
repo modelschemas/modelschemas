@@ -1,4 +1,4 @@
-- cloudflare-workers-ai: maxOutput — Cloudflare caps `max_tokens` by the context window ("This limit cannot exceed the context window") and publishes no separate output limit: no model's catalog properties or request schema state one, https://developers.cloudflare.com/workers-ai/platform/glossary/, checked 2026-10-07
+- cloudflare-workers-ai: maxOutput — Cloudflare caps `max_tokens` by the context window ("This limit cannot exceed the context window") and publishes no separate output limit: none of the 39 text-generation model cards states one in its properties or request schema, https://developers.cloudflare.com/workers-ai/platform/glossary/, checked 2026-10-22
 
 - cloudflare-workers-ai/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b: replayReasoningContent — The exact own model schema/card plus the first-party Workers AI guides publish no normative caller requirement or rejection rule for replaying historical reasoning_content, https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/workers-ai-models/deepseek-r1-distill-qwen-32b.json, checked 2026-10-09.
 

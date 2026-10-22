@@ -118,6 +118,13 @@ describe('parsePerplexityModelsPage', () => {
       'reasoning',
     ])
     expect(page.flags.has('perplexity/nemotron-3-ultra-550b-a55b')).toBe(false)
+    // The same sentence's limits are that model's, and no other row's.
+    expect([...page.limits]).toEqual([
+      [
+        'perplexity/nemotron-3.5-super-120b-a12b',
+        { contextWindow: 1_048_576, maxOutput: 131_072 },
+      ],
+    ])
   })
 
   it('leaves the effort flag off when no tab states an effort', () => {
@@ -511,7 +518,12 @@ describe('perplexity listModels', () => {
           rawId: 'perplexity/sonar',
           releasedAt: null,
           activity: 'chat',
-          absent: { capabilities: 'unavailable', reasoning: 'unavailable' },
+          absent: {
+            capabilities: 'unavailable',
+            reasoning: 'unavailable',
+            contextWindow: 'unavailable',
+            maxOutput: 'unavailable',
+          },
         },
       ],
       docsFailures: {
