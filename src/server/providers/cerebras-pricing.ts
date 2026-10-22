@@ -153,12 +153,15 @@ function modelInfoBlocks(page: string): Array<string> {
   return priced.length > 0 ? priced : blocks
 }
 
-/** Catalog table: link slug plus the backticked API id. */
+/**
+ * Catalog table: link slug plus the backticked API id. Links may end in
+ * `.md` (issue #437); the slug drops it so the HTML page is read.
+ */
 export function cerebrasCatalogRows(
   markdown: string,
 ): Array<{ slug: string; id: string }> {
   const out: Array<{ slug: string; id: string }> = []
-  const re = /\[[^\]]+\]\(\/models\/([a-z0-9.-]+)\)\s*\|\s*`([^`]+)`/g
+  const re = /\[[^\]]+\]\(\/models\/([a-z0-9.-]+?)(?:\.md)?\)\s*\|\s*`([^`]+)`/g
   for (const match of markdown.matchAll(re)) {
     if (match[1] && match[2]) out.push({ slug: match[1], id: match[2] })
   }
