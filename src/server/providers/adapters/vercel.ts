@@ -4,6 +4,15 @@
  * Context-length tiers are the standard schedule. fast, flex, priority,
  * regional, and peak are not. Effort values are stored when the row
  * publishes them. A missing price stays null.
+ *
+ * A row with `pricing.varies_by_provider` has no single billed price:
+ * "By default, AI Gateway dynamically chooses providers based on recent
+ * uptime and latency" (docs/ai-gateway/models-and-providers/
+ * provider-filtering-and-ordering), and each route bills its own rate
+ * (`/v1/models/{id}/endpoints`). The top-level price is one route's, not
+ * the cheapest or a stated default (reflection/beam quotes its free route,
+ * alibaba/qwen-3-235b its vertex route over a cheaper deepinfra one), so
+ * those rows store no card and say why (`absent.pricing: cleared`).
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -409,7 +418,9 @@ export function parseVercelModels(
       continue
     }
     const pricing = isRecord(row.pricing) ? row.pricing : null
-    const card = pricing ? tokenCard(row.id, pricing, source) : null
+    const variesByRoute = pricing?.varies_by_provider === true
+    const card =
+      pricing && !variesByRoute ? tokenCard(row.id, pricing, source) : null
     const activity =
       typeof row.type === 'string' ? (TYPE_ACTIVITY[row.type] ?? null) : null
     const reasoning = vercelReasoning(row)
@@ -448,6 +459,7 @@ export function parseVercelModels(
       reasoning,
       ...(requestMap ? { requestMap } : {}),
       releasedAt: positive(row.released),
+      ...(variesByRoute ? { absent: { pricing: 'cleared' as const } } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
     })
   }
