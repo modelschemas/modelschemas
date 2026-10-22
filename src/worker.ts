@@ -147,7 +147,11 @@ export default {
               },
               (error: unknown) => {
                 console.error(
-                  JSON.stringify({ job: 'row-shape', error: String(error) }),
+                  JSON.stringify({
+                    job: 'row-shape',
+                    error: String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                  }),
                 )
               },
             )

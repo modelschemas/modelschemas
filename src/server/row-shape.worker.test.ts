@@ -46,8 +46,17 @@ describe('recordRowShape', () => {
       },
     })
 
+    // A provider added later gets the current shape on its first poll.
+    await db.insert(providers).values({
+      id: 'shape-prov-late',
+      displayName: 'Shape late',
+      specSourceUrl: 'https://example.com/spec.json',
+    })
+    expect(await recordRowShape(db, NOW + 1200)).toBe(1)
+    expect(await recordRowShape(db, NOW + 1500)).toBe(0)
+
     const next = { version: 99, hash: 'b'.repeat(64), notes: 'next' }
-    expect(await recordRowShape(db, NOW + 1800, next)).toBe(providerCount)
+    expect(await recordRowShape(db, NOW + 1800, next)).toBe(providerCount + 1)
     const bumped = (await shapeRows()).filter(
       (row) => row.createdAt === NOW + 1800,
     )

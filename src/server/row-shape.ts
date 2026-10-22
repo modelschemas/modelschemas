@@ -6,7 +6,7 @@
  * add a changeset for @modelschemas/client. The models-poll cron then
  * writes a `catalog.shape_changed` row to /v1/changes.
  */
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, ne, sql } from 'drizzle-orm'
 
 import type { Db } from '#/db/index.ts'
 import { changes, providers } from '#/db/schema.ts'
@@ -71,25 +71,38 @@ export async function modelRowShapeHash(
 }
 
 /**
- * Writes one `catalog.shape_changed` row per provider when the latest one
- * names a different hash (or none exists). Returns the rows written.
+ * Writes a `catalog.shape_changed` row for each provider that has none for
+ * the current hash: every provider when the shape moves, and a provider
+ * added later on its first poll. Returns the rows written. Rows of one
+ * announcement share `payload.contentHash`; dedupe on it when reading
+ * across providers.
  */
 export async function recordRowShape(
   db: Db,
   now = Math.floor(Date.now() / 1000),
   shape: { version: number; hash: string; notes: string } = MODEL_ROW_SHAPE,
 ): Promise<number> {
-  const [latest] = await db
-    .select({ payload: changes.payload })
+  const hashOf = sql`json_extract(${changes.payload}, '$.contentHash')`
+  const isShape = eq(changes.type, 'catalog.shape_changed')
+  const announced = new Set(
+    (
+      await db
+        .selectDistinct({ providerId: changes.providerId })
+        .from(changes)
+        .where(and(isShape, eq(hashOf, shape.hash)))
+    ).map((row) => row.providerId),
+  )
+  const ids = (await db.select({ id: providers.id }).from(providers)).filter(
+    ({ id }) => !announced.has(id),
+  )
+  if (ids.length === 0) return 0
+  const [previous] = await db
+    .select({ hash: hashOf })
     .from(changes)
-    .where(eq(changes.type, 'catalog.shape_changed'))
+    .where(and(isShape, ne(hashOf, shape.hash)))
     .orderBy(desc(changes.createdAt))
     .limit(1)
-  const previousHash =
-    (latest?.payload as { contentHash?: string } | null | undefined)
-      ?.contentHash ?? null
-  if (previousHash === shape.hash) return 0
-  const ids = await db.select({ id: providers.id }).from(providers)
+  const previousHash = typeof previous?.hash === 'string' ? previous.hash : null
   const rows = ids.map(({ id }) => ({
     id: crypto.randomUUID(),
     type: 'catalog.shape_changed' as const,
