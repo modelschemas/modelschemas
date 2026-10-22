@@ -226,6 +226,11 @@ Reasoning.effort supports: minimal, low, medium, and high.
       input: ['text', 'image', 'file'],
       output: ['text'],
     })
+    const noModalities = withFiles.replace(
+      /^- (In|Out)put modalities.*\n/gm,
+      '',
+    )
+    expect(parseModelPage(noModalities)?.facts.modalities).toBeNull()
   })
 
   it('leaves serverTools null when the page names no tool ids', () => {

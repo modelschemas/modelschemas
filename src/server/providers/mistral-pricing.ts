@@ -505,17 +505,21 @@ function featureGrids(
 /**
  * Feature ids a model page lists under its "Features" heading
  * (`document-qna`, `function-calling`, …), read from the RSC payload. Null
- * when the page has no such grid, a grid is unreadable, or the grids the
- * page renders disagree.
+ * when the page has no such grid. A grid it cannot fully read, or grids
+ * that disagree, throw: a shorter list would drop `file` from the row.
  */
 export function parseMistralPageFeatures(html: string): Array<string> | null {
   const rows = rscRows(html)
   const grids = [...rows.values()].flatMap((row) => featureGrids(rows, row))
+  if (grids.length === 0) return null
   const [first] = grids
-  if (!first) return null
-  return grids.every((grid) => JSON.stringify(grid) === JSON.stringify(first))
-    ? first
-    : null
+  if (
+    !first ||
+    grids.some((grid) => JSON.stringify(grid) !== JSON.stringify(first))
+  ) {
+    throw new Error('mistral model page: Features grid in an unread shape')
+  }
+  return first
 }
 
 /**

@@ -728,11 +728,35 @@ describe('mistral model page features', () => {
     ])
   })
 
-  it('reads nothing from a grid it cannot fully read', () => {
-    expect(
+  it('throws on a grid it cannot fully read or grids that disagree', () => {
+    expect(() =>
       parseMistralPageFeatures(page([feature('x'), '$Lmissing'])),
-    ).toBeNull()
-    expect(parseMistralPageFeatures(page([feature('x', true)]))).toBeNull()
+    ).toThrow('Features grid')
+    expect(() => parseMistralPageFeatures(page([feature('x', true)]))).toThrow(
+      'Features grid',
+    )
+    const twice = page([feature('x')], {
+      ab: [
+        '$',
+        'div',
+        null,
+        {
+          children: [
+            [
+              '$',
+              '$L1c',
+              null,
+              { children: ['$', '$L1d', null, { children: 'Features' }] },
+            ],
+            ['$', 'div', null, { children: [feature('y')] }],
+          ],
+        },
+      ],
+    })
+    expect(() => parseMistralPageFeatures(twice)).toThrow('Features grid')
+  })
+
+  it('reads nothing from a page with no Features grid', () => {
     expect(parseMistralPageFeatures('<h1>no payload</h1>')).toBeNull()
   })
 
