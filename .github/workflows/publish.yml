@@ -9,10 +9,15 @@
 #   workflow filename: publish.yml
 #   environment: npm
 #   allowed action: npm stage publish only
+#
+# On main, changesets keeps a Version Packages PR open while `.changeset/`
+# holds changesets. Merging it leaves none and a version npm lacks, so the
+# same run packs and stages that version.
 name: Publish
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v[0-9]*'
   workflow_dispatch:
@@ -29,23 +34,74 @@ concurrency:
 permissions: {}
 
 jobs:
+  version:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          no-cache: true # release jobs never restore a cache
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Pinned: this step holds a contents/pull-requests write token.
+      # API pushes (the default) are signed; main requires signed commits.
+      - id: changesets
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          version-script: bunx changeset version
+          pr-title: Version Packages
+          commit-message: Version Packages
+
+      - name: Run CI on the Version Packages PR
+        if: steps.changesets.outputs.pr-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run ci.yml --ref changeset-release/main
+
+      - id: check
+        if: steps.changesets.outputs.has-changesets == 'false'
+        run: |
+          v=$(jq -r .version packages/rate-card/package.json)
+          if npm view "@modelschemas/rate-card@$v" version >/dev/null 2>&1; then
+            echo "$v is already on npm"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   ci:
-    uses: ./.github/workflows/ci.yml
+    needs: version
+    if: ${{ !cancelled() && (github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || needs.version.outputs.release == 'true') }}
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] newer syntax; ./ is what GitHub documents for reusable workflows
     permissions:
       contents: read
 
   pack:
     needs: ci
+    if: ${{ !cancelled() && needs.ci.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          no-cache: true # release jobs never restore a cache
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -57,7 +113,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: bun scripts/npm-pack.ts --pack-dir dist/npm
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-tarballs
           path: dist/npm/*.tgz
@@ -66,7 +122,7 @@ jobs:
 
   stage:
     needs: pack
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    if: ${{ !cancelled() && needs.pack.result == 'success' && (github.event_name == 'push' || !inputs.dry_run) }}
     runs-on: ubuntu-latest
     environment: npm
     permissions:
@@ -74,19 +130,19 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: npm-tarballs
           path: tarballs
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
       - name: Install npm 11.19.0 (stage needs >= 11.15; npm 12 needs Node 24.15+)
-        run: npm install -g npm@11.19.0
+        run: npm install -g npm@11.19.0 # zizmor: ignore[adhoc-packages] exact version; stage publish needs npm, not bun
 
       - name: Require npm >= 11.15.0
         run: |

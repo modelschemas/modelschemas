@@ -429,14 +429,17 @@ reviewer; deployment branches limited to `main` and tags `v*`.
 
 ### Ongoing releases
 
-1. Bump the five `package.json` versions together. Commit. MAJOR.MINOR
+1. A PR that changes a published package adds a changeset
+   (`bunx changeset`). The five packages share one version. MAJOR.MINOR
    must equal `RATE_CARD_LANGUAGE` in `packages/rate-card/src/card.ts`
    (a test checks it): a release that changes what a card can say bumps
-   both, and a release that does not is a patch.
-2. Tag `vX.Y.Z` matching those versions (or create a GitHub Release
-   whose tag is that name) and push the tag.
-3. Actions runs CI, packs, then (after the `npm` environment approval)
-   `npm stage publish`. Inspect the tarball artifacts on the run.
+   both (minor), and a release that does not is a patch.
+2. On main, the Publish workflow keeps a **Version Packages** PR open
+   that applies the pending changesets (versions + CHANGELOGs). Merge it.
+3. That merge's Publish run sees no changesets and a version npm lacks,
+   so it runs CI, packs, then (after the `npm` environment approval)
+   `npm stage publish`. Inspect the tarball artifacts on the run. Pushing
+   a `vX.Y.Z` tag still works as a manual trigger.
 4. On [npmjs.com](https://www.npmjs.com) → **Staged Packages**, 2FA-approve
    in the same order as bootstrap. Until you approve, `npm install` cannot
    see the version.
