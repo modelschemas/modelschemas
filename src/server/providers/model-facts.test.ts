@@ -217,6 +217,17 @@ Reasoning.effort supports: minimal, low, medium, and high.
     })
   })
 
+  it('adds file input when the page lists file_uploads', () => {
+    const withFiles = page.replace(
+      '- function_calling\n\n## Supported tools',
+      '- function_calling\n- file_uploads\n\n## Supported tools',
+    )
+    expect(parseModelPage(withFiles)?.facts.modalities).toEqual({
+      input: ['text', 'image', 'file'],
+      output: ['text'],
+    })
+  })
+
   it('leaves serverTools null when the page names no tool ids', () => {
     const bare = page.replace(
       /## Supported tools[\s\S]*?## Snapshots/,

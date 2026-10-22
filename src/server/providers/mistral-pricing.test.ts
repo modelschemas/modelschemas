@@ -12,10 +12,12 @@ import {
   parseMistralApiIds,
   parseMistralModelIndex,
   parseMistralPageMaxOutput,
+  parseMistralPageFeatures,
   parseMistralPageModalities,
   parseMistralPagePrice,
   parseMistralPricing,
   parseMistralSamePrice,
+  withDocumentInput,
 } from './mistral-pricing.ts'
 
 const PAGE = `<h2>Flagship models</h2>
@@ -683,5 +685,65 @@ describe('usdExpr', () => {
     if (!usd || !yuan) throw new Error('did not compile')
     expect(usdExpr(usd)).toBe(usd.price)
     expect(() => usdExpr(yuan)).toThrow('cannot extend a CNY card')
+  })
+})
+
+describe('mistral model page features', () => {
+  // The live shape (2026-10-22): a "Features" heading, then a grid of
+  // `div`s keyed by feature id; later ones arrive as lazy rows.
+  const feature = (id: string, disabled: unknown = '$undefined') => [
+    '$',
+    'div',
+    id,
+    { className: 'flex flex-col', 'aria-disabled': disabled, children: [] },
+  ]
+  const page = (grid: Array<unknown>, extra: Record<string, unknown> = {}) =>
+    mistralModelPage(['m-1'], [[tip('Text input'), tip('Text output')]], {
+      f: [
+        '$',
+        '$L5b',
+        null,
+        {
+          children: [
+            [
+              '$',
+              '$L1c',
+              null,
+              { children: ['$', '$L1d', null, { children: 'Features' }] },
+            ],
+            ['$', 'div', null, { className: 'grid', children: grid }],
+          ],
+        },
+      ],
+      ...extra,
+    })
+
+  it('reads feature ids, lazy rows followed', () => {
+    const html = page([feature('function-calling'), '$Lf2'], {
+      f2: feature('document-qna'),
+    })
+    expect(parseMistralPageFeatures(html)).toEqual([
+      'function-calling',
+      'document-qna',
+    ])
+  })
+
+  it('reads nothing from a grid it cannot fully read', () => {
+    expect(
+      parseMistralPageFeatures(page([feature('x'), '$Lmissing'])),
+    ).toBeNull()
+    expect(parseMistralPageFeatures(page([feature('x', true)]))).toBeNull()
+    expect(parseMistralPageFeatures('<h1>no payload</h1>')).toBeNull()
+  })
+
+  it('adds file input only for document-qna on stated modalities', () => {
+    const text = { input: ['text', 'image'], output: ['text'] }
+    expect(withDocumentInput(text, ['document-qna'])).toEqual({
+      input: ['text', 'image', 'file'],
+      output: ['text'],
+    })
+    expect(withDocumentInput(text, ['function-calling'])).toBe(text)
+    expect(withDocumentInput(text, null)).toBe(text)
+    expect(withDocumentInput(null, ['document-qna'])).toBeNull()
   })
 })

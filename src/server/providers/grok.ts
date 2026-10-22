@@ -415,12 +415,18 @@ async function grokModelFacts(
     }),
   ])
   const byId = new Map<string, GrokExtrasModel>()
-  for (const m of [
-    ...(language.models ?? []),
-    ...(image.models ?? []),
-    ...(video.models ?? []),
-  ]) {
-    for (const id of [m.id, ...(m.aliases ?? [])]) byId.set(id, m)
+  const listedAt = new Map<string, string>()
+  for (const [url, list] of [
+    [GROK_LANGUAGE_MODELS_URL, language],
+    [GROK_IMAGE_MODELS_URL, image],
+    [GROK_VIDEO_MODELS_URL, video],
+  ] as const) {
+    for (const m of list.models ?? []) {
+      for (const id of [m.id, ...(m.aliases ?? [])]) {
+        byId.set(id, m)
+        listedAt.set(id, url)
+      }
+    }
   }
   const pages = new Map<
     string,
@@ -484,6 +490,15 @@ async function grokModelFacts(
       reasoning: page?.value ?? null,
     }
     const sources: ModelFacts['factSources'] = {}
+    if (modalities) {
+      // No `file`: xAI reads attached files through the `attachment_search`
+      // server-side tool, not as model input, and the listing names none.
+      sources.modalities = {
+        derivation: 'listing',
+        sourceUrl: listedAt.get(rawId),
+        path: 'input_modalities',
+      }
+    }
     if (contextWindow != null) {
       sources.contextWindow = {
         derivation: 'docs-derived',

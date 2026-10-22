@@ -413,6 +413,12 @@ export function parseModelPage(markdown: string): OpenAiModelPage | null {
       ...markdownSection(markdown, 'Supported features').matchAll(/^- (\S+)/gm),
     ].map((m) => m[1] ?? ''),
   )
+  // `file_uploads` is the page's per-model statement that the model takes
+  // `input_file` / `file` parts (the file-inputs guide: PDFs on every such
+  // model, other documents as extracted text). Absent, nothing is said.
+  if (features.has('file_uploads') && !input.includes('file')) {
+    input.push('file')
+  }
   const reasoning = /^- Reasoning token support/m.test(details)
   const capabilities: Array<string> = []
   if (features.has('function_calling')) capabilities.push('tools')

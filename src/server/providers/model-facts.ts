@@ -196,7 +196,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // model-page entry would keep gpt-5-pro at mandatory null for six hours.
 // v33: Vertex Claude card titles drop a leading "Anthropic's" (#390). A v32
 // entry keeps every row unpriced, so the poll refuses the clear for six hours.
-const DOCS_CACHE_VERSION = 'v33'
+// v34: OpenAI pages add `file` input from `file_uploads` and Mistral pages from
+// `document-qna` (#407). A v33 entry would keep them without it for six hours.
+const DOCS_CACHE_VERSION = 'v34'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
