@@ -602,7 +602,7 @@ describe('gemini features (issue #77)', () => {
       })
     })
 
-    it('binds a looked-up page to its own id, not the siblings it repeats', async () => {
+    it('lets a looked-up page repeat a sibling another page states', async () => {
       const index = [
         '| [Gemini Robotics ER 2](https://ai.google.dev/gemini-api/docs/robotics-overview) | ``` gemini-robotics-er-2-preview ``` |',
         `${INDEX}/gemini-2.5-flash`,
@@ -623,6 +623,10 @@ describe('gemini features (issue #77)', () => {
           'gemini-robotics-er-2-streaming-preview',
           '**Inputs** Audio **Output** Text',
         ),
+        section(
+          'gemini-robotics-er-1.6-preview',
+          '**Inputs** Video **Output** Text',
+        ),
       ].join('\n')
       const { features } = await withPages(
         {},
@@ -630,12 +634,14 @@ describe('gemini features (issue #77)', () => {
           geminiModelFeatures([
             'gemini-robotics-er-2-preview',
             'gemini-robotics-er-2-streaming-preview',
+            'gemini-robotics-er-1.6-preview',
           ]),
         {
           index,
           extras: {
             '/robotics-overview.md.txt': overview,
             '/models/gemini-robotics-er-2-streaming-preview.md.txt': streaming,
+            '/models/gemini-robotics-er-1.6-preview.md.txt': 404,
           },
         },
       )
@@ -651,6 +657,10 @@ describe('gemini features (issue #77)', () => {
       expect(
         features('gemini-robotics-er-2-streaming-preview', false).modalities,
       ).toEqual({ input: ['audio'], output: ['text'] })
+      // A sibling no other page states still binds from the repeat.
+      expect(
+        features('gemini-robotics-er-1.6-preview', false).modalities,
+      ).toEqual({ input: ['video'], output: ['text'] })
     })
 
     it('refuses a model id that two pages both document', async () => {

@@ -547,9 +547,8 @@ export async function geminiModelFeatures(
   // Google serves some model pages the index does not link (gemini-3.5-flash,
   // #409). A listed id no index page covers is looked up at its own
   // `/models/{id}` path. A 404 there is no page. Such a page names no ids
-  // for the index, and binds only the id it was looked up for and that id's
-  // versions: a family page repeats its siblings' tables, and a sibling binds
-  // from its own page or not at all.
+  // for the index. A family page repeats its siblings' tables; those bind only
+  // where no other page states the sibling (`sibling` placements).
   const unindexed: Array<GeminiIndexDoc> = rawIds
     .filter(
       (id) =>
@@ -599,7 +598,7 @@ export async function geminiModelFeatures(
   const placements = loaded.flatMap((page) =>
     pagePlacements(page, index, bySlug),
   )
-  for (const kind of ['code', 'version', 'index'] as const) {
+  for (const kind of ['code', 'version', 'index', 'sibling'] as const) {
     for (const place of placements) {
       if (place.kind !== kind) continue
       const prev = byId.get(place.id)
@@ -735,14 +734,14 @@ export async function geminiModelFeatures(
 
 interface Placement {
   id: string
-  kind: 'code' | 'version' | 'index'
+  kind: 'code' | 'version' | 'index' | 'sibling'
   bound: BoundSection
 }
 
 /**
  * A dedicated `/models/{id}` page wins over another page that repeats the
  * id. Two model codes and no dedicated page is a real conflict. A version
- * row repeating an id keeps the earlier page.
+ * row, or a sibling table a looked-up page repeats, keeps the earlier page.
  */
 function chooseBound(
   id: string,
@@ -769,10 +768,15 @@ function pagePlacements(
   const doc = index.find((item) => pageUrl(item.url) === page.url)
   const slug = modelSlug(page.url)
   const placements = sectionPlacements(page, doc, slug, bySlug)
-  // A page the index does not link binds only its own id's family.
-  return doc || !slug
-    ? placements
-    : placements.filter((place) => familyOf(place.id, [slug]) === slug)
+  if (doc || !slug) return placements
+  // A page the index does not link was looked up for its own id. Another
+  // model's table on it is a repeat, outranked by any page that states it.
+  return placements.map((place) =>
+    familyOf(place.id, [slug]) === slug ||
+    familyOf(slug, [place.id]) === place.id
+      ? place
+      : { ...place, kind: 'sibling' as const },
+  )
 }
 
 function sectionPlacements(
