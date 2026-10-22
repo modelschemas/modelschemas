@@ -167,6 +167,37 @@ describe('DashScope China native source parsing', () => {
       }),
     ).toThrow('no Beijing')
   })
+  it('reads a price cell that tiers itself by prompt size', () => {
+    const tiered = (input: string, output: string): CnDoc => ({
+      ...prices,
+      text: `## 文本生成\n<Tabs><Tab title="华北2（北京）"><table><tr><th>模型 ID（Model ID）</th><th>模式</th><th>输入单价（每百万Token）</th><th>输出单价（每百万Token）</th></tr><tr><td>MiniMax/MiniMax-M3</td><td>非思考和思考模式</td><td>${input}</td><td>${output}</td></tr></table></Tab></Tabs>`,
+    })
+    const [m3] = cnPriceModels(
+      tiered(
+        '输入不超过 512k Token：2.1元\n\n输入超过 512k Token：4.2元',
+        '输入不超过 512k Token：8.4元\n\n输入超过 512k Token：16.8元',
+      ),
+    )
+    const card = rateCardSchema.parse(m3!.pricing)
+    expect(cardCurrency(card)).toBe('CNY')
+    expect(
+      price(card, {}, { input_tokens: 512000, output_tokens: 1000000 }),
+    ).toBeCloseTo(1.0752 + 8.4)
+    expect(
+      price(card, {}, { input_tokens: 512001, output_tokens: 1000000 }),
+    ).toBeCloseTo(512001 * 4.2e-6 + 16.8)
+    expect(() =>
+      cnPriceModels(
+        tiered(
+          '输入不超过 512k Token：2.1元 输入超过 512k Token：4.2元',
+          '输入不超过 256k Token：8.4元 输入超过 256k Token：16.8元',
+        ),
+      ),
+    ).toThrow('mismatched input and output price tiers')
+    expect(() =>
+      cnPriceModels(tiered('输入不超过 512k Token：2.1元', '8.4元')),
+    ).toThrow('unreadable tiered RMB token quote')
+  })
   it('keeps distinct native thinking or media prices null instead of choosing a mode', () => {
     const rows = native()
     expect(rows.find((row) => row.rawId === 'qwen-plus')?.pricing).toBeNull()
