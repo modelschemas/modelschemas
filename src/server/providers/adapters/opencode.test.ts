@@ -2,6 +2,7 @@ import { price } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 import { OPENCODE_CATALOG_URL } from '../opencode-catalog.ts'
 import { OPENCODE_PRICING_URL } from '../opencode-pricing.ts'
+import { OPENCODE_ROUTE_DOCS_URL } from '../opencode-routes.ts'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -88,6 +89,19 @@ const PAGE = `## Endpoints
 | Jev                 | $0.042 | Free   | -           | -            |
 `
 
+/** inference.mdx Endpoints table, listing the paths CATALOG's api yields. */
+const ROUTE_DOCS = `# Inference API
+
+## Endpoints
+
+| API       | Path                                               |
+| --------- | -------------------------------------------------- |
+| Chat      | \`/inference/v1/chat/completions\`                   |
+| Responses | \`/inference/v1/responses\`                          |
+| Messages  | \`/inference/v1/messages\`                           |
+| Gemini    | \`/inference/v1/models/<model>:generateContent\`     |
+`
+
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
@@ -107,14 +121,8 @@ function serve(catalog: unknown = CATALOG, page = PAGE) {
     if (String(url) === OPENCODE_PRICING_URL) {
       return Promise.resolve(new Response(page))
     }
-    if (
-      String(url).startsWith(
-        'https://raw.githubusercontent.com/anomalyco/opencode/dev/',
-      )
-    ) {
-      return Promise.resolve(
-        new Response('export function POST(input: APIEvent) {}'),
-      )
+    if (String(url) === OPENCODE_ROUTE_DOCS_URL) {
+      return Promise.resolve(new Response(ROUTE_DOCS))
     }
     return Promise.reject(new Error(`unexpected fetch: ${String(url)}`))
   }) as typeof fetch
@@ -233,7 +241,7 @@ describe('opencode', () => {
     const source = spec.specs[0]?.paths?.['/inference/v1/messages']?.post?.[
       'x-modelschemas-method-source'
     ] as { url: string }
-    expect(source.url).toContain('/zen/v1/messages.ts')
+    expect(source.url).toBe(OPENCODE_ROUTE_DOCS_URL)
   })
 
   it('fails the poll when the catalog is unavailable', async () => {
