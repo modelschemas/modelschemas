@@ -444,6 +444,12 @@ export interface ModelInfo {
    * the dated snapshot). Empty when the provider documents none.
    */
   aliases?: Array<string> | null
+  /**
+   * Upstream identity the listing row itself states, when the raw id alone
+   * cannot carry it (LLM Gateway's `providers[]` route). Wins over
+   * `ProviderConfig.upstreamModelIdentity`; null states there is none.
+   */
+  upstream?: UpstreamModelIdentity | null
   deprecated?: boolean
   /**
    * Upstream release/creation time (epoch seconds) when the provider reports

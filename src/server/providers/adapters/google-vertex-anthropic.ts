@@ -32,6 +32,8 @@ async function skippedSpec(): Promise<SpecFetchResult> {
 
 export const provider: ProviderConfig = {
   id: 'google-vertex-anthropic',
+  // LLM Gateway route name (providers[].providerId).
+  modelNamespaces: ['vertex-anthropic'],
   displayName: 'Vertex (Anthropic)',
   specSourceUrl: VERTEX_CLAUDE_REQUEST_URL,
   modelsEndpoint: VERTEX_CLAUDE_URL,
