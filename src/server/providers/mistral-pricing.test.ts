@@ -1,11 +1,16 @@
 import { price } from '@modelschemas/rate-card'
 import { describe, expect, it } from 'vitest'
 
-import { mistralModelPage, tip } from './fixtures/mistral-model-page.ts'
+import {
+  MISTRAL_WEBSEARCH_GUIDE,
+  mistralModelPage,
+  tip,
+} from './fixtures/mistral-model-page.ts'
 import {
   copyMistralAliasFacts,
   indexMistralApiIds,
   indexMistralModalities,
+  mistralConversationTools,
   mistralIndexSlugFor,
   mistralModelPricing,
   mistralRateCard,
@@ -17,6 +22,7 @@ import {
   parseMistralPagePrice,
   parseMistralPricing,
   parseMistralSamePrice,
+  parseMistralWebSearchTools,
   withDocumentInput,
 } from './mistral-pricing.ts'
 
@@ -769,5 +775,33 @@ describe('mistral model page features', () => {
     expect(withDocumentInput(text, ['function-calling'])).toBe(text)
     expect(withDocumentInput(text, null)).toBe(text)
     expect(withDocumentInput(null, ['document-qna'])).toBeNull()
+  })
+})
+
+describe('mistral web search tools', () => {
+  it('reads the guide ids, or throws without its any-model statement', () => {
+    expect(parseMistralWebSearchTools(MISTRAL_WEBSEARCH_GUIDE)).toEqual([
+      'web_search',
+      'web_search_premium',
+    ])
+    expect(() =>
+      parseMistralWebSearchTools(
+        MISTRAL_WEBSEARCH_GUIDE.replace('any of our models', 'some models'),
+      ),
+    ).toThrow('no any-model statement')
+    expect(() =>
+      parseMistralWebSearchTools(
+        MISTRAL_WEBSEARCH_GUIDE.replace('There are two versions:', 'Versions'),
+      ),
+    ).toThrow('names no tool id')
+  })
+
+  it('gives them only to a page that lists agents-conversations', () => {
+    const tools = ['web_search', 'web_search_premium']
+    expect(mistralConversationTools(['agents-conversations'], tools)).toEqual(
+      tools,
+    )
+    expect(mistralConversationTools(['chat-completions'], tools)).toEqual([])
+    expect(mistralConversationTools(null, tools)).toEqual([])
   })
 })

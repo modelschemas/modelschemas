@@ -1,8 +1,8 @@
 /**
  * Provider-hosted tool type ids (issue #123). A page that does not name a
- * type id for a model contributes nothing. Grok and OpenRouter are not
- * parsed here: xAI publishes no per-model list, and OpenRouter ids are
- * router-level.
+ * type id for a model contributes nothing. Grok (`grok.ts`) and BytePlus
+ * MCP (`byteplus-tools.ts`) are read beside their adapters; OpenRouter ids
+ * are router-level and are not parsed.
  */
 import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'

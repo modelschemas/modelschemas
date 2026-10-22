@@ -235,7 +235,7 @@ function ratesFromGroup(
 }
 
 /** Every table whose header (units stripped) names all of `required`. */
-function tablesWith(
+export function tablesWith(
   doc: ByteplusDoc,
   required: Array<string>,
 ): Array<{ keys: Array<string>; rows: Array<Array<string>> }> {

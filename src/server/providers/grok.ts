@@ -17,15 +17,20 @@ import {
   NO_FACTS,
   assertParsed,
   cachedDocs,
+  docsReport,
+  docsRun,
   mapConcurrent,
   markdownSection,
   markdownTableRows,
   tokenCount,
+  tryDocs,
+  unavailable,
 } from './model-facts.ts'
-import type { ModelFacts } from './model-facts.ts'
+import type { DocsRun, ModelFacts } from './model-facts.ts'
 import { fetchJson, fetchText, sha256Text, skippedResult } from './types.ts'
 import type {
   ListModelsResult,
+  ModelInfo,
   ModelReasoning,
   OpenApiDocument,
   ProviderConfig,
@@ -122,11 +127,42 @@ function listingMaxOutput(m: GrokExtrasModel): number | null {
 }
 
 /**
- * xAI publishes no per-model tool type list (issue #123). A capabilities
- * page that mentions search still does not name `tools[].type` ids.
+ * The files page: attached files run the `attachment_search` server-side
+ * tool, and its "Agentic models only" bullet names the models that can.
+ * xAI's other server-side tools (web_search, x_search, code_execution, …)
+ * are documented per provider, with no per-model list, so they are not
+ * assigned (#409).
  */
-export function grokServerTools(_markdown: string): null {
-  return null
+export const GROK_FILES_DOC_URL = 'https://docs.x.ai/developers/files.md'
+
+/**
+ * The files page's statement: the tool id it says attachments activate,
+ * and the models its "**Agentic models only**" bullet names. Either one
+ * missing, or the page naming two different tool ids, throws.
+ */
+export function parseGrokFileTool(markdown: string): {
+  tool: string
+  models: Array<string>
+} {
+  const tools = new Set(
+    [
+      ...markdown.matchAll(
+        /activates the `([a-z][a-z0-9_]*)` (?:\[?server-side tool|tool)/g,
+      ),
+    ].map((match) => match[1] ?? ''),
+  )
+  const line = /^\* \*\*Agentic models only\*\*:(.*)$/m.exec(markdown)?.[1]
+  const models = [...(line ?? '').matchAll(/`([a-z0-9][a-z0-9.-]*)`/g)].map(
+    (match) => match[1] ?? '',
+  )
+  const [tool] = tools
+  if (!tool || tools.size !== 1) {
+    throw new Error('xai files page: no single attachment tool id')
+  }
+  if (models.length === 0) {
+    throw new Error('xai files page: no Agentic models only list')
+  }
+  return { tool, models }
 }
 
 /**
@@ -394,13 +430,34 @@ export function parseGrokContextWindows(markdown: string): Map<string, number> {
   return out
 }
 
+interface GrokHostedTools {
+  tools: Array<string>
+  models: Array<string>
+  hash: string
+}
+
+/** The files page, or null (a failure is in `docsFailures`). */
+function grokHostedTools(
+  kv: KVNamespace | undefined,
+  run: DocsRun,
+): Promise<GrokHostedTools | null> {
+  return tryDocs(run, GROK_FILES_DOC_URL, (cached) =>
+    cached(kv, GROK_FILES_DOC_URL, async () => {
+      const markdown = await fetchText(GROK_FILES_DOC_URL)
+      const { tool, models } = parseGrokFileTool(markdown)
+      return { tools: [tool], models, hash: await sha256Text(markdown) }
+    }),
+  )
+}
+
 async function grokModelFacts(
   headers: HeadersInit,
   kv: KVNamespace | undefined,
-): Promise<(rawId: string) => ModelFacts> {
+  run: DocsRun,
+): Promise<(rawId: string) => ModelFacts & Pick<ModelInfo, 'absent'>> {
   const extras = (url: string) =>
     fetchJson(url, { headers }) as Promise<{ models?: Array<GrokExtrasModel> }>
-  const [language, image, video, docs] = await Promise.all([
+  const [language, image, video, docs, hosted] = await Promise.all([
     extras(GROK_LANGUAGE_MODELS_URL),
     extras(GROK_IMAGE_MODELS_URL),
     extras(GROK_VIDEO_MODELS_URL),
@@ -413,6 +470,7 @@ async function grokModelFacts(
         videoPerSecond: Object.fromEntries(parseGrokVideoPrices(markdown)),
       }
     }),
+    grokHostedTools(kv, run),
   ])
   const byId = new Map<string, GrokExtrasModel>()
   const listedAt = new Map<string, string>()
@@ -489,6 +547,13 @@ async function grokModelFacts(
       pricing: cards.get(rawId) ?? null,
       reasoning: page?.value ?? null,
     }
+    // Only a language model the files page names (by id or alias) runs
+    // the server-side tools; any other row is left unknown.
+    const agentic =
+      hosted !== null &&
+      language.models?.includes(m) === true &&
+      [m.id, ...(m.aliases ?? [])].some((id) => hosted.models.includes(id))
+    if (agentic) facts.serverTools = hosted.tools
     const sources: ModelFacts['factSources'] = {}
     if (modalities) {
       // No `file`: xAI reads attached files through the `attachment_search`
@@ -541,7 +606,21 @@ async function grokModelFacts(
         },
       }
     }
+    if (agentic) {
+      sources.serverTools = Object.fromEntries(
+        hosted.tools.map((tool) => [
+          tool,
+          {
+            derivation: 'docs-derived' as const,
+            sourceUrl: GROK_FILES_DOC_URL,
+            sourceHash: hosted.hash,
+            path: 'Limitations: Agentic models only',
+          },
+        ]),
+      )
+    }
     if (Object.keys(sources).length > 0) facts.factSources = sources
+    if (hosted === null) return { ...facts, ...unavailable('serverTools') }
     return facts
   }
 }
@@ -555,9 +634,10 @@ async function listModels(
     return { models: [], ...skippedResult('grok', 'XAI_API_KEY') }
   }
   const headers = { Authorization: `Bearer ${key}` }
+  const run = docsRun()
   const [body, facts] = await Promise.all([
     fetchJson(GROK_MODELS_URL, { headers }) as Promise<GrokModelList>,
-    grokModelFacts(headers, kv),
+    grokModelFacts(headers, kv, run),
   ])
   return {
     models: (body.data ?? []).map((m) => ({
@@ -567,6 +647,7 @@ async function listModels(
       releasedAt: m.created ?? null,
       ...facts(m.id),
     })),
+    docsFailures: docsReport(run),
   }
 }
 

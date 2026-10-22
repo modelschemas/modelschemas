@@ -31,7 +31,7 @@ import { tagDocsFacts } from './fact-sources.ts'
 import { assertParsed, cachedDocs, mapConcurrent } from './model-facts.ts'
 import { parseMistralPageTools } from './server-tools.ts'
 import { fetchText, sha256Text } from './types.ts'
-import type { ModelInfo } from './types.ts'
+import type { FactSource, ModelInfo } from './types.ts'
 
 export const MISTRAL_PRICING_URL = 'https://docs.mistral.ai/inference/pricing'
 export const MISTRAL_CHANGELOG_URL =
@@ -868,6 +868,7 @@ export interface MistralModelPage {
   modalities?: MistralModalities | null
   maxOutput?: number | null
   pagePrice?: MistralListedPrice | null
+  features?: Array<string> | null
   extractedAt?: string
 }
 
@@ -1067,6 +1068,43 @@ export interface MistralPricingLookup {
   seen: ReadonlySet<string>
 }
 
+export const MISTRAL_WEBSEARCH_URL =
+  'https://docs.mistral.ai/studio/agents/agent-tools/websearch.md'
+
+/**
+ * The web search guide's tool ids (#409). It states the tool "allows any
+ * of our models to access the web" and that it works with the
+ * Conversations API (`/v1/conversations`), not Chat Completions; the ids
+ * are the bullets under "There are two versions:". Without the any-model
+ * sentence, the Conversations scope, or an id, it throws. Mistral's other
+ * built-in tools (code interpreter, image generation, libraries) make no
+ * any-model statement, so they are not read.
+ */
+export function parseMistralWebSearchTools(markdown: string): Array<string> {
+  if (!/allows any of our models to access the web/.test(markdown)) {
+    throw new Error('mistral websearch guide: no any-model statement')
+  }
+  if (!/work with the \[Conversations API\]/.test(markdown)) {
+    throw new Error('mistral websearch guide: no Conversations API scope')
+  }
+  const versions = markdown.split(/^There are two versions:$/m)[1] ?? ''
+  const ids = [...versions.matchAll(/^- `([a-z][a-z0-9_]*)`:/gm)].map(
+    (match) => match[1] ?? '',
+  )
+  if (ids.length === 0) {
+    throw new Error('mistral websearch guide: names no tool id')
+  }
+  return ids
+}
+
+/** The guide's tools for a page that lists `agents-conversations`. */
+export function mistralConversationTools(
+  features: Array<string> | null | undefined,
+  webSearch: ReadonlyArray<string>,
+): Array<string> {
+  return features?.includes('agents-conversations') ? [...webSearch] : []
+}
+
 /** Card lookup by API model id. */
 export async function mistralModelPricing(
   kv?: KVNamespace,
@@ -1092,6 +1130,7 @@ export async function mistralModelPricing(
     const page = await cachedDocs(kv, url, async () => {
       const body = await fetchText(url)
       const ids = parseMistralApiIds(body, slug)
+      const features = parseMistralPageFeatures(body)
       if (ids.length === 0) {
         throw new Error(`mistral model page ${slug}: parsed 0 API ids`)
       }
@@ -1101,8 +1140,9 @@ export async function mistralModelPricing(
         serverTools: parseMistralPageTools(body),
         modalities: withDocumentInput(
           parseMistralPageModalities(body),
-          parseMistralPageFeatures(body),
+          features,
         ),
+        features,
         maxOutput: parseMistralPageMaxOutput(body),
         pagePrice: parseMistralPagePrice(body),
         extractedAt: new Date().toISOString(),
@@ -1153,6 +1193,14 @@ export async function mistralModelPricing(
   const modalities = indexMistralModalities(pages)
   const maxOutput = indexPageField(pages, (page) => page.maxOutput)
   const pageRates = indexPageField(pages, (page) => page.pagePrice)
+  const featured = indexPageField(pages, (page) => page.features)
+  const webSearch = await cachedDocs(kv, MISTRAL_WEBSEARCH_URL, async () => {
+    const markdown = await fetchText(MISTRAL_WEBSEARCH_URL)
+    return {
+      tools: parseMistralWebSearchTools(markdown),
+      hash: await sha256Text(markdown),
+    }
+  })
   const seen = new Set(pages.flatMap((page) => page.ids))
   const lookup = (rawId: string): PricedFacts => {
     const tableRow = byId.get(rawId)
@@ -1186,9 +1234,29 @@ export async function mistralModelPricing(
           tableRow ? table.hash : pageRow?.hash,
         )
       : {}
-    const toolFacts = hosted
-      ? tagDocsFacts({ serverTools: hosted.tools }, hosted.url, hosted.hash)
-      : {}
+    const features = featured.get(rawId)
+    const builtIn = mistralConversationTools(features?.value, webSearch.tools)
+    const serverTools = [
+      ...new Set([...(hosted?.tools ?? []), ...builtIn]),
+    ].sort()
+    const toolSources: Record<string, FactSource> = {}
+    for (const tool of builtIn) {
+      toolSources[tool] = {
+        derivation: 'docs-derived',
+        sourceUrl: features?.url,
+        sourceHash: features?.hash,
+        path: `Features.agents-conversations; ${MISTRAL_WEBSEARCH_URL} (any model, Conversations API /v1/conversations only)`,
+      }
+    }
+    for (const tool of hosted?.tools ?? []) {
+      toolSources[tool] = {
+        derivation: 'docs-derived',
+        sourceUrl: hosted?.url,
+        sourceHash: hosted?.hash,
+        path: `serverTools.${tool}`,
+      }
+    }
+    const toolFacts = serverTools.length > 0 ? { serverTools: toolSources } : {}
     const stated = modalities.get(rawId)
     const modalityFacts = stated
       ? tagDocsFacts({ modalities: stated.modalities }, stated.url, stated.hash)
@@ -1203,10 +1271,12 @@ export async function mistralModelPricing(
       ...modalityFacts,
       ...maxFacts,
     }
-    if (!pricing && !hosted && !stated && !cap) return {}
+    if (!pricing && serverTools.length === 0 && !stated && !cap) {
+      return {}
+    }
     return {
       ...(pricing ? { pricing } : {}),
-      ...(hosted ? { serverTools: hosted.tools } : {}),
+      ...(serverTools.length > 0 ? { serverTools } : {}),
       ...(stated ? { modalities: stated.modalities } : {}),
       ...(cap ? { maxOutput: cap.value } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
