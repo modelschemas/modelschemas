@@ -118,14 +118,25 @@ export function parseNovitaChatDoc(text: string, hash: string): NovitaChatDoc {
   if (!role) throw new Error('novita chat doc: role is missing')
   const roles = roleEnum(role.body)
   const thinking = fields.find((field) => field.name === 'enable_thinking')
+  const followsClose =
+    thinking?.top === true &&
+    /support switching thinking off/.test(thinking.body)
+  // A reworded field would otherwise drop every catalog-named body quietly.
+  if (
+    thinking &&
+    !followsClose &&
+    !/Supported models\s*:/.test(thinking.body)
+  ) {
+    throw new Error(
+      'novita chat doc: enable_thinking states neither a model list nor the switch-off rule',
+    )
+  }
   return {
     hash,
     developerRole: roles.includes('developer'),
     flags: CHAT_FLAGS.filter((flag) => top.has(flag)),
     enableThinkingIds: thinkingIds(thinking),
-    enableThinkingFollowsClose:
-      thinking?.top === true &&
-      /support switching thinking off/.test(thinking.body),
+    enableThinkingFollowsClose: followsClose,
   }
 }
 

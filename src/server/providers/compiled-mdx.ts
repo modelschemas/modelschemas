@@ -3,8 +3,7 @@
  * template literal with no `${…}` (`_jsx(Component,{key:`value`,…})`).
  * Shared by readers of pages whose `.md` export renders a component
  * without its values (Kimi `<DocTable>`, Cerebras `<ModelInfo>`, MiniMax
- * `<Tab>` or without its nesting (Novita `<ParamField>`).
-
+ * `<Tab>`) or without its nesting (Novita `<ParamField>`).
  */
 
 /** Index of the backtick closing the template literal opened at `open`. */

@@ -216,6 +216,17 @@ describe('novita chat doc', () => {
     expect(parseNovitaChatDoc(CHAT_DOC, HASH).enableThinkingFollowsClose).toBe(
       false,
     )
+    expect(() =>
+      parseNovitaChatDoc(
+        withThinkingField(
+          LIVE_THINKING_FIELD.replace(
+            'support switching thinking off',
+            'can turn thinking off',
+          ),
+        ),
+        HASH,
+      ),
+    ).toThrow(/neither a model list nor the switch-off rule/)
   })
 
   it('does not read a nested max_tokens as the top-level field', () => {
