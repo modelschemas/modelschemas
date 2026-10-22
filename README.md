@@ -173,9 +173,12 @@ and `@modelschemas/client` types its responses from it.
   shape change cannot merge without one.
 - **The feed announces it.** The first models poll after the deploy
   (within 15 minutes) writes one `catalog.shape_changed` change per
-  provider, `subjectId: "model-row"`, with `payload: { version,
-contentHash, previousHash, notes }`, and webhooks deliver it. Watch for
-  it with `GET /v1/changes?type=catalog.shape_changed`.
+  provider, `subjectId: "model-row"`, with
+  `payload: { version, contentHash, previousHash, notes }`, and webhooks
+  deliver it. Watch for it with `GET /v1/changes?type=catalog.shape_changed`.
+  The rows of one announcement share `payload.contentHash`: dedupe on it
+  when you read across providers. A provider added later gets the current
+  shape's row on its first poll.
 - A change that is not additive is also listed as **Breaking** under
   "Releasing on npm" below.
 
