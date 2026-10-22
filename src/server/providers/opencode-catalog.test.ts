@@ -300,3 +300,15 @@ it('routes Go rows on the model api, like Zen', () => {
     },
   })
 })
+
+it('throws when a Go block states no api', () => {
+  const data = {
+    'opencode-go': {
+      npm: '@ai-sdk/openai-compatible',
+      models: { synthetic: { id: 'synthetic' } },
+    },
+  }
+  expect(() => parseOpenCodeCatalog(data, 'opencode-go', HASH)).toThrow(
+    'opencode-go: models.dev api is missing',
+  )
+})

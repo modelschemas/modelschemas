@@ -68,12 +68,18 @@ function reasoning(value: unknown): ModelReasoning | null {
   return toggle ? { mode: 'toggle', mandatory: false } : null
 }
 
-/** Zen's base path under opencode.ai, from a provider or model `api`. */
-function openCodeApiPath(api: string, field: string): string {
+/** The base path under opencode.ai, from a provider or model `api`. */
+function openCodeApiPath(
+  provider: OpenCodeProvider,
+  api: string,
+  field: string,
+): string {
   const url = URL.parse(api)
   const path = url?.pathname.replace(/^\//, '').replace(/\/$/, '') ?? ''
   if (url?.origin !== 'https://opencode.ai' || path.length === 0) {
-    throw new Error(`opencode: models.dev ${field} is not an opencode.ai path`)
+    throw new Error(
+      `${provider}: models.dev ${field} is not an opencode.ai path`,
+    )
   }
   return path
 }
@@ -114,7 +120,7 @@ export function parseOpenCodeCatalog(
   if (typeof block.api !== 'string') {
     throw new Error(`${provider}: models.dev api is missing`)
   }
-  const apiPath = openCodeApiPath(block.api, 'api')
+  const apiPath = openCodeApiPath(provider, block.api, 'api')
   const out: Record<string, ModelInfo> = {}
   for (const [id, row] of Object.entries(models)) {
     if (!record(row) || row.id !== id)
@@ -167,6 +173,7 @@ export function parseOpenCodeCatalog(
           throw new Error(`${provider}: unreadable provider.api for ${id}`)
         }
         modelApiPath = openCodeApiPath(
+          provider,
           row.provider.api,
           `provider.api for ${id}`,
         )

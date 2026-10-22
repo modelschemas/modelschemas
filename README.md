@@ -363,7 +363,9 @@ by unit — so `null` on a list row always means no card. `GET
 **Breaking (0.1.x):** `opencode-go` endpoint ids moved from `v1/<tail>` to
 the documented `inference/go/<protocol>/v1/<tail>` (#393), e.g.
 `/v1/schemas/opencode-go/chat/inference/go/openai/v1/chat/completions`.
-The next spec sync emits `endpoint.removed` for the old ids.
+The next spec sync emits `endpoint.removed` for the old ids. Until it runs,
+polls leave Go models unbound; run `POST /v1/admin/sync/opencode-go` after
+deploy.
 
 **Currencies:** rate cards may be in a currency other than USD.
 `moonshotai-cn` and `minimax-cn` are priced in CNY. A USD card is unchanged;
