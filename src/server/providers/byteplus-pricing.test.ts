@@ -19,6 +19,8 @@ import {
   sharePublishedAliases,
 } from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
+import { overlayModelFacts } from './reasoning-config.ts'
+import type { ModelInfo } from './types.ts'
 
 function cell(id: string, text: string) {
   return {
@@ -240,6 +242,19 @@ describe('byteplus pricing page', () => {
       requestProperties: new Set(['model', 'messages']),
     })
     expect(stored).toEqual({ card })
+  })
+
+  it('keeps each patch’s absent facts when overlaying', () => {
+    const model = { rawId: 'seed-translation-250915', activity: 'chat' }
+    const merged = overlayModelFacts(
+      model as ModelInfo,
+      { absent: { pricing: 'unavailable' } },
+      { absent: { reasoning: 'unavailable' } },
+    )
+    expect(merged.absent).toEqual({
+      pricing: 'unavailable',
+      reasoning: 'unavailable',
+    })
   })
 
   it("reads a model page's single price row (seed-translation)", () => {

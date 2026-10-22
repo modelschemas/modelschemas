@@ -1341,7 +1341,7 @@ export async function byteplusModelPricing(
     const tools = doc.serverTools?.[rawId]
     const isTranslation = byteplusRatesFor(rawId, translationIds) === true
     // Page failed this poll: keep the stored card (`tryDocs` counted it).
-    if (isTranslation && !translation) return unavailable('pricing')
+    const lost = isTranslation && !translation ? unavailable('pricing') : {}
     const page = isTranslation ? translation : null
     const pricing = page
       ? compileTokenCard(page.rates, [], {
@@ -1349,7 +1349,9 @@ export async function byteplusModelPricing(
           hash: page.hash,
           extractedAt: page.extractedAt,
         })
-      : card(rawId)
+      : isTranslation
+        ? null
+        : card(rawId)
     const pricingFacts = !pricing
       ? {}
       : page
@@ -1360,8 +1362,9 @@ export async function byteplusModelPricing(
         ? tagDocsFacts({ serverTools: tools }, BYTEPLUS_PRICING_URL, doc.hash)
         : {}
     const factSources = { ...pricingFacts, ...toolFacts }
-    if (!pricing && !tools) return {}
+    if (!pricing && !tools) return lost
     return {
+      ...lost,
       ...(pricing ? { pricing } : {}),
       ...(tools && tools.length > 0 ? { serverTools: tools } : {}),
       ...(Object.keys(factSources).length > 0 ? { factSources } : {}),
