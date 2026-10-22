@@ -9,7 +9,8 @@ import {
   classifyOpenAiCompat,
   listOpenAiCompatibleModels,
 } from '../openai-compat.ts'
-import { groqModelPricing } from '../groq-pricing.ts'
+import { GROQ_PRICING_URL, groqModelPricing } from '../groq-pricing.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import {
   groqModelReasoning,
   listsReasoning,
@@ -65,8 +66,10 @@ async function listModels(
     activity: groqModelActivity,
   })
   if (listed.models.length === 0) return listed
+  const docs = docsRun()
+  // Pricing reads several docs pages; one failing keeps the stored cards.
   const [pricing, reasoning, tools] = await Promise.all([
-    groqModelPricing(kv),
+    tryDocs(docs, GROQ_PRICING_URL, (cached) => groqModelPricing(kv, cached)),
     groqModelReasoning(kv),
     groqModelServerTools(kv),
   ])
@@ -75,11 +78,12 @@ async function listModels(
     models: listed.models.map((model) =>
       overlayModelFacts(
         model,
-        pricing(model.rawId),
+        pricing ? pricing(model.rawId) : unavailable('pricing'),
         reasoning(model.rawId, listsReasoning(model.capabilities)),
         tools(model.rawId),
       ),
     ),
+    docsFailures: docsReport(docs),
   }
 }
 

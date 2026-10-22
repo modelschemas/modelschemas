@@ -121,9 +121,10 @@ type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 /** Card lookup by listed model id. */
 export async function groqModelPricing(
-  kv?: KVNamespace,
+  kv: KVNamespace | undefined,
+  cached: typeof cachedDocs = cachedDocs,
 ): Promise<(rawId: string) => PricedFacts> {
-  const doc = await cachedDocs(kv, GROQ_PRICING_URL, async () => {
+  const doc = await cached(kv, GROQ_PRICING_URL, async () => {
     const markdown = await fetchText(GROQ_PRICING_URL)
     const parsed = parseGroqPricing(markdown)
     assertParsed(parsed, 'groq models page')
