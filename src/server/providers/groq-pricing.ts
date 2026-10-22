@@ -3,20 +3,31 @@
  * markdown mirror is one table per lifecycle (production, preview) whose
  * price cell is `$0.15 input$0.60 output`, `$0.111 per hour`, or
  * `$40.00 per 1M characters`. "Contact Sales" publishes no number, so that
- * row gets no card. The models table has no cached-input column, and the
- * prompt-caching doc names no dollar rate, so `cache_read_tokens` stays
- * unset. A price cell in any other shape refuses that model rather than
+ * row gets no card. The models table has no cached-input column: the
+ * prompt-caching doc lists the models that cache, and each of their model
+ * pages states its own `Cached Input` price (issue #411), read as
+ * `cache_read_tokens`. A listed caching model whose page states none
+ * throws. A price cell in any other shape refuses that model rather than
  * quoting part of it. A page that prices nothing throws.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
 import type { UnitCardSpec } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
-import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  markdownSection,
+  markdownTableRows,
+} from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
 
 export const GROQ_PRICING_URL = 'https://console.groq.com/docs/models.md'
+export const GROQ_CACHING_URL =
+  'https://console.groq.com/docs/prompt-caching.md'
+export const groqModelPageUrl = (id: string): string =>
+  `https://console.groq.com/docs/model/${id}.md`
 
 export type GroqPrice =
   | { kind: 'tokens'; rates: Record<string, number> }
@@ -86,6 +97,26 @@ export function parseGroqPricing(markdown: string): Map<string, GroqPrice> {
   return out
 }
 
+/** Model ids in the prompt-caching doc's Supported Models table; throws on none. */
+export function parseGroqCachingModels(markdown: string): Array<string> {
+  const ids = markdownTableRows(markdownSection(markdown, '[Supported Models]'))
+    .map((cells) => cells[0] ?? '')
+    .filter((id) => id !== 'Model ID' && /^[a-z0-9][a-z0-9./_-]*$/i.test(id))
+  if (ids.length === 0) {
+    throw new Error('groq prompt-caching doc: no Supported Models rows')
+  }
+  return ids
+}
+
+/** USD per token from a model page's `Cached Input` price; throws on none. */
+export function parseGroqCachedInput(markdown: string, id: string): number {
+  const match = markdown.match(/^Cached Input\s*\n\s*\$(\d+(?:\.\d+)?)\s*$/m)
+  if (!match?.[1]) {
+    throw new Error(`groq model page ${id}: no Cached Input price`)
+  }
+  return Number(match[1]) / 1e6
+}
+
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 
 /** Card lookup by listed model id. */
@@ -96,9 +127,20 @@ export async function groqModelPricing(
     const markdown = await fetchText(GROQ_PRICING_URL)
     const parsed = parseGroqPricing(markdown)
     assertParsed(parsed, 'groq models page')
+    const caching = await fetchText(GROQ_CACHING_URL)
+    const pages = await Promise.all(
+      parseGroqCachingModels(caching).map(async (id) => {
+        const price = parsed.get(id)
+        // A caching model the models page does not token-price has no card.
+        if (price?.kind !== 'tokens') return ''
+        const page = await fetchText(groqModelPageUrl(id))
+        price.rates.cache_read_tokens = parseGroqCachedInput(page, id)
+        return page
+      }),
+    )
     return {
       rates: Object.fromEntries(parsed),
-      hash: await sha256Text(markdown),
+      hash: await sha256Text([markdown, caching, ...pages].join('\n')),
       extractedAt: new Date().toISOString(),
     }
   })
