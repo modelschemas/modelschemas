@@ -339,6 +339,7 @@ export const CHANGE_STYLES: Record<string, string> = {
   'model.added': 'text-tok-green',
   'model.removed': 'text-tok-red',
   'model.updated': 'text-tok-amber',
+  'catalog.shape_changed': 'text-tok-red',
   'schema.added': 'text-tok-green',
   'schema.updated': 'text-tok-amber',
   'endpoint.added': 'text-tok-green',

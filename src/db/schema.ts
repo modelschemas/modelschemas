@@ -356,6 +356,7 @@ export const changeTypes = [
   'model.added',
   'model.removed',
   'model.updated',
+  'catalog.shape_changed',
   'schema.added',
   'schema.updated',
   'endpoint.added',

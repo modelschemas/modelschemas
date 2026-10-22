@@ -664,3 +664,38 @@ it('serves exact-model replay leaf silence on detail and default lists', async (
     sourceSilentEvidenceLedger.delete(scope)
   }
 })
+
+describe('served rows match the published row schema', () => {
+  const validatorFor = (name: string) =>
+    new Validator(
+      {
+        $ref: `#/components/schemas/${name}`,
+        components: openApiDocument.components,
+      },
+      '2020-12',
+      false,
+    )
+
+  it('validates list, provider-list and detail responses', async () => {
+    const list = await listModelsCatalog(db, { includeDeprecated: true })
+    expect(validatorFor('ModelList').validate(list).errors).toEqual([])
+    const { capabilities: _dropped, ...missingField } = list.models[0] ?? {}
+    expect(
+      validatorFor('ModelList').validate({ ...list, models: [missingField] })
+        .valid,
+    ).toBe(false)
+    const full = await listModelsCatalog(db, { pricing: true })
+    expect(validatorFor('ModelList').validate(full).errors).toEqual([])
+    const bare = await listModelsCatalog(db, { provenance: false })
+    expect(validatorFor('ModelList').validate(bare).errors).toEqual([])
+    const byProvider = await listProviderModels(db, 'cat-alpha')
+    expect(
+      validatorFor('ProviderModelList').validate(byProvider).errors,
+    ).toEqual([])
+    const detail = validatorFor('ModelDetail')
+    for (const row of list.models) {
+      const body = await getModelDetail(db, row.provider, row.id)
+      expect(detail.validate(body).errors).toEqual([])
+    }
+  })
+})

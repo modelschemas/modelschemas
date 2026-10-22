@@ -56,7 +56,9 @@ availability and schema questions.
    `mixed_usage`. "Estimate usage" below maps each native field. CLI: `modelschemas estimate openai gpt-4o usage.json`.
 6. **Stay current.** Poll `GET /v1/changes?since=<epoch>` (cursor-paginated)
    or subscribe: `POST /v1/subscriptions` (authed) delivers HMAC-signed
-   webhooks for model/schema changes.
+   webhooks for model/schema changes. `catalog.shape_changed` means the
+   model row changed shape (`payload.version`, `payload.notes`); re-read
+   `/openapi.json`. Ignore row keys you do not know.
 
 ## CLI quick reference
 
@@ -117,7 +119,9 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
 - Estimate the cost of a call from the stored rate card, in the card's
   currency (`POST /v1/estimate`).
 - Poll /v1/changes (or subscribe via webhooks) to hear about new models and
-  API revisions.
+  API revisions. A catalog.shape_changed change means the model row itself
+  changed shape (payload.version, payload.notes): re-read openapi.json.
+  /v1 changes are otherwise additive; ignore keys you do not know.
 
 ## Quickstart (no auth needed for reads)
 

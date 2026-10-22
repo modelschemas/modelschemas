@@ -109,7 +109,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ProviderModelList"
                 }
               }
             }
@@ -250,7 +250,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Model"
+                  "$ref": "#/components/schemas/ModelDetail"
                 }
               }
             }
@@ -721,6 +721,7 @@
                 "model.added",
                 "model.removed",
                 "model.updated",
+                "catalog.shape_changed",
                 "schema.added",
                 "schema.updated",
                 "endpoint.added",
@@ -919,7 +920,7 @@
                     "models": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/Model"
+                        "$ref": "#/components/schemas/ExportModel"
                       }
                     },
                     "providers": {
@@ -1330,6 +1331,7 @@
               "model.added",
               "model.removed",
               "model.updated",
+              "catalog.shape_changed",
               "schema.added",
               "schema.updated",
               "endpoint.added",
@@ -1347,7 +1349,7 @@
           },
           "payload": {
             "type": "object",
-            "description": "model.updated carries before, after, and changed. changed is the fact paths that differ and is never empty. A source hash, an extract time, the operand order of +, and the order of an input values list are not facts, so they do not appear here and do not produce an event. Schema events carry kind, contentHash, and previousHash instead.",
+            "description": "model.updated carries before, after, and changed. changed is the fact paths that differ and is never empty. A source hash, an extract time, the operand order of +, and the order of an input values list are not facts, so they do not appear here and do not produce an event. Schema events carry kind, contentHash, and previousHash instead. catalog.shape_changed means the served model row changed shape: one row per provider, subjectId model-row, carrying version, contentHash (the row-shape hash), previousHash, and notes. Re-read openapi.json and upgrade @modelschemas/client.",
             "properties": {
               "before": {},
               "after": {},
@@ -1374,6 +1376,14 @@
                   "string",
                   "null"
                 ]
+              },
+              "version": {
+                "type": "integer",
+                "description": "catalog.shape_changed: the row shape version."
+              },
+              "notes": {
+                "type": "string",
+                "description": "catalog.shape_changed: what changed in the row."
               }
             }
           },
@@ -1870,8 +1880,252 @@
           }
         }
       },
+      "HalLink": {
+        "type": "object",
+        "required": [
+          "href",
+          "method",
+          "contentType"
+        ],
+        "properties": {
+          "href": {
+            "type": "string",
+            "description": "A path, or an RFC 6570 template when templated is true."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "DELETE"
+            ]
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "templated": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "example": {
+            "description": "A concrete URL for a GET, or a request body for a POST.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
+      },
+      "ModelLinks": {
+        "type": "object",
+        "required": [
+          "provider",
+          "schemas"
+        ],
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/HalLink"
+          },
+          "schemas": {
+            "$ref": "#/components/schemas/HalLink"
+          },
+          "openapi": {
+            "$ref": "#/components/schemas/HalLink"
+          },
+          "schema": {
+            "description": "The bound generation schema. Only on model rows whose schemaEndpointId and activity are set.",
+            "$ref": "#/components/schemas/HalLink"
+          }
+        }
+      },
+      "FactSource": {
+        "type": "object",
+        "required": [
+          "derivation"
+        ],
+        "properties": {
+          "derivation": {
+            "type": "string",
+            "enum": [
+              "listing",
+              "docs-extracted",
+              "upstream-spec",
+              "generated",
+              "probe-verified",
+              "docs-derived",
+              "source-silent"
+            ],
+            "description": "How the fact was arrived at. source-silent: the provider publishes no value for it (docs/source-silent ledger)."
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "sourceHash": {
+            "type": "string"
+          },
+          "fetchedAt": {
+            "type": "integer",
+            "description": "Epoch seconds."
+          },
+          "endpointId": {
+            "type": "string",
+            "description": "Bound generation route, when the fact came from its schema."
+          },
+          "path": {
+            "type": "string",
+            "description": "JSON pointer or field name in the source document."
+          },
+          "checkedAt": {
+            "type": "string",
+            "description": "source-silent only: the date the ledger author checked the source (YYYY-MM-DD)."
+          },
+          "normalized": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "sameAs only: the id matched after dots were read as hyphens."
+          }
+        }
+      },
+      "FactSourceMap": {
+        "description": "One source per key (a capability flag or a server tool id), or one source-silent entry for the whole field.",
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FactSource"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/FactSource"
+          }
+        ]
+      },
+      "ModelFactSources": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "schemaEndpointId": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "sameAs": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "contextWindow": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "maxOutput": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "modalities": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/FactSourceMap"
+          },
+          "knowledgeCutoff": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "openWeights": {
+            "description": "Covers openWeights and weightsUrl.",
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "requestMap": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "requestMapFields": {
+            "type": "object",
+            "description": "Per-field evidence when a request map combines sources, keyed by ChatRequestMap field.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FactSource"
+            }
+          },
+          "serverTools": {
+            "$ref": "#/components/schemas/FactSourceMap"
+          },
+          "cacheRead": {
+            "$ref": "#/components/schemas/FactSource"
+          },
+          "efforts": {
+            "$ref": "#/components/schemas/FactSource"
+          }
+        }
+      },
+      "FactDiscrepancy": {
+        "type": "object",
+        "required": [
+          "field",
+          "ours",
+          "openrouter",
+          "oursDerivation",
+          "openrouterId"
+        ],
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "ours": {
+            "description": "This row's value."
+          },
+          "openrouter": {
+            "description": "OpenRouter's value for the same model."
+          },
+          "oursDerivation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "openrouterId": {
+            "type": "string"
+          }
+        }
+      },
       "Model": {
         "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "rawId",
+          "sameAs",
+          "activity",
+          "displayName",
+          "schemaEndpointId",
+          "contextWindow",
+          "maxOutput",
+          "modalities",
+          "pricing",
+          "capabilities",
+          "providerMetadata",
+          "reasoning",
+          "serverTools",
+          "requestMap",
+          "aliases",
+          "releasedAt",
+          "knowledgeCutoff",
+          "openWeights",
+          "weightsUrl",
+          "firstSeenAt",
+          "deprecatedAt",
+          "lastSeenAt",
+          "_links"
+        ],
         "properties": {
           "id": {
             "type": "string"
@@ -1944,7 +2198,33 @@
               "null"
             ]
           },
-          "modalities": {},
+          "modalities": {
+            "description": "Input and output modalities as the source states them, or null when unknown. A side the source leaves unstated is absent or null.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "input": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "output": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "pricing": {
             "description": "Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.",
             "oneOf": [
@@ -2047,6 +2327,7 @@
             }
           },
           "factSources": {
+            "$ref": "#/components/schemas/ModelFactSources",
             "description": "Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry."
           },
           "releasedAt": {
@@ -2082,7 +2363,283 @@
             "description": "The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.",
             "type": "integer"
           },
+          "deprecatedAt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "lastSeenAt": {
+            "type": "integer"
+          },
+          "_links": {
+            "$ref": "#/components/schemas/ModelLinks"
+          }
+        }
+      },
+      "ExportModel": {
+        "type": "object",
+        "description": "A model row in GET /v1/admin/export: the Model shape without lastSeenAt and _links.",
+        "required": [
+          "id",
+          "provider",
+          "rawId",
+          "sameAs",
+          "activity",
+          "displayName",
+          "schemaEndpointId",
+          "contextWindow",
+          "maxOutput",
+          "modalities",
+          "pricing",
+          "capabilities",
+          "providerMetadata",
+          "reasoning",
+          "serverTools",
+          "requestMap",
+          "aliases",
+          "releasedAt",
+          "knowledgeCutoff",
+          "openWeights",
+          "weightsUrl",
+          "firstSeenAt",
+          "deprecatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "rawId": {
+            "type": "string"
+          },
+          "sameAs": {
+            "description": "The catalog row this provider's own listing or docs identify as the same upstream model. It does not change this row's facts. null when no upstream is stated, or the stated one matches no row or more than one. When set, factSources.sameAs records the source, with normalized: true when the id matched only after reading dots as hyphens.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "provider",
+                  "rawId"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "rawId": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "chat",
+              "image",
+              "video",
+              "audio",
+              "embeddings",
+              "moderation",
+              null
+            ]
+          },
+          "displayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "schemaEndpointId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "contextWindow": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "maxOutput": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "modalities": {
+            "description": "Input and output modalities as the source states them, or null when unknown. A side the source leaves unstated is absent or null.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "input": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "output": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "pricing": {
+            "description": "Full RateCard on detail and on list rows with ?pricing=1; a CompactPricing summary on list rows otherwise. null only when no card is stored.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RateCard"
+              },
+              {
+                "$ref": "#/components/schemas/CompactPricing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilities": {
+            "description": "Capability flags as a map. true: the provider states the model supports the flag. false: the provider states it does not. Key absent: unknown; never read a missing key as false. null: nothing is known. Test capabilities?.tools === true to offer a feature and === false to rule it out. factSources.capabilities holds one source per key, for a true and a false alike; a false whose source has path 'unlisted' comes from the provider publishing the model's whole flag list without that flag.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "providerMetadata": {
+            "description": "The provider's own listing object for the model, as published: not normalised, and different for every provider (fal category, BytePlus Ark features and task type, ElevenLabs languages, Replicate visibility). null when the provider lists none. Nothing in it is a capability flag; read capabilities for those.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "reasoning": {
+            "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "mode",
+                  "mandatory"
+                ],
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "adaptive",
+                      "budget",
+                      "effort",
+                      "toggle"
+                    ]
+                  },
+                  "mandatory": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "efforts": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "serverTools": {
+            "description": "Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "requestMap": {
+            "description": "How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChatRequestMap"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "aliases": {
+            "description": "Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "factSources": {
+            "$ref": "#/components/schemas/ModelFactSources",
+            "description": "Per-field provenance, included by default on detail and list responses (provenance=0 explicitly omits it on lists). A ledgered null chat fact carries derivation source-silent, with sourceUrl and checkedAt only when recorded. capabilities and serverTools normally contain per-item source maps; whole-field silence is a source-silent object. Missing cacheRead and efforts subfacts have separate provenance keys; endpoint silence is schemaEndpointId. Populated facts keep their existing provenance. Nulls without ledger evidence gain no entry."
+          },
+          "releasedAt": {
+            "description": "The provider's own stated release or creation date, epoch seconds. null when the provider reports none. Unlike firstSeenAt it is never our observation.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "knowledgeCutoff": {
+            "description": "Knowledge (training data) cutoff as the provider states it: YYYY-MM, or YYYY-MM-DD when the provider gives a day. Never padded to a day. null when unknown. factSources.knowledgeCutoff is its source.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d{4}-\\d{2}(-\\d{2})?$"
+          },
+          "openWeights": {
+            "description": "true when the provider itself states the weights can be openly downloaded, false when it states they cannot, null when it states neither. Never inferred from a model name. factSources.openWeights is its source.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "weightsUrl": {
+            "description": "Where the provider says the weights are. Set only when openWeights is true.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "firstSeenAt": {
+            "description": "The release date the provider reports when it reports one (the same date as releasedAt), otherwise when this service first observed the model. Read releasedAt to tell the two apart.",
             "type": "integer"
           },
           "deprecatedAt": {
@@ -2093,8 +2650,35 @@
           }
         }
       },
+      "ModelDetail": {
+        "description": "GET /v1/models/{provider}/{modelId}: a Model with its full RateCard and OpenRouter discrepancies.",
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Model"
+          },
+          {
+            "type": "object",
+            "required": [
+              "discrepancies"
+            ],
+            "properties": {
+              "discrepancies": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/FactDiscrepancy"
+                }
+              }
+            }
+          }
+        ]
+      },
       "ModelList": {
         "type": "object",
+        "required": [
+          "count",
+          "models",
+          "_links"
+        ],
         "properties": {
           "count": {
             "type": "integer"
@@ -2104,6 +2688,47 @@
             "items": {
               "$ref": "#/components/schemas/Model"
             }
+          },
+          "_links": {
+            "type": "object",
+            "required": [
+              "self",
+              "providers"
+            ],
+            "properties": {
+              "self": {
+                "$ref": "#/components/schemas/HalLink"
+              },
+              "providers": {
+                "$ref": "#/components/schemas/HalLink"
+              }
+            }
+          }
+        }
+      },
+      "ProviderModelList": {
+        "type": "object",
+        "required": [
+          "provider",
+          "count",
+          "models",
+          "_links"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Model"
+            }
+          },
+          "_links": {
+            "$ref": "#/components/schemas/ModelLinks"
           }
         }
       },

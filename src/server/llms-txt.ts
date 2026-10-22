@@ -36,7 +36,9 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
 - Estimate the cost of a call from the stored rate card, in the card's
   currency (\`POST /v1/estimate\`).
 - Poll /v1/changes (or subscribe via webhooks) to hear about new models and
-  API revisions.
+  API revisions. A catalog.shape_changed change means the model row itself
+  changed shape (payload.version, payload.notes): re-read openapi.json.
+  /v1 changes are otherwise additive; ignore keys you do not know.
 
 ## Quickstart (no auth needed for reads)
 
