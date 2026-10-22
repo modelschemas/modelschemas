@@ -6,10 +6,12 @@ import { storeListedPricing } from '../rate-card.ts'
 
 import {
   byteplusRatesFor,
+  compilePeriodCard,
   compileSeedanceCard,
   compileSeedreamProCard,
   parseByteplusAliases,
   parseByteplusImages,
+  parseByteplusModelPage,
   parseByteplusPixelTiers,
   parseByteplusPricing,
   parseByteplusVideo,
@@ -17,6 +19,8 @@ import {
   sharePublishedAliases,
 } from './byteplus-pricing.ts'
 import type { ByteplusDoc } from './byteplus-pricing.ts'
+import { overlayModelFacts } from './reasoning-config.ts'
+import type { ModelInfo } from './types.ts'
 
 function cell(id: string, text: string) {
   return {
@@ -133,31 +137,145 @@ describe('byteplus pricing page', () => {
       },
       tiers: [],
     })
-    expect(rates.get('seed-2-0-lite-260428')?.base.audio_tokens).toBe(3.75e-6)
-    expect(rates.get('seed-2-0-pro-260328')?.tiers).toEqual([
-      {
-        minPromptTokens: 128_000,
-        rates: {
-          input_tokens: 1 / 1e6,
-          cache_read_tokens: 0.2 / 1e6,
-          output_tokens: 6 / 1e6,
+    expect(rates.get('seed-2-0-lite-260428')).toMatchObject({
+      base: { audio_tokens: 3.75e-6 },
+    })
+    expect(rates.get('seed-2-0-pro-260328')).toMatchObject({
+      tiers: [
+        {
+          minPromptTokens: 128_000,
+          rates: {
+            input_tokens: 1 / 1e6,
+            cache_read_tokens: 0.2 / 1e6,
+            output_tokens: 6 / 1e6,
+          },
+        },
+      ],
+    })
+    // Cache storage is per hour, so it is not a lever.
+    expect(rates.get('glm-5-2-260617')).not.toHaveProperty('base.cache_storage')
+    // Peak and off-peak rows are kept apart, never folded into one price.
+    expect(rates.get('deepseek-v4-1-flash-260910')).toEqual({
+      periods: {
+        off_peak: {
+          input_tokens: 0.15e-6,
+          cache_read_tokens: 0.003e-6,
+          output_tokens: 0.6e-6,
+        },
+        peak: {
+          input_tokens: 0.3e-6,
+          cache_read_tokens: 0.006e-6,
+          output_tokens: 1.2e-6,
         },
       },
-    ])
-    // Cache storage is per hour, so it is not a lever.
-    expect(rates.get('glm-5-2-260617')?.base).not.toHaveProperty(
-      'cache_storage',
+    })
+    expect(byteplusRatesFor('dola-seed-2-1-turbo-260628', rates)).toMatchObject(
+      { base: { input_tokens: 0.5e-6 } },
     )
-    // Peak and off-peak have no time lever.
-    expect(rates.has('deepseek-v4-1-flash-260910')).toBe(false)
-    expect(
-      byteplusRatesFor('dola-seed-2-1-turbo-260628', rates)?.base.input_tokens,
-    ).toBe(0.5e-6)
     expect(byteplusRatesFor('seed-translation-250915', rates)).toBeUndefined()
     // Only a dated suffix reaches an undated row, never a sibling model.
     expect(
       byteplusRatesFor('dola-seed-2-1-turbo-flash-260628', rates),
     ).toBeUndefined()
+  })
+
+  it('refuses a period group that is not one off-peak and one peak row', () => {
+    const offPeak = [
+      'deepseek-v4-1-flash-261017',
+      'Off-peak hours',
+      '0.15',
+      '-',
+      '0.0083',
+      '0.003',
+      '-',
+      '0.60',
+    ]
+    const twoOffPeak = parseByteplusPricing(
+      doc([CHAT_HEADERS, offPeak, ['', ...offPeak.slice(1)]]),
+    )
+    expect(twoOffPeak.has('deepseek-v4-1-flash-261017')).toBe(false)
+    const mixed = parseByteplusPricing(
+      doc([
+        CHAT_HEADERS,
+        offPeak,
+        ['', 'Prompt length (128, 256]', '1', '-', '-', '-', '-', '2'],
+      ]),
+    )
+    expect(mixed.has('deepseek-v4-1-flash-261017')).toBe(false)
+  })
+
+  it('prices a period card only for a stated pricing_period', async () => {
+    const card = compilePeriodCard(
+      {
+        periods: {
+          off_peak: {
+            input_tokens: 0.12e-6,
+            cache_read_tokens: 0.0024e-6,
+            output_tokens: 0.48e-6,
+          },
+          peak: {
+            input_tokens: 0.24e-6,
+            cache_read_tokens: 0.0048e-6,
+            output_tokens: 0.96e-6,
+          },
+        },
+      },
+      SOURCE,
+    )
+    const usage = { input_tokens: 1_000_000, output_tokens: 1_000_000 }
+    expect(price(card, {}, { ...usage, pricing_period: 'off_peak' })).toBe(0.6)
+    expect(
+      price(
+        card,
+        {},
+        { ...usage, cache_read_tokens: 1_000_000, pricing_period: 'peak' },
+      ),
+    ).toBeCloseTo(1.2048, 10)
+    expect(() => price(card, {}, usage)).toThrow(/pricing_period/)
+    expect(() =>
+      price(card, {}, { ...usage, pricing_period: 'night' }),
+    ).toThrow(/pricing_period/)
+    // Usage-bound levers only, so the chat schema accepts the card as stored.
+    const stored = await storeListedPricing(card, {
+      sourceUrl: SOURCE.url,
+      now: 1_790_000_000,
+      requestProperties: new Set(['model', 'messages']),
+    })
+    expect(stored).toEqual({ card })
+  })
+
+  it('keeps each patch’s absent facts when overlaying', () => {
+    const model = { rawId: 'seed-translation-250915', activity: 'chat' }
+    const merged = overlayModelFacts(
+      model as ModelInfo,
+      { absent: { pricing: 'unavailable' } },
+      { absent: { reasoning: 'unavailable' } },
+    )
+    expect(merged.absent).toEqual({
+      pricing: 'unavailable',
+      reasoning: 'unavailable',
+    })
+  })
+
+  it("reads a model page's single price row (seed-translation)", () => {
+    const headers = [
+      'Input USD/M Tokens',
+      'Input Hits Cache USD/M Tokens',
+      'Output Unit Price USD/M Tokens',
+      'Cache Storage USD/M Tokens/Hour',
+    ]
+    expect(
+      parseByteplusModelPage(doc([headers, ['0.20', '-', '0.80', '-']])),
+    ).toEqual({ input_tokens: 0.2 / 1e6, output_tokens: 0.8 / 1e6 })
+    expect(() =>
+      parseByteplusModelPage(
+        doc([headers, ['0.20', '-', '0.80', '-'], ['0.30', '-', '1', '-']]),
+      ),
+    ).toThrow(/one price table row/)
+    expect(() =>
+      parseByteplusModelPage(doc([headers, ['0.20', '-', 'TBD', '-']])),
+    ).toThrow(/unreadable/)
+    expect(() => parseByteplusModelPage(doc([CHAT_HEADERS]))).toThrow()
   })
 })
 

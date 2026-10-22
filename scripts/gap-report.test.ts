@@ -88,6 +88,23 @@ describe('gap report scoring', () => {
     expect(provider('full', own).score).toBe(1)
   })
 
+  it('counts a card with no base row only when every row prices the lever', () => {
+    const rate = {
+      off_peak: {
+        input_tokens: 1e-7,
+        output_tokens: 4e-7,
+        cache_read_tokens: 1e-9,
+      },
+      peak: { input_tokens: 2e-7, output_tokens: 8e-7 },
+    }
+    const periods = provider(
+      'full',
+      buildReport([{ ...complete, pricing: { tables: { rate } } }]),
+    )
+    expect(periods.facts.priced).toEqual({ have: 1, need: 1 })
+    expect(periods.facts.cacheRead).toEqual({ have: 0, need: 1 })
+  })
+
   it('counts a card in another currency as priced', () => {
     const yuan = buildReport([
       {

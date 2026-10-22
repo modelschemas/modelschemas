@@ -107,8 +107,10 @@ export function overlayModelFacts(
   let next: ModelInfo = { ...model }
   const factSources: ModelFactSources = { ...(model.factSources ?? {}) }
   for (const patch of patches) {
-    const { factSources: more, ...rest } = patch
+    const { factSources: more, absent, ...rest } = patch
     next = { ...next, ...rest }
+    // Each patch may mark its own facts absent; one must not erase another's.
+    if (absent) next.absent = { ...next.absent, ...absent }
     if (more) Object.assign(factSources, more)
   }
   if (emptySources(factSources)) {
