@@ -550,7 +550,7 @@ describe('source-silent catalog provenance', () => {
     const expected = {
       derivation: 'source-silent',
       sourceUrl: 'https://docs.x.ai/openapi.json',
-      checkedAt: '2026-10-09',
+      checkedAt: '2026-10-22',
     }
     expect(detail?.maxOutput).toBeNull()
     expect(detail?.factSources?.maxOutput).toEqual(expected)
