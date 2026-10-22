@@ -1,0 +1,47 @@
+# Copy to .github/workflows/catalog-mirror.yml in the public data repo
+# (issue #343). Needs the repo secret MODELSCHEMAS_ADMIN_KEY. Hourly: the
+# 15-minute poll would mostly produce empty runs.
+name: Catalog mirror
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch the mirror script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: modelschemas/modelschemas
+          path: .modelschemas
+          persist-credentials: false
+          sparse-checkout: scripts/mirror-catalog.ts
+          sparse-checkout-cone-mode: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Write the catalog files
+        env:
+          MODELSCHEMAS_ADMIN_KEY: ${{ secrets.MODELSCHEMAS_ADMIN_KEY }}
+        run: bun .modelschemas/scripts/mirror-catalog.ts . > "$RUNNER_TEMP/commit-msg"
+      - name: Commit only on change
+        run: |
+          git add -A providers models schemas feed.json
+          if git diff --cached --quiet; then
+            echo "Catalog unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit --quiet -F "$RUNNER_TEMP/commit-msg"
+          git push
