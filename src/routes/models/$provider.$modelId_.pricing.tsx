@@ -59,13 +59,17 @@ async function runQuote(raw: unknown): Promise<Quote> {
   }
   try {
     const outcome = await estimateCost(getDb(env), body)
-    return outcome.ok
-      ? {
-          ok: true,
-          amount: outcome.result.amount,
-          estimated: outcome.result.estimated,
-        }
-      : { ok: false, message: outcome.message }
+    if (!outcome.ok) return { ok: false, message: outcome.message }
+    // The calculator renders only for a row with a card; a routed row's
+    // range has no single amount to show.
+    if ('min' in outcome.result) {
+      return { ok: false, message: 'This model has no single billed price.' }
+    }
+    return {
+      ok: true,
+      amount: outcome.result.amount,
+      estimated: outcome.result.estimated,
+    }
   } catch (cause) {
     console.error('rate card quote failed', body.provider, body.model, cause)
     return { ok: false, message: QUOTE_FAILED }

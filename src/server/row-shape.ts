@@ -13,10 +13,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 1,
-  hash: '691a63b1df6de072adbdf78f8261bc7fc6857b61058295be54b319b3d0e7d557',
+  version: 2,
+  hash: '937f5dc7babab202e55bf1581426afba420ffd4b72076efb400416b3f182de76',
   notes:
-    'First versioned row shape. capabilities is a flag map (Record<string, boolean>, a missing key is unknown); provider listing objects, ElevenLabs canDo* flags among them, are in providerMetadata; every row field is typed in openapi.json.',
+    'Adds pricingRange (PricingRange or null) and factSources.pricingRange: a routed id whose routes bill different prices has pricing null and a min/max per million over its routes, each route named with its own row. A bound, never the billed price. POST /v1/estimate on such a row returns { currency, min, max, routes }.',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

@@ -9,6 +9,7 @@ import { getDb } from '../db/index.ts'
 import type { Db } from '../db/index.ts'
 import { models, providers } from '../db/schema.ts'
 import { estimateCost, parseEstimateBody } from './estimate.ts'
+import type { EstimateResult } from './estimate.ts'
 import { anthropicModelPricing } from './providers/anthropic-pricing.ts'
 import { compileSeedanceCard } from './providers/byteplus-pricing.ts'
 import { ANTHROPIC_PRICING_PAGE } from './providers/fixtures/anthropic-pricing.ts'
@@ -201,7 +202,9 @@ describe('estimateCost', () => {
       })
       // 8000 × 1.25/M + 4000 × 0.125/M + 800 × 10/M, not 0.0235.
       expect(outcome).toMatchObject({ ok: true, result: { defaulted: [] } })
-      if (outcome.ok) expect(outcome.result.amount).toBeCloseTo(0.0185, 10)
+      if (outcome.ok && 'amount' in outcome.result) {
+        expect(outcome.result.amount).toBeCloseTo(0.0185, 10)
+      }
     },
   )
 
@@ -433,12 +436,94 @@ describe('POST /v1/estimate conformance with evaluateCard', () => {
         return
       }
       if (!outcome.ok) throw new Error(`${outcome.code}: ${outcome.message}`)
+      if (!('amount' in outcome.result)) throw new Error('unexpected range')
       const { amount, currency, estimated } = JSON.parse(
         JSON.stringify(outcome.result),
-      ) as typeof outcome.result
+      ) as EstimateResult
       expect({ amount, currency, estimated }).toEqual(
         evaluateCard(c.card, { request: c.request, usage: c.usage }),
       )
     },
   )
+})
+
+describe('estimateCost on a routed id (#406)', () => {
+  const card = (input: number, output: number) =>
+    compileTokenCard(
+      { input_tokens: input / 1e6, output_tokens: output / 1e6 },
+      [],
+      GPT_4O.source,
+    )
+  const range = (routes: Array<string>) => ({
+    currency: 'USD',
+    routes: routes.map((model) => ({
+      model,
+      pricing: { currency: 'USD', per: 'token' as const },
+    })),
+    inputPerMillion: { min: 0, max: 0 },
+  })
+  const row = (
+    rawId: string,
+    extra: Partial<typeof models.$inferInsert> = {},
+  ): typeof models.$inferInsert => ({
+    id: `est-gw-${rawId.replaceAll('/', '-')}`,
+    providerId: 'est-gw',
+    rawId,
+    activity: 'chat',
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+    ...extra,
+  })
+
+  beforeAll(async () => {
+    await db.insert(providers).values({
+      id: 'est-gw',
+      displayName: 'Estimate gateway',
+      specSourceUrl: 'https://example.com/g.json',
+    })
+    await db
+      .insert(models)
+      .values([
+        row('oss', { pricingRange: range(['a/oss', 'b/oss', 'c/oss']) }),
+        row('a/oss', { pricing: card(0.15, 0.75) }),
+        row('b/oss', { pricing: card(0.35, 0.6) }),
+        row('c/oss', { pricing: card(0.05, 2) }),
+        row('gap', { pricingRange: range(['a/gap', 'b/gap']) }),
+        row('a/gap', { pricing: card(1, 1) }),
+        row('b/gap'),
+      ])
+  })
+
+  it('returns min and max over every route, naming each', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-gw',
+      model: 'oss',
+      usage: { input_tokens: 1_000_000, output_tokens: 100_000 },
+    })
+    if (!outcome.ok || !('min' in outcome.result)) {
+      throw new Error(JSON.stringify(outcome))
+    }
+    const { min, max, routes, currency } = outcome.result
+    expect(currency).toBe('USD')
+    expect(routes).toEqual(['a/oss', 'b/oss', 'c/oss'])
+    // a: 0.15 + 0.075, b: 0.35 + 0.06, c: 0.05 + 0.2
+    expect(min.model).toBe('a/oss')
+    expect(min.amount).toBeCloseTo(0.225, 10)
+    expect(max.model).toBe('b/oss')
+    expect(max.amount).toBeCloseTo(0.41, 10)
+  })
+
+  it('refuses when a route has no card', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-gw',
+      model: 'gap',
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    expect(outcome).toMatchObject({
+      ok: false,
+      status: 404,
+      code: 'unknown_pricing',
+    })
+    if (!outcome.ok) expect(outcome.message).toContain('est-gw/b/gap')
+  })
 })

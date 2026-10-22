@@ -170,6 +170,7 @@ function comparable(
     openWeights: info.openWeights ?? null,
     weightsUrl: info.weightsUrl ?? null,
     providerMetadata: info.providerMetadata ?? null,
+    pricingRange: info.pricingRange ?? null,
   }
 }
 
@@ -861,6 +862,7 @@ export async function pollProviderModels(
         maxOutput: info.maxOutput ?? null,
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
+        pricingRange: info.pricingRange ?? null,
         capabilities: info.capabilities ?? null,
         providerMetadata: info.providerMetadata ?? null,
         reasoning: info.reasoning ?? null,
@@ -911,6 +913,7 @@ export async function pollProviderModels(
       openWeights: existing.openWeights,
       weightsUrl: existing.weightsUrl,
       providerMetadata: existing.providerMetadata,
+      pricingRange: existing.pricingRange,
     }
     const capabilities = preserveAsyncApiFlag(
       existing.capabilities,
@@ -981,6 +984,7 @@ export async function pollProviderModels(
         maxOutput: info.maxOutput ?? null,
         modalities: info.modalities ?? null,
         pricing: info.pricing ?? null,
+        pricingRange: info.pricingRange ?? null,
         capabilities,
         providerMetadata: info.providerMetadata ?? null,
         reasoning: info.reasoning ?? null,

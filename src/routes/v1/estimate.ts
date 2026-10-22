@@ -33,7 +33,11 @@ export const Route = createFileRoute('/v1/estimate')({
           event: 'cost_estimated',
           properties: {
             currency: outcome.result.currency,
-            estimated_input_count: outcome.result.estimated.length,
+            estimated_input_count:
+              'estimated' in outcome.result
+                ? outcome.result.estimated.length
+                : outcome.result.max.estimated.length,
+            range: 'min' in outcome.result,
             has_request: body.request !== undefined,
             has_usage: body.usage !== undefined,
             model: body.model,

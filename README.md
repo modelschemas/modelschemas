@@ -386,6 +386,19 @@ by unit — so `null` on a list row always means no card. `GET
 `GET /v1/status` counts `priced` models per provider. Together all-zero placeholders are
 `null`. `POST /v1/estimate` evaluates a stored card.
 
+**Breaking (0.1.x):** `POST /v1/estimate` (and the MCP `estimate_cost`
+tool, and `estimateCost` in `@modelschemas/client`) can return a range
+(#406). A routed id whose routes bill different prices (LLM Gateway bare
+ids such as `gpt-oss-120b`) has `pricing: null` and a `pricingRange`:
+min/max per million over the routes' published cards, each route named by
+its own pinned row (`groq/gpt-oss-120b`). It is a bound, never the billed
+price. Estimating such a row prices the call on every route and returns
+`{ currency, min, max, routes }` instead of `{ amount, … }`; `min` and
+`max` each carry `model` (the route) and the usual result fields. A route
+with no card refuses the estimate. Check for `min` before reading
+`amount`. Vercel rows whose price varies by route (#346) are `pricing:
+null` with no range yet.
+
 **Breaking (0.1.x):** `opencode-go` endpoint ids moved from `v1/<tail>` to
 the documented `inference/go/<protocol>/v1/<tail>` (#393), e.g.
 `/v1/schemas/opencode-go/chat/inference/go/openai/v1/chat/completions`.

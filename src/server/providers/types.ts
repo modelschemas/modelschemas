@@ -1,4 +1,5 @@
 import type { Activity } from '#/db/schema.ts'
+import type { PricingRange } from '#/server/rate-card.ts'
 import type { ChatRequestMap } from './request-map.ts'
 import type { Fetcher } from './us-egress.ts'
 
@@ -166,6 +167,8 @@ export interface ModelFactSources {
   maxOutput?: FactSource
   modalities?: FactSource
   pricing?: FactSource
+  /** Where the route prices behind `pricingRange` were read. */
+  pricingRange?: FactSource
   /**
    * One source per flag in the stored map, for a `true` and a `false`
    * alike. `path: 'unlisted'` on a `false` means the provider published the
@@ -369,6 +372,12 @@ export interface ModelInfo {
   maxOutput?: number | null
   modalities?: unknown
   pricing?: unknown
+  /**
+   * A routed id's min/max over its routes' published cards (issue #406),
+   * when it has no single billed price. Built by `pricingRange`; each
+   * route is its own row. Null or omitted: none.
+   */
+  pricingRange?: PricingRange | null
   /**
    * The flags the provider states the model supports, as a list. The
    * poller joins it with `unsupportedCapabilities` into the stored map

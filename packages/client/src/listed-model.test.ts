@@ -27,6 +27,7 @@ const row: Model = {
   maxOutput: null,
   modalities: null,
   pricing: null,
+  pricingRange: null,
   capabilities: { tools: true },
   providerMetadata: null,
   reasoning: null,

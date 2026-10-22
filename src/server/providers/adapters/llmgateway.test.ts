@@ -117,6 +117,73 @@ describe('parseLlmGatewayModels', () => {
     expect(bare?.maxOutput).toBe(32000)
   })
 
+  it('gives a bare id whose routes differ a range over them, not a price (#406)', () => {
+    const bare = row('gpt-oss-120b')
+    expect(bare?.absent).toEqual({ pricing: 'cleared' })
+    expect(bare?.pricingRange).toEqual({
+      currency: 'USD',
+      routes: [
+        {
+          model: 'groq/gpt-oss-120b',
+          pricing: {
+            currency: 'USD',
+            per: 'token',
+            inputPerMillion: 0.15,
+            outputPerMillion: 0.75,
+          },
+        },
+        {
+          model: 'cerebras/gpt-oss-120b',
+          pricing: {
+            currency: 'USD',
+            per: 'token',
+            inputPerMillion: 0.35,
+            outputPerMillion: 0.75,
+          },
+        },
+      ],
+      inputPerMillion: { min: 0.15, max: 0.35 },
+      outputPerMillion: { min: 0.75, max: 0.75 },
+    })
+    expect(bare?.factSources?.pricingRange?.path).toBe(
+      'data[].providers[].pricing',
+    )
+    // One price on every route, or a single route: no range.
+    expect(row('claude-sonnet-4-5')?.pricingRange).toBeNull()
+    expect(row('claude-sonnet-4-5')?.absent).toBeUndefined()
+    expect(row('gpt-4o')?.pricingRange).toBeNull()
+  })
+
+  it('gives no range when a route has no readable card', () => {
+    const [bare] = parseLlmGatewayModels(
+      {
+        data: [
+          {
+            id: 'm',
+            architecture: { output_modalities: ['text'] },
+            providers: [
+              {
+                providerId: 'a',
+                externalId: 'm',
+                pricing: { prompt: '1e-6', completion: '2e-6' },
+              },
+              {
+                providerId: 'b',
+                externalId: 'm',
+                pricing: { prompt: '1e-6', image: '0.01' },
+              },
+            ],
+          },
+        ],
+      },
+      SOURCE,
+    )
+    expect(bare?.pricing).toBeNull()
+    expect(bare?.pricingRange).toBeNull()
+    // Unreadable is not "no single price": a plain omission.
+    expect(bare?.absent).toBeUndefined()
+  })
+
   it("gives a pinned row its route's price, limits and upstream", () => {
     const groq = row('groq/gpt-oss-120b')
     expect(
