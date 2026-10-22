@@ -185,3 +185,17 @@ Sources: https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production
 - cloudflare-ai-gateway/xai/grok-4.6: replayReasoningContent — The exact own hosted model catalog document and first-party Gateway guides publish no normative historical reasoning_content replay requirement or rejection rule, https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/xai-grok-4.6.json, checked 2026-10-09.
 
 - cloudflare-ai-gateway/xai/grok-4.7: replayReasoningContent — The exact own hosted model catalog document and first-party Gateway guides publish no normative historical reasoning_content replay requirement or rejection rule, https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/xai-grok-4.7.json, checked 2026-10-09.
+
+- `cloudflare-ai-gateway/fireworks/ember-1`: reasoning — The catalog file tags Reasoning but has no request schema and no reasoning metadata (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/fireworks-ember-1.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/google/gemini-4-argon`: reasoning — The catalog file states only "Default thinking level: medium" and has no request schema; no accepted levels are listed (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/google-gemini-4-argon.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/meta/muse-spark-1.1`: reasoning — The request schema's `reasoning.effort` enum is the shared one ("availability and accepted values are model-dependent") and the metadata names no levels (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/meta-muse-spark-1.1.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/meta/muse-spark-1.2`: reasoning — The request schema's `reasoning.effort` enum is the shared one ("availability and accepted values are model-dependent") and the metadata names no levels (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/meta-muse-spark-1.2.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/meta/muse-spark-1.3`: reasoning — The request schema's `reasoning.effort` enum is the shared one ("availability and accepted values are model-dependent") and the metadata names no levels (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/meta-muse-spark-1.3.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/meta/muse-wonder-1.0`: reasoning — The request schema's `reasoning.effort` enum is the shared one ("availability and accepted values are model-dependent") and the metadata names no levels (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/meta-muse-wonder-1.0.json, checked 2026-10-22
+
+- `cloudflare-ai-gateway/reflection-ai/beam-1.0-501b-a23b`: reasoning — The metadata says "Reasoning: Always on", but the schema's `reasoning_effort` is the shared untyped string ("accepted values are model-dependent") and no levels are listed (#323), https://raw.githubusercontent.com/cloudflare/cloudflare-docs/production/src/content/catalog-models/reflection-ai-beam-1.0-501b-a23b.json, checked 2026-10-22

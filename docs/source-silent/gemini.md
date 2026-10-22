@@ -109,3 +109,9 @@
 - `gemini/nano-banana-pro-preview`: priced — the pricing page prices gemini-3-pro-image (Nano Banana Pro) and names no binding for this id (#411), https://ai.google.dev/gemini-api/docs/pricing, checked 2026-10-22
 
 - `gemini/nano-banana-pro-preview`: cacheRead — the pricing page prices gemini-3-pro-image (Nano Banana Pro) and names no binding for this id (#411), https://ai.google.dev/gemini-api/docs/pricing, checked 2026-10-22
+
+- `gemini/gemini-3.1-pro-preview`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview.md.txt, checked 2026-10-22
+
+- `gemini/gemini-3.1-pro-preview-customtools`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview.md.txt, checked 2026-10-22
+
+- `gemini/gemini-3.5-flash`: reasoning — The model page says Thinking "Supported" with no levels, and the thinking page's `thinkingLevel` table no longer has a column for it; no control is stated for this id (#323), https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash.md.txt, checked 2026-10-22

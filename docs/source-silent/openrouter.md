@@ -715,3 +715,31 @@
 - openrouter/rekaai/reka-flash-3: reasoning — Own per-model metadata makes reasoning mandatory and publishes neither effort selection nor a reasoning-token budget; native guide rejects disabling mandatory reasoning, so no selectable mode can be sourced, https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.md, checked 2026-10-09
 - openrouter/deepseek/deepseek-r1: reasoning — Own per-model metadata makes reasoning mandatory and publishes neither effort selection nor a reasoning-token budget; native guide rejects disabling mandatory reasoning, so no selectable mode can be sourced, https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.md, checked 2026-10-09
 - openrouter/openrouter/auto: reasoning — Own per-model metadata publishes reasoning support but no mandatory state, effort selection or reasoning-token budget; native gateway enable/disable normalization cannot establish this exact model can disable reasoning, https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.md, checked 2026-10-09
+
+- `openrouter/liquid/lfm-2.5-24b-a2b`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o1`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o1-pro`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o3`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o3:batch`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o3-mini`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o3-mini:batch`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o3-pro`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o4-mini`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openai/o4-mini:batch`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/perplexity/sonar-deep-research`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/perplexity/sonar-reasoning-pro`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/recursive/flint-v1.0:free`: reasoning — The OpenRouter listing states `reasoning: { mandatory: true }` and omits `supported_efforts`, which the reasoning guide defines as "the model does not expose effort selection"; an always-on model with no request field stores no reasoning object (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22
+
+- `openrouter/openrouter/pareto-code`: reasoning — A dynamic router: the OpenRouter listing omits its `reasoning` field, which the reasoning guide says router models do; no model-scoped control is published (#323), https://openrouter.ai/api/v1/models, checked 2026-10-22

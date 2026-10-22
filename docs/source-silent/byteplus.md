@@ -1,1 +1,3 @@
 - byteplus/seed-translation-250915: cacheRead — The model's own page quotes input 0.20 and output 0.80 USD/M tokens and marks "Input Hits Cache" as "-"; the ModelArk pricing page has no row for this model, so no cached-input price is published (#411), https://docs.byteplus.com/en/docs/ModelArk/recommended-models-seed-translation, checked 2026-10-22
+
+- `byteplus/deepseek-v4-flash-260425`: reasoning — The deep-thinking page lists its `thinking.type` and `reasoning_effort` models by dated id; this id is in neither list (its siblings deepseek-v4-pro-260425 and deepseek-v4-flash-ga-260731 are), so no control is bound to it (#323), https://docs.byteplus.com/en/docs/ModelArk/1449737, checked 2026-10-22
