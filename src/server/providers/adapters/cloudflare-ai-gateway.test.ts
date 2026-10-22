@@ -297,6 +297,49 @@ describe('cloudflare-ai-gateway', () => {
     expect(grok46.capabilities).toEqual(['tools', 'reasoning'])
   })
 
+  it("reads levels from the model's own Reasoning Effort metadata over a generic field", () => {
+    // Shape of catalog-models/meta-muse-spark-open.json (2026-10-22).
+    const parsed = parseCatalogModel(
+      {
+        ...FABLE,
+        model_id: 'meta/muse-spark-open',
+        metadata: { 'Reasoning Effort': 'low, medium, high, xhigh (default)' },
+        schema: {
+          input: {
+            properties: {
+              max_tokens: {},
+              reasoning_effort: {
+                description:
+                  'Optional reasoning control; availability and accepted values are model-dependent.',
+                type: ['string', 'null'],
+              },
+            },
+          },
+        },
+      },
+      SOURCE,
+      { schemaShared: true },
+    )
+    expect(parsed.reasoning).toEqual({
+      mode: 'effort',
+      mandatory: null,
+      efforts: ['low', 'medium', 'high', 'xhigh'],
+    })
+    expect(parsed.factSources?.reasoning?.path).toBe(
+      'metadata.Reasoning Effort',
+    )
+    expect(() =>
+      parseCatalogModel(
+        {
+          ...FABLE,
+          model_id: 'meta/muse-spark-open',
+          metadata: { 'Reasoning Effort': 'low, medium' },
+        },
+        SOURCE,
+      ),
+    ).toThrow(/no reasoning_effort field/)
+  })
+
   it('does not infer disabled thinking from the none enum label', () => {
     const parsed = parseCatalogModel(
       {

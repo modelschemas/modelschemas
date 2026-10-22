@@ -439,6 +439,27 @@ function adaptiveThinking(schema: unknown, rawId: string): boolean {
   return kinds.includes('adaptive') && !kinds.includes('other')
 }
 
+/**
+ * "Reasoning Effort: low, medium, high, xhigh (default)": the levels this
+ * model's own catalog file lists for its `reasoning_effort` field.
+ */
+function listedEfforts(
+  value: string | null,
+  rawId: string,
+): Array<string> | null {
+  if (!value) return null
+  const efforts = value.split(',').map((part) =>
+    part
+      .replace(/\(default\)/i, '')
+      .trim()
+      .toLowerCase(),
+  )
+  if (!efforts.every((effort) => EFFORT_WORDS.has(effort))) {
+    throw fail(rawId, `Reasoning Effort is not a level list: ${value}`)
+  }
+  return efforts
+}
+
 function effortReasoning(field: EffortField): ModelReasoning {
   return {
     mode: 'effort',
@@ -474,6 +495,27 @@ function parsedReasoning(
       reasoning: effortReasoning(match),
       wire: match.wire,
       path: 'metadata.Reasoning',
+    }
+  }
+  const levels = listedEfforts(
+    metaString(metadata, 'Reasoning Effort', rawId),
+    rawId,
+  )
+  if (levels) {
+    if (!isRecord(schema) || !isRecord(schema.properties)) {
+      throw fail(rawId, 'Reasoning Effort has no request schema')
+    }
+    if (!('reasoning_effort' in schema.properties)) {
+      throw fail(rawId, 'Reasoning Effort has no reasoning_effort field')
+    }
+    const own = fields.find((field) => field.wire === 'reasoning_effort')
+    if (own && !sameEfforts(own.efforts, levels)) {
+      throw fail(rawId, 'Reasoning Effort does not match the schema enum')
+    }
+    return {
+      reasoning: effortReasoning({ wire: 'reasoning_effort', efforts: levels }),
+      wire: 'reasoning_effort',
+      path: 'metadata.Reasoning Effort',
     }
   }
   // Identical schemas do not negate an exact catalog's unqualified control.
