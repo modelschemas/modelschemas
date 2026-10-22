@@ -482,6 +482,47 @@ describe('perplexity listModels', () => {
     ).toBe('v1/agent')
   })
 
+  it('puts a card sentence’s limits on its own row only', async () => {
+    const nemotron = 'perplexity/nemotron-3.5-super-120b-a12b'
+    const nvidia = MODELS_DOC.replace(
+      /^> Nemotron 3 Ultra[^]*?(?=\*\*Perplexity\*\*)/m,
+      [
+        '> Nemotron 3.5 Super is a reasoning model with a 1,048,576-token context window and up to 131,072 output tokens. It accepts text input only.',
+        '',
+        ...HEADER,
+        `| \`${nemotron}\` | 0.20 | 0.50 | 0.04 | — | — |`,
+        '',
+        '',
+      ].join('\n'),
+    )
+    globalThis.fetch = ((url: string) =>
+      Promise.resolve(
+        String(url) === MODELS_URL
+          ? Response.json({
+              data: [{ id: nemotron }, { id: 'perplexity/sonar' }],
+            })
+          : new Response(String(url) === DOC_URL ? nvidia : PRESETS_DOC),
+      )) as typeof fetch
+    const { models } = await provider.listModels({
+      PERPLEXITY_API_KEY: 'test-key',
+    })
+    const row = models.find((m) => m.rawId === nemotron)
+    expect(row).toMatchObject({
+      contextWindow: 1_048_576,
+      maxOutput: 131_072,
+      factSources: {
+        contextWindow: { derivation: 'docs-derived', sourceUrl: DOC_URL },
+        maxOutput: { derivation: 'docs-derived', sourceUrl: DOC_URL },
+      },
+    })
+    expect(row?.factSources?.contextWindow?.sourceHash).toMatch(
+      /^[0-9a-f]{64}$/,
+    )
+    const sonar = models.find((m) => m.rawId === 'perplexity/sonar')
+    expect(sonar?.contextWindow).toBeUndefined()
+    expect(sonar?.factSources?.contextWindow).toBeUndefined()
+  })
+
   it('reads an off value in the published list as "can be turned off"', async () => {
     const withNone = MODELS_DOC.replace('accepts `minimal`,', 'accepts `none`,')
     expect(withNone).not.toBe(MODELS_DOC)
