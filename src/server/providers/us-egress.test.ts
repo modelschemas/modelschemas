@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ProviderEnvironment } from './types.ts'
 import { usEgressFetch } from './us-egress.ts'
@@ -33,7 +33,16 @@ describe('usEgressFetch', () => {
     ])
   })
 
-  it('uses the global fetch when no binding is present', () => {
+  it('uses the global fetch outside the Workers runtime', () => {
     expect(usEgressFetch({})).toBe(fetch)
+  })
+
+  it('throws inside the Workers runtime when the binding is missing', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Cloudflare-Workers' })
+    try {
+      expect(() => usEgressFetch({})).toThrow(/US_EGRESS binding missing/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

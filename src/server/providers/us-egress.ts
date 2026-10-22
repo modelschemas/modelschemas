@@ -16,12 +16,17 @@ export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>
  * guarantee, but workerd does not implement it, so `bun run dev` would
  * throw.)
  *
- * No `US_EGRESS` binding (local scripts, unit tests): the global fetch,
- * which runs from the caller's own machine.
+ * Outside the Workers runtime (bun scripts, node unit tests) there is no
+ * binding and the global fetch runs from the caller's own machine. Inside
+ * it, a missing binding is a config error and throws.
  */
 export function usEgressFetch(env: ProviderEnvironment): Fetcher {
   const ns = env.US_EGRESS
-  if (!ns) return fetch
+  if (!ns) {
+    if (navigator.userAgent === 'Cloudflare-Workers')
+      throw new Error('US_EGRESS binding missing (wrangler.jsonc, issue #356)')
+    return fetch
+  }
   const stub = ns.get(ns.idFromName('provider-egress'), {
     locationHint: 'enam',
   })
