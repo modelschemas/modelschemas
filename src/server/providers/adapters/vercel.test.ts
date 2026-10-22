@@ -422,4 +422,48 @@ describe('vercel', () => {
     expect(vercelReasoning({})).toBeNull()
     expect(vercelReasoning({ reasoning_options: 'toggle' })).toBeNull()
   })
+
+  it('clears the price of a row whose price varies by route (#346)', () => {
+    // ai-gateway.vercel.sh/v1/models, 2026-10-22: the top-level price is
+    // one route's (beam: the free `reflection` route; qwen-3-235b: vertex,
+    // not the cheaper deepinfra), and the gateway picks the route.
+    const [beam, qwen, plain] = parseVercelModels(
+      {
+        data: [
+          {
+            id: 'reflection/beam',
+            type: 'language',
+            pricing: {
+              input: '0',
+              output: '0',
+              input_cache_read: '0',
+              varies_by_provider: true,
+            },
+          },
+          {
+            id: 'alibaba/qwen-3-235b',
+            type: 'language',
+            pricing: {
+              input: '0.00000022',
+              output: '0.00000088',
+              varies_by_provider: true,
+            },
+          },
+          {
+            id: 'alibaba/qwen-3-14b',
+            type: 'language',
+            pricing: { input: '0.00000012', output: '0.00000024' },
+          },
+        ],
+      },
+      SOURCE,
+    )
+    for (const row of [beam, qwen]) {
+      expect(row?.pricing).toBeNull()
+      expect(row?.absent).toEqual({ pricing: 'cleared' })
+      expect(row?.factSources?.pricing).toBeUndefined()
+    }
+    expect(plain?.pricing).not.toBeNull()
+    expect(plain?.absent).toBeUndefined()
+  })
 })
