@@ -19,6 +19,10 @@ availability and schema questions.
 2. **Read without auth.** All reads are public at a low rate limit (60/h per
    IP). Go straight to:
    - `GET /v1/models?activity=chat&q=claude` — what can I use right now.
+     `requiredRequestHeaders` names headers whose values are not constants
+     (OpenCode Go: `x-opencode-session` and `User-Agent`).
+     `trainsOnRequestData: true` means that id's own source says it trains
+     on request data.
      A row's `capabilities` is a map: `true` = the provider states
      support, `false` = it states none, key absent = unknown (never read a
      missing key as false). `?capability=tools` keeps rows where it is true.
@@ -112,8 +116,10 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
   the full card. `/v1/status` counts live `priced` models per provider
   and scores `completeness` (the share of chat facts filled; `score` is
   null with no chat models). A provider there carries `docsFailing`,
-  `priceClearsRefused`, or `updateStorm` while its stored docs facts or
-  prices may be stale, or one poll rewrote most of its live rows.
+  `priceClearsRefused`, `updateStorm`, or `staleProbes` while its
+  stored docs facts or prices may be stale, one poll rewrote most of its
+  live rows, or a probe record is older than 90 days. A model row's
+  `requiredRequestHeaders` lists headers whose values are not constants.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as `{endpointId}`: it aliases onto that

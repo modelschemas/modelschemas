@@ -27,6 +27,10 @@ availability and schema questions.
 2. **Read without auth.** All reads are public at a low rate limit (60/h per
    IP). Go straight to:
    - \`GET /v1/models?activity=chat&q=claude\` — what can I use right now.
+     \`requiredRequestHeaders\` names headers whose values are not constants
+     (OpenCode Go: \`x-opencode-session\` and \`User-Agent\`).
+     \`trainsOnRequestData: true\` means that id's own source says it trains
+     on request data.
      A row's \`capabilities\` is a map: \`true\` = the provider states
      support, \`false\` = it states none, key absent = unknown (never read a
      missing key as false). \`?capability=tools\` keeps rows where it is true.

@@ -13,10 +13,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 4,
-  hash: 'bcf01bcd5d79933bbda5b7f2d67b2c0cba9a13749d37082bc2215b4a3c49f4cf',
+  version: 5,
+  hash: '881ff4bcc2a958ff643bbac81d25abe254805639ce1309fa6e4598c7cfbf0aa4',
   notes:
-    'pricingRange.routes[] may name a gateway route with provider and an inline card (examples empty) when that route has no catalog row. Vercel varies-by-provider rows use it (issue #451). model is still the catalog rawId when the card lives on a row.',
+    'Adds requiredRequestHeaders (name and description, null when none) and trainsOnRequestData (true or null). FactSource gains verifiedAt for a probe-verified fact (issue #461).',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

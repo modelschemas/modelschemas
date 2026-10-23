@@ -1,7 +1,13 @@
 /** Native OpenCode routes, with unpublished request/response schemas absent. */
 import { markdownSection, markdownTableRows } from './model-facts.ts'
-import { fetchText, sha256Text } from './types.ts'
-import type { OpenApiDocument, SpecFetchResult } from './types.ts'
+import { openCodeGoHeaderParameters } from './opencode-go-facts.ts'
+import { probesFor } from './probes/index.ts'
+import { fetchText, PROVENANCE_MARKER, sha256Text } from './types.ts'
+import type {
+  OpenApiDocument,
+  OpenApiOperation,
+  SpecFetchResult,
+} from './types.ts'
 
 export const ROUTE_ONLY_MARKER = 'x-modelschemas-route-only'
 const ROUTE_ACTIVITY = 'x-modelschemas-opencode-activity'
@@ -39,6 +45,26 @@ function routePattern(documented: string): RegExp {
   return new RegExp(`^${escaped.replace(/<[^>]+>/g, '[^/:]+')}$`)
 }
 
+/**
+ * A probed route stays route-only. The live call shows the method and a
+ * response shape; it does not publish the request schema.
+ */
+export function probeOperation(record: {
+  verifiedAt: string
+  route: string
+}): OpenApiOperation {
+  return {
+    [ROUTE_ONLY_MARKER]: true,
+    [ROUTE_ACTIVITY]: 'chat',
+    [PROVENANCE_MARKER]: {
+      derivation: 'probe-verified',
+      verifiedAt: record.verifiedAt,
+    },
+    'x-modelschemas-probe': record.route,
+    responses: {},
+  }
+}
+
 export async function openCodeRouteSpec(
   rows: Array<RouteRow>,
   docs: { url: string; text?: string; hash?: string },
@@ -49,14 +75,29 @@ export async function openCodeRouteSpec(
       ? [`/${row.schemaEndpointId.replace(/^\//, '')}`]
       : [],
   )
+  const provider = go ? 'opencode-go' : 'opencode'
+  const probed = new Map(
+    probesFor(provider).map((record) => [`/${record.route}`, record]),
+  )
+  for (const path of probed.keys()) {
+    if (!routes.includes(path)) routes.push(path)
+  }
   if (routes.length === 0)
     throw new Error('opencode: catalog names no verified chat routes')
   const url = go ? OPENCODE_GO_ROUTE_DOCS_URL : OPENCODE_ROUTE_DOCS_URL
   const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
   const documented = documentedRoutes(text, url).map(routePattern)
   const method = { url, hash: await sha256Text(text) }
+  const headers = go ? openCodeGoHeaderParameters() : undefined
   const paths: NonNullable<OpenApiDocument['paths']> = {}
   for (const path of routes) {
+    const record = probed.get(path)
+    if (record) {
+      paths[path] = {
+        post: { ...probeOperation(record), parameters: headers },
+      }
+      continue
+    }
     if (!documented.some((pattern) => pattern.test(path)))
       throw new Error(`opencode: ${url} documents no ${path} route`)
     paths[path] = {
@@ -64,6 +105,7 @@ export async function openCodeRouteSpec(
         [ROUTE_ONLY_MARKER]: true,
         [ROUTE_ACTIVITY]: 'chat',
         'x-modelschemas-method-source': method,
+        ...(headers ? { parameters: headers } : {}),
         responses: {},
       },
     }

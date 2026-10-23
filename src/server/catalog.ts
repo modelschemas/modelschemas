@@ -27,6 +27,7 @@ import {
   storedAliases,
 } from '#/server/providers/provider-aliases.ts'
 import { servePricing } from '#/server/rate-card.ts'
+import { openCodeGoFacts } from '#/server/providers/opencode-go-facts.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
 import { getServiceStatus } from '#/server/status.ts'
 import { sourceSilentEvidenceLedger } from './source-silent.ts'
@@ -120,10 +121,12 @@ function modelFactSources(
   match: ReturnType<typeof linkMatch>,
 ): ModelFactSources | null {
   const stored = (row.factSources as ModelFactSources | null) ?? null
-  if (match === null) return stored
+  const go = openCodeGoFacts(row.providerId, row.rawId).factSources
+  const withGo = Object.keys(go).length === 0 ? stored : { ...stored, ...go }
+  if (match === null) return withGo
   const source = row.upstreamSource as FactSource
   return {
-    ...stored,
+    ...withGo,
     sameAs: match === 'published' ? source : { ...source, normalized: true },
   }
 }
@@ -156,6 +159,7 @@ function toApiModel(
       ? undefined
       : halGet(schemaPath, { example: `${schemaPath}?kind=input` })
   const match = linkMatch(row, opts.upstream)
+  const go = openCodeGoFacts(row.providerId, row.rawId)
   return {
     id: row.id,
     provider: row.providerId,
@@ -177,6 +181,8 @@ function toApiModel(
     reasoning: row.reasoning,
     serverTools: row.serverTools,
     requestMap: row.requestMap,
+    requiredRequestHeaders: go.requiredRequestHeaders,
+    trainsOnRequestData: go.trainsOnRequestData,
     aliases: storedAliases(row.aliases),
     releasedAt: row.releasedAt,
     knowledgeCutoff: row.knowledgeCutoff,

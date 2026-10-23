@@ -1,5 +1,6 @@
 /** OpenCode owns models.dev. Only its two providers may read these facts. */
 import { cachedDocs } from './model-facts.ts'
+import { probeFactSource, probedRoute } from './probes/index.ts'
 import type { ChatRequestMap } from './request-map.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type {
@@ -93,9 +94,10 @@ function schemaEndpointId(
 ): string | null {
   const suffix = PACKAGE_SUFFIX[npm]?.(id) ?? null
   if (!suffix) return null
-  // go.mdx lists Go Gemini as `.../v1beta/models/<id>` with no method, and no
-  // Go page states the `:generateContent` route, so Go Gemini binds none.
-  if (provider === 'opencode-go' && npm === '@ai-sdk/google') return null
+  // go.mdx lists the base path and no method. Bind only an exact probe record.
+  if (provider === 'opencode-go' && npm === '@ai-sdk/google') {
+    return probedRoute(provider, id)
+  }
   if (id.includes('/'))
     throw new Error(`${provider}: unreadable model id ${id}`)
   return `${apiPath}/${suffix}`
@@ -185,7 +187,8 @@ export function parseOpenCodeCatalog(
     if (endpoint) {
       model.schemaEndpointId = endpoint
       model.activity = 'chat'
-      factSources.schemaEndpointId = {
+      const probed = probeFactSource(provider, id, endpoint)
+      factSources.schemaEndpointId = probed ?? {
         derivation: 'listing',
         sourceUrl: OPENCODE_CATALOG_URL,
         sourceHash: hash,

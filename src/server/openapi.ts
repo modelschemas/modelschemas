@@ -144,6 +144,29 @@ const modelFields = {
       "How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).",
     oneOf: [{ $ref: '#/components/schemas/ChatRequestMap' }, { type: 'null' }],
   },
+  requiredRequestHeaders: {
+    description:
+      'Request headers the client must send. description says what to put in the header; these are not constant values (ProviderConnect.requiredHeaders is the constant case). null when the provider publishes none. factSources.requiredRequestHeaders is the source. OpenCode Go: x-opencode-session and User-Agent, https://opencode.ai/docs/go/ "Where can I use it?".',
+    oneOf: [
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['name', 'description'],
+          properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+          },
+        },
+      },
+      { type: 'null' },
+    ],
+  },
+  trainsOnRequestData: {
+    description:
+      "true when this model's own source states it trains on request data and the workspace must opt in. null when that source does not say so for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.",
+    type: ['boolean', 'null'],
+  },
   aliases: {
     description:
       'Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.',
@@ -234,6 +257,8 @@ const modelRequired = [
   'reasoning',
   'serverTools',
   'requestMap',
+  'requiredRequestHeaders',
+  'trainsOnRequestData',
   'aliases',
   'releasedAt',
   'knowledgeCutoff',
@@ -507,7 +532,7 @@ export const openApiDocument = {
             description:
               'Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. ' +
               'JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. ' +
-              '`provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal, while `probe-verified` (confirmed against live API calls on `provenance.verifiedAt`) and `docs-derived` (never confirmed) are point-in-time claims that can go stale.',
+              '`provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call recorded in `src/server/providers/probes/<provider>.ts` on `provenance.verifiedAt` (`YYYY-MM-DD`). Re-run it with `bun scripts/probe.ts <provider> [--write]`. A record older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.',
             content: {
               'application/json': { schema: { type: 'object' } },
               'text/typescript': { schema: { type: 'string' } },
@@ -925,6 +950,11 @@ export const openApiDocument = {
                         'Live rows, not deprecated, at the start of that poll.',
                     },
                   },
+                },
+                staleProbes: {
+                  type: 'integer',
+                  description:
+                    'Present only when this provider has probe records older than 90 days. The probed facts stay served. Does not change status. Re-run with `bun scripts/probe.ts <provider> --write`.',
                 },
                 priceClearsRefused: {
                   type: 'object',
@@ -1418,6 +1448,11 @@ export const openApiDocument = {
             description:
               'source-silent only: the date the ledger author checked the source (YYYY-MM-DD).',
           },
+          verifiedAt: {
+            type: 'string',
+            description:
+              'probe-verified only: the date the live call last matched the recorded result (YYYY-MM-DD). A date older than 90 days is still served and counted on GET /v1/status staleProbes.',
+          },
           normalized: {
             type: 'boolean',
             enum: [true],
@@ -1455,6 +1490,8 @@ export const openApiDocument = {
           },
           reasoning: { $ref: '#/components/schemas/FactSource' },
           requestMap: { $ref: '#/components/schemas/FactSource' },
+          requiredRequestHeaders: { $ref: '#/components/schemas/FactSource' },
+          trainsOnRequestData: { $ref: '#/components/schemas/FactSource' },
           requestMapFields: {
             type: 'object',
             description:

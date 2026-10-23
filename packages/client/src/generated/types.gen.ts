@@ -83,6 +83,10 @@ export type ServiceStatus = {
       live: number
     }
     /**
+     * Present only when this provider has probe records older than 90 days. The probed facts stay served. Does not change status. Re-run with `bun scripts/probe.ts <provider> --write`.
+     */
+    staleProbes?: number
+    /**
      * Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.
      */
     priceClearsRefused?: {
@@ -442,6 +446,10 @@ export type FactSource = {
    */
   checkedAt?: string
   /**
+   * probe-verified only: the date the live call last matched the recorded result (YYYY-MM-DD). A date older than 90 days is still served and counted on GET /v1/status staleProbes.
+   */
+  verifiedAt?: string
+  /**
    * sameAs only: the id matched after dots were read as hyphens.
    */
   normalized?: true
@@ -472,6 +480,8 @@ export type ModelFactSources = {
   openWeights?: FactSource
   reasoning?: FactSource
   requestMap?: FactSource
+  requiredRequestHeaders?: FactSource
+  trainsOnRequestData?: FactSource
   /**
    * Per-field evidence when a request map combines sources, keyed by ChatRequestMap field.
    */
@@ -557,6 +567,17 @@ export type Model = {
    * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
    */
   requestMap: ChatRequestMap | null
+  /**
+   * Request headers the client must send. description says what to put in the header; these are not constant values (ProviderConnect.requiredHeaders is the constant case). null when the provider publishes none. factSources.requiredRequestHeaders is the source. OpenCode Go: x-opencode-session and User-Agent, https://opencode.ai/docs/go/ "Where can I use it?".
+   */
+  requiredRequestHeaders: Array<{
+    name: string
+    description: string
+  }> | null
+  /**
+   * true when this model's own source states it trains on request data and the workspace must opt in. null when that source does not say so for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.
+   */
+  trainsOnRequestData: boolean | null
   /**
    * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
    */
@@ -666,6 +687,17 @@ export type ExportModel = {
    * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
    */
   requestMap: ChatRequestMap | null
+  /**
+   * Request headers the client must send. description says what to put in the header; these are not constant values (ProviderConnect.requiredHeaders is the constant case). null when the provider publishes none. factSources.requiredRequestHeaders is the source. OpenCode Go: x-opencode-session and User-Agent, https://opencode.ai/docs/go/ "Where can I use it?".
+   */
+  requiredRequestHeaders: Array<{
+    name: string
+    description: string
+  }> | null
+  /**
+   * true when this model's own source states it trains on request data and the workspace must opt in. null when that source does not say so for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.
+   */
+  trainsOnRequestData: boolean | null
   /**
    * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
    */
@@ -1128,7 +1160,7 @@ export type GetSchemaError = GetSchemaErrors[keyof GetSchemaErrors]
 
 export type GetSchemaResponses = {
   /**
-   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. `provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal, while `probe-verified` (confirmed against live API calls on `provenance.verifiedAt`) and `docs-derived` (never confirmed) are point-in-time claims that can go stale.
+   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. `provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call recorded in `src/server/providers/probes/<provider>.ts` on `provenance.verifiedAt` (`YYYY-MM-DD`). Re-run it with `bun scripts/probe.ts <provider> [--write]`. A record older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.
    */
   200: {
     [key: string]: unknown
