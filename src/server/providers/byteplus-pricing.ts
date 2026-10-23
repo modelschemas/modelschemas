@@ -529,8 +529,9 @@ export function compilePeriodCard(
 
 /**
  * Model-page price headers (units kept: the cells have no parentheses).
- * seed-translation writes the first spelling, gpt-oss-120b the second.
- * "[Batch]" columns are other headers, so they are never read.
+ * Where a lever lists two spellings, seed-translation writes the first and
+ * gpt-oss-120b the second. "[Batch]" columns are other headers, so they
+ * are never read; cache storage is per token-hour and not a lever.
  */
 const MODEL_PAGE_LEVERS: Record<string, Array<string>> = {
   input_tokens: ['input usd/m tokens', 'input unit price usd/m tokens'],
@@ -559,7 +560,8 @@ function modelPageColumns(keys: Array<string>): Record<string, number> | null {
 
 /**
  * The single price row of a one-model doc page. Throws unless exactly one
- * table with one row quotes both input and output.
+ * table, with one row, has one input and one output column (cached input
+ * optional; a lever matching two columns disqualifies the table).
  */
 export function parseByteplusModelPage(
   doc: ByteplusDoc,

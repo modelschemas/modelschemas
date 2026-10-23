@@ -425,6 +425,15 @@ describe('byteplus pricing page', () => {
       cache_read_tokens: 0.02 / 1e6,
       output_tokens: 0.5 / 1e6,
     })
+    // Both input spellings in one table: refused, not the first one picked.
+    expect(() =>
+      parseByteplusModelPage(
+        doc([
+          ['Input USD/M Tokens', ...headers],
+          ['0.20', '0.10', '0.02', '0.50', '0.0083', '0.05', '0.02', '0.25'],
+        ]),
+      ),
+    ).toThrow(/one price table row/)
   })
 })
 
