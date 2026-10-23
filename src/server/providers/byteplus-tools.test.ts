@@ -48,7 +48,7 @@ describe('parseByteplusMcpSupport', () => {
     ])
   })
 
-  it('reads the Yes / No wording and the Provider column', () => {
+  it('reads the Yes / No wording past a Provider column', () => {
     // The Tool use table as served on 2026-10-23, cut down.
     const support = parseByteplusMcpSupport(
       doc([

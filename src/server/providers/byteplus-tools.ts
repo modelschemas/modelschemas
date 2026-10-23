@@ -2,7 +2,7 @@
  * BytePlus server-side tools (#409). The ModelArk model list has a "Tool
  * use" table, one row per model, with an MCP column; the cloud-deployed /
  * remote MCP guide's "Supported models" points at it. A `Supported` or
- * `Yes` cell (the page's wording since 2026-10-23) is the `mcp` tool type.
+ * `Yes` cell (the wording served on 2026-10-23) is the `mcp` tool type.
  */
 import { fetchByteplusDoc } from './byteplus-docs.ts'
 import {
@@ -18,8 +18,8 @@ import type { ModelInfo } from './types.ts'
 
 /**
  * Model id → whether the model list's Tool use table marks MCP supported.
- * No such table, or a cell other than "Supported" / "Yes" or "Not
- * Supported" / "No", throws. An id the table lists twice with different answers is dropped.
+ * No such table, or a cell other than Supported or Yes, Not Supported or
+ * No, throws. An id the table lists twice with different answers is dropped.
  */
 export function parseByteplusMcpSupport(
   doc: ByteplusDoc,
