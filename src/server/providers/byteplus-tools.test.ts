@@ -48,6 +48,23 @@ describe('parseByteplusMcpSupport', () => {
     ])
   })
 
+  it('reads the Yes / No wording and the Provider column', () => {
+    // The Tool use table as served on 2026-10-23, cut down.
+    const support = parseByteplusMcpSupport(
+      doc([
+        ['Provider', 'Model ID', 'Function calling', 'MCP'],
+        ['ByteDance', 'dola-seed-2-1-turbo-260628', 'Yes', 'Yes'],
+        ['', 'seed-2-0-code-preview-260328', 'Yes', 'No'],
+        ['Z.ai', 'glm-5-2-260617', 'Yes', 'Yes'],
+      ]),
+    )
+    expect([...support]).toEqual([
+      ['dola-seed-2-1-turbo-260628', true],
+      ['seed-2-0-code-preview-260328', false],
+      ['glm-5-2-260617', true],
+    ])
+  })
+
   it('throws on a missing table or a cell it cannot read', () => {
     expect(() =>
       parseByteplusMcpSupport(doc([['Model ID', 'Capabilities']])),

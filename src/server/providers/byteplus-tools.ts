@@ -1,8 +1,8 @@
 /**
  * BytePlus server-side tools (#409). The ModelArk model list has a "Tool
- * use" table, one row per model, with a "MCP | Responses API" column; the
- * cloud-deployed / remote MCP guide's "Supported models" points at it. A
- * `Supported` cell is the `mcp` tool type on the Responses API.
+ * use" table, one row per model, with an MCP column; the cloud-deployed /
+ * remote MCP guide's "Supported models" points at it. A `Supported` or
+ * `Yes` cell (the page's wording since 2026-10-23) is the `mcp` tool type.
  */
 import { fetchByteplusDoc } from './byteplus-docs.ts'
 import {
@@ -18,8 +18,8 @@ import type { ModelInfo } from './types.ts'
 
 /**
  * Model id → whether the model list's Tool use table marks MCP supported.
- * No such table, or a cell other than "Supported" / "Not Supported",
- * throws. An id the table lists twice with different answers is dropped.
+ * No such table, or a cell other than "Supported" / "Yes" or "Not
+ * Supported" / "No", throws. An id the table lists twice with different answers is dropped.
  */
 export function parseByteplusMcpSupport(
   doc: ByteplusDoc,
@@ -38,9 +38,9 @@ export function parseByteplusMcpSupport(
     for (const row of rows) {
       const id = /^[a-z0-9][a-z0-9.-]*/.exec(row[idAt] ?? '')?.[0]
       const cell = (row[mcpAt] ?? '').trim()
-      const supported = /^supported$/i.test(cell)
+      const supported = /^(supported|yes)$/i.test(cell)
         ? true
-        : /^not supported$/i.test(cell)
+        : /^(not supported|no)$/i.test(cell)
           ? false
           : null
       if (!id || supported === null) {
@@ -93,7 +93,7 @@ export async function byteplusServerTools(
             derivation: 'docs-derived',
             sourceUrl: BYTEPLUS_MODEL_LIST_URL,
             sourceHash: doc.hash,
-            path: 'Tool use table: MCP | Responses API',
+            path: 'Tool use table: MCP',
           },
         },
       },
