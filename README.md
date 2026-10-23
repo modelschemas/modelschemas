@@ -399,6 +399,20 @@ with no card refuses the estimate. Check for `min` before reading
 `amount`. Vercel rows whose price varies by route (#346) are `pricing:
 null` with no range yet.
 
+**Breaking (0.1.x):** `POST /v1/estimate` (and `estimate_cost`,
+`estimateCost`) has a third result shape (#450). When the call omits
+exactly one required choice input (an enum or boolean with no default,
+such as BytePlus `pricing_period: off_peak | peak`) and supplies every
+other required input, it returns `{ currency, byInput: { input, values }
+}`: one usual result per allowed value, keyed by value (`"true"`/`"false"`
+for a boolean). Supplying the input returns one result as before. Two
+omitted choices, or any omitted quantity, is still 422 `unbound_input`,
+now naming every omitted choice with its values. A routed id whose route
+hits this case refuses. Check for `byInput` (and `min`) before reading
+`amount`. `RateCardError` in `@modelschemas/rate-card` gains `input`: the
+card input the caller did not supply, on `bad-input` "required" and
+`estimate-unavailable`.
+
 **Breaking (0.1.x):** `opencode-go` endpoint ids moved from `v1/<tail>` to
 the documented `inference/go/<protocol>/v1/<tail>` (#393), e.g.
 `/v1/schemas/opencode-go/chat/inference/go/openai/v1/chat/completions`.

@@ -507,6 +507,27 @@ describe('estimate', () => {
     )
   })
 
+  it('names the unsupplied card input on the error', () => {
+    const thrown = (fn: () => unknown) => {
+      try {
+        fn()
+      } catch (error) {
+        return error as RateCardError
+      }
+      throw new Error('did not throw')
+    }
+    expect(thrown(() => priceDetailed(card, {}, {}))).toMatchObject({
+      code: 'bad-input',
+      input: 'resolution',
+    })
+    expect(
+      thrown(() => priceDetailed(card, { resolution: '480p' }, {})),
+    ).toMatchObject({ code: 'estimate-unavailable', input: 'tokens' })
+    expect(
+      thrown(() => priceDetailed(card, { resolution: 'nope' }, {})).input,
+    ).toBeUndefined()
+  })
+
   it('never estimates through price(), the billed entry point', () => {
     expect(price(card, { resolution: '480p' }, { tokens: 500 })).toBe(0.5)
     expect(() => price(card, { resolution: '480p', seconds: 2 }, {})).toThrow(

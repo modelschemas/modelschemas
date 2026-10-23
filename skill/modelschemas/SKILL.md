@@ -47,8 +47,11 @@ availability and schema questions.
    `usd` repeats it only for a USD card. `estimated` names any omitted
    usage the card filled by the source's published estimate method (empty:
    billed price). `defaulted` names omitted inputs that took the card's
-   default; `ignored` names request keys the card does not read. Missing
-   levers → 422; a usage key the card does not read → 422
+   default; `ignored` names request keys the card does not read. One
+   omitted required choice input (enum or boolean, such as BytePlus
+   `pricing_period`) → `{currency, byInput: {input, values}}`, one result
+   per allowed value; pass it to get one price. Missing quantities, or two
+   omitted choices → 422; a usage key the card does not read → 422
    `unknown_usage_key`; no card → 404 `unknown_pricing`. `usage` is
    the provider's own usage object (OpenAI Responses or Chat, Anthropic,
    Gemini `usageMetadata`) or card levers whose counts do not overlap

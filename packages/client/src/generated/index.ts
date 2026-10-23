@@ -27,6 +27,7 @@ export type {
   ClientOptions,
   CompactPricing,
   Error,
+  EstimateByInputResult,
   EstimateCostData,
   EstimateCostError,
   EstimateCostErrors,

@@ -36,8 +36,15 @@ export const Route = createFileRoute('/v1/estimate')({
             estimated_input_count:
               'estimated' in outcome.result
                 ? outcome.result.estimated.length
-                : outcome.result.max.estimated.length,
+                : 'max' in outcome.result
+                  ? outcome.result.max.estimated.length
+                  : Math.max(
+                      ...Object.values(outcome.result.byInput.values).map(
+                        (value) => value.estimated.length,
+                      ),
+                    ),
             range: 'min' in outcome.result,
+            by_input: 'byInput' in outcome.result,
             has_request: body.request !== undefined,
             has_usage: body.usage !== undefined,
             model: body.model,
