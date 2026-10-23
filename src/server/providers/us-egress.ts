@@ -1,6 +1,9 @@
 import type { ProviderEnvironment } from './types.ts'
 
-/** What `fetchJson` calls; the global `fetch` is one. */
+/**
+ * What `fetchJson`, `fetchText` and `fetchOptional` call; the global
+ * `fetch` is one.
+ */
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>
 
 /**
@@ -12,9 +15,10 @@ export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>
  * only moves fetch handlers, so the models poll has no fixed location.
  * A Durable Object is created near its `locationHint` on the first `get()`
  * and does not move afterwards, so routing the keyed listing calls through
- * one fixes where they egress. (The `us` jurisdiction would be a hard
- * guarantee, but workerd does not implement it, so `bun run dev` would
- * throw.)
+ * one fixes where they egress. Anthropic's docs loads go the same way: its
+ * docs host serves pages with no tables to the regions its API refuses
+ * (#482). (The `us` jurisdiction would be a hard guarantee, but workerd
+ * does not implement it, so `bun run dev` would throw.)
  *
  * Outside the Workers runtime (bun scripts, node unit tests) there is no
  * binding and the global fetch runs from the caller's own machine. Inside

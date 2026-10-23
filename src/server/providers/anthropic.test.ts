@@ -65,6 +65,11 @@ it('keeps the poll when the docs host serves pages with no tables', async () => 
   }
 })
 
+const OVERVIEW_LINKS = [
+  'https://platform.claude.com/docs/en/about-claude/model-deprecations',
+  'https://platform.claude.com/docs/en/models/claude-opus-5-5/overview',
+].join('\n')
+
 it('loads the docs through the US egress, like the listing (#482)', async () => {
   const original = globalThis.fetch
   globalThis.fetch = ((url: string) =>
@@ -77,6 +82,8 @@ it('loads the docs through the US egress, like the listing (#482)', async () => 
     get: () => ({
       fetch(url: string) {
         egressed.push(String(url))
+        if (url === ANTHROPIC_MODELS_OVERVIEW_URL)
+          return Promise.resolve(new Response(OVERVIEW_LINKS))
         if (url.includes('platform.claude.com'))
           return Promise.resolve(new Response('# Docs'))
         return Promise.resolve(Response.json({ data: [], has_more: false }))
@@ -96,6 +103,9 @@ it('loads the docs through the US egress, like the listing (#482)', async () => 
         ANTHROPIC_PRICING_URL,
         ANTHROPIC_THINKING_URL,
         ANTHROPIC_MODELS_OVERVIEW_URL,
+        // The alias map's follow-up loads: deprecations and a model page.
+        'https://platform.claude.com/docs/en/about-claude/model-deprecations.md',
+        'https://platform.claude.com/docs/en/models/claude-opus-5-5/overview.md',
       ]),
     )
   } finally {
