@@ -8,10 +8,10 @@ import {
   cardCurrency,
   compileOpenRouterPricing,
   price,
-  rateCardSchema,
   RateCardError,
   verifyExamples,
 } from '@modelschemas/rate-card'
+import { rateCardSchema } from '@modelschemas/rate-card/schema'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { contentHash, stableStringify } from '#/server/kv.ts'

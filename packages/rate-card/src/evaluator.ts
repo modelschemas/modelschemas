@@ -1,8 +1,8 @@
 /**
  * `@modelschemas/rate-card/evaluator`: the evaluator with no runtime
  * dependencies, for edge runtimes and clients that price cards they fetched
- * from `GET /v1/models/{provider}/{id}`. The package root adds the zod
- * schema and the listing compilers.
+ * from `GET /v1/models/{provider}/{id}`. The package root adds the listing
+ * compilers; `./schema` is the zod schema.
  */
 import { priceDetailed } from './evaluate.ts'
 import type { PriceResult } from './evaluate.ts'

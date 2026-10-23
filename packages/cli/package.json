@@ -11,7 +11,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun ../../scripts/rewrite-dist-imports.ts dist"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@modelschemas/client": "workspace:*",
@@ -29,7 +29,8 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
-      }
+      },
+      "./package.json": "./package.json"
     }
   },
   "license": "MIT",
@@ -48,5 +49,8 @@
     "model",
     "schemas",
     "cli"
-  ]
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  }
 }

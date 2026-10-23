@@ -398,6 +398,15 @@ void modelschemas
         ).toEqual(packageExpected(c))
       }
     })
+
+    it('loads the package root without zod', async () => {
+      const root = join(dir, 'package', 'dist', 'index.js')
+      const mod = (await import(
+        /* @vite-ignore */ pathToFileURL(root).href
+      )) as Record<string, unknown>
+      expect(mod.compileOpenRouterPricing).toBeTypeOf('function')
+      expect(mod.rateCardSchema).toBeUndefined()
+    })
   })
 })
 

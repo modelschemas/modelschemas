@@ -1,0 +1,23 @@
+// Shared `bun run build` config: dist/*.js + .d.ts, the files npm ships
+// (scripts/npm-pack.ts lifts publishConfig onto the packed manifest).
+// Each package extends this and adds only its lib/types.
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2024"],
+    "types": [],
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "rootDir": "${configDir}/src",
+    "outDir": "${configDir}/dist"
+  },
+  "include": ["${configDir}/src"],
+  "exclude": ["${configDir}/src/**/*.test.ts"]
+}

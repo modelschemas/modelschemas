@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { cardCurrency, price, rateCardSchema } from '@modelschemas/rate-card'
+import { cardCurrency, price } from '@modelschemas/rate-card'
+import { rateCardSchema } from '@modelschemas/rate-card/schema'
 import { describe, expect, it } from 'vitest'
 import {
   applyCnCardFacts,

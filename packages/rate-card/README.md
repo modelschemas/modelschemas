@@ -45,17 +45,17 @@ it. A fix that reads the same cards is a patch.
 | `0.1`    | Core ops, `lookup`, input estimates. USD only.  |
 | `0.2`    | The `{ currency: [code, expr] }` price wrapper. |
 
-The package root also exports `rateCardSchema` (zod) and the listing
-compilers. `zod` is an optional peer dependency: install it to import
-the root.
+The package root adds the listing compilers and needs no dependencies.
+`@modelschemas/rate-card/schema` exports `rateCardSchema` (zod). `zod` is
+an optional peer dependency: install it to import that entry.
 
 ```ts
 import {
   compileOpenRouterPricing,
   price,
-  rateCardSchema,
   verifyExamples,
 } from '@modelschemas/rate-card'
+import { rateCardSchema } from '@modelschemas/rate-card/schema'
 
 const card = rateCardSchema.parse(json)
 if (verifyExamples(card).some((r) => !r.ok)) throw new Error('bad card')

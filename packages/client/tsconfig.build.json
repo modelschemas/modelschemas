@@ -1,19 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2024",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "lib": ["ES2024", "DOM"],
-    "types": [],
-    "rewriteRelativeImportExtensions": true,
-    "verbatimModuleSyntax": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "rootDir": "src",
-    "outDir": "dist"
-  },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "extends": "../tsconfig.build.json",
+  "compilerOptions": { "lib": ["ES2024", "DOM"] }
 }

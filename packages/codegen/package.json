@@ -5,13 +5,14 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun ../../scripts/rewrite-dist-imports.ts dist"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
   },
   "license": "MIT",
   "homepage": "https://modelschemas.com",
@@ -36,7 +37,8 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
-      }
+      },
+      "./package.json": "./package.json"
     }
   },
   "peerDependencies": {
@@ -46,5 +48,9 @@
     "prettier": {
       "optional": true
     }
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.18.0"
   }
 }
