@@ -16,6 +16,8 @@ import {
   compileSeedreamProCard,
 } from './byteplus-pricing.ts'
 import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
+import { pricingDoc, routerHtml } from './fixtures/byteplus-pricing-doc.ts'
+import type { PricingTable } from './fixtures/byteplus-pricing-doc.ts'
 
 /**
  * One chat, video, and image row, enough for listModels to attach cards
@@ -23,7 +25,7 @@ import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
  * fetch stubs).
  */
 function pricingFixtureHtml(): string {
-  return docFixtureHtml(PRICING_TABLES)
+  return routerHtml(pricingDoc(PRICING_TABLES))
 }
 
 /** The tutorial's model and pixel tables, one Seedance 1.0 row each. */
@@ -84,43 +86,51 @@ const DOC_FIXTURES: Record<string, () => string> = {
   [BYTEPLUS_MODEL_LIST_URL]: modelListFixtureHtml,
 }
 
-const PRICING_TABLES = (() => {
-  const chat = [
-    'Model ID',
-    'Pricing tiers (K tokens)',
-    'Input (non-audio) (USD/M tokens)',
-    'Input (audio) (USD/M tokens)',
-    'Cache-storage (USD/M tokens/Hour)',
-    'Cache-hit input (non-audio) (USD/M tokens)',
-    'Cache-hit input (audio) (USD/M tokens)',
-    'Output (USD/M tokens)',
-  ]
-  const tables: Array<Array<Array<string>>> = [
-    [
-      chat,
-      ['seed-2-0-pro-260328', '-', '0.50', '-', '0.0083', '0.10', '-', '3.00'],
-    ],
-    [
+const PRICING_TABLES: Array<PricingTable> = [
+  {
+    tab: 'Standard',
+    rows: [
       [
+        'Provider',
         'Model ID',
-        'Online inference (USD / M tokens)',
-        'Offline inference (USD / M tokens)',
+        'Prompt length',
+        'Input',
+        'Cached input',
+        'Cache storage',
+        'Output',
       ],
-      ['seedance-1-0-pro-250528', '2.5', '1.25'],
-    ],
-    [
       [
-        'Model ID',
-        'Input image price (USD / image)',
-        'Output image price (USD / image)',
+        'ByteDance',
+        'seed-2-0-pro-260328',
+        'Not applicable',
+        '$0.50',
+        '$0.10',
+        '$0.0083',
+        '$3.00',
       ],
-      ['seedream-5-0-lite-260128', 'Free', '0.035'],
-      ['seedream-4-5-251128', 'Free', '0.04'],
-      ['seedream-4-0-250828', 'Free', '0.03'],
     ],
-  ]
-  return tables
-})()
+  },
+  {
+    tab: 'Input without video',
+    rows: [
+      ['Model', 'Online inference', '', '', 'Offline inference'],
+      ['', '480p and 720p', '1080p', '4K', ''],
+      ['seedance-1-0-pro-250528', '$2.5', '', '', '$1.25'],
+    ],
+    merges: [
+      [[0], [1, 2, 3]],
+      [[2], [1, 2, 3]],
+    ],
+  },
+  {
+    rows: [
+      ['Model ID', 'Input image', 'Output image'],
+      ['seedream-5-0-lite-260128', 'Free', '$0.035'],
+      ['seedream-4-5-251128', 'Free', '$0.04'],
+      ['seedream-4-0-250828', 'Free', '$0.03'],
+    ],
+  },
+]
 
 function docFixtureHtml(tables: Array<Array<Array<string>>>): string {
   const data: Record<string, unknown> = {
@@ -469,9 +479,9 @@ describe('byteplus pricing pages failing', () => {
 
   it('throws when the pricing page loses a table, keeping stored cards', async () => {
     const withoutVideo = () =>
-      docFixtureHtml(
-        PRICING_TABLES.filter(
-          (table) => !table[0]?.includes('Online inference (USD / M tokens)'),
+      routerHtml(
+        pricingDoc(
+          PRICING_TABLES.filter((table) => table.rows[0]?.[0] !== 'Model'),
         ),
       )
     await expect(
