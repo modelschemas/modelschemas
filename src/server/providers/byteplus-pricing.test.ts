@@ -633,8 +633,10 @@ describe('byteplus video and image tables', () => {
     const listed = doc([
       ['seedream-5-0-260128\n*Also supports seedream-5-0-lite-260128'],
       ['seedream-4-5-251128', 'Also supports seedream-9-other-260128'],
+      ['seedream-4-0-250828 Also supports seedream-9-other-260128Pro'],
     ])
-    // The second table's alias sits in another cell: not a pair.
+    // The second row's note sits in the next cell, and a cut-off alias
+    // is not an id: neither is a pair.
     expect(parseByteplusAliases(listed)).toEqual(
       new Map([['seedream-5-0-260128', 'seedream-5-0-lite-260128']]),
     )

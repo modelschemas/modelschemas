@@ -575,12 +575,13 @@ export function byteplusRatesFor<T>(
 }
 
 /**
- * `id (also supports: alias)`, or since 2026-10-23 (#468) the cell's next
- * line `Also supports alias`, which `zoneText` joins with one space. That
- * form takes a literal space so it never pairs ids across cells.
+ * `id (also supports: alias)`, or (#468) the cell's next line `Also
+ * supports alias` (seen 2026-10-23), which `zoneText` joins with one space. Cells are joined with `\n`, so that form's literal space never
+ * pairs ids across cells. Capital `Also` only: prose "also supports" is
+ * not a note. The alias must end at a non-id character, never mid-word.
  */
 const ALSO_SUPPORTS =
-  /\b([a-z0-9]+(?:-[a-z0-9]+)+)(?:\s*\(also supports:\s*([a-z0-9]+(?:-[a-z0-9]+)+)\s*\)| [Aa]lso supports ([a-z0-9]+(?:-[a-z0-9]+)+)\b)/g
+  /\b([a-z0-9]+(?:-[a-z0-9]+)+)(?:\s*\(also supports:\s*([a-z0-9]+(?:-[a-z0-9]+)+)\s*\)| Also supports ([a-z0-9]+(?:-[a-z0-9]+)+)(?![\w-]))/g
 
 /**
  * Model-list "also supports" pairs. One id named with two different
