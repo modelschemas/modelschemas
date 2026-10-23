@@ -6,8 +6,8 @@ import {
   getModel as getModelRaw,
   listModels as listModelsRaw,
   listProviderModels as listProviderModelsRaw,
-} from './generated/sdk.gen'
-import type { Options } from './generated/sdk.gen'
+} from './generated/sdk.gen.js'
+import type { Options } from './generated/sdk.gen.js'
 import type {
   GetModelData,
   ListModelsData,
@@ -16,7 +16,7 @@ import type {
   ModelDetail,
   ModelList,
   ProviderModelList,
-} from './generated/types.gen'
+} from './generated/types.gen.js'
 
 export type ListedModelId<TProvider extends string = string> = string & {
   readonly __modelschemasListed: TProvider
