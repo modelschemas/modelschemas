@@ -1,9 +1,9 @@
 /**
  * Moonshot AI (China). platform.moonshot.cn redirects to platform.kimi.com,
- * whose OpenAPI document names api.moonshot.cn as its server. Model ids and
- * context windows come from the pricing page; activity, reasoning and
- * modalities from the spec's per-model chat request schemas. Output is
- * capped by the context window; no separate limit is published.
+ * whose OpenAPI document names api.moonshot.cn as its server. Model ids
+ * come from the pricing page, which no longer states a context window
+ * (issue #484); activity, reasoning and modalities from the spec's
+ * per-model chat request schemas. No output limit is published.
  * Prices on the pricing page are yuan per 1M tokens, stored as CNY cards.
  * `GET /v1/models` needs a CN key, which is region-bound.
  */
@@ -101,23 +101,22 @@ export function parseMoonshotCnModels(
  * `cache_write_1h_tokens`.
  */
 const PRICE_COLUMNS: Record<string, string> = {
-  '缓存写入（TTL 5min）': 'cache_write_tokens',
-  '缓存写入（TTL 1h）': 'cache_write_1h_tokens',
-  '输入价格（缓存命中）': 'cache_read_tokens',
-  '输入价格（缓存未命中）': 'input_tokens',
-  输出价格: 'output_tokens',
+  输入: 'input_tokens',
+  输出: 'output_tokens',
+  缓存命中: 'cache_read_tokens',
+  '缓存写入（5min）': 'cache_write_tokens',
+  '缓存写入（1h）': 'cache_write_1h_tokens',
 }
-const UNIT_COLUMN = '计费单位'
-const OTHER_COLUMNS = new Set(['模型', UNIT_COLUMN, '上下文窗口'])
+const OTHER_COLUMNS = new Set(['模型'])
 
 /**
  * Model id → yuan per token, by lever, from the `### … 系列模型` tables
  * of `## 模型定价` (`parseKimiDocTables`). Columns are read by title. A
- * row is priced only when its unit is `1M tokens` and every price cell is
- * a bare `¥12.50`. Any other row naming the model leaves it unpriced: a
- * unit suffix, a cell that is not plain text (a struck price), a range, a
- * cell count that differs from the column count, a table with a title this
- * does not know, a table under another `###` of `## 模型定价` (a batch
+ * row is priced only when every price cell is a bare `¥12.50 / MTok` (the
+ * page states 1 MTok = 1,000,000 tokens). Any other row naming the model
+ * leaves it unpriced: another unit, a cell that is not text (a struck
+ * price), a range, a cell count that differs from the column count, a
+ * table with a title this does not know, a table under another `###` of `## 模型定价` (a batch
  * price), or a second row for the same id. Tables outside `## 模型定价` are
  * ignored. Throws when a row there has no readable id, or when no row is
  * priced.
@@ -143,7 +142,7 @@ export function parseMoonshotCnPricing(
       const rates: Record<string, number> = {}
       titles.forEach((title, index) => {
         const lever = title === null ? undefined : PRICE_COLUMNS[title]
-        const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?)$/)?.[1]
+        const amount = cells[index]?.match(/^¥(\d+(?:\.\d+)?) \/ MTok$/)?.[1]
         if (lever && amount !== undefined) rates[lever] = Number(amount) / 1e6
       })
       const priceColumns = titles.filter(
@@ -153,7 +152,6 @@ export function parseMoonshotCnPricing(
         !known ||
         out.has(id) ||
         cells.length !== titles.length ||
-        cells[titles.indexOf(UNIT_COLUMN)] !== '1M tokens' ||
         Object.keys(rates).length !== priceColumns.length ||
         rates.input_tokens === undefined ||
         rates.output_tokens === undefined

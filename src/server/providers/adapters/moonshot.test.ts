@@ -8,7 +8,7 @@ import { provider } from './moonshot.ts'
 const SPEC_URL = 'https://platform.kimi.ai/docs/openapi.json'
 /** One compiled-MDX DocTable row, as the HTML pricing page embeds it. */
 const OTHER_PRICES =
-  '_jsx(DocTable,{columns:[{title:`Model`}],rows:[[`kimi-other`,`1M tokens`,`$0.1`,`$0.2`,`$0.3`]]})_provideComponents()'
+  '_jsx(DocTable,{columns:[{title:`Model`},{title:`Input`},{title:`Output`},{title:`Cached Input`}],rows:[[`kimi-other`,`$0.2 / MTok`,`$0.3 / MTok`,`$0.1 / MTok`]]})_provideComponents()'
 
 const FIXTURE_SPEC = {
   openapi: '3.1.0',
