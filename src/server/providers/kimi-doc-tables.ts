@@ -9,7 +9,10 @@
  * string a template literal. The payload carries the body twice: first
  * with a rendering `DocTable`, then with `DocTable=()=>null` (on
  * platform.kimi.ai that copy has no `rows`). Only the first copy, up to its
- * `_provideComponents(`, is read.
+ * `_provideComponents(`, is read. As of 2026-10-23 a DocTable also carries
+ * `className`, `corner` and `groups` (styling and a header row over the
+ * column titles), a model id cell is a link, and a column title can be a
+ * `Tooltip` over its text.
  */
 import { closing, literalEnd } from './compiled-mdx.ts'
 
@@ -25,7 +28,8 @@ export interface KimiDocTable {
   /**
    * A cell is its text: a template literal, or a fragment of them joined
    * (`<>{"$"}0.16</>` compiles to `_jsxs(_Fragment,{children:[`$`,`0.16`]})`,
-   * read as `$0.16`). Anything else is null.
+   * read as `$0.16`), or the text of a link or tooltip. Anything else (a
+   * struck price) is null.
    */
   rows: Array<Array<string | null>>
 }
@@ -34,9 +38,12 @@ export interface KimiDocTable {
 const LITERAL = '`((?:[^`\\\\$]|\\$(?!\\{))*)`'
 const TEXT = new RegExp(`^${LITERAL}$`)
 const FRAGMENT = /^_jsxs?\(_Fragment,\{children:([\s\S]*)\}\)$/
+/** A link or tooltip: its text is its `children`. */
+const WRAPPER = /^_jsxs?\((?:_components\.a|Tooltip),\{/
 const HEADING = /_jsxs?\((?:Heading|_components\.h(\d)),\{/g
-const TITLE = new RegExp(`^\\{title:${LITERAL}`)
 const TABLE = /_jsxs?\(DocTable,\{/g
+/** DocTable props that style it or group its titles; they move no cell. */
+const STYLE_PROPS = new Set(['className', 'corner', 'groups'])
 
 /** The comma-separated items between `open` and its closing bracket. */
 function items(source: string, open: number): Array<string> {
@@ -61,6 +68,13 @@ function items(source: string, open: number): Array<string> {
 function cell(item: string): string | null {
   const text = TEXT.exec(item)
   if (text) return text[1] ?? ''
+  const wrapper = WRAPPER.exec(item)
+  if (wrapper) {
+    const open = wrapper[0].length - 1
+    if (closing(item, open, LABEL) !== item.length - 2) return null
+    const children = props(item, open).get('children')
+    return children === undefined ? null : cell(children)
+  }
   const children = FRAGMENT.exec(item)?.[1]
   if (children === undefined) return null
   const parts = children.startsWith('[') ? items(children, 0) : [children]
@@ -81,9 +95,9 @@ function props(source: string, open: number): Map<string, string> {
 /**
  * Every DocTable on the page, in order, under the headings above it.
  * Throws when the page has no compiled MDX body or no DocTable, when a
- * heading's level is unreadable, when a DocTable's props are not exactly
- * `columns` then `rows` or a row is not an array, or when the body is
- * malformed.
+ * heading's level is unreadable, when a DocTable's props are not `columns`
+ * then `rows` beside the style props, or a row is not an array, or when
+ * the body is malformed.
  */
 export function parseKimiDocTables(html: string): Array<KimiDocTable> {
   const start = html.search(/_jsxs?\((?:Heading|DocTable|_components\.h\d),/)
@@ -109,7 +123,9 @@ export function parseKimiDocTables(html: string): Array<KimiDocTable> {
     marks.push({ at: match.index, level, text })
   }
   for (const match of body.matchAll(TABLE)) {
-    const table = [...props(body, match.index + match[0].length - 1)]
+    const table = [...props(body, match.index + match[0].length - 1)].filter(
+      ([key]) => !STYLE_PROPS.has(key),
+    )
     const [columns, rows] = table.map(([, value]) => value)
     if (
       table.map(([key]) => key).join() !== 'columns,rows' ||
@@ -118,9 +134,12 @@ export function parseKimiDocTables(html: string): Array<KimiDocTable> {
     ) {
       throw new Error('kimi docs: DocTable props are not columns, rows')
     }
-    const titles = items(columns, 0).map(
-      (column) => TITLE.exec(column)?.[1] ?? null,
-    )
+    const titles = items(columns, 0).map((column) => {
+      const title = column.startsWith('{')
+        ? props(column, 0).get('title')
+        : undefined
+      return title === undefined ? null : cell(title)
+    })
     const cells = items(rows, 0).map((row) => {
       if (!row.startsWith('[')) {
         throw new Error('kimi docs: DocTable row is not an array')
