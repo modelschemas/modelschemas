@@ -402,6 +402,39 @@ describe('byteplus pricing page', () => {
     ).toThrow(/unreadable/)
     expect(() => parseByteplusModelPage(doc([CHAT_HEADERS]))).toThrow()
   })
+
+  it("reads gpt-oss-120b's model page headers, Standard columns only", () => {
+    const headers = [
+      'Input unit price USD/M Tokens',
+      'Input cache hits USD/M Tokens',
+      'Output unit price USD/M Tokens',
+      'Cache Storage USD/M Tokens/Hour',
+      'Input unit price [Batch] USD/M Tokens',
+      'Input cache-hit unit price [Batch] USD/M Tokens',
+      'Output unit price [Batch] USD/M Tokens',
+    ]
+    expect(
+      parseByteplusModelPage(
+        doc([
+          headers,
+          ['0.10', '0.02', '0.50', '0.0083', '0.05', '0.02', '0.25'],
+        ]),
+      ),
+    ).toEqual({
+      input_tokens: 0.1 / 1e6,
+      cache_read_tokens: 0.02 / 1e6,
+      output_tokens: 0.5 / 1e6,
+    })
+    // Both input spellings in one table: refused, not the first one picked.
+    expect(() =>
+      parseByteplusModelPage(
+        doc([
+          ['Input USD/M Tokens', ...headers],
+          ['0.20', '0.10', '0.02', '0.50', '0.0083', '0.05', '0.02', '0.25'],
+        ]),
+      ),
+    ).toThrow(/one price table row/)
+  })
 })
 
 const SOURCE = {
