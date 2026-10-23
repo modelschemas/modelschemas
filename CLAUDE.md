@@ -231,9 +231,10 @@ ones).
   login/whoami/models/schema/validate/estimate/changes/subscribe),
   `packages/rate-card` (`@modelschemas/rate-card`: pricing schema +
   evaluator + OpenRouter listing compiler; no Workers deps). Its
-  `./evaluator` entry (`evaluateCard`) imports no package; npm gets
-  `bun run build` output (`dist/` JS + .d.ts), and `npm-pack` lifts
-  `publishConfig` onto the packed manifest. MAJOR.MINOR equals
+  `./evaluator` entry (`evaluateCard`) imports no package. Every public
+  package's npm tarball is `bun run build` output (`dist/` JS + .d.ts);
+  `npm-pack` lifts `publishConfig` onto the packed manifest. The CLI
+  `bin` is `dist/index.js`. MAJOR.MINOR equals
   `RATE_CARD_LANGUAGE` (`card.ts`). The shared estimate cases
   (`packages/rate-card/src/fixtures/estimate-cases.ts`) run through the package, the packed
   tarball and `POST /v1/estimate`.

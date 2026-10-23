@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,6 +30,7 @@ import {
   manifestEntryPoints,
   packAll,
   packedEntryNames,
+  pinWorkspaceSpecs,
   publishManifest,
   publishOrder,
   readPackedManifest,
@@ -160,6 +170,14 @@ describe('assertPublishableManifest', () => {
 })
 
 describe('publishManifest / assertShipsEntryPoints', () => {
+  it('pins workspace:* to the workspace package version', () => {
+    const manifest = {
+      dependencies: { '@modelschemas/client': 'workspace:*' },
+    }
+    pinWorkspaceSpecs(manifest, join(import.meta.dirname, '..', 'packages'))
+    expect(manifest.dependencies['@modelschemas/client']).toBe(sharedVersion())
+  })
+
   it('lifts publishConfig entry points and keeps npm config there', () => {
     expect(
       publishManifest({
@@ -227,16 +245,125 @@ describe('packAll', () => {
       expect(entries.some((entry) => entry.endsWith('.test.ts'))).toBe(false)
       expect(entries).toContain('package/package.json')
       expect(entries).toContain('package/LICENSE')
+      expect(entries).toContain('package/dist/index.js')
+      expect(entries).toContain('package/dist/index.d.ts')
+      expect(
+        entries.filter((e) => e.endsWith('.ts') && !e.endsWith('.d.ts')),
+      ).toEqual([])
       if (pkg.name === '@modelschemas/rate-card') {
-        expect(entries).toContain('package/dist/index.js')
         expect(entries).toContain('package/dist/evaluator.d.ts')
-        expect(
-          entries.filter((e) => e.endsWith('.ts') && !e.endsWith('.d.ts')),
-        ).toEqual([])
-      } else {
-        expect(entries).toContain('package/src/index.ts')
+      }
+      if (pkg.name === 'modelschemas') {
+        expect(json).toContain('"./dist/index.js"')
       }
     }
+  })
+
+  describe('plain Node loads the built packages', () => {
+    let root = ''
+
+    beforeAll(() => {
+      root = mkdtempSync(join(tmpdir(), 'modelschemas-node-'))
+      const nm = join(root, 'node_modules')
+      mkdirSync(join(nm, '@modelschemas'), { recursive: true })
+      const place = (name: string, target: string) => {
+        const row = packed.find((r) => r.pkg.name === name)
+        if (!row) throw new Error(`${name} was not packed`)
+        const extract = mkdtempSync(join(tmpdir(), 'extract-'))
+        run('tar', ['-xzf', row.tarball, '-C', extract], extract)
+        cpSync(join(extract, 'package'), target, { recursive: true })
+        rmSync(extract, { recursive: true, force: true })
+      }
+      place('@modelschemas/client', join(nm, '@modelschemas', 'client'))
+      place('@modelschemas/codegen', join(nm, '@modelschemas', 'codegen'))
+      place('@modelschemas/vite', join(nm, '@modelschemas', 'vite'))
+      place('modelschemas', join(nm, 'modelschemas'))
+      const repoModules = join(import.meta.dirname, '..', 'node_modules')
+      cpSync(join(repoModules, 'jose'), join(nm, 'jose'), { recursive: true })
+      cpSync(join(repoModules, 'vite'), join(nm, 'vite'), { recursive: true })
+    })
+    afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+    it('imports client, codegen, and vite with no loader', () => {
+      for (const name of [
+        '@modelschemas/client',
+        '@modelschemas/codegen',
+        '@modelschemas/vite',
+      ]) {
+        const result = run(
+          'node',
+          ['--input-type=module', '-e', `import('${name}')`],
+          root,
+        )
+        expect(result).toBe('')
+      }
+    })
+
+    it('runs modelschemas --help', () => {
+      // No command exits 1 after printing help. A command plus --help exits 0.
+      const result = spawnSync(
+        'node',
+        [
+          join(root, 'node_modules', 'modelschemas', 'dist', 'index.js'),
+          '--help',
+        ],
+        { cwd: root, encoding: 'utf8' },
+      )
+      expect(result.stdout).toContain('modelschemas — live AI model schemas')
+      expect(result.status).toBe(1)
+    })
+
+    it('typechecks a nodenext consumer against dist declarations', () => {
+      const file = join(root, 'consumer.ts')
+      writeFileSync(
+        file,
+        `import { createModelschemasClient } from '@modelschemas/client'
+import { pull } from '@modelschemas/codegen'
+import { modelschemas } from '@modelschemas/vite'
+createModelschemasClient({ baseUrl: 'https://modelschemas.com' })
+void pull
+void modelschemas
+`,
+      )
+      run(
+        join(
+          import.meta.dirname,
+          '..',
+          'node_modules',
+          'typescript',
+          'bin',
+          'tsc',
+        ),
+        [
+          '--strict',
+          '--module',
+          'nodenext',
+          '--moduleResolution',
+          'nodenext',
+          '--noEmit',
+          '--pretty',
+          'false',
+          file,
+        ],
+        root,
+      )
+    })
+
+    it('publint passes on each packed package', () => {
+      for (const name of [
+        '@modelschemas/client',
+        '@modelschemas/codegen',
+        '@modelschemas/vite',
+        'modelschemas',
+      ]) {
+        const dir =
+          name === 'modelschemas'
+            ? join(root, 'node_modules', 'modelschemas')
+            : join(root, 'node_modules', name)
+        const out = run('bunx', ['publint'], dir)
+        expect(out).not.toMatch(/error/i)
+      }
+    })
   })
 
   describe('the packed rate-card evaluator', () => {

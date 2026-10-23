@@ -5,7 +5,7 @@ per-endpoint request/response JSON Schemas and model metadata for AI
 providers (OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter,
 FAL), generated from the service's OpenAPI spec.
 
-> Ships as TypeScript source — use from Bun, Vite, or any TS-aware bundler.
+> Ships built ESM (`.js` + `.d.ts`). Node loads it with no TypeScript loader.
 
 ```bash
 bun add @modelschemas/client

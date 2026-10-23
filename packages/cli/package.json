@@ -8,16 +8,29 @@
     "modelschemas": "./src/index.ts"
   },
   "files": [
-    "src",
-    "!src/**/*.test.ts"
+    "dist"
   ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun ../../scripts/rewrite-dist-imports.ts dist"
+  },
   "dependencies": {
     "@modelschemas/client": "workspace:*",
     "@modelschemas/codegen": "workspace:*",
     "jose": "^6.2.3"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+      "modelschemas": "./dist/index.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
   },
   "license": "MIT",
   "homepage": "https://modelschemas.com",

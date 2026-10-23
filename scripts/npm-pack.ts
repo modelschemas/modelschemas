@@ -18,7 +18,9 @@
  * `publishConfig` names entry points (rate-card: `dist/` JS and .d.ts
  * instead of `src/` TypeScript) is packed from a staged copy with those
  * fields lifted onto the manifest, because `bun pm pack` does not apply
- * them. Every tarball must contain each file its manifest points at.
+ * them. Staging leaves the workspace, so `workspace:*` is pinned to
+ * that package's version before `bun pm pack`. Every tarball must
+ * contain each file its manifest points at.
  */
 import {
   cpSync,
@@ -195,6 +197,46 @@ export function publishManifest(
   }
 }
 
+const DEP_FIELDS = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+] as const
+
+/** `workspace:*` → that package's version. Bun does this only inside the workspace. */
+export function pinWorkspaceSpecs(
+  manifest: Record<string, unknown>,
+  packagesDir: string,
+): void {
+  for (const field of DEP_FIELDS) {
+    const deps = manifest[field]
+    if (!isRecord(deps)) continue
+    for (const [name, spec] of Object.entries(deps)) {
+      if (typeof spec !== 'string' || !spec.startsWith('workspace:')) continue
+      if (spec !== 'workspace:*') {
+        throw new Error(`${name}: unsupported workspace spec ${spec}`)
+      }
+      deps[name] = workspaceVersion(packagesDir, name)
+    }
+  }
+}
+
+function workspaceVersion(packagesDir: string, name: string): string {
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const pkgPath = join(packagesDir, entry.name, 'package.json')
+    if (!existsSync(pkgPath)) continue
+    const parsed: unknown = JSON.parse(readFileSync(pkgPath, 'utf8'))
+    if (!isRecord(parsed) || parsed.name !== name) continue
+    if (typeof parsed.version !== 'string') {
+      throw new Error(`${pkgPath}: version is not a string`)
+    }
+    return parsed.version
+  }
+  throw new Error(`no workspace package named ${name}`)
+}
+
 /** Relative file paths a manifest's `main`, `types`, `bin` and `exports` name. */
 export function manifestEntryPoints(manifest: unknown): Array<string> {
   if (!isRecord(manifest)) return []
@@ -253,13 +295,14 @@ export function packPackage(pkg: PublicPackage, packDir: string): string {
   const published = publishManifest(manifest)
   let cwd = pkg.dir
   if (published) {
-    // Outside the workspace, so bun cannot rewrite `workspace:*` here;
-    // assertPublishableManifest refuses the tarball if one is left.
+    // Outside the workspace, so bun cannot rewrite `workspace:*` here.
+    // Pin those specs to the workspace package's version before packing.
     cwd = mkdtempSync(join(tmpdir(), 'npm-pack-'))
     cpSync(pkg.dir, cwd, {
       recursive: true,
       filter: (path) => basename(path) !== 'node_modules',
     })
+    pinWorkspaceSpecs(published, join(pkg.dir, '..'))
     writeFileSync(
       join(cwd, 'package.json'),
       `${JSON.stringify(published, null, 2)}\n`,

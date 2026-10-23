@@ -4,7 +4,7 @@ CLI for [modelschemas](https://modelschemas.com) — live per-endpoint
 request/response JSON Schemas and model metadata for AI providers
 (OpenAI, Anthropic, Gemini, xAI Grok, ElevenLabs, OpenRouter, FAL).
 
-> Runs on [Bun](https://bun.sh) (the bin ships as TypeScript).
+> The published bin is built JavaScript and runs on Node. No TypeScript loader.
 
 ```bash
 bunx modelschemas models list --activity chat

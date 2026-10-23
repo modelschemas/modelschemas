@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * modelschemas CLI (PLAN.md task 7.5) — thin command layer over
  * @modelschemas/client. `--json` everywhere (default when stdout is not a
