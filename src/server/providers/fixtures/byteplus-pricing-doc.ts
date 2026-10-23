@@ -3,8 +3,8 @@ import type { ByteplusDoc } from '../byteplus-pricing.ts'
 /**
  * One pricing-page table, header row first. `tab` puts it in a tab strip
  * with that title; `folded` puts it in a folded section ("Retiring
- * models"). A merge is `[row indexes, column indexes]`: its text goes in
- * its first cell, the others stay blank.
+ * models"). A merge is `[row indexes, column indexes]`: put its text in
+ * its first cell and leave the others blank.
  */
 export interface PricingTable {
   rows: Array<Array<string>>

@@ -36,7 +36,7 @@ function cell(id: string, text: string) {
 const CHAT_HEADERS = [
   'Provider',
   'Model ID',
-  'Prompt length',
+  'Prompt length (K tokens)',
   'Input',
   'Cached input',
   'Cache storage',
@@ -44,7 +44,12 @@ const CHAT_HEADERS = [
 ]
 
 /** "Audio input" table: no output column (the chat table quotes it). */
-const AUDIO_HEADERS = ['Model ID', 'Prompt length', 'Input', 'Cached input']
+const AUDIO_HEADERS = [
+  'Model ID',
+  'Prompt length (K tokens)',
+  'Input',
+  'Cached input',
+]
 
 /** Page document of `tables`, each a header row then body rows. */
 function doc(...tables: Array<Array<Array<string>>>): ByteplusDoc {
@@ -78,6 +83,30 @@ describe('byteplus pricing page', () => {
   it('reads standard token rates, tiers, and a dated catalog suffix', () => {
     const rates = parseByteplusPricing(
       pricingDoc([
+        // Flex is not a lever, even first and with every Standard column.
+        {
+          tab: 'Flex',
+          rows: [
+            CHAT_HEADERS,
+            [
+              'Z.ai',
+              'glm-5-2-260617',
+              'Not applicable',
+              '$0.7',
+              '$0.26',
+              '$0.0083',
+              '$2.2',
+            ],
+          ],
+        },
+        {
+          tab: 'Flex',
+          rows: [
+            AUDIO_HEADERS,
+            ['seed-2-0-lite-260428', '[0, 128]', '$1.88', '$0.75'],
+            ['', '(128, 256]', '$3.75', '$1.50'],
+          ],
+        },
         {
           tab: 'Standard',
           rows: [
@@ -110,6 +139,7 @@ describe('byteplus pricing page', () => {
               '$0.0083',
               '$2.00',
             ],
+            ['', '', '(128, 256]', '$0.50', '$0.10', '$0.0083', '$4.00'],
             [
               'DeepSeek',
               'deepseek-v4-1-flash-260910',
@@ -131,27 +161,12 @@ describe('byteplus pricing page', () => {
             ],
           ],
         },
-        // Flex is not a lever, even with every Standard column.
-        {
-          tab: 'Flex',
-          rows: [
-            CHAT_HEADERS,
-            [
-              'Z.ai',
-              'glm-5-2-260617',
-              'Not applicable',
-              '$0.7',
-              '$0.26',
-              '$0.0083',
-              '$2.2',
-            ],
-          ],
-        },
         {
           tab: 'Standard',
           rows: [
             AUDIO_HEADERS,
             ['seed-2-0-lite-260428', '[0, 128]', '$3.75', '$0.75'],
+            ['', '(128, 256]', '$7.50', '$1.50'],
           ],
         },
         {
@@ -180,11 +195,27 @@ describe('byteplus pricing page', () => {
       },
       tiers: [],
     })
-    expect(rates.get('glm-5-2-260617')).toMatchObject({
-      base: { input_tokens: 1.4e-6 },
-    })
-    expect(rates.get('seed-2-0-lite-260428')).toMatchObject({
-      base: { audio_tokens: 3.75e-6, audio_cache_tokens: 0.75e-6 },
+    // Standard audio joins each chat bracket; the Flex audio table is not read.
+    expect(rates.get('seed-2-0-lite-260428')).toEqual({
+      base: {
+        input_tokens: 0.25e-6,
+        cache_read_tokens: 0.05 / 1e6,
+        output_tokens: 2e-6,
+        audio_tokens: 3.75e-6,
+        audio_cache_tokens: 0.75e-6,
+      },
+      tiers: [
+        {
+          minPromptTokens: 128_000,
+          rates: {
+            input_tokens: 0.5e-6,
+            cache_read_tokens: 0.1 / 1e6,
+            output_tokens: 4e-6,
+            audio_tokens: 7.5e-6,
+            audio_cache_tokens: 1.5e-6,
+          },
+        },
+      ],
     })
     // The folded "Retiring models" Standard table is read too.
     expect(rates.get('seed-1-8-251228')).toMatchObject({
@@ -254,7 +285,7 @@ describe('byteplus pricing page', () => {
     expect(mixed.has('deepseek-v4-1-flash-261017')).toBe(false)
   })
 
-  it('refuses audio rates quoted in other prompt-length brackets', () => {
+  it('refuses audio rates it cannot fold into the chat brackets', () => {
     const rates = parseByteplusPricing(
       pricingDoc([
         {
@@ -287,12 +318,15 @@ describe('byteplus pricing page', () => {
           rows: [
             AUDIO_HEADERS,
             ['seed-2-0-mini-260428', '[0, 128]', '$1.50', '$0.30'],
+            // An unreadable audio row refuses the card rather than leave
+            // audio input unpriced on a text-only one.
+            ['dola-seed-2-1-turbo', '[0, 256]', 'TBD', '$0.30'],
           ],
         },
       ]),
     )
     expect(rates.has('seed-2-0-mini-260428')).toBe(false)
-    expect(rates.has('dola-seed-2-1-turbo')).toBe(true)
+    expect(rates.has('dola-seed-2-1-turbo')).toBe(false)
   })
 
   it('prices a period card only for a stated pricing_period', async () => {
@@ -406,6 +440,37 @@ const VIDEO_TABLES: Array<PricingTable> = [
       ['seedance-9-unknown-261231', 'Contact sales', '$1', '$1', '$1'],
       // A blank cell that is not part of a merge is unread, not free.
       ['seedance-9-gap-261231', '$1', '', '$1', 'Not supported'],
+
+      ['dreamina-seedance-2-0-260128', '$7.0', '$7.7', '$4.0', 'Not supported'],
+      [
+        'seedance-9-noted-261231',
+        '$2',
+        'Not supported',
+        'Not supported',
+        'Not supported',
+      ],
+      [
+        'seedance-9-no-video-input-261231',
+        '$2',
+        'Not supported',
+        'Not supported',
+        'Not supported',
+      ],
+      // Two prices for one slot: neither is the price.
+      [
+        'seedance-9-twice-261231',
+        '$2',
+        'Not supported',
+        'Not supported',
+        'Not supported',
+      ],
+      [
+        'seedance-9-twice-261231',
+        '$3',
+        'Not supported',
+        'Not supported',
+        'Not supported',
+      ],
     ],
     merges: [
       [[0], [1, 2, 3]],
@@ -434,6 +499,24 @@ const VIDEO_TABLES: Array<PricingTable> = [
       [
         'seedance-9-video-only-261231',
         '$1',
+        'Not supported',
+        'Not supported',
+        'Not supported',
+      ],
+
+      ['dreamina-seedance-2-0-260128', '$4.3', '$4.7', '$2.4', 'Not supported'],
+      // The id cell may carry a note after the id.
+      [
+        'seedance-9-noted-261231 (New)',
+        '$1',
+        'Not supported',
+        'Not supported',
+        'Not supported',
+      ],
+      // Listed with video but priced nowhere: video input is not one rate.
+      [
+        'seedance-9-no-video-input-261231',
+        'Not supported',
         'Not supported',
         'Not supported',
         'Not supported',
@@ -500,6 +583,18 @@ describe('byteplus video and image tables', () => {
     expect(video.has('seedance-9-unknown-261231')).toBe(false)
     expect(video.has('seedance-9-gap-261231')).toBe(false)
     expect(video.has('seedance-9-video-only-261231')).toBe(false)
+    expect(video.get('dreamina-seedance-2-0-260128')?.default?.['4k']).toEqual({
+      no_video: 4,
+      video: 2.4,
+    })
+    expect(video.get('seedance-9-noted-261231')).toEqual({
+      default: {
+        '480p': { no_video: 2, video: 1 },
+        '720p': { no_video: 2, video: 1 },
+      },
+    })
+    expect(video.has('seedance-9-no-video-input-261231')).toBe(false)
+    expect(video.has('seedance-9-twice-261231')).toBe(false)
     expect(parseByteplusImages(page)).toEqual(
       new Map([
         ['seedream-5-0-lite-260128', 0.035],

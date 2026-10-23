@@ -7,9 +7,10 @@
  * in a folded "Retiring models" section, and merged cells are listed by
  * `mergeCellID` on their rows and columns.
  *
- * Only the Standard tab's online-inference tables are read (the ones that
- * quote cache storage per hour). Flex and Batch are about half of Standard
- * and are not levers. Cache storage itself is per token-hour, not per
+ * Only Standard-tab tables are read: the chat tables (the ones that quote
+ * cache storage per hour) and the Audio input tables, whose audio rates
+ * join the same model's chat brackets. Flex and Batch are about half of
+ * Standard and are not levers. Cache storage itself is per token-hour, not per
  * request, so that column is ignored. A model quoted at off-peak and
  * peak rates gets a card whose required `pricing_period` lever picks one
  * (#411); the page states the windows, not the request. A dated catalog id uses an
@@ -142,7 +143,7 @@ function headerKey(cell: string): string {
   return (
     cell
       .toLowerCase()
-      // Drop the trailing unit ("(USD/M tokens)"), keep "(non-audio)".
+      // Drop a trailing parenthetical unit ("(USD/M tokens)").
       .replace(/\s*\([^)]*\)\s*$/, '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -162,7 +163,8 @@ function promptFloorK(label: string): number | null {
 }
 
 /**
- * USD per million tokens (the page's stated token unit), written `$0.25`.
+ * USD per million tokens (the page's stated token unit), written `$0.25`
+ * (the `$` is optional).
  * `undefined` is a lever the cell does not price.
  */
 function usdPerMillion(cell: string): number | null | undefined {
@@ -346,13 +348,16 @@ export function tablesWith(
   })
 }
 
-/** Model id → rates, one group per id (later tier rows leave it blank). */
+/**
+ * Model id → rates, one group per id (later tier rows leave it blank).
+ * `null` is a group with a cell or bracket this parser cannot read.
+ */
 function tableRates(
   { keys, rows }: FoundTable,
   names: Record<string, string>,
   required: Array<string>,
-): Map<string, ByteplusTokenRates> {
-  const out = new Map<string, ByteplusTokenRates>()
+): Map<string, ByteplusTokenRates | null> {
+  const out = new Map<string, ByteplusTokenRates | null>()
   const idAt = keys.indexOf('model id')
   const columns: RateColumns = {
     tier: keys.indexOf('prompt length'),
@@ -376,9 +381,11 @@ function tableRates(
   }
   if (current) groups.push(current)
   for (const group of groups) {
-    if (out.has(group.id) || /\s/.test(group.id)) continue
-    const rates = ratesFromGroup(group.rows, columns)
-    if (rates) out.set(group.id, rates)
+    if (out.has(group.id)) continue
+    out.set(
+      group.id,
+      /\s/.test(group.id) ? null : ratesFromGroup(group.rows, columns),
+    )
   }
   return out
 }
@@ -402,9 +409,10 @@ function withAudio(
 }
 
 /**
- * Page model id → standard online-inference rates: the Standard tabs under
- * "Non-audio input" and "Retiring models" (the tables with a cache-storage
- * column), plus the "Audio input" Standard tab's audio rates, which must
+ * Page model id → standard online-inference rates: every Standard-tab
+ * table with the chat header (Model ID, Prompt length, Input, Cached
+ * input, Cache storage, Output), the folded "Retiring models" ones
+ * included, plus the Audio input Standard tab's audio rates, which must
  * use the same prompt-length brackets. Flex and Batch are not levers.
  */
 export function parseByteplusPricing(
@@ -426,7 +434,9 @@ export function parseByteplusPricing(
       'input_tokens',
       'output_tokens',
     ])) {
-      if (!out.has(id)) out.set(id, rates)
+      if (out.has(id)) continue
+      if (rates) out.set(id, rates)
+      else warnUnread('chat', id, [])
     }
   }
   const audio = standard(['model id', 'prompt length', 'input']).filter(
@@ -437,11 +447,12 @@ export function parseByteplusPricing(
       'audio_tokens',
     ])) {
       const text = out.get(id)
-      const merged = text && withAudio(text, rates)
+      const merged = text && rates && withAudio(text, rates)
       if (merged) {
         out.set(id, merged)
       } else {
-        // Audio rates with no chat row, or other brackets: no card.
+        // Unreadable audio, no chat row, or other brackets: no card, so
+        // audio input is never left unpriced on a text-only card.
         out.delete(id)
         warnUnread('audio', id, [])
       }
@@ -682,7 +693,10 @@ function videoRow(
       if (/^not supported/i.test(text)) continue
       const rate = dollars(text)
       if (rate === null) return null
-      const label = whole ? '' : (sub[at]?.text ?? '').toLowerCase()
+      const label = whole ? '' : spanText(sub, at).toLowerCase()
+      // A column with no sub-header names no resolution only when it is
+      // its tier's one column; beside named ones it is unreadable.
+      if (label === '' && !whole && columns.length > 1) return null
       const subVariant = VIDEO_VARIANTS[label]
       const resolutions =
         subVariant || label === '' ? ['*'] : (label.match(/\d+p|4k/g) ?? [])
@@ -712,6 +726,8 @@ export function parseByteplusVideo(
 ): Map<string, ByteplusVideoRates> {
   const out = new Map<string, ByteplusVideoRates>()
   const dropped = new Set<string>()
+  // Ids with an "Input with video" row, priced or "Not supported".
+  const withVideoRows = new Set<string>()
   for (const { spec, tab } of docTables(doc)) {
     const grid = tableGrid(doc, spec) ?? []
     const [head = []] = grid
@@ -724,8 +740,13 @@ export function parseByteplusVideo(
     const sub = hasSub ? (grid[1] ?? []) : []
     const tabVariant = VIDEO_VARIANTS[(tab ?? '').toLowerCase()]
     for (const row of grid.slice(hasSub ? 2 : 1)) {
-      const id = row[0]?.text ?? ''
-      if (!/^[a-z0-9-]+$/.test(id)) continue
+      const cell = row[0]?.text ?? ''
+      const id = cell.split(' ')[0] ?? ''
+      if (!/^[a-z0-9-]+$/.test(id)) {
+        if (cell !== '') warnUnread('video', cell, [])
+        continue
+      }
+      if (tabVariant === 'video') withVideoRows.add(id)
       const rates = videoRow(row, sub, tiers, tabVariant)
       const held = out.get(id) ?? {}
       let readable = rates !== null
@@ -759,7 +780,10 @@ export function parseByteplusVideo(
       slots.flatMap((byVariant) => Object.keys(byVariant)),
     )
     if (slots.length === 0) out.delete(id)
-    if (variants.has('video') && !variants.has('no_video')) {
+    // Video-only rates, or a with-video row that prices nothing: one rate
+    // for every input would misprice video requests.
+    const videoUnpriced = withVideoRows.has(id) && !variants.has('video')
+    if ((variants.has('video') && !variants.has('no_video')) || videoUnpriced) {
       dropped.add(id)
       warnUnread('video', id, [])
     }
