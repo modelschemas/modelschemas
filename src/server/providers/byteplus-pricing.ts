@@ -574,8 +574,14 @@ export function byteplusRatesFor<T>(
   return dated === undefined ? undefined : rates.get(dated)
 }
 
+/**
+ * `id (also supports: alias)`, or (#468) the cell's next line `Also
+ * supports alias` (seen 2026-10-23), which `zoneText` joins with one space. Cells are joined with `\n`, so that form's literal space never
+ * pairs ids across cells. Capital `Also` only: prose "also supports" is
+ * not a note. The alias must end at a non-id character, never mid-word.
+ */
 const ALSO_SUPPORTS =
-  /\b([a-z0-9]+(?:-[a-z0-9]+)+)\s*\(also supports:\s*([a-z0-9]+(?:-[a-z0-9]+)+)\s*\)/g
+  /\b([a-z0-9]+(?:-[a-z0-9]+)+)(?:\s*\(also supports:\s*([a-z0-9]+(?:-[a-z0-9]+)+)\s*\)| Also supports ([a-z0-9]+(?:-[a-z0-9]+)+)(?![\w-]))/g
 
 /**
  * Model-list "also supports" pairs. One id named with two different
@@ -587,7 +593,7 @@ export function parseByteplusAliases(doc: ByteplusDoc): Map<string, string> {
   const text = Object.values(doc.data).map(zoneText).join('\n')
   for (const match of text.matchAll(ALSO_SUPPORTS)) {
     const primary = match[1] ?? ''
-    const alias = match[2] ?? ''
+    const alias = match[2] ?? match[3] ?? ''
     if (primary === '' || primary === alias) continue
     const previous = pairs.get(primary)
     if (previous !== undefined && previous !== alias) {
