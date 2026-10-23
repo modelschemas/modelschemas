@@ -182,7 +182,8 @@ function SchemaIndex() {
                 onChange={(event) => {
                   setSearch({
                     activity: (event.target.value || undefined) as
-                      Activity | undefined,
+                      | Activity
+                      | undefined,
                   })
                 }}
               >

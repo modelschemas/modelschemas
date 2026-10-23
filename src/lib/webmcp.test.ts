@@ -37,7 +37,7 @@ describe('WebMCP (task 10.6)', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     expect(registerWebMcp()).toBe(true)
-    const { tools } = provideContext.mock.calls[0]?.[0] as {
+    const { tools } = provideContext.mock.calls[0]![0] as {
       tools: Array<{
         name: string
         execute: (args: Record<string, unknown>) => Promise<unknown>

@@ -156,7 +156,7 @@ describe('opencode', () => {
         },
       },
     })
-    expect((byId.opus?.pricing as Card).tables.rate).toEqual({
+    expect((byId.opus!.pricing as Card).tables.rate).toEqual({
       base: {
         input_tokens: 4 / 1e6,
         output_tokens: 20 / 1e6,
@@ -165,7 +165,7 @@ describe('opencode', () => {
       },
     })
 
-    expect((byId.gpt?.pricing as Card).tables.rate).toEqual({
+    expect((byId.gpt!.pricing as Card).tables.rate).toEqual({
       base: {
         input_tokens: 5 / 1e6,
         output_tokens: 30 / 1e6,

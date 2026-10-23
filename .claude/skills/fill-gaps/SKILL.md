@@ -75,7 +75,7 @@ checkout (for its `.env.local`), and this:
   price is the billed price or it is absent. No estimates, no fallbacks.
 - **Nothing published?** Leave the fact null and add a line to
   `docs/source-silent/<provider>.md`: `- <provider>: <fact> — <why>, <URL checked>,
-checked <date>`.
+  checked <date>`.
 - **Do not change the DB schema or the API shape.** If a fact has no
   field, stop and say so.
 - **Verify locally.** Other agents run at the same time, each in its own

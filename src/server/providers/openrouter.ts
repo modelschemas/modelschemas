@@ -128,7 +128,8 @@ export function synthesizeVideoModelEndpoints(
   models: Array<VideoModel>,
 ): void {
   const basePost = spec.paths?.['/videos']?.post as
-    { responses?: unknown } | undefined
+    | { responses?: unknown }
+    | undefined
   const baseRequest = spec.components?.schemas?.VideoGenerationRequest
   if (!basePost || !baseRequest || !spec.paths) return
 

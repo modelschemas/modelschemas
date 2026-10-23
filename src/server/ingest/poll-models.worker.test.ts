@@ -1230,7 +1230,7 @@ describe('pollProviderModels', () => {
       inputs: { num_images: { param: 'num_images' } },
     })
     expect(
-      (kept?.factSources as { pricing?: { derivation: string } }).pricing
+      (kept!.factSources as { pricing?: { derivation: string } }).pricing
         ?.derivation,
     ).toBe('docs-extracted')
 
@@ -1249,7 +1249,7 @@ describe('pollProviderModels', () => {
       where: eq(models.id, modelDbId(id, 'fal-ai/nano')),
     })
     expect(
-      (after?.factSources as { pricing?: { derivation: string } }).pricing
+      (after!.factSources as { pricing?: { derivation: string } }).pricing
         ?.derivation,
     ).toBe('listing')
   })
@@ -1583,7 +1583,7 @@ describe('perModelSchemaFlags', () => {
     expect(plain[0]?.capabilities).toEqual({ temperature: true })
     expect(
       Object.keys(
-        (plain[0]?.factSources as { capabilities: object }).capabilities,
+        (plain[0]!.factSources as { capabilities: object }).capabilities,
       ),
     ).toEqual(['temperature'])
     const thinker = await db
@@ -2826,7 +2826,7 @@ describe('model.updated facts', () => {
         await deps.db.select().from(changes).where(eq(changes.providerId, id))
       ).filter((change) => change.type === 'model.updated')
     const rateChange = (await written()).at(-1)
-    const changed = (rateChange?.payload as { changed?: Array<string> }).changed
+    const changed = (rateChange!.payload as { changed?: Array<string> }).changed
     expect(changed?.length).toBeGreaterThan(0)
     expect(changed).toContain('pricing.tables.rate.base.input_tokens')
 
@@ -2839,7 +2839,7 @@ describe('model.updated facts', () => {
     expect(expiry.updated).toBe(1)
     const expiryChange = (await written()).at(-1)
     expect(
-      (expiryChange?.payload as { changed: Array<string> }).changed,
+      (expiryChange!.payload as { changed: Array<string> }).changed,
     ).toEqual(['pricing.source.expiresAt'])
 
     const extra = tokenCard(
@@ -2854,7 +2854,7 @@ describe('model.updated facts', () => {
     expect(added.updated).toBe(1)
     const addedChange = (await written()).at(-1)
     expect(
-      (addedChange?.payload as { changed: Array<string> }).changed.some(
+      (addedChange!.payload as { changed: Array<string> }).changed.some(
         (path) => path.includes('cache_read_tokens'),
       ),
     ).toBe(true)
@@ -2866,7 +2866,7 @@ describe('model.updated facts', () => {
     expect(dropped.updated).toBe(1)
     const droppedChange = (await written()).at(-1)
     expect(
-      (droppedChange?.payload as { changed: Array<string> }).changed.some(
+      (droppedChange!.payload as { changed: Array<string> }).changed.some(
         (path) => path.includes('cache_read_tokens'),
       ),
     ).toBe(true)

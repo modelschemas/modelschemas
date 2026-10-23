@@ -189,7 +189,11 @@ export interface SchemaProvenance {
    * recorded.
    */
   derivation:
-    'upstream-spec' | 'generated' | 'probe-verified' | 'docs-derived' | null
+    | 'upstream-spec'
+    | 'generated'
+    | 'probe-verified'
+    | 'docs-derived'
+    | null
   /**
    * `YYYY-MM-DD` the claim was last confirmed against the live API. Set for
    * `probe-verified`; null for the self-healing derivations, whose freshness

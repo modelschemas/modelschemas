@@ -381,7 +381,7 @@ describe('fal listModels', () => {
     const { models } = await falProvider.listModels({ FAL_KEY: 'k' })
     const seed = models.find((m) => m.rawId === 'fal-ai/bytedance/seed/v2/mini')
     const rate = (
-      seed?.pricing as {
+      seed!.pricing as {
         tables?: { rate?: { base?: Record<string, number> } }
       }
     ).tables?.rate?.base

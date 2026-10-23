@@ -127,7 +127,7 @@ describe('extractEndpointSchemas', () => {
     )
     expect(result.input).toBeDefined()
     expect(
-      (result.input?.properties as Record<string, Record<string, unknown>>).file
+      (result.input!.properties as Record<string, Record<string, unknown>>).file
         ?.format,
     ).toBe('binary')
     expect(result.output).toBeDefined()
@@ -186,7 +186,7 @@ describe('bundleSchema', () => {
     const defs = schema.$defs as Record<string, Record<string, unknown>>
     expect(Object.keys(defs)).toEqual(['Child'])
     expect(
-      (defs.Child?.properties as Record<string, Record<string, unknown>>).parent
+      (defs.Child!.properties as Record<string, Record<string, unknown>>).parent
         ?.$ref,
     ).toBe('#')
     expect(findDanglingRefs(schema)).toEqual([])

@@ -192,7 +192,8 @@ function priceCard(
   card: RateCard,
   body: EstimateRequestBody,
 ):
-  { ok: true; result: EstimateResult | EstimateByInputResult } | EstimateError {
+  | { ok: true; result: EstimateResult | EstimateByInputResult }
+  | EstimateError {
   const refuse = (error: unknown, prefix = ''): EstimateError => {
     if (!(error instanceof RateCardError)) throw error
     const mapped = mapRateCardError(error, card, body)

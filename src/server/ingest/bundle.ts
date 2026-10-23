@@ -255,7 +255,8 @@ export function extractEndpointSchemas(
   const warnings: Array<string> = []
   const components = schemaComponents(spec)
   const operation = spec.paths?.[pathKey]?.[method] as
-    OperationShape | undefined
+    | OperationShape
+    | undefined
   if (!operation) return { warnings }
   const post = operation
 
@@ -284,7 +285,8 @@ export function extractEndpointSchemas(
   let outputContent: MediaContent | undefined
   if (strategy === 'sibling-get') {
     const sibling = spec.paths?.[`${pathKey}/requests/{request_id}`]?.get as
-      OperationShape | undefined
+      | OperationShape
+      | undefined
     outputContent = sibling?.responses?.['200']?.content?.['application/json']
   } else {
     for (const status of ['200', '201', '202']) {

@@ -313,7 +313,7 @@ describe('extractFalPricing', () => {
       inputs: { num_images: { param: 'num_images' } },
     })
     expect(
-      (kept?.factSources as { pricing?: { derivation: string } }).pricing
+      (kept!.factSources as { pricing?: { derivation: string } }).pricing
         ?.derivation,
     ).toBe('docs-extracted')
   })
@@ -746,7 +746,7 @@ describe('extractFalPricing', () => {
     })
     const sectionHash = await pricingSectionHash(pricingSection(NANO_LLMS))
     expect(
-      (row?.factSources as { pricing?: { sourceHash: string } }).pricing
+      (row!.factSources as { pricing?: { sourceHash: string } }).pricing
         ?.sourceHash,
     ).toBe(sectionHash)
   })
@@ -796,7 +796,7 @@ describe('extractFalPricing', () => {
     })
     expect((row?.pricing as RateCard | null)?.examples[0]?.usd).toBe(0.08)
     expect(
-      (row?.factSources as { pricing?: { sourceHash: string } }).pricing
+      (row!.factSources as { pricing?: { sourceHash: string } }).pricing
         ?.sourceHash,
     ).toBe(previousHash)
   })
@@ -1167,7 +1167,7 @@ describe('extractFalPricing retries (#84)', () => {
     })
     expect(stamped?.pricing).toBeNull()
     expect(
-      (stamped?.factSources as { pricing?: { sourceHash?: string } }).pricing
+      (stamped!.factSources as { pricing?: { sourceHash?: string } }).pricing
         ?.sourceHash,
     ).toBe(await pricingSectionHash(pricingSection(NANO_LLMS)))
 
@@ -1314,7 +1314,7 @@ describe('extractFalPricing failed leftovers (#88)', () => {
     })
     expect(b?.pricing).toBeNull()
     expect(
-      (b?.factSources as { pricing?: { sourceHash?: string } }).pricing
+      (b!.factSources as { pricing?: { sourceHash?: string } }).pricing
         ?.sourceHash,
     ).toBe(await pricingSectionHash(pricingSection(NANO_LLMS)))
 
