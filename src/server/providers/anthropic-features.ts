@@ -13,6 +13,7 @@
 import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { FactSource, ModelFactSources, ModelReasoning } from './types.ts'
+import type { Fetcher } from './us-egress.ts'
 
 export const ANTHROPIC_THINKING_URL =
   'https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting.md'
@@ -262,9 +263,10 @@ export function anthropicServerTools(rawId: string): {
 export async function anthropicModelFeatures(
   kv?: KVNamespace,
   cached: typeof cachedDocs = cachedDocs,
+  fetcher: Fetcher = fetch,
 ) {
   const doc = await cached(kv, ANTHROPIC_THINKING_URL, async () => {
-    const markdown = await fetchText(ANTHROPIC_THINKING_URL)
+    const markdown = await fetchText(ANTHROPIC_THINKING_URL, undefined, fetcher)
     const parsed = parseThinkingTable(markdown)
     assertParsed(parsed, 'anthropic thinking table')
     return {

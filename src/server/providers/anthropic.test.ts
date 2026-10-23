@@ -64,3 +64,41 @@ it('keeps the poll when the docs host serves pages with no tables', async () => 
     globalThis.fetch = original
   }
 })
+
+it('loads the docs through the US egress, like the listing (#482)', async () => {
+  const original = globalThis.fetch
+  globalThis.fetch = ((url: string) =>
+    Promise.reject(
+      new Error(`global fetch called for ${String(url)}`),
+    )) as typeof fetch
+  const egressed: Array<string> = []
+  const ns = {
+    idFromName: () => 'id',
+    get: () => ({
+      fetch(url: string) {
+        egressed.push(String(url))
+        if (url.includes('platform.claude.com'))
+          return Promise.resolve(new Response('# Docs'))
+        return Promise.resolve(Response.json({ data: [], has_more: false }))
+      },
+    }),
+  }
+  try {
+    const result = await anthropicProvider.listModels({
+      ANTHROPIC_API_KEY: 'test-key',
+      US_EGRESS: ns as unknown as DurableObjectNamespace,
+    })
+    for (const failure of result.docsFailures?.first ?? []) {
+      expect(failure.error).not.toMatch(/global fetch called/)
+    }
+    expect(egressed).toEqual(
+      expect.arrayContaining([
+        ANTHROPIC_PRICING_URL,
+        ANTHROPIC_THINKING_URL,
+        ANTHROPIC_MODELS_OVERVIEW_URL,
+      ]),
+    )
+  } finally {
+    globalThis.fetch = original
+  }
+})
