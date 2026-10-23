@@ -442,7 +442,7 @@ is token-auth only and is not used for releases.
      `src/db/seed-providers.ts`) against the provider's docs.
    - Anthropic `403 forbidden` or Gemini
      `User location is not supported` on the models poll → the provider
-     refused the caller's region. Their listing calls go through the `US_EGRESS`
+     refused the caller's region. Their listing calls (and Anthropic's docs pages) go through the `US_EGRESS`
      Durable Object (`src/server/providers/us-egress.ts`), created with
      `locationHint: 'enam'`. The hint is best effort and an object never
      moves, so if this persists, change its name (`provider-egress`) so

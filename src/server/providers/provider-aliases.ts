@@ -7,6 +7,7 @@
  */
 import type { ModelInfo } from './types.ts'
 import { fetchText, sha256Text } from './types.ts'
+import type { Fetcher } from './us-egress.ts'
 import {
   assertParsed,
   cachedDocs,
@@ -215,8 +216,11 @@ function deprecationsUrl(overview: string): string | null {
 }
 
 /** The page, or null when the server answers 404. Any other failure throws. */
-export async function fetchOptional(url: string): Promise<string | null> {
-  const response = await fetch(url)
+export async function fetchOptional(
+  url: string,
+  fetcher: Fetcher = fetch,
+): Promise<string | null> {
+  const response = await fetcher(url)
   if (response.status === 404) return null
   if (!response.ok) {
     throw new Error(
@@ -230,13 +234,22 @@ export async function fetchOptional(url: string): Promise<string | null> {
 export async function anthropicAliasMap(
   kv?: KVNamespace,
   cached: typeof cachedDocs = cachedDocs,
+  fetcher: Fetcher = fetch,
 ): Promise<Map<string, string>> {
   const doc = await cached(kv, ANTHROPIC_MODELS_OVERVIEW_URL, async () => {
-    const overview = await fetchText(ANTHROPIC_MODELS_OVERVIEW_URL)
+    const overview = await fetchText(
+      ANTHROPIC_MODELS_OVERVIEW_URL,
+      undefined,
+      fetcher,
+    )
     const depUrl = deprecationsUrl(overview)
-    const deprecations = depUrl ? await fetchText(depUrl) : ''
+    const deprecations = depUrl
+      ? await fetchText(depUrl, undefined, fetcher)
+      : ''
     const urls = claudeModelPageUrls(overview, deprecations)
-    const fetched = await mapConcurrent(urls, 4, fetchOptional)
+    const fetched = await mapConcurrent(urls, 4, (url) =>
+      fetchOptional(url, fetcher),
+    )
     const pages = fetched.filter((page): page is string => page !== null)
     const aliases = parseClaudeAliases([overview, ...pages])
     assertParsed(aliases, 'anthropic models overview')
