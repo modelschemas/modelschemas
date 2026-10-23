@@ -1,3 +1,5 @@
+The Command family of models includes [Command A+](command-a-plus), [Command A](command-a), [Command R7B](command-r7b), [Command A Translate](command-a-translate), [Command A Reasoning](command-a-reasoning), [Command A Vision](command-a-vision), [Command R+](command-r-plus), [Command R](command-r), and [Command](command).
+
 ## Command
 
 Command is Cohere's default generation model that takes a user instruction (or command) and generates text

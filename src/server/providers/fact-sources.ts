@@ -144,6 +144,7 @@ export function tagDocsFacts(
     | 'pricing'
     | 'reasoning'
     | 'serverTools'
+    | 'knowledgeCutoff'
   >,
   sourceUrl: string,
   sourceHash?: string,
@@ -156,6 +157,9 @@ export function tagDocsFacts(
   })
   const out: ModelFactSources = {}
   if (facts.pricing != null) out.pricing = src('Pricing')
+  if (facts.knowledgeCutoff != null) {
+    out.knowledgeCutoff = src('Knowledge Cutoff')
+  }
   if (facts.contextWindow != null) out.contextWindow = src('contextWindow')
   if (facts.maxOutput != null) out.maxOutput = src('maxOutput')
   if (facts.modalities != null) out.modalities = src('modalities')

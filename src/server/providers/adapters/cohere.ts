@@ -4,6 +4,7 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { cohereModelDocFacts } from '../cohere-model-docs.ts'
+import { cohereCommandPageFacts } from '../cohere-model-pages.ts'
 import { cohereModelPricing } from '../cohere-pricing.ts'
 import { openAiCompatModelFacts } from '../openai-compat.ts'
 import {
@@ -135,9 +136,10 @@ async function listModels(
   if (!key) {
     return { models: [], ...skippedResult('cohere', 'COHERE_API_KEY') }
   }
-  const [docs, pricing, reasoning] = await Promise.all([
+  const [docs, pricing, pages, reasoning] = await Promise.all([
     cohereModelDocFacts(kv),
     cohereModelPricing(kv),
+    cohereCommandPageFacts(kv),
     cohereModelReasoning(kv),
   ])
   const models: ListModelsResult['models'] = []
@@ -153,11 +155,30 @@ async function listModels(
     for (const m of body.models ?? []) {
       if (typeof m.name !== 'string' || m.name.length === 0) continue
       const listed = listedFacts(m, m.name)
+      const priced = pricing(m.name)
+      const page = pages(m.name)
+      // A pricing-page card stays sourced there. The model page fills a
+      // price only when that page is the one that states it.
+      const { pricing: pageCard, factSources: pageSources, ...pageRest } = page
+      const pagePatch =
+        priced.pricing || !pageCard
+          ? {
+              ...pageRest,
+              ...(pageSources?.knowledgeCutoff
+                ? {
+                    factSources: {
+                      knowledgeCutoff: pageSources.knowledgeCutoff,
+                    },
+                  }
+                : {}),
+            }
+          : page
       models.push(
         overlayModelFacts(
           listed,
           docs(m.name),
-          pricing(m.name),
+          priced,
+          pagePatch,
           reasoning(m.name, listsReasoning(listed.capabilities)),
         ),
       )
