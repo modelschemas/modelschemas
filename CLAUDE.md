@@ -163,8 +163,8 @@ ones).
   `toggle` is never stored with `null`. Full rules on `ModelReasoning` in
   `providers/types.ts`; `reasoningViolation` gates every poll write
   (`keepValidReasoning`: a bad object keeps the prior value and emits
-  `ingest_failed`). Older adapters still infer `true` (README "Releasing
-  on npm" lists them). `models.reasoning` and
+  `ingest_failed`). Older adapters still infer `true` (docs/api-changes.md
+  lists them). `models.reasoning` and
   `models.serverTools` (provider tool type ids) come from docs: OpenAI and
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
   Models API + thinking table; Anthropic tools are a hand-written table

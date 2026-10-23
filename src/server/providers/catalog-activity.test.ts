@@ -120,15 +120,28 @@ async function withFetch(
 }
 
 describe('deepseek pricing page', () => {
-  it('keeps the off-peak rate and drops a model the table does not name', () => {
+  it('keeps both periods and drops a model the table does not name', () => {
     const parsed = parseDeepseekPricing(DEEPSEEK_HTML)
     expect(parsed.get('deepseek-flash')).toEqual({
-      cacheRead: 0.003,
-      input: 0.15,
-      output: 0.6,
+      off_peak: { cacheRead: 0.003, input: 0.15, output: 0.6 },
+      peak: { cacheRead: 0.006, input: 0.3, output: 1.2 },
     })
-    expect(parsed.get('deepseek-v4-pro')?.input).toBe(0.66)
+    expect(parsed.get('deepseek-v4-pro')?.off_peak.input).toBe(0.66)
+    expect(parsed.get('deepseek-v4-pro')?.peak.input).toBe(1.32)
     expect(parsed.has('deepseek-chat')).toBe(false)
+  })
+
+  it('throws when a named model lacks a peak set', () => {
+    const offPeakOnly = [
+      'MODEL',
+      'deepseek-flash',
+      'PRICING',
+      '$0.003',
+      '$0.15',
+      '$0.6',
+      'Concurrency',
+    ].join('\n')
+    expect(() => parseDeepseekPricing(offPeakOnly)).toThrow(/expected 6 prices/)
   })
 })
 
@@ -260,7 +273,7 @@ Maximum output: 32K tokens (32,768) for Free Trial and 40K tokens (40,960) for p
 })
 
 describe('issue #109 listModels', () => {
-  it('sets deepseek activity and an off-peak card, and leaves an unpriced id null', async () => {
+  it('sets deepseek activity and a period card, and leaves an unpriced id null', async () => {
     await withFetch(
       (url) => {
         if (url.includes('api.deepseek.com/models')) {
@@ -295,7 +308,34 @@ describe('issue #109 listModels', () => {
           output: ['text'],
         })
         expect(flash?.pricing).toBeTruthy()
-        expect(inputUsd(flash?.pricing)).toBeCloseTo(0.15, 9)
+        const card = flash?.pricing as RateCard
+        expect(card.inputs.pricing_period).toMatchObject({
+          bound: 'usage',
+          values: ['off_peak', 'peak'],
+        })
+        expect(card.inputs.pricing_period).not.toHaveProperty('default')
+        expect(
+          price(
+            card,
+            {},
+            {
+              input_tokens: 1e6,
+              output_tokens: 0,
+              pricing_period: 'off_peak',
+            },
+          ),
+        ).toBeCloseTo(0.15, 9)
+        expect(
+          price(
+            card,
+            {},
+            {
+              input_tokens: 1e6,
+              output_tokens: 0,
+              pricing_period: 'peak',
+            },
+          ),
+        ).toBeCloseTo(0.3, 9)
         expect(other?.activity).toBeNull()
         expect(other?.pricing ?? null).toBeNull()
       },

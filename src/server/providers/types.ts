@@ -244,7 +244,7 @@ export interface UpstreamModelIdentity {
  * fact, and `reasoningViolation` refuses it.
  *
  * Many rows written before this rule infer `true` from a level list with
- * no `none`; README "Releasing on npm" lists the providers.
+ * no `none`; docs/api-changes.md lists the providers.
  */
 export interface ModelReasoning {
   mode: 'adaptive' | 'budget' | 'effort' | 'toggle'

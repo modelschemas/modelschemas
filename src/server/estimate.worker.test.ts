@@ -103,6 +103,36 @@ beforeAll(async () => {
     lastSeenAt: NOW,
   })
   await db.insert(providers).values({
+    id: 'est-deepseek',
+    displayName: 'Estimate DeepSeek',
+    specSourceUrl: 'https://example.com/deepseek.json',
+  })
+  await db.insert(models).values({
+    id: 'est-deepseek-flash',
+    providerId: 'est-deepseek',
+    rawId: 'deepseek-flash',
+    activity: 'chat',
+    pricing: compilePeriodCard(
+      {
+        periods: {
+          off_peak: {
+            input_tokens: 0.15e-6,
+            cache_read_tokens: 0.003e-6,
+            output_tokens: 0.6e-6,
+          },
+          peak: {
+            input_tokens: 0.3e-6,
+            cache_read_tokens: 0.006e-6,
+            output_tokens: 1.2e-6,
+          },
+        },
+      },
+      GPT_4O.source,
+    ),
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+  })
+  await db.insert(providers).values({
     id: 'est-anthropic',
     displayName: 'Estimate Anthropic',
     specSourceUrl: 'https://example.com/anthropic.json',
@@ -335,6 +365,37 @@ describe('estimateCost', () => {
       expect(outcome.status).toBe(404)
       expect(outcome.code).toBe('unknown_pricing')
       expect(outcome.message).toContain('GET /v1/models/est-openai/free')
+    }
+  })
+
+  it('prices both periods when a DeepSeek estimate omits pricing_period', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-deepseek',
+      model: 'deepseek-flash',
+      usage: { input_tokens: 1_000_000, output_tokens: 0 },
+    })
+    if (!outcome.ok || !('byInput' in outcome.result)) {
+      throw new Error(JSON.stringify(outcome))
+    }
+    expect(outcome.result.byInput.input).toBe('pricing_period')
+    expect(outcome.result.byInput.values.off_peak?.amount).toBeCloseTo(0.15, 9)
+    expect(outcome.result.byInput.values.peak?.amount).toBeCloseTo(0.3, 9)
+  })
+
+  it('refuses a DeepSeek estimate with an unknown pricing_period', async () => {
+    const outcome = await estimateCost(db, {
+      provider: 'est-deepseek',
+      model: 'deepseek-flash',
+      usage: {
+        input_tokens: 1_000_000,
+        output_tokens: 0,
+        pricing_period: 'night',
+      },
+    })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) {
+      expect(outcome.message).toContain('pricing_period')
+      expect(outcome.message).toContain('night')
     }
   })
 
