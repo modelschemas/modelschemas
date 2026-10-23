@@ -52,16 +52,25 @@ export interface CoherePageFacts {
   knowledgeCutoff?: string
 }
 
-/** Relative slugs in the overview's Command-family sentence, as page URLs. */
+/**
+ * Relative slugs in the overview's Command-family sentence, as page URLs.
+ * A page that no longer has that sentence throws: returning no URLs would
+ * clear stored cutoffs and the Command A card on the next poll.
+ */
 export function commandFamilyPageUrls(markdown: string): Array<string> {
   const sentence = FAMILY.exec(markdown)?.[1]
-  if (!sentence) return []
+  if (!sentence) {
+    throw new Error('cohere models page: Command family links are missing')
+  }
   const urls: Array<string> = []
   for (const link of sentence.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
     const href = link[1] ?? ''
     if (!/^[a-z0-9-]+$/.test(href)) continue
     const url = `https://docs.cohere.com/docs/${href}`
     if (!urls.includes(url)) urls.push(url)
+  }
+  if (urls.length === 0) {
+    throw new Error('cohere models page: Command family links are unreadable')
   }
   return urls
 }

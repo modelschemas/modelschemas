@@ -38,7 +38,9 @@ describe('command model pages', () => {
       'https://docs.cohere.com/docs/command-a-reasoning',
       'https://docs.cohere.com/docs/command',
     ])
-    expect(commandFamilyPageUrls('# Models\nno family sentence')).toEqual([])
+    expect(() => commandFamilyPageUrls('# Models\nno family sentence')).toThrow(
+      /Command family links are missing/,
+    )
   })
 
   it('treats the free sentence as a quota, and leaves the context cell', () => {
