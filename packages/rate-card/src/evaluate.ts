@@ -29,9 +29,14 @@ export type RateCardErrorCode =
   | 'mixed-usage'
 
 export class RateCardError extends Error {
+  /**
+   * @param input The card input (its key in `card.inputs`) the caller did
+   *   not supply, on `bad-input` "required" and `estimate-unavailable`.
+   */
   constructor(
     readonly code: RateCardErrorCode,
     message: string,
+    readonly input?: string,
   ) {
     super(message)
     this.name = 'RateCardError'
@@ -271,6 +276,7 @@ export function bindInputs(
       new RateCardError(
         'bad-input',
         `${name} (${input.param}): ${why}${value === undefined ? '' : ` ${JSON.stringify(value)}`}`,
+        why === 'required' ? name : undefined,
       )
     switch (input.kind) {
       case 'count':
@@ -498,6 +504,7 @@ function evaluate(
       throw new RateCardError(
         'estimate-unavailable',
         `${name} (${param}): not supplied, and cannot be estimated for this request: ${error.message}`,
+        name,
       )
     }
   }

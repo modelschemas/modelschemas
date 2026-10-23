@@ -65,6 +65,12 @@ async function runQuote(raw: unknown): Promise<Quote> {
     if ('min' in outcome.result) {
       return { ok: false, message: 'This model has no single billed price.' }
     }
+    if ('byInput' in outcome.result) {
+      return {
+        ok: false,
+        message: `Choose ${outcome.result.byInput.input} to see one price.`,
+      }
+    }
     return {
       ok: true,
       amount: outcome.result.amount,

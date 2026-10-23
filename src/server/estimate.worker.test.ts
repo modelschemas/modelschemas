@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 
 import { compileTokenCard, evaluateCard } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
 
 import { ESTIMATE_CASES } from '../../packages/rate-card/src/fixtures/estimate-cases.ts'
 import { GPT_4O } from '../../packages/rate-card/src/fixtures/gpt-4o.ts'
@@ -11,7 +12,10 @@ import { models, providers } from '../db/schema.ts'
 import { estimateCost, parseEstimateBody } from './estimate.ts'
 import type { EstimateResult } from './estimate.ts'
 import { anthropicModelPricing } from './providers/anthropic-pricing.ts'
-import { compileSeedanceCard } from './providers/byteplus-pricing.ts'
+import {
+  compilePeriodCard,
+  compileSeedanceCard,
+} from './providers/byteplus-pricing.ts'
 import { ANTHROPIC_PRICING_PAGE } from './providers/fixtures/anthropic-pricing.ts'
 import { parseStoredRateCard } from './rate-card.ts'
 
@@ -525,5 +529,114 @@ describe('estimateCost on a routed id (#406)', () => {
       code: 'unknown_pricing',
     })
     if (!outcome.ok) expect(outcome.message).toContain('est-gw/b/gap')
+  })
+})
+
+describe('estimateCost with one required choice missing (#450)', () => {
+  const periods = {
+    off_peak: { input_tokens: 0.3 / 1e6, output_tokens: 1.2 / 1e6 },
+    peak: { input_tokens: 0.6 / 1e6, output_tokens: 2.4 / 1e6 },
+  }
+  const usage = { input_tokens: 1_000_000, output_tokens: 1_000_000 }
+  const row = (rawId: string, pricing: RateCard) => ({
+    id: `est-period-${rawId}`,
+    providerId: 'est-period',
+    rawId,
+    activity: 'chat' as const,
+    pricing,
+    firstSeenAt: NOW,
+    lastSeenAt: NOW,
+  })
+
+  beforeAll(async () => {
+    const period = compilePeriodCard({ periods }, GPT_4O.source)
+    await db.insert(providers).values({
+      id: 'est-period',
+      displayName: 'Estimate period',
+      specSourceUrl: 'https://example.com/p.json',
+    })
+    await db.insert(models).values([
+      row('deepseek', period),
+      row('two-choices', {
+        ...period,
+        inputs: {
+          ...period.inputs,
+          input_video: { param: 'input_video', kind: 'boolean' },
+        },
+      }),
+      // A cache-read rate off-peak only: peak cannot price the call.
+      row(
+        'peak-gap',
+        compilePeriodCard(
+          {
+            periods: {
+              off_peak: { ...periods.off_peak, cache_read_tokens: 0.1 / 1e6 },
+              peak: periods.peak,
+            },
+          },
+          GPT_4O.source,
+        ),
+      ),
+    ])
+  })
+
+  const estimate = (model: string, u: Record<string, unknown>) =>
+    estimateCost(db, { provider: 'est-period', model, usage: u })
+
+  it('prices each value when pricing_period is missing', async () => {
+    const outcome = await estimate('deepseek', usage)
+    if (!outcome.ok || !('byInput' in outcome.result)) {
+      throw new Error(JSON.stringify(outcome))
+    }
+    const { currency, byInput } = outcome.result
+    expect(currency).toBe('USD')
+    expect(byInput.input).toBe('pricing_period')
+    expect(Object.keys(byInput.values)).toEqual(['off_peak', 'peak'])
+    expect(byInput.values.off_peak?.amount).toBeCloseTo(1.5, 10)
+    expect(byInput.values.peak?.amount).toBeCloseTo(3, 10)
+    expect(byInput.values.peak).toMatchObject({
+      estimated: [],
+      ignored: [],
+      cardSource: GPT_4O.source,
+    })
+  })
+
+  it('returns one result when pricing_period is supplied', async () => {
+    const outcome = await estimate('deepseek', {
+      ...usage,
+      pricing_period: 'peak',
+    })
+    if (!outcome.ok || !('amount' in outcome.result)) {
+      throw new Error(JSON.stringify(outcome))
+    }
+    expect(outcome.result.amount).toBeCloseTo(3, 10)
+  })
+
+  it('refuses two missing choices, naming both and their values', async () => {
+    const outcome = await estimate('two-choices', usage)
+    expect(outcome).toMatchObject({ ok: false, code: 'unbound_input' })
+    if (!outcome.ok) {
+      expect(outcome.message).toContain(
+        'usage.pricing_period (off_peak | peak)',
+      )
+      expect(outcome.message).toContain('request.input_video (true | false)')
+    }
+  })
+
+  it('refuses a missing quantity even with a choice missing', async () => {
+    const outcome = await estimate('deepseek', { input_tokens: 1 })
+    expect(outcome).toMatchObject({ ok: false, code: 'unbound_input' })
+    if (!outcome.ok) expect(outcome.message).toContain('usage.output_tokens')
+  })
+
+  it('refuses the whole estimate when one value cannot be priced', async () => {
+    const outcome = await estimate('peak-gap', {
+      ...usage,
+      cache_read_tokens: 1000,
+    })
+    expect(outcome).toMatchObject({ ok: false, code: 'missing_key' })
+    if (!outcome.ok) {
+      expect(outcome.message).toContain('usage.pricing_period = "peak"')
+    }
   })
 })
