@@ -18,7 +18,10 @@ models.dev `api` path plus the package suffix (`inference/go/<protocol>/...`),
 checked against that page's Endpoints table (#393). Go `cost` in
 https://models.dev/api.json is not stored: it is not confirmed as a billed
 token price. The per-row checks below cited https://opencode.ai/docs/go,
-removed upstream on 2026-10-12. Checked 2026-10-09. Among activity-null rows,
+removed upstream on 2026-10-12. Checked 2026-10-09. Rows added on
+2026-10-23 cite the page that replaced it,
+https://opencode.ai/v2/docs/console/go (Go $10/month, Go Plus $40/month;
+token columns count against the monthly allowance). Among activity-null rows,
 no own catalog record was published for: `minimax-m2.5`, `kimi-k2.5`, `glm-5.1`, `glm-5`, `deepseek-flash`, `qwen3.5-plus`, `mimo-v2-pro`, `mimo-v2-omni`, `hy3-preview`, `omen-alpha`.
 Catalogued rows take their chat route from the model's package, or the provider package when the model states none.
 The ten live ids absent from the public catalog remain activity-null. There is
@@ -124,3 +127,11 @@ credentials are not substituted for the unavailable public evidence.
 - opencode-go/gpt-6-luna: cacheRead — Go publishes no billed cached-token price; cached-read rates account against monthly subscription allowance (#265), https://opencode.ai/docs/go, checked 2026-10-09
 - opencode-go/space-bunny: priced — Go bills a monthly subscription; per-token tables account against the plan usage allowance and are not billed token prices (#265), https://opencode.ai/docs/go, checked 2026-10-09
 - opencode-go/space-bunny: cacheRead — Go publishes no billed cached-token price; cached-read rates account against monthly subscription allowance (#265), https://opencode.ai/docs/go, checked 2026-10-09
+- opencode-go/beam-free: priced — Go bills a monthly subscription; per-token tables account against the plan usage allowance and are not billed token prices (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/beam-free: cacheRead — Go publishes no billed cached-token price; cached-read rates account against monthly subscription allowance (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/gemini-4-argon-contributor: priced — Go bills a monthly subscription; per-token tables account against the plan usage allowance and are not billed token prices (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/gemini-4-argon-contributor: cacheRead — Go publishes no billed cached-token price; cached-read rates account against monthly subscription allowance (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/minimax-m3.1-flash: priced — Go bills a monthly subscription; per-token tables account against the plan usage allowance and are not billed token prices (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/minimax-m3.1-flash: cacheRead — Go publishes no billed cached-token price; cached-read rates account against monthly subscription allowance (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/step-5-preview: priced — Go bills a monthly subscription; per-token tables account against the plan usage allowance and are not billed token prices (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
+- opencode-go/step-5-preview: cacheRead — Go publishes no billed cached-token price; cached-read rates account against monthly subscription allowance (#443), https://opencode.ai/v2/docs/console/go, checked 2026-10-23
