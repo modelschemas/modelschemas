@@ -8,6 +8,8 @@ import { ingestFailedEvent, noteIngest } from '../ingest/ingest-signals.ts'
 import { emptySources } from './fact-sources.ts'
 import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
 import { fetchByteplusDoc } from './byteplus-docs.ts'
+import { pricingContent, tableRows } from './byteplus-pricing.ts'
+import type { ByteplusDoc } from './byteplus-pricing.ts'
 import { fetchText, reasoningViolation, sha256Text } from './types.ts'
 import type { ModelFactSources, ModelInfo, ModelReasoning } from './types.ts'
 
@@ -389,113 +391,55 @@ export function parseCohereReasoning(
   return out
 }
 
-/** Pull the chain-of-thought section out of the docs HTML or a markdown fixture. */
-export function byteplusReasoningSection(body: string): string {
-  const text = body
-    .replace(/\\u003C/gi, '<')
-    .replace(/\\u003E/gi, '>')
-    .replace(/\\u0026/gi, '&')
-    .replace(/\\u002F/gi, '/')
-    .replace(/\\n/g, '\n')
-    .replace(/\\-/g, '-')
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-  const headed = text.search(/(?:^|\n)## Adjust chain-of-thought length/i)
-  const start =
-    headed >= 0 ? headed : text.search(/adjust chain-of-thought length/i)
-  if (start < 0) return ''
-  const rest = text.slice(start)
-  const end = rest.search(/\n## (?!Adjust)/)
-  return end < 0 ? rest : rest.slice(0, end)
-}
+const BYTEPLUS_EFFORT = /^(none|minimal|low|medium|high|xhigh|max)$/
+const BYTEPLUS_MODEL_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*-\d{4,}$/
 
 /**
- * Doc-center delta: each visible string is an `"insert":"..."` fragment.
- * Effort names are the published value list. Model ids are the dated ids
- * after that list. Markdown fixtures fall through to the table parser.
+ * The ModelArk deep-thinking page is a Lark doc (`curDoc.Content`). Under
+ * the "Adjust chain-of-thought length" heading, effort names are the
+ * published value list and model ids are the cells of that section's
+ * "Supported models" table, nothing else on the page (#432). Missing either
+ * configures nothing, so the load fails closed.
  */
-function parseByteplusInserts(section: string): Map<string, ModelReasoning> {
-  const out = new Map<string, ModelReasoning>()
-  const inserts = [
-    ...section.matchAll(/\\"insert\\":\\"([^\\"]*)\\"/g),
-  ].flatMap((match) => {
-    const text = (match[1] ?? '').replace(/\\n/g, '').trim()
-    return text.length > 0 ? [text] : []
-  })
-  const efforts: Array<string> = []
-  const ids: Array<string> = []
-  let phase: 'seek' | 'values' | 'models' = 'seek'
-  for (const insert of inserts) {
-    if (phase === 'seek') {
-      if (insert === 'reasoning_effort' || insert === 'reasoning.effort') {
-        phase = 'values'
-      }
-      continue
-    }
-    if (phase === 'values') {
-      if (/the table below|^supported models$/i.test(insert)) {
-        phase = 'models'
-        continue
-      }
-      if (
-        /^(none|minimal|low|medium|high|xhigh|max)$/.test(insert) &&
-        !efforts.includes(insert)
-      ) {
-        efforts.push(insert)
-      }
-      continue
-    }
-    if (
-      /^[a-z0-9]+(?:-[a-z0-9]+)*-\d{4,}$/.test(insert) &&
-      !ids.includes(insert)
-    ) {
-      ids.push(insert)
-    }
-  }
-  if (efforts.length === 0 || ids.length === 0) return out
-  const reasoning: ModelReasoning = {
-    mode: 'effort',
-    mandatory: !efforts.includes('none'),
-    efforts,
-  }
-  for (const id of ids) out.set(id, reasoning)
-  return out
-}
-
 export function parseByteplusReasoning(
   body: string,
 ): Map<string, ModelReasoning> {
-  const section = byteplusReasoningSection(body)
-  const out = new Map<string, ModelReasoning>()
-  if (!section) return out
-  const inserted = parseByteplusInserts(section)
-  if (inserted.size > 0) return inserted
-  const [values = ''] = section.split(/\| ?Supported models/i)
+  const doc = JSON.parse(
+    pricingContent(body, 'byteplus reasoning page'),
+  ) as ByteplusDoc
   const efforts: Array<string> = []
-  for (const line of values.split('\n')) {
-    const name = line.match(/^\*\s*`([a-z]+)`/)?.[1]
-    if (name && !efforts.includes(name)) efforts.push(name)
+  const ids: Array<string> = []
+  let inSection = false
+  for (const op of doc.data['0']?.ops ?? []) {
+    if (typeof op.insert !== 'string') continue
+    const text = op.insert.trim()
+    if (!inSection) {
+      inSection = /^adjust chain-of-thought length$/i.test(text)
+      continue
+    }
+    if (op.attributes?.heading) break
+    if (BYTEPLUS_EFFORT.test(text) && !efforts.includes(text)) {
+      efforts.push(text)
+    }
+    const spec = op.attributes?.aceTable
+    const [header, ...rows] = spec ? (tableRows(doc, spec) ?? []) : []
+    if (!/^supported models$/i.test(header?.[0] ?? '')) continue
+    for (const cell of rows.map((row) => row[0] ?? '')) {
+      for (const token of cell.split(/[\s*]+/)) {
+        if (BYTEPLUS_MODEL_ID.test(token) && !ids.includes(token)) {
+          ids.push(token)
+        }
+      }
+    }
   }
+  const out = new Map<string, ModelReasoning>()
   if (efforts.length === 0) return out
   const reasoning: ModelReasoning = {
     mode: 'effort',
     mandatory: !efforts.includes('none'),
     efforts,
   }
-  let inTable = false
-  for (const row of markdownTableRows(section)) {
-    const head = (row[0] ?? '').replace(/\\/g, '').trim()
-    if (/^supported models$/i.test(head)) {
-      inTable = true
-      continue
-    }
-    if (!inTable) continue
-    if (/^(api|example)$/i.test(head)) break
-    for (const match of head.matchAll(/`([a-z0-9]+(?:-[a-z0-9]+)*-\d{4,})`/g)) {
-      const id = match[1]
-      if (id) out.set(id, reasoning)
-    }
-  }
+  for (const id of ids) out.set(id, reasoning)
   return out
 }
 

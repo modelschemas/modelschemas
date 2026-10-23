@@ -9,6 +9,7 @@ import {
   parseGroqReasoning,
   parseMistralReasoning,
 } from './reasoning-config.ts'
+import { docFixtureHtml } from './fixtures/byteplus-doc.ts'
 import { reasoningViolation } from './types.ts'
 
 describe('reasoningViolation', () => {
@@ -238,23 +239,39 @@ model="command-r-08-2024"
 Reasoning is on by default. No budget or effort parameter is documented.
 `
 
-const BYTEPLUS = `
-## Adjust chain-of-thought length
-
-* \`none\`: Turn off reasoning.
-* \`minimal\`: Turns off reasoning and answers directly.
-* \`low\`: Light reasoning.
-* \`high\`: Deep analysis.
-
-|Supported models |Default value |Compatibility mapping |
-|---|---|---|
-|\\* \`dola-seed-2-1-turbo-260628\` | | |
-|* \`seed-2-0-lite-260228\`<br>* \`glm-5-2-260617\` |\`medium\` | If \`none\` is passed, reasoning is turned off. |
-
-## Pass thinking content back
-
-\`seed-1-6-250615\` supports thinking but is not in the effort table.
-`
+// Shaped like https://docs.byteplus.com/en/docs/ModelArk/1449737 on
+// 2026-10-23: the effort table's cells are their own zones, and other
+// tables on the page list ids that are not in it.
+const BYTEPLUS = docFixtureHtml([
+  'Thinking can be switched off with thinking.type for seed-1-6-250615.',
+  '## Adjust chain-of-thought length',
+  'Use the ',
+  'reasoning_effort',
+  ' parameter. Valid values are:',
+  'none',
+  ': Turn off reasoning.',
+  'minimal',
+  'low',
+  'high',
+  'The table below shows the models that support adjusting the chain-of-thought length.',
+  [
+    ['Supported models', 'Default value', 'Compatibility mapping'],
+    ['* dola-seed-2-1-turbo-260628', '', ''],
+    [
+      'seed-2-0-lite-260228 * glm-5-2-260617',
+      'medium',
+      'If none is passed, reasoning is turned off.',
+    ],
+  ],
+  'Supported models:',
+  'deepseek-v4-flash-260425',
+  [
+    ['API', 'Chat API'],
+    ['Supported models', 'deepseek-v4-pro-260425 deepseek-v4-flash-260425'],
+  ],
+  '## Pass thinking content back',
+  'seed-1-8-251228',
+])
 
 describe('openRouterReasoning', () => {
   it('copies published efforts and does not invent a mode', () => {
@@ -379,5 +396,16 @@ describe('parseByteplusReasoning', () => {
       'high',
     ])
     expect(parsed.get('seed-1-6-250615')).toBeUndefined()
+    expect(parsed.get('deepseek-v4-flash-260425')).toBeUndefined()
+    expect(parsed.get('seed-1-8-251228')).toBeUndefined()
+    expect(parsed.size).toBe(3)
+  })
+
+  it('configures nothing when the effort table is gone', () => {
+    expect(
+      parseByteplusReasoning(
+        docFixtureHtml(['## Adjust chain-of-thought length', 'none', 'high']),
+      ).size,
+    ).toBe(0)
   })
 })
