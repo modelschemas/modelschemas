@@ -203,7 +203,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // (#408, #409). A v34 entry has none of them for six hours.
 // v36: Mistral OCR cells take the unit from their "Prices /1000 Pages"
 // header (#439). A v35 entry would keep OCR rows unpriced for six hours.
-const DOCS_CACHE_VERSION = 'v36'
+// v37: DeepSeek cards store off-peak and peak behind pricing_period (#449).
+// A v36 entry would keep serving the off-peak rate alone for six hours.
+const DOCS_CACHE_VERSION = 'v37'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

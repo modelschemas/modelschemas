@@ -1,11 +1,10 @@
 /**
  * DeepSeek prices from the models page (issue #109). Each model publishes
- * off-peak and peak rates. There is no request lever for the clock, so the
- * card is the off-peak rate (the rate outside the named peak windows).
- * Peak is not stored. A page that does not match this table throws.
+ * off-peak and peak rates. The card holds both behind a required
+ * `pricing_period` lever (issue #449, same compiler as BytePlus #411).
+ * A page that does not give both sets for every model throws.
  */
-import { compileTokenCard } from '@modelschemas/rate-card'
-
+import { compilePeriodCard } from './byteplus-pricing.ts'
 import type { cachedDocs } from './model-facts.ts'
 import { assertParsed } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
@@ -21,13 +20,21 @@ export interface DeepseekRates {
   output: number
 }
 
+/** Both published periods, USD per million tokens. Neither is a default. */
+export interface DeepseekPeriodRates {
+  off_peak: DeepseekRates
+  peak: DeepseekRates
+}
+
 function money(line: string): number | null {
   const match = line.match(/^\$(\d+(?:\.\d+)?)$/)
   return match?.[1] ? Number(match[1]) : null
 }
 
-/** Off-peak USD per million tokens, keyed by API id. */
-export function parseDeepseekPricing(html: string): Map<string, DeepseekRates> {
+/** Both periods, USD per million tokens, keyed by API id. */
+export function parseDeepseekPricing(
+  html: string,
+): Map<string, DeepseekPeriodRates> {
   const text = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<[^>]+>/g, '\n')
@@ -50,23 +57,42 @@ export function parseDeepseekPricing(html: string): Map<string, DeepseekRates> {
     if (value !== null) prices.push(value)
     else if (prices.length > 0 && line.startsWith('Concurrency')) break
   }
-  if (ids.length === 0 || prices.length !== ids.length * 6) return new Map()
-  const out = new Map<string, DeepseekRates>()
-  ids.forEach((id, index) => {
+  if (ids.length === 0) return new Map()
+  if (prices.length !== ids.length * 6) {
+    throw new Error(
+      `deepseek pricing page: expected ${ids.length * 6} prices (off-peak and peak for cache read, input, and output), got ${prices.length}`,
+    )
+  }
+  const out = new Map<string, DeepseekPeriodRates>()
+  for (const [index, id] of ids.entries()) {
     const at = (row: number) => prices[row * ids.length + index]
-    const cacheRead = at(0)
-    const input = at(2)
-    const output = at(4)
-    if (
-      cacheRead === undefined ||
-      input === undefined ||
-      output === undefined
-    ) {
-      return
+    const period = (start: number): DeepseekRates => {
+      const cacheRead = at(start)
+      const input = at(start + 2)
+      const output = at(start + 4)
+      if (
+        cacheRead === undefined ||
+        input === undefined ||
+        output === undefined
+      ) {
+        throw new Error(
+          `deepseek pricing page: ${id} is missing an off-peak or peak rate`,
+        )
+      }
+      return { input, cacheRead, output }
     }
-    out.set(id, { input, cacheRead, output })
-  })
+    // Rows alternate off-peak then peak: cache, input, output.
+    out.set(id, { off_peak: period(0), peak: period(1) })
+  }
   return out
+}
+
+function perToken(row: DeepseekRates): Record<string, number> {
+  return {
+    input_tokens: row.input / 1e6,
+    output_tokens: row.output / 1e6,
+    cache_read_tokens: row.cacheRead / 1e6,
+  }
 }
 
 type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
@@ -102,20 +128,19 @@ export async function deepseekModelPricing(
   return (rawId) => {
     const row = doc.rates[rawId]
     if (!row) return {}
-    const pricing = compileTokenCard(
+    const pricing = compilePeriodCard(
       {
-        input_tokens: row.input / 1e6,
-        output_tokens: row.output / 1e6,
-        cache_read_tokens: row.cacheRead / 1e6,
+        periods: {
+          off_peak: perToken(row.off_peak),
+          peak: perToken(row.peak),
+        },
       },
-      [],
       {
         url: DEEPSEEK_PRICING_URL,
         hash: doc.hash,
         extractedAt: doc.extractedAt,
       },
     )
-    if (!pricing) return {}
     return { pricing }
   }
 }

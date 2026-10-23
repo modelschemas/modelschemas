@@ -103,6 +103,16 @@ describe('gap report scoring', () => {
     )
     expect(periods.facts.priced).toEqual({ have: 1, need: 1 })
     expect(periods.facts.cacheRead).toEqual({ have: 0, need: 1 })
+    const both = {
+      off_peak: rate.off_peak,
+      peak: { ...rate.peak, cache_read_tokens: 2e-9 },
+    }
+    const fullPeriods = provider(
+      'full',
+      buildReport([{ ...complete, pricing: { tables: { rate: both } } }]),
+    )
+    expect(fullPeriods.facts.priced).toEqual({ have: 1, need: 1 })
+    expect(fullPeriods.facts.cacheRead).toEqual({ have: 1, need: 1 })
   })
 
   it('counts a card in another currency as priced', () => {
