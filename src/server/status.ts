@@ -20,6 +20,7 @@ import type {
 import { providerRegistry } from '#/server/providers/index.ts'
 import { servePricing } from '#/server/rate-card.ts'
 import { resolveSchemaEndpointId } from '#/server/schema-binding.ts'
+import { staleProbeCount } from '#/server/providers/probes/index.ts'
 import { sourceSilentLedger } from '#/server/source-silent.ts'
 
 /**
@@ -62,6 +63,11 @@ export interface ProviderStatus {
    * Does not change `status`.
    */
   priceClearsRefused?: PriceClearsRefused
+  /**
+   * Probe records older than 90 days. The facts stay served. Present only
+   * when the count is above zero. Does not change `status`.
+   */
+  staleProbes?: number
   /**
    * Present while the latest poll wrote `model.updated` for more than half
    * of the live rows, and at least 20. The updates are written; this only
@@ -265,6 +271,14 @@ async function readCompleteness(db: Db): Promise<{
  * sync hasn't landed yet still appear — as `pending` with zero counts — so
  * the listing is always the full roster, for humans and agents alike.
  */
+function staleProbeField(
+  providerId: string,
+  nowSeconds: number,
+): { staleProbes?: number } {
+  const stale = staleProbeCount(providerId, new Date(nowSeconds * 1000))
+  return stale > 0 ? { staleProbes: stale } : {}
+}
+
 export async function getServiceStatus(
   db: Db,
   now = Math.floor(Date.now() / 1000),
@@ -340,6 +354,7 @@ export async function getServiceStatus(
       lastPolledAt: p.lastPolledAt,
       lastSyncedAt: p.lastSyncedAt,
       ...records.get(p.id),
+      ...staleProbeField(p.id, now),
       completeness: completeness(p.id),
       counts: {
         models: modelsBy.get(p.id)?.models ?? 0,
@@ -361,6 +376,7 @@ export async function getServiceStatus(
       status: 'pending',
       lastPolledAt: null,
       lastSyncedAt: null,
+      ...staleProbeField(config.id, now),
       completeness: completeness(config.id),
       counts: {
         models: 0,

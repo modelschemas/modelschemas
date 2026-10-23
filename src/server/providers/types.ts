@@ -81,6 +81,11 @@ export interface ProviderSecrets {
    * declared so local probe scripts share one canonical name.
    */
   SEED_SPEECH_API_KEY?: string
+  /**
+   * OpenCode Go data plane. The catalog and spec sync do not read it.
+   * `bun scripts/probe.ts opencode-go` does. Never log the value.
+   */
+  OPENCODE_GO_API_KEY?: string
   // Adapter-batch secrets (docs/providers-to-add.md). Optional: a missing
   // key skips listModels; fetchSpec stays keyless whenever the spec is public.
   MISTRAL_API_KEY?: string
@@ -156,6 +161,12 @@ export interface FactSource {
   endpointId?: string
   /** JSON pointer or field name in the source document. */
   path?: string
+  /**
+   * `YYYY-MM-DD` a `probe-verified` fact was last confirmed against the
+   * live API. A record older than 90 days is still served;
+   * `GET /v1/status` counts it on `staleProbes`.
+   */
+  verifiedAt?: string
 }
 
 /** Per-field (and per-flag) provenance for a catalog row. */

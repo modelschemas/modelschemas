@@ -183,7 +183,15 @@ ones).
   `openWeights` + `weightsUrl` are null unless the provider states them.
   A stored row's first `releasedAt` or `providerMetadata` is written with
   no `model.updated`. Migration `0014` is a drizzle custom migration that
-  converted the stored lists.
+  converted the stored lists. A fact the provider's docs do not state can
+  still come from a live API check: one file per provider under
+  `src/server/providers/probes/`, derivation `probe-verified`, dated
+  `verifiedAt`. The adapter binds that fact only for the exact model and
+  route the record names. A record older than 90 days stays served;
+  `GET /v1/status` counts it on `staleProbes`. Re-run with
+  `bun scripts/probe.ts <provider> [--write]` (not CI, not the 15-minute
+  poll). The script reads the provider key from the environment or Doppler
+  and never prints it.
 - **sameAs links** (issue #199, `src/server/ingest/model-identity.ts`): a
   reseller row links to the upstream row its own provider names — never
   inferred from a similar name alone, and never a copied fact. Adapters

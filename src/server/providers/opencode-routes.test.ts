@@ -129,6 +129,8 @@ it('checks Go ids against the full documented /inference/go/<protocol>/ path', a
   expect(Object.keys(result.specs[0]?.paths ?? {})).toEqual([
     '/inference/go/openai/v1/responses',
     '/inference/go/anthropic/v1/messages',
+    '/inference/go/google/v1beta/models/gemini-4-argon-contributor:generateContent',
+    '/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent',
   ])
   expect(fetched()).toEqual([OPENCODE_GO_ROUTE_DOCS_URL])
 })

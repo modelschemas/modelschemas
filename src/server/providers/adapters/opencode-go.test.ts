@@ -135,6 +135,17 @@ describe('opencode-go', () => {
     ).toMatchObject({
       'x-modelschemas-route-only': true,
     })
+    expect(
+      spec.specs[0]?.paths?.[
+        '/inference/go/google/v1beta/models/gemini-4-argon-contributor:generateContent'
+      ]?.post,
+    ).toMatchObject({
+      'x-modelschemas-route-only': true,
+      'x-modelschemas-provenance': {
+        derivation: 'probe-verified',
+        verifiedAt: '2026-10-23',
+      },
+    })
     expect(spec.specs[0]?.paths?.['/v1/messages']).toBeUndefined()
     expect(urls.filter((url) => url.includes('/docs/'))).toEqual([
       OPENCODE_GO_ROUTE_DOCS_URL,
@@ -143,7 +154,7 @@ describe('opencode-go', () => {
     expect(urls).toContain(OPENCODE_CATALOG_URL)
   })
 
-  it('binds no route to a Gemini row, even where the Go docs list one', async () => {
+  it('binds a Go Gemini row only when that exact id has a probe record', async () => {
     const catalog = {
       'opencode-go': {
         ...CATALOG['opencode-go'],
@@ -152,6 +163,14 @@ describe('opencode-go', () => {
           gemini: {
             id: 'gemini',
             name: 'Gemini',
+            provider: {
+              npm: '@ai-sdk/google',
+              api: 'https://opencode.ai/inference/go/google/v1beta',
+            },
+          },
+          'gemini-4-argon-contributor': {
+            id: 'gemini-4-argon-contributor',
+            name: 'Argon',
             provider: {
               npm: '@ai-sdk/google',
               api: 'https://opencode.ai/inference/go/google/v1beta',
@@ -166,7 +185,14 @@ describe('opencode-go', () => {
           new Response(
             JSON.stringify({
               object: 'list',
-              data: [{ id: 'gemini', object: 'model', owned_by: 'opencode' }],
+              data: [
+                { id: 'gemini', object: 'model', owned_by: 'opencode' },
+                {
+                  id: 'gemini-4-argon-contributor',
+                  object: 'model',
+                  owned_by: 'opencode',
+                },
+              ],
             }),
           ),
         )
@@ -183,13 +209,33 @@ describe('opencode-go', () => {
     const spec = await provider.fetchSpec({})
     expect(Object.keys(spec.specs[0]?.paths ?? {}).sort()).toEqual([
       '/inference/go/anthropic/v1/messages',
+      '/inference/go/google/v1beta/models/gemini-4-argon-contributor:generateContent',
+      '/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent',
       '/inference/go/openai/v1/chat/completions',
       '/inference/go/openai/v1/responses',
     ])
-    const [gemini] = (await provider.listModels({})).models
+    const listed = await provider.listModels({})
+    const gemini = listed.models.find((model) => model.rawId === 'gemini')
+    const argon = listed.models.find(
+      (model) => model.rawId === 'gemini-4-argon-contributor',
+    )
     expect(gemini).toMatchObject({ rawId: 'gemini', activity: 'chat' })
     expect(gemini?.schemaEndpointId).toBeUndefined()
     expect(gemini?.factSources?.schemaEndpointId).toBeUndefined()
+    expect(argon?.schemaEndpointId).toBe(
+      'inference/go/google/v1beta/models/gemini-4-argon-contributor:generateContent',
+    )
+    expect(argon?.factSources?.schemaEndpointId).toEqual({
+      derivation: 'probe-verified',
+      verifiedAt: '2026-10-23',
+      sourceUrl:
+        'src/server/providers/probes/opencode-go.ts#gemini-4-argon-contributor-generate',
+    })
+    expect(
+      spec.specs[0]?.paths?.[
+        '/inference/go/google/v1beta/models/gemini-4-argon-contributor:generateContent'
+      ]?.post,
+    ).not.toHaveProperty('requestBody')
   })
 
   it('throws when the catalog classifies no listed row', async () => {

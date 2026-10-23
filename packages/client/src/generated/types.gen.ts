@@ -83,6 +83,10 @@ export type ServiceStatus = {
       live: number
     }
     /**
+     * Present only when this provider has probe records older than 90 days. The probed facts stay served. Does not change status. Re-run with `bun scripts/probe.ts <provider> --write`.
+     */
+    staleProbes?: number
+    /**
      * Present only while polls refuse to clear most of the stored prices of the provider at once. The stored prices stay and may be stale. Does not change status.
      */
     priceClearsRefused?: {
@@ -441,6 +445,10 @@ export type FactSource = {
    * source-silent only: the date the ledger author checked the source (YYYY-MM-DD).
    */
   checkedAt?: string
+  /**
+   * probe-verified only: the date the live call last matched the recorded result (YYYY-MM-DD). A date older than 90 days is still served and counted on GET /v1/status staleProbes.
+   */
+  verifiedAt?: string
   /**
    * sameAs only: the id matched after dots were read as hyphens.
    */
@@ -1145,7 +1153,7 @@ export type GetSchemaError = GetSchemaErrors[keyof GetSchemaErrors]
 
 export type GetSchemaResponses = {
   /**
-   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. `provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal, while `probe-verified` (confirmed against live API calls on `provenance.verifiedAt`) and `docs-derived` (never confirmed) are point-in-time claims that can go stale.
+   * Self-contained JSON Schema ($defs-bundled) — or, with format=types, a TypeScript module — served with ETag. JSON responses carry `provenance` (upstream sourceUrl, sourceHash, fetchedAt, extractorVersion) so derivations are independently verifiable. `provenance.derivation` grades how the content was arrived at — `upstream-spec` and `generated` are re-derived every sync and self-heal. `probe-verified` is a live API call recorded in `src/server/providers/probes/<provider>.ts` on `provenance.verifiedAt` (`YYYY-MM-DD`). Re-run it with `bun scripts/probe.ts <provider> [--write]`. A record older than 90 days is still served; `GET /v1/status` counts those on `staleProbes`. `docs-derived` was never confirmed against the API. Both are point-in-time claims that can go stale.
    */
   200: {
     [key: string]: unknown
