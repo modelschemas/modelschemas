@@ -16,7 +16,7 @@
   "dependencies": {
     "@modelschemas/client": "workspace:*",
     "@modelschemas/codegen": "workspace:*",
-    "jose": "^6.2.3"
+    "jose": "^6.2.12"
   },
   "publishConfig": {
     "access": "public",
