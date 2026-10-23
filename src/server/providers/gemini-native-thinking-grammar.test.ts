@@ -26,3 +26,13 @@ it('rejects unknown declared levels and ignores fenced declarations', () => {
     parsePageThinking('```\n' + docs['gemini-3.1-flash-lite-image'] + '\n```'),
   ).toBeNull()
 })
+it('reads a deprecated page that names minimal as unsupported (#432)', () => {
+  // The Capabilities cell of models/gemini-3.7-flash.md.txt on 2026-10-23.
+  const cell =
+    '| Capabilities | **[Thinking](https://ai.google.dev/gemini-api/docs/thinking)** Supported (low, medium, high) Note: `minimal` is not supported and returns an error. |'
+  expect(parsePageThinking(cell)).toEqual({
+    mode: 'effort',
+    mandatory: null,
+    efforts: ['low', 'medium', 'high'],
+  })
+})

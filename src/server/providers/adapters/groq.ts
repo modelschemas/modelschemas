@@ -75,7 +75,11 @@ async function listModels(
   // Pricing reads several docs pages; one failing keeps the stored cards.
   const [pricing, reasoning, tools] = await Promise.all([
     tryDocs(docs, GROQ_PRICING_URL, (cached) => groqModelPricing(kv, cached)),
-    groqModelReasoning(kv),
+    groqModelReasoning(
+      kv,
+      docs,
+      listed.models.map((model) => model.rawId),
+    ),
     groqModelServerTools(kv),
   ])
   const deprecations = await loadDeprecations(

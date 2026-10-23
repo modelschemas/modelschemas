@@ -1,14 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { takeIngestEvents } from '../ingest/ingest-signals.ts'
 import {
+  groqModelReasoning,
   keepValidReasoning,
   openRouterReasoning,
   parseByteplusReasoning,
   parseCohereReasoning,
+  parseGroqPageEfforts,
   parseGroqReasoning,
   parseMistralReasoning,
 } from './reasoning-config.ts'
+import { docFixtureHtml } from './fixtures/byteplus-doc.ts'
+import { docsRun } from './model-facts.ts'
 import { reasoningViolation } from './types.ts'
 
 describe('reasoningViolation', () => {
@@ -238,23 +242,39 @@ model="command-r-08-2024"
 Reasoning is on by default. No budget or effort parameter is documented.
 `
 
-const BYTEPLUS = `
-## Adjust chain-of-thought length
-
-* \`none\`: Turn off reasoning.
-* \`minimal\`: Turns off reasoning and answers directly.
-* \`low\`: Light reasoning.
-* \`high\`: Deep analysis.
-
-|Supported models |Default value |Compatibility mapping |
-|---|---|---|
-|\\* \`dola-seed-2-1-turbo-260628\` | | |
-|* \`seed-2-0-lite-260228\`<br>* \`glm-5-2-260617\` |\`medium\` | If \`none\` is passed, reasoning is turned off. |
-
-## Pass thinking content back
-
-\`seed-1-6-250615\` supports thinking but is not in the effort table.
-`
+// Shaped like https://docs.byteplus.com/en/docs/ModelArk/1449737 on
+// 2026-10-23: the effort table's cells are their own zones, and other
+// tables on the page list ids that are not in it.
+const BYTEPLUS = docFixtureHtml([
+  'Thinking can be switched off with thinking.type for seed-1-6-250615.',
+  '## Adjust chain-of-thought length',
+  'Use the ',
+  'reasoning_effort',
+  ' parameter. Valid values are:',
+  'none',
+  ': Turn off reasoning.',
+  'minimal',
+  'low',
+  'high',
+  'The table below shows the models that support adjusting the chain-of-thought length.',
+  [
+    ['Supported models', 'Default value', 'Compatibility mapping'],
+    ['* dola-seed-2-1-turbo-260628', '', ''],
+    [
+      'seed-2-0-lite-260228 * glm-5-2-260617',
+      'medium',
+      'If none is passed, reasoning is turned off.',
+    ],
+  ],
+  'Supported models:',
+  'deepseek-v4-flash-260425',
+  [
+    ['API', 'Chat API'],
+    ['Supported models', 'deepseek-v4-pro-260425 deepseek-v4-flash-260425'],
+  ],
+  '## Pass thinking content back',
+  'seed-1-8-251228',
+])
 
 describe('openRouterReasoning', () => {
   it('copies published efforts and does not invent a mode', () => {
@@ -379,5 +399,136 @@ describe('parseByteplusReasoning', () => {
       'high',
     ])
     expect(parsed.get('seed-1-6-250615')).toBeUndefined()
+    expect(parsed.get('deepseek-v4-flash-260425')).toBeUndefined()
+    expect(parsed.get('seed-1-8-251228')).toBeUndefined()
+    expect(parsed.size).toBe(3)
+  })
+
+  it('configures nothing when the effort table is gone', () => {
+    expect(
+      parseByteplusReasoning(
+        docFixtureHtml(['## Adjust chain-of-thought length', 'none', 'high']),
+      ).size,
+    ).toBe(0)
+  })
+
+  it('takes effort names only from the list before the table', () => {
+    const parsed = parseByteplusReasoning(
+      docFixtureHtml([
+        '## Adjust chain-of-thought length',
+        'high',
+        [['Supported models'], ['seed-2-0-lite-260228']],
+        'max',
+      ]),
+    )
+    expect(parsed.get('seed-2-0-lite-260228')?.efforts).toEqual(['high'])
+  })
+})
+
+describe('parseGroqPageEfforts', () => {
+  it('reads the model page sentence and fails closed when it changes', () => {
+    // openai/gpt-oss-safeguard-20b.md on 2026-10-23.
+    const line =
+      '* Harmony format for structured reasoning with low/medium/high reasoning effort'
+    expect(parseGroqPageEfforts(line)).toEqual(['low', 'medium', 'high'])
+    expect(parseGroqPageEfforts('Supports configurable reasoning.')).toBeNull()
+    expect(() => parseGroqPageEfforts(line.replace('medium', 'turbo'))).toThrow(
+      /unreadable reasoning effort/,
+    )
+  })
+})
+
+describe('groqModelReasoning', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const GUIDE = `
+## [Supported Models](#supported-models)
+
+| Model ID | Model |
+| --- | --- |
+| openai/gpt-oss-20b | [GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-oss-20b) |
+| openai/gpt-oss-safeguard-20b | [GPT-OSS-Safeguard 20B](https://console.groq.com/docs/model/openai/gpt-oss-safeguard-20b) |
+| minimaxai/minimax-m2.7 | [MiniMax M2.7](https://console.groq.com/docs/model/minimaxai/minimax-m2.7) |
+
+### [Options for Reasoning Effort (GPT-OSS)](#gpt-oss)
+
+Only supported by [GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-oss-20b).
+
+| Option | Description |
+| --- | --- |
+| low | Low effort |
+| high | High effort |
+`
+
+  function serve(pages: Record<string, string | null>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const body = url.endsWith('/reasoning.md') ? GUIDE : pages[url]
+        return Promise.resolve(
+          body == null
+            ? new Response('down', { status: 503 })
+            : new Response(body),
+        )
+      }),
+    )
+  }
+  const page = (id: string) => `https://console.groq.com/docs/model/${id}.md`
+  const ids = [
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-safeguard-20b',
+    'minimaxai/minimax-m2.7',
+  ]
+
+  it('reads efforts from the model page of a guide model with no options', async () => {
+    serve({
+      [page('openai/gpt-oss-safeguard-20b')]:
+        'Harmony format with low/medium/high reasoning effort',
+      [page('minimaxai/minimax-m2.7')]: 'A reasoning model.',
+    })
+    const run = docsRun()
+    const reasoning = await groqModelReasoning(undefined, run, ids)
+    expect(reasoning('openai/gpt-oss-safeguard-20b', true)).toEqual({
+      reasoning: {
+        mode: 'effort',
+        mandatory: null,
+        efforts: ['low', 'medium', 'high'],
+      },
+      factSources: {
+        reasoning: expect.objectContaining({
+          sourceUrl: page('openai/gpt-oss-safeguard-20b'),
+          path: 'reasoning',
+        }) as unknown,
+      },
+    })
+    expect(reasoning('minimaxai/minimax-m2.7', true).reasoning).toBeUndefined()
+    expect(reasoning('openai/gpt-oss-20b', true).reasoning?.efforts).toEqual([
+      'low',
+      'high',
+    ])
+    expect(run.failed).toBe(0)
+  })
+
+  it('keeps stored reasoning when a model page fails to load', async () => {
+    serve({ [page('minimaxai/minimax-m2.7')]: 'A reasoning model.' })
+    const run = docsRun()
+    const reasoning = await groqModelReasoning(undefined, run, ids)
+    expect(reasoning('openai/gpt-oss-safeguard-20b', true)).toEqual({
+      absent: { reasoning: 'unavailable' },
+    })
+    expect(run.failed).toBe(1)
+  })
+
+  it('keeps stored reasoning when the guide fails to load', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('down', { status: 503 }))),
+    )
+    const run = docsRun()
+    const reasoning = await groqModelReasoning(undefined, run, ids)
+    expect(reasoning('openai/gpt-oss-20b', true)).toEqual({
+      absent: { reasoning: 'unavailable' },
+    })
+    expect(run.failed).toBe(1)
   })
 })

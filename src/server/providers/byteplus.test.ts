@@ -18,6 +18,7 @@ import {
 import { BYTEPLUS_REASONING_URL } from './reasoning-config.ts'
 import { pricingDoc, routerHtml } from './fixtures/byteplus-pricing-doc.ts'
 import type { PricingTable } from './fixtures/byteplus-pricing-doc.ts'
+import { docFixtureHtml } from './fixtures/byteplus-doc.ts'
 
 /**
  * One chat, video, and image row, enough for listModels to attach cards
@@ -45,19 +46,16 @@ function guideFixtureHtml(): string {
 
 /** The thinking page: one effort list and one supported-models row. */
 function reasoningFixtureHtml(): string {
-  return [
-    '<script>window._ROUTER_DATA = {"loaderData":{}}</script>',
+  return docFixtureHtml([
     '## Adjust chain-of-thought length',
-    '',
-    '* `minimal`: Turns off reasoning and answers directly.',
-    '* `high`: Deep analysis.',
-    '',
-    '|Supported models |Default value |',
-    '|---|---|',
-    '|* `seed-2-0-lite-260428` |`high` |',
-    '',
+    'minimal',
+    'high',
+    [
+      ['Supported models', 'Default value'],
+      ['* seed-2-0-lite-260428', 'high'],
+    ],
     '## Pass thinking content back',
-  ].join('\n')
+  ])
 }
 
 /** Model list alias for the lite Seedream row the pricing fixture names. */
@@ -131,43 +129,6 @@ const PRICING_TABLES: Array<PricingTable> = [
     ],
   },
 ]
-
-function docFixtureHtml(tables: Array<Array<Array<string>>>): string {
-  const data: Record<string, unknown> = {
-    '0': {
-      ops: tables.map((_, t) => ({
-        insert: '*',
-        attributes: { aceTable: `rows${t} cols${t}` },
-      })),
-    },
-  }
-  tables.forEach((body, t) => {
-    data[`rows${t}`] = {
-      ops: body.map((_, index) => ({ insert: { id: `t${t}r${index}` } })),
-      zoneType: 'R',
-    }
-    data[`cols${t}`] = {
-      ops: (body[0] ?? []).map((_, index) => ({
-        insert: { id: `t${t}c${index}` },
-      })),
-      zoneType: 'C',
-    }
-    body.forEach((cells, row) => {
-      cells.forEach((text, column) => {
-        data[`xt${t}r${row}xt${t}c${column}`] = {
-          ops: [
-            { insert: '*', attributes: { lmkr: '1' } },
-            { insert: `${text}\n` },
-          ],
-        }
-      })
-    })
-  })
-  const router = {
-    loaderData: { page: { curDoc: { Content: JSON.stringify({ data }) } } },
-  }
-  return `<script>window._ROUTER_DATA = ${JSON.stringify(router)}</script>`
-}
 
 /**
  * Minimal stand-ins for the four `service/arkruntime/model` files fetchSpec

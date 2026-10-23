@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchByteplusDoc } from './byteplus-docs.ts'
+import { docFixtureHtml } from './fixtures/byteplus-doc.ts'
 import {
   BYTEPLUS_REASONING_URL,
   byteplusModelReasoning,
@@ -15,16 +16,15 @@ const SHELL = readFileSync(
   'utf8',
 )
 
-const RENDERED = `<script>window._ROUTER_DATA = {"loaderData":{}}</script>
-## Adjust chain-of-thought length
-
-* \`none\`: Turn off reasoning.
-* \`high\`: Deep analysis.
-
-|Supported models |Default value |
-|---|---|
-|* \`seed-2-0-lite-260228\` |\`medium\` |
-`
+const RENDERED = docFixtureHtml([
+  '## Adjust chain-of-thought length',
+  'none',
+  'high',
+  [
+    ['Supported models', 'Default value'],
+    ['* seed-2-0-lite-260228', 'medium'],
+  ],
+])
 
 function serve(...bodies: Array<string>) {
   const fetchMock = vi.fn((_url: string) => {

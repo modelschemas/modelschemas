@@ -215,7 +215,7 @@ function tableGrid(
   )
 }
 
-function tableRows(
+export function tableRows(
   doc: ByteplusDoc,
   spec: string,
 ): Array<Array<string>> | null {

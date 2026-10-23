@@ -6,8 +6,18 @@
  */
 import { ingestFailedEvent, noteIngest } from '../ingest/ingest-signals.ts'
 import { emptySources } from './fact-sources.ts'
-import { assertParsed, cachedDocs, markdownTableRows } from './model-facts.ts'
+import {
+  assertParsed,
+  cachedDocs,
+  markdownTableRows,
+  tryDocs,
+  unavailable,
+} from './model-facts.ts'
+import type { DocsRun } from './model-facts.ts'
+import { groqModelPageUrl } from './groq-pricing.ts'
 import { fetchByteplusDoc } from './byteplus-docs.ts'
+import { pricingContent, tableRows } from './byteplus-pricing.ts'
+import type { ByteplusDoc } from './byteplus-pricing.ts'
 import { fetchText, reasoningViolation, sha256Text } from './types.ts'
 import type { ModelFactSources, ModelInfo, ModelReasoning } from './types.ts'
 
@@ -291,24 +301,28 @@ function linkLabel(cell: string): string {
     .trim()
 }
 
+/** Rows of the Groq reasoning guide's Supported Models table. */
+function groqSupportedModels(markdown: string): Array<NamedModel> {
+  return headingBlocks(markdown)
+    .filter((block) => block.title === 'Supported Models')
+    .flatMap((block) => markdownTableRows(block.body))
+    .flatMap((row) => {
+      const id = (row[0] ?? '').trim()
+      if (!/^[A-Za-z0-9][A-Za-z0-9./_-]*$/.test(id) || id === 'Model ID') {
+        return []
+      }
+      return [{ id, label: linkLabel(row[1] ?? '') }]
+    })
+}
+
 /** Groq reasoning page: per-model `reasoning_effort` tables. Ids the page lists as reasoning models but never gives options stay absent. */
 export function parseGroqReasoning(
   markdown: string,
 ): Map<string, ModelReasoning> {
-  const models: Array<NamedModel> = []
+  const models = groqSupportedModels(markdown)
   const effortsById = new Map<string, Array<string>>()
   const conflicts = new Set<string>()
   for (const block of headingBlocks(markdown)) {
-    if (block.title === 'Supported Models') {
-      for (const row of markdownTableRows(block.body)) {
-        const id = (row[0] ?? '').trim()
-        if (!/^[A-Za-z0-9][A-Za-z0-9./_-]*$/.test(id) || id === 'Model ID') {
-          continue
-        }
-        models.push({ id, label: linkLabel(row[1] ?? '') })
-      }
-      continue
-    }
     if (!block.title.startsWith('Options for Reasoning Effort')) continue
     const efforts: Array<string> = []
     for (const row of markdownTableRows(block.body)) {
@@ -389,113 +403,60 @@ export function parseCohereReasoning(
   return out
 }
 
-/** Pull the chain-of-thought section out of the docs HTML or a markdown fixture. */
-export function byteplusReasoningSection(body: string): string {
-  const text = body
-    .replace(/\\u003C/gi, '<')
-    .replace(/\\u003E/gi, '>')
-    .replace(/\\u0026/gi, '&')
-    .replace(/\\u002F/gi, '/')
-    .replace(/\\n/g, '\n')
-    .replace(/\\-/g, '-')
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-  const headed = text.search(/(?:^|\n)## Adjust chain-of-thought length/i)
-  const start =
-    headed >= 0 ? headed : text.search(/adjust chain-of-thought length/i)
-  if (start < 0) return ''
-  const rest = text.slice(start)
-  const end = rest.search(/\n## (?!Adjust)/)
-  return end < 0 ? rest : rest.slice(0, end)
-}
+const BYTEPLUS_EFFORT = /^(none|minimal|low|medium|high|xhigh|max)$/
+const BYTEPLUS_MODEL_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*-\d{4,}$/
 
 /**
- * Doc-center delta: each visible string is an `"insert":"..."` fragment.
- * Effort names are the published value list. Model ids are the dated ids
- * after that list. Markdown fixtures fall through to the table parser.
+ * The ModelArk deep-thinking page is a Lark doc (`curDoc.Content`). Under
+ * the "Adjust chain-of-thought length" heading, effort names are the
+ * published value list and model ids are the cells of that section's
+ * "Supported models" table, nothing else on the page (#432). Missing either
+ * configures nothing, so the load fails closed.
  */
-function parseByteplusInserts(section: string): Map<string, ModelReasoning> {
-  const out = new Map<string, ModelReasoning>()
-  const inserts = [
-    ...section.matchAll(/\\"insert\\":\\"([^\\"]*)\\"/g),
-  ].flatMap((match) => {
-    const text = (match[1] ?? '').replace(/\\n/g, '').trim()
-    return text.length > 0 ? [text] : []
-  })
-  const efforts: Array<string> = []
-  const ids: Array<string> = []
-  let phase: 'seek' | 'values' | 'models' = 'seek'
-  for (const insert of inserts) {
-    if (phase === 'seek') {
-      if (insert === 'reasoning_effort' || insert === 'reasoning.effort') {
-        phase = 'values'
-      }
-      continue
-    }
-    if (phase === 'values') {
-      if (/the table below|^supported models$/i.test(insert)) {
-        phase = 'models'
-        continue
-      }
-      if (
-        /^(none|minimal|low|medium|high|xhigh|max)$/.test(insert) &&
-        !efforts.includes(insert)
-      ) {
-        efforts.push(insert)
-      }
-      continue
-    }
-    if (
-      /^[a-z0-9]+(?:-[a-z0-9]+)*-\d{4,}$/.test(insert) &&
-      !ids.includes(insert)
-    ) {
-      ids.push(insert)
-    }
-  }
-  if (efforts.length === 0 || ids.length === 0) return out
-  const reasoning: ModelReasoning = {
-    mode: 'effort',
-    mandatory: !efforts.includes('none'),
-    efforts,
-  }
-  for (const id of ids) out.set(id, reasoning)
-  return out
-}
-
 export function parseByteplusReasoning(
   body: string,
 ): Map<string, ModelReasoning> {
-  const section = byteplusReasoningSection(body)
-  const out = new Map<string, ModelReasoning>()
-  if (!section) return out
-  const inserted = parseByteplusInserts(section)
-  if (inserted.size > 0) return inserted
-  const [values = ''] = section.split(/\| ?Supported models/i)
+  const doc = JSON.parse(
+    pricingContent(body, 'byteplus reasoning page'),
+  ) as ByteplusDoc
   const efforts: Array<string> = []
-  for (const line of values.split('\n')) {
-    const name = line.match(/^\*\s*`([a-z]+)`/)?.[1]
-    if (name && !efforts.includes(name)) efforts.push(name)
+  const ids: Array<string> = []
+  let inSection = false
+  for (const op of doc.data['0']?.ops ?? []) {
+    if (typeof op.insert !== 'string') continue
+    const text = op.insert.trim()
+    if (!inSection) {
+      inSection = /^adjust chain-of-thought length$/i.test(text)
+      continue
+    }
+    if (op.attributes?.heading) break
+    // Effort names are the value list, which ends where the table begins.
+    if (
+      ids.length === 0 &&
+      BYTEPLUS_EFFORT.test(text) &&
+      !efforts.includes(text)
+    ) {
+      efforts.push(text)
+    }
+    const spec = op.attributes?.aceTable
+    const [header, ...rows] = spec ? (tableRows(doc, spec) ?? []) : []
+    if (!/^supported models$/i.test(header?.[0] ?? '')) continue
+    for (const cell of rows.map((row) => row[0] ?? '')) {
+      for (const token of cell.split(/[\s*]+/)) {
+        if (BYTEPLUS_MODEL_ID.test(token) && !ids.includes(token)) {
+          ids.push(token)
+        }
+      }
+    }
   }
+  const out = new Map<string, ModelReasoning>()
   if (efforts.length === 0) return out
   const reasoning: ModelReasoning = {
     mode: 'effort',
     mandatory: !efforts.includes('none'),
     efforts,
   }
-  let inTable = false
-  for (const row of markdownTableRows(section)) {
-    const head = (row[0] ?? '').replace(/\\/g, '').trim()
-    if (/^supported models$/i.test(head)) {
-      inTable = true
-      continue
-    }
-    if (!inTable) continue
-    if (/^(api|example)$/i.test(head)) break
-    for (const match of head.matchAll(/`([a-z0-9]+(?:-[a-z0-9]+)*-\d{4,})`/g)) {
-      const id = match[1]
-      if (id) out.set(id, reasoning)
-    }
-  }
+  for (const id of ids) out.set(id, reasoning)
   return out
 }
 
@@ -537,14 +498,95 @@ export async function mistralModelReasoning(kv?: KVNamespace) {
   return lookup(doc)
 }
 
-export async function groqModelReasoning(kv?: KVNamespace) {
-  const doc = await loadReasoningMap(
-    kv,
-    GROQ_REASONING_URL,
-    'groq reasoning page',
-    parseGroqReasoning,
+/**
+ * A Groq model page's own effort list: "low/medium/high reasoning effort"
+ * on openai/gpt-oss-safeguard-20b. No such sentence is null. A word in it
+ * that is not an effort name throws.
+ */
+export function parseGroqPageEfforts(markdown: string): Array<string> | null {
+  const list = markdown.match(
+    /\b([a-z]+(?:\/[a-z]+)+) reasoning effort\b/i,
+  )?.[1]
+  if (!list) return null
+  const efforts = list.toLowerCase().split('/')
+  if (
+    !efforts.every((effort) =>
+      /^(none|minimal|low|medium|high|xhigh|max)$/.test(effort),
+    )
+  ) {
+    throw new Error(`groq model page: unreadable reasoning effort "${list}"`)
+  }
+  return efforts
+}
+
+/**
+ * The reasoning guide's effort tables. A model the guide lists as reasoning
+ * but gives no options is read from its own model page (#432): the guide
+ * says `reasoning_effort` is GPT-OSS 20B/120B only, while the
+ * gpt-oss-safeguard-20b page states low/medium/high, and a live probe on
+ * 2026-10-23 accepted them. `mandatory` stays null: no page says `none`
+ * is refused. A guide or page that fails to load marks reasoning
+ * `unavailable` (kept) and is counted in `run`.
+ */
+export async function groqModelReasoning(
+  kv: KVNamespace | undefined,
+  run: DocsRun,
+  rawIds: Array<string>,
+): Promise<(rawId: string, capability: boolean) => Partial<ModelInfo>> {
+  // Its own cache key: this entry's shape (with `listed`) is not the plain
+  // reasoning map other loaders cache under the URL.
+  const guide = await tryDocs(run, GROQ_REASONING_URL, (cached) =>
+    cached(kv, `${GROQ_REASONING_URL}#models`, async () => {
+      const body = await fetchText(GROQ_REASONING_URL)
+      const parsed = parseGroqReasoning(body)
+      assertParsed(parsed, 'groq reasoning page')
+      return {
+        byId: Object.fromEntries(parsed),
+        listed: groqSupportedModels(body).map((model) => model.id),
+        hash: await sha256Text(body),
+      }
+    }),
   )
-  return lookup(doc)
+  if (!guide) return () => unavailable('reasoning')
+  const doc = { ...guide, url: GROQ_REASONING_URL }
+  const fromPages = new Map<string, Partial<ModelInfo>>()
+  const pageIds = guide.listed.filter(
+    (id) => !(id in guide.byId) && rawIds.includes(id),
+  )
+  await Promise.all(
+    pageIds.map(async (id) => {
+      const url = groqModelPageUrl(id)
+      const page = await tryDocs(run, url, (cached) =>
+        cached(kv, url, async () => {
+          const body = await fetchText(url)
+          return {
+            efforts: parseGroqPageEfforts(body),
+            hash: await sha256Text(body),
+          }
+        }),
+      )
+      if (!page) {
+        fromPages.set(id, unavailable('reasoning'))
+      } else if (page.efforts) {
+        const reasoning: ModelReasoning = {
+          mode: 'effort',
+          mandatory: null,
+          efforts: page.efforts,
+        }
+        fromPages.set(
+          id,
+          reasoningFactsFor(
+            id,
+            { [id]: reasoning },
+            { url, hash: page.hash },
+            true,
+          ),
+        )
+      }
+    }),
+  )
+  return (rawId, capability) =>
+    fromPages.get(rawId) ?? reasoningFactsFor(rawId, doc.byId, doc, capability)
 }
 
 export async function cohereModelReasoning(kv?: KVNamespace) {
