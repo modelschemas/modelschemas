@@ -628,6 +628,21 @@ describe('byteplus video and image tables', () => {
     expect(images.has('seedream-4-0-20260415')).toBe(false)
   })
 
+  it('reads the model list note on its own "Also supports" line (#468)', () => {
+    // The live cell as of 2026-10-23: two list lines, no parentheses.
+    const listed = doc([
+      ['seedream-5-0-260128\n*Also supports seedream-5-0-lite-260128'],
+      ['seedream-4-5-251128', 'Also supports seedream-9-other-260128'],
+    ])
+    // The second table's alias sits in another cell: not a pair.
+    expect(parseByteplusAliases(listed)).toEqual(
+      new Map([['seedream-5-0-260128', 'seedream-5-0-lite-260128']]),
+    )
+    const images = parseByteplusImages(page)
+    sharePublishedAliases(images, parseByteplusAliases(listed))
+    expect(images.get('seedream-5-0-260128')).toBe(0.035)
+  })
+
   it('prices billed completion_tokens and refuses what it cannot know', () => {
     const usd = (
       id: string,
