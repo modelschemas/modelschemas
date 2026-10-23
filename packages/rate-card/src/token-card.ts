@@ -110,22 +110,20 @@ export function compileTokenCard(
     ),
     tables: { rate: table },
     price: inCurrency(options?.currency, {
-      '+': levers.map(
-        (lever): Expr => ({
-          // A zero count skips the lookup, so a lever a tier leaves unpriced
-          // refuses only when it is actually used.
-          if: [
-            { '>': [{ var: lever }, 0] },
-            {
-              '*': [
-                { var: lever },
-                { lookup: { table: 'rate', keys: [tierKey, lever] } },
-              ],
-            },
-            0,
-          ],
-        }),
-      ),
+      '+': levers.map((lever): Expr => ({
+        // A zero count skips the lookup, so a lever a tier leaves unpriced
+        // refuses only when it is actually used.
+        if: [
+          { '>': [{ var: lever }, 0] },
+          {
+            '*': [
+              { var: lever },
+              { lookup: { table: 'rate', keys: [tierKey, lever] } },
+            ],
+          },
+          0,
+        ],
+      })),
     }),
     examples: [],
     source,

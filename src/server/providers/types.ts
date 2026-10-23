@@ -26,10 +26,7 @@ import type { Fetcher } from './us-egress.ts'
  *   confirmed against the API. The weakest claim we make.
  */
 export type Derivation =
-  | 'upstream-spec'
-  | 'generated'
-  | 'probe-verified'
-  | 'docs-derived'
+  'upstream-spec' | 'generated' | 'probe-verified' | 'docs-derived'
 
 /**
  * Operation-level provenance annotation, read back by the sync engine —

@@ -32,13 +32,7 @@ interface MdxObject {
 }
 
 type MdxValue =
-  | string
-  | number
-  | boolean
-  | null
-  | MdxElement
-  | MdxObject
-  | Array<MdxValue>
+  string | number | boolean | null | MdxElement | MdxObject | Array<MdxValue>
 
 const IDENTIFIER = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?/
 const SCALAR = /^(?:true|false|null|-?\d+(?:\.\d+)?)(?![\w$])/

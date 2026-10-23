@@ -385,8 +385,7 @@ describe('elevenlabs classify', () => {
     const modelIdSchema = (modelId as { model_id?: { $ref?: string } }).model_id
     expect(modelIdSchema?.$ref).toBe('#/$defs/MusicModelID')
     const defs = compose?.input?.$defs as
-      | { MusicModelID?: { enum?: Array<string> } }
-      | undefined
+      { MusicModelID?: { enum?: Array<string> } } | undefined
     expect(defs?.MusicModelID?.enum).toEqual([
       'music_v1',
       'music_v2',

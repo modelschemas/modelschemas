@@ -218,8 +218,7 @@ describe('azure model rates', () => {
   it('serves the per-million figure the meter states', () => {
     const served = (id: string) => {
       const pricing = azureModelPricing(doc, id, null).pricing as
-        | RateCard
-        | undefined
+        RateCard | undefined
       if (!pricing) throw new Error(`fixture does not price ${id}`)
       const { inputPerMillion, outputPerMillion } = projectTokenPricing(pricing)
       return [inputPerMillion, outputPerMillion]

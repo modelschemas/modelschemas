@@ -21,11 +21,7 @@ import type { RateCard } from './card.ts'
 type Vars = Record<string, unknown>
 
 export type UsageFormat =
-  | 'card'
-  | 'openai-responses'
-  | 'openai-chat'
-  | 'anthropic'
-  | 'gemini'
+  'card' | 'openai-responses' | 'openai-chat' | 'anthropic' | 'gemini'
 
 type NativeFormat = Exclude<UsageFormat, 'card'>
 

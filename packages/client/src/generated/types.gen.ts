@@ -509,13 +509,7 @@ export type Model = {
     rawId: string
   } | null
   activity:
-    | 'chat'
-    | 'image'
-    | 'video'
-    | 'audio'
-    | 'embeddings'
-    | 'moderation'
-    | null
+    'chat' | 'image' | 'video' | 'audio' | 'embeddings' | 'moderation' | null
   displayName: string | null
   schemaEndpointId: string | null
   contextWindow: number | null
@@ -624,13 +618,7 @@ export type ExportModel = {
     rawId: string
   } | null
   activity:
-    | 'chat'
-    | 'image'
-    | 'video'
-    | 'audio'
-    | 'embeddings'
-    | 'moderation'
-    | null
+    'chat' | 'image' | 'video' | 'audio' | 'embeddings' | 'moderation' | null
   displayName: string | null
   schemaEndpointId: string | null
   contextWindow: number | null
@@ -936,12 +924,7 @@ export type ListModelsData = {
   path?: never
   query?: {
     activity?:
-      | 'chat'
-      | 'image'
-      | 'video'
-      | 'audio'
-      | 'embeddings'
-      | 'moderation'
+      'chat' | 'image' | 'video' | 'audio' | 'embeddings' | 'moderation'
     provider?: string
     /**
      * A capability flag the model is stated to support: matches rows whose capabilities map has this key set to true (capability=tools). Exact flag name, not a substring.
@@ -1171,12 +1154,7 @@ export type GetProviderOpenApiData = {
      * Restrict to one activity group.
      */
     activity?:
-      | 'chat'
-      | 'image'
-      | 'video'
-      | 'audio'
-      | 'embeddings'
-      | 'moderation'
+      'chat' | 'image' | 'video' | 'audio' | 'embeddings' | 'moderation'
   }
   url: '/v1/openapi/{provider}'
 }

@@ -136,22 +136,20 @@ async function scoreCompleteness(
     .from(models)
     .where(and(eq(models.activity, 'chat'), isNull(models.deprecatedAt)))
   const report = buildReport(
-    rows.map(
-      (row): ModelRow => ({
-        provider: row.providerId,
-        rawId: row.rawId,
-        activity: row.activity,
-        contextWindow: row.contextWindow,
-        maxOutput: row.maxOutput,
-        // JSON columns: the scorer checks what it reads of each.
-        modalities: row.modalities as ModelRow['modalities'],
-        pricing: servePricing(row.pricing, 'full') as ModelRow['pricing'],
-        capabilities: row.capabilities,
-        reasoning: row.reasoning as ModelRow['reasoning'],
-        requestMap: row.requestMap,
-        schemaEndpointId: resolveSchemaEndpointId(row),
-      }),
-    ),
+    rows.map((row): ModelRow => ({
+      provider: row.providerId,
+      rawId: row.rawId,
+      activity: row.activity,
+      contextWindow: row.contextWindow,
+      maxOutput: row.maxOutput,
+      // JSON columns: the scorer checks what it reads of each.
+      modalities: row.modalities as ModelRow['modalities'],
+      pricing: servePricing(row.pricing, 'full') as ModelRow['pricing'],
+      capabilities: row.capabilities,
+      reasoning: row.reasoning as ModelRow['reasoning'],
+      requestMap: row.requestMap,
+      schemaEndpointId: resolveSchemaEndpointId(row),
+    })),
     ledger,
   )
   return Object.fromEntries(
