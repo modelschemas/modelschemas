@@ -1,14 +1,14 @@
 /**
  * Command model pages (issue #447). The models overview links each Command
- * model to its own page. The page's showcase states the price and the
- * knowledge cutoff. The context-window cell is not copied: `GET /v1/models`
+ * model to its own page. The showcase's token rates and knowledge cutoff
+ * are stored. "Free until rate limits are reached" is an evaluation quota
+ * (20 req/min, 1,000 calls/month; production is sales or Model Vault), so
+ * it writes no card. The context-window cell is not copied: `GET /v1/models`
  * `context_length` and this cell disagree (Command A+ is 436000 on the
  * listing and 128,000 on the page), and neither source says which wins.
  *
- * A page that does not fetch throws. A showcase whose price sentence no
- * longer matches writes no card. $0 is only the sentence that names this
- * model ("Command A+ is free until rate limits are reached"), never the
- * general trial-key rule.
+ * A page that does not fetch throws. A token-price sentence that no longer
+ * matches writes no card.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -84,28 +84,11 @@ function perMillion(amount: string): number {
   return Number((Number(amount) / 1e6).toPrecision(12))
 }
 
-function freeCard(source: RateCard['source']): RateCard {
-  return {
-    inputs: {
-      input_tokens: { param: 'input_tokens', bound: 'usage', kind: 'number' },
-      output_tokens: {
-        param: 'output_tokens',
-        bound: 'usage',
-        kind: 'number',
-      },
-    },
-    tables: { rate: { base: { input_tokens: 0, output_tokens: 0 } } },
-    price: 0,
-    examples: [],
-    source,
-  }
-}
-
 /**
  * Facts the showcase states for its Model ID. No showcase, no model id,
  * or a price sentence that no longer matches: nothing, not a guess.
- * A free sentence and a token price on the same page is a conflict, so
- * neither is stored.
+ * The "free until rate limits" sentence is a quota, so it stores no card.
+ * That sentence beside a token price is a conflict, so neither is stored.
  */
 export function parseCohereModelPage(
   html: string,
@@ -118,19 +101,16 @@ export function parseCohereModelPage(
   const facts: CoherePageFacts = {}
   const free = FREE.test(box)
   const token = TOKEN_PRICE.exec(box)
-  if (free !== Boolean(token)) {
-    if (free) facts.pricing = freeCard(source)
-    else if (token?.[1] && token[2]) {
-      const card = compileTokenCard(
-        {
-          input_tokens: perMillion(token[1]),
-          output_tokens: perMillion(token[2]),
-        },
-        [],
-        source,
-      )
-      if (card) facts.pricing = card
-    }
+  if (!free && token?.[1] && token[2]) {
+    const card = compileTokenCard(
+      {
+        input_tokens: perMillion(token[1]),
+        output_tokens: perMillion(token[2]),
+      },
+      [],
+      source,
+    )
+    if (card) facts.pricing = card
   }
   const cutoff = CUTOFF.exec(box)
   const month = cutoff?.[1] ? MONTHS[cutoff[1]] : undefined

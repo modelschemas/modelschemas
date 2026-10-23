@@ -41,13 +41,10 @@ describe('command model pages', () => {
     expect(commandFamilyPageUrls('# Models\nno family sentence')).toEqual([])
   })
 
-  it('stores a $0 card and the cutoff, and leaves the context cell', () => {
+  it('treats the free sentence as a quota, and leaves the context cell', () => {
     const parsed = parseCohereModelPage(FREE, SOURCE)
     expect(parsed?.id).toBe('command-a-plus-05-2026')
-    expect(parsed?.facts.pricing).toMatchObject({ price: 0 })
-    expect(parsed?.facts.pricing?.tables).toEqual({
-      rate: { base: { input_tokens: 0, output_tokens: 0 } },
-    })
+    expect(parsed?.facts.pricing).toBeUndefined()
     expect(parsed?.facts.knowledgeCutoff).toBe('2025-04-01')
     expect(parsed?.facts).not.toHaveProperty('contextWindow')
   })
