@@ -6,7 +6,9 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./evaluator": "./src/evaluator.ts"
+    "./evaluator": "./src/evaluator.ts",
+    "./schema": "./src/rate-card.schema.ts",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
@@ -42,7 +44,12 @@
       "./evaluator": {
         "types": "./dist/evaluator.d.ts",
         "default": "./dist/evaluator.js"
-      }
+      },
+      "./schema": {
+        "types": "./dist/rate-card.schema.d.ts",
+        "default": "./dist/rate-card.schema.js"
+      },
+      "./package.json": "./package.json"
     }
   },
   "peerDependencies": {

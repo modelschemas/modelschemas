@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.build.json",
+  "compilerOptions": { "lib": ["ES2024", "DOM"] }
+}

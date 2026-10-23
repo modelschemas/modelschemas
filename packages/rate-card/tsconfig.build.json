@@ -1,23 +1,6 @@
-// `bun run build`: plain ES2022 JS plus .d.ts in dist/, the files npm
-// ships (scripts/npm-pack.ts lifts publishConfig onto the packed
-// manifest). No DOM or Node types, so the output runs on edge runtimes.
+// ES2022 and no DOM or Node types, so the output runs on edge runtimes.
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "types": [],
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-    "verbatimModuleSyntax": true,
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "rootDir": "src",
-    "outDir": "dist"
-  },
-  "include": ["src"],
+  "extends": "../tsconfig.build.json",
+  "compilerOptions": { "target": "ES2022", "lib": ["ES2022"] },
   "exclude": ["src/**/*.test.ts", "src/fixtures"]
 }

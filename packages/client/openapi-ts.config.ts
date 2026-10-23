@@ -5,6 +5,12 @@ import { defineConfig } from '@hey-api/openapi-ts'
 // (bun run check:client).
 export default defineConfig({
   input: '../../openapi.json',
-  output: { path: 'src/generated', format: 'prettier' },
+  output: {
+    path: 'src/generated',
+    format: 'prettier',
+    // `.js` is what nodenext loads. The generator would infer this from a
+    // nodenext tsconfig, but it finds the repo root config, which is bundler.
+    module: { extension: '.js' },
+  },
   plugins: ['@hey-api/client-fetch', '@hey-api/typescript', '@hey-api/sdk'],
 })

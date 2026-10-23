@@ -15,11 +15,8 @@
  * Anything else returns null. The unit-rate parser still owns per-image,
  * per-second, and the other single-unit lines.
  */
-import {
-  rateCardSchema,
-  verifyExamples,
-  compileTokenCard,
-} from '@modelschemas/rate-card'
+import { verifyExamples, compileTokenCard } from '@modelschemas/rate-card'
+import { rateCardSchema } from '@modelschemas/rate-card/schema'
 import type { Expr, RateCard } from '@modelschemas/rate-card'
 
 import { tokenCount } from '#/server/providers/model-facts.ts'

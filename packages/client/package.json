@@ -5,12 +5,15 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
   },
   "files": [
-    "src",
-    "!src/**/*.test.ts"
+    "dist"
   ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json"
+  },
   "license": "MIT",
   "homepage": "https://modelschemas.com",
   "repository": {
@@ -28,6 +31,16 @@
     "schemas"
   ],
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "sideEffects": false
 }

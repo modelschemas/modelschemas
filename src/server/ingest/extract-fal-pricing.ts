@@ -8,11 +8,8 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 
-import {
-  cardParams,
-  rateCardSchema,
-  verifyExamples,
-} from '@modelschemas/rate-card'
+import { cardParams, verifyExamples } from '@modelschemas/rate-card'
+import { rateCardSchema } from '@modelschemas/rate-card/schema'
 import type { RateCard } from '@modelschemas/rate-card'
 
 import { cacheMeta, changes, models, schemaVersions } from '#/db/schema.ts'

@@ -5,9 +5,9 @@
  * service's own openapi.json (bun run generate:client); this file is the
  * hand-written entry adding pluggable auth and branded model ids.
  */
-import { createClient, createConfig } from './generated/client'
+import { createClient, createConfig } from './generated/client/index.js'
 
-import type { ClientOptions } from './generated/types.gen'
+import type { ClientOptions } from './generated/types.gen.js'
 
 export {
   getActivitySchemas,
@@ -24,8 +24,8 @@ export {
   extractFalPricing,
   syncProvider,
   validatePayload,
-} from './generated/index'
-export type * from './generated/index'
+} from './generated/index.js'
+export type * from './generated/index.js'
 export { createClient, createConfig }
 export {
   asListedModelId,
@@ -35,7 +35,7 @@ export {
   type ListedModel,
   type ListedModelList,
   type ListedModelId,
-} from './listed-model.ts'
+} from './listed-model.js'
 
 export interface ModelschemasClientOptions {
   /** Service origin, e.g. https://modelschemas.example.com */

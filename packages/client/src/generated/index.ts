@@ -19,7 +19,7 @@ export {
   type Options,
   syncProvider,
   validatePayload,
-} from './sdk.gen'
+} from './sdk.gen.js'
 export type {
   Change,
   ChangesPage,
@@ -126,4 +126,4 @@ export type {
   ValidatePayloadResponses,
   ValidateRequest,
   ValidateResult,
-} from './types.gen'
+} from './types.gen.js'

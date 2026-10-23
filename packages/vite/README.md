@@ -3,6 +3,7 @@
 Vite plugin for [modelschemas](https://modelschemas.com): pull selected
 provider JSON Schemas + generated TypeScript into your repo at dev time,
 verify offline at build time — production builds touch zero network.
+The package ships built ESM (`.js` + `.d.ts`). Node loads it with no TypeScript loader.
 
 ```bash
 bun add -D @modelschemas/vite

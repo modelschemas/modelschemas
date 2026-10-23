@@ -6,8 +6,8 @@ and type generation: selection grammar
 (ETag/304), the `.manifest.json` lockfile, atomic file writes, offline
 build verification, and content-hash integrity checks.
 
-> Ships as TypeScript source — used by `@modelschemas/vite` and the
-> `modelschemas` CLI; usable directly from Bun or any TS-aware bundler.
+> Ships built ESM (`.js` + `.d.ts`). Node loads it with no TypeScript loader.
+> Used by `@modelschemas/vite` and the `modelschemas` CLI.
 
 ```bash
 bun add @modelschemas/codegen
