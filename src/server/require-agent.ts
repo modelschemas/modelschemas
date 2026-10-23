@@ -74,8 +74,7 @@ async function fetchAgentSession(
 }
 
 export type RequireAgentResult =
-  | { ok: true; principal: Principal }
-  | { ok: false; response: Response }
+  { ok: true; principal: Principal } | { ok: false; response: Response }
 
 /** Bearer credentials that are not three-part JWTs are treated as API keys. */
 function bearerApiKey(request: Request): string | null {

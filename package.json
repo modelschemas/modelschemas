@@ -100,7 +100,7 @@
     "eslint": "^9.20.0",
     "jsdom": "^28.1.0",
     "lefthook": "^2.1.9",
-    "prettier": "^3.8.1",
+    "prettier": "^3.9.10",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",

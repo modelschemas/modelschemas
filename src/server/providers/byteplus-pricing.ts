@@ -498,25 +498,23 @@ export function compilePeriodCard(
     },
     tables: { rate: periods },
     price: {
-      '+': levers.map(
-        (lever): Expr => ({
-          if: [
-            { '>': [{ var: lever }, 0] },
-            {
-              '*': [
-                { var: lever },
-                {
-                  lookup: {
-                    table: 'rate',
-                    keys: [{ var: 'pricing_period' }, lever],
-                  },
+      '+': levers.map((lever): Expr => ({
+        if: [
+          { '>': [{ var: lever }, 0] },
+          {
+            '*': [
+              { var: lever },
+              {
+                lookup: {
+                  table: 'rate',
+                  keys: [{ var: 'pricing_period' }, lever],
                 },
-              ],
-            },
-            0,
-          ],
-        }),
-      ),
+              },
+            ],
+          },
+          0,
+        ],
+      })),
     },
     examples: [],
     source,

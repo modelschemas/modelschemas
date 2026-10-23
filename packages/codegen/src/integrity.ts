@@ -72,8 +72,7 @@ function parseKey(key: string): ParsedKey | null {
   const hashIndex = key.lastIndexOf('#')
   if (hashIndex === -1) return null
   const kind = LABEL_KIND[key.slice(hashIndex + 1) as KindLabel] as
-    | Kind
-    | undefined
+    Kind | undefined
   if (kind === undefined) return null
   const [provider, activity, ...endpoint] = key.slice(0, hashIndex).split('/')
   if (provider === undefined || activity === undefined || endpoint.length === 0)

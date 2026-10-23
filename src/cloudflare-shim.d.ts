@@ -25,8 +25,8 @@ declare module 'cloudflare:workers' {
 
 type DurableObjectNamespace<
   T extends
-    | import('@cloudflare/workers-types').Rpc.DurableObjectBranded
-    | undefined = undefined,
+    import('@cloudflare/workers-types').Rpc.DurableObjectBranded | undefined =
+    undefined,
 > = import('@cloudflare/workers-types').DurableObjectNamespace<T>
 
 /** Cloudflare Browser Rendering binding; keep runtime globals scoped. */
