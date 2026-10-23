@@ -597,13 +597,14 @@ export const openApiDocument = {
         responses: {
           '200': {
             description:
-              'The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored. For a routed model with a pricingRange: min and max over its routes, each naming its route.',
+              'The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored. For a routed model with a pricingRange: min and max over its routes, each naming its route. When the call omits exactly one required choice input: byInput, one estimate per allowed value.',
             content: {
               'application/json': {
                 schema: {
                   oneOf: [
                     { $ref: '#/components/schemas/EstimateResult' },
                     { $ref: '#/components/schemas/EstimateRangeResult' },
+                    { $ref: '#/components/schemas/EstimateByInputResult' },
                   ],
                 },
               },
@@ -1617,6 +1618,34 @@ export const openApiDocument = {
             },
           },
         ],
+      },
+      EstimateByInputResult: {
+        type: 'object',
+        description:
+          'The card has one required choice input (enum or boolean, no default) the call did not supply, and every other required input was supplied: the call priced once per allowed value. The bill is the amount for the value the call uses; nothing is picked. Two or more missing choice inputs, or any missing quantity, is a 422 unbound_input naming each one. If any value cannot be priced, the whole estimate refuses.',
+        required: ['currency', 'byInput'],
+        properties: {
+          currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+          byInput: {
+            type: 'object',
+            required: ['input', 'values'],
+            properties: {
+              input: {
+                type: 'string',
+                description:
+                  "The param the call omitted. The model's pricing.inputs says whether it goes on request or usage.",
+              },
+              values: {
+                type: 'object',
+                description:
+                  "Each allowed value (from the card's enum values, or true/false) to the estimate with that value.",
+                additionalProperties: {
+                  $ref: '#/components/schemas/EstimateResult',
+                },
+              },
+            },
+          },
+        },
       },
       EstimateRangeResult: {
         type: 'object',

@@ -792,6 +792,25 @@ export type EstimateRouteResult = EstimateResult & {
 }
 
 /**
+ * The card has one required choice input (enum or boolean, no default) the call did not supply, and every other required input was supplied: the call priced once per allowed value. The bill is the amount for the value the call uses; nothing is picked. Two or more missing choice inputs, or any missing quantity, is a 422 unbound_input naming each one. If any value cannot be priced, the whole estimate refuses.
+ */
+export type EstimateByInputResult = {
+  currency: string
+  byInput: {
+    /**
+     * The param the call omitted. The model's pricing.inputs says whether it goes on request or usage.
+     */
+    input: string
+    /**
+     * Each allowed value (from the card's enum values, or true/false) to the estimate with that value.
+     */
+    values: {
+      [key: string]: EstimateResult
+    }
+  }
+}
+
+/**
  * A model with a pricingRange and no single card: the call priced on every route's card. The bill is one route's amount; min and max bound it and neither is the billed price. Any route that cannot be priced refuses the whole estimate.
  */
 export type EstimateRangeResult = {
@@ -1241,9 +1260,9 @@ export type EstimateCostError = EstimateCostErrors[keyof EstimateCostErrors]
 
 export type EstimateCostResponses = {
   /**
-   * The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored. For a routed model with a pricingRange: min and max over its routes, each naming its route.
+   * The amount for this call and its currency, the card source, which inputs (if any) were estimated or took a default, and which request keys the card ignored. For a routed model with a pricingRange: min and max over its routes, each naming its route. When the call omits exactly one required choice input: byInput, one estimate per allowed value.
    */
-  200: EstimateResult | EstimateRangeResult
+  200: EstimateResult | EstimateRangeResult | EstimateByInputResult
 }
 
 export type EstimateCostResponse =
