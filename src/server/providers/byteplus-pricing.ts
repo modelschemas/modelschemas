@@ -2,12 +2,16 @@
  * BytePlus chat prices from the ModelArk pricing page (issue #73). The page
  * is a Lark document: `window._ROUTER_DATA` embeds `curDoc.Content`, and
  * each table is an `aceTable` of a row zone plus a column zone. Cell text
- * lives in a zone id `x{rowId}x{colId}`.
+ * lives in a zone id `x{rowId}x{colId}`. Since 2026-10-23 (#462) most
+ * tables sit in Standard/Flex/Batch or "Input without/with video" tabs and
+ * in a folded "Retiring models" section, and merged cells are listed by
+ * `mergeCellID` on their rows and columns.
  *
- * Only the standard online-inference table is read (the one that quotes
- * cache storage per hour). Flex and batch tables further down are half of
- * standard and are not levers. Cache storage itself is per token-hour, not
- * per request, so that column is ignored. A model quoted at off-peak and
+ * Only Standard-tab tables are read: the chat tables (the ones that quote
+ * cache storage per hour) and the Audio input tables, whose audio rates
+ * join the same model's chat brackets. Flex and Batch are about half of
+ * Standard and are not levers. Cache storage itself is per token-hour, not per
+ * request, so that column is ignored. A model quoted at off-peak and
  * peak rates gets a card whose required `pricing_period` lever picks one
  * (#411); the page states the windows, not the request. A dated catalog id uses an
  * undated page row only when exactly one page id is its prefix
@@ -63,18 +67,33 @@ export const BYTEPLUS_SEED_TRANSLATION_URL =
 export const BYTEPLUS_MODEL_LIST_URL =
   'https://docs.byteplus.com/en/docs/ModelArk/1330310'
 
-/** Header (unit stripped) → request lever. Cache storage is not one. */
+/** Chat-table header → request lever. Cache storage is not one. */
 const LEVERS: Record<string, string> = {
-  'input (non-audio)': 'input_tokens',
-  'input (audio)': 'audio_tokens',
-  'cache-hit input (non-audio)': 'cache_read_tokens',
-  'cache-hit input (audio)': 'audio_cache_tokens',
+  input: 'input_tokens',
+  'cached input': 'cache_read_tokens',
   output: 'output_tokens',
+}
+
+/** The "Audio input" tables quote the same two headers for audio tokens. */
+const AUDIO_LEVERS: Record<string, string> = {
+  input: 'audio_tokens',
+  'cached input': 'audio_cache_tokens',
 }
 
 interface DocOp {
   insert: string | { id?: string }
-  attributes?: { aceTable?: string; [key: string]: unknown }
+  attributes?: {
+    aceTable?: string
+    /** Comma-separated merged regions this row or column is part of. */
+    mergeCellID?: string
+    /** A tab strip: its zone lists one `tabContent` op per tab. */
+    tabsZoneId?: string
+    tabContent?: string
+    title?: string
+    /** A tab's or a folded section's own zone. */
+    zoneId?: string
+    [key: string]: unknown
+  }
 }
 
 interface DocZone {
@@ -124,7 +143,7 @@ function headerKey(cell: string): string {
   return (
     cell
       .toLowerCase()
-      // Drop the trailing unit ("(USD/M tokens)"), keep "(non-audio)".
+      // Drop a trailing parenthetical unit ("(USD/M tokens)").
       .replace(/\s*\([^)]*\)\s*$/, '')
       .replace(/\s+/g, ' ')
       .trim()
@@ -132,72 +151,113 @@ function headerKey(cell: string): string {
 }
 
 /**
- * `Prompt length [0, 128]` is the base. `(128, 256]` starts above 128K
- * tokens. `-` is an untiered base row. Anything else (peak hours) refuses.
+ * `[0, 128]` is the base. `(128, 256]` starts above 128K tokens. `Not
+ * applicable` is an untiered base row. Anything else (peak hours) refuses.
  */
 function promptFloorK(label: string): number | null {
-  if (label === '-' || label === '') return 0
-  if (/^prompt length \[0,\s*[\d.]+\]$/i.test(label)) return 0
-  const next = label.match(/^prompt length \(([\d.]+),\s*[\d.]+\]$/i)
+  if (/^not applicable$/i.test(label)) return 0
+  if (/^\[0,\s*[\d.]+\]$/.test(label)) return 0
+  const next = label.match(/^\(([\d.]+),\s*[\d.]+\]$/)
   if (next?.[1]) return Number(next[1])
   return null
 }
 
-/** USD per million tokens. `undefined` is a lever the cell does not price. */
+/**
+ * USD per million tokens (the page's stated token unit), written `$0.25`
+ * (the `$` is optional).
+ * `undefined` is a lever the cell does not price.
+ */
 function usdPerMillion(cell: string): number | null | undefined {
   if (cell === '-' || cell === '') return undefined
-  if (!/^[\d]+(?:\.[\d]+)?$/.test(cell)) return null
-  return Number(cell) / 1e6
+  const usd = /^\$?(\d+(?:\.\d+)?)$/.exec(cell)?.[1]
+  return usd === undefined ? null : Number(usd) / 1e6
+}
+
+interface GridCell {
+  text: string
+  /** The merged region this cell is part of; its text is in the first cell. */
+  merge?: string
+}
+
+/**
+ * A table's cells, header row first. A merged region lists its id on every
+ * row and column it covers (`mergeCellID`), so a cell is in it when both
+ * its row and its column carry that id.
+ */
+function tableGrid(
+  doc: ByteplusDoc,
+  spec: string,
+): Array<Array<GridCell>> | null {
+  const [rowId, colId] = spec.split(' ')
+  const row = rowId ? doc.data[rowId] : undefined
+  const col = colId ? doc.data[colId] : undefined
+  if (!row || !col) return null
+  const lines = (zone: DocZone) =>
+    (zone.ops ?? []).flatMap((op) =>
+      typeof op.insert === 'object' && op.insert.id
+        ? [
+            {
+              id: op.insert.id,
+              merges: (op.attributes?.mergeCellID ?? '')
+                .split(',')
+                .filter((id) => id !== ''),
+            },
+          ]
+        : [],
+    )
+  const cols = lines(col)
+  return lines(row).map((line) =>
+    cols.map((column) => {
+      const merge = line.merges.find((id) => column.merges.includes(id))
+      const text = zoneText(doc.data[`x${line.id}x${column.id}`])
+      return merge ? { text, merge } : { text }
+    }),
+  )
 }
 
 function tableRows(
   doc: ByteplusDoc,
   spec: string,
 ): Array<Array<string>> | null {
-  const [rowId, colId] = spec.split(' ')
-  const row = rowId ? doc.data[rowId] : undefined
-  const col = colId ? doc.data[colId] : undefined
-  if (!row || !col) return null
-  const cols = (col.ops ?? []).flatMap((op) =>
-    typeof op.insert === 'object' && op.insert.id ? [op.insert.id] : [],
+  return (
+    tableGrid(doc, spec)?.map((row) => row.map((cell) => cell.text)) ?? null
   )
-  return (row.ops ?? []).flatMap((op) => {
-    const rowCell = op.insert
-    if (typeof rowCell !== 'object' || !rowCell.id) return []
-    const cellId = rowCell.id
-    return [cols.map((column) => zoneText(doc.data[`x${cellId}x${column}`]))]
-  })
 }
 
-/** One row's lever rates; null when a cell is unreadable or input/output is missing. */
+interface RateColumns {
+  tier: number
+  /** Lever → column. */
+  levers: Record<string, number>
+  /** Levers a row must price to count. */
+  required: Array<string>
+}
+
+/** One row's lever rates; null when a cell is unreadable or a required lever is missing. */
 function rowRates(
   row: Array<string>,
-  levers: Record<string, number>,
+  columns: RateColumns,
 ): Record<string, number> | null {
   const rates: Record<string, number> = {}
-  for (const [key, lever] of Object.entries(LEVERS)) {
-    const at = levers[key]
-    if (at === undefined) continue
+  for (const [lever, at] of Object.entries(columns.levers)) {
     const value = usdPerMillion(row[at] ?? '')
     if (value === null) return null
     if (value !== undefined) rates[lever] = value
   }
-  if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
-    return null
-  }
-  return rates
+  return columns.required.every((lever) => rates[lever] !== undefined)
+    ? rates
+    : null
 }
 
 /** Exactly one off-peak and one peak row, or null. */
 function periodsFromGroup(
   rows: Array<Array<string>>,
-  columns: { tier: number; levers: Record<string, number> },
+  columns: RateColumns,
 ): ByteplusPeriodRates | null {
   if (rows.length !== 2) return null
   const periods: Partial<ByteplusPeriodRates['periods']> = {}
   for (const row of rows) {
     const period = PERIOD_LABELS[(row[columns.tier] ?? '').toLowerCase()]
-    const rates = rowRates(row, columns.levers)
+    const rates = rowRates(row, columns)
     if (!period || !rates || periods[period]) return null
     periods[period] = rates
   }
@@ -207,7 +267,7 @@ function periodsFromGroup(
 
 function ratesFromGroup(
   rows: Array<Array<string>>,
-  columns: { tier: number; levers: Record<string, number> },
+  columns: RateColumns,
 ): ByteplusTokenRates | null {
   if (
     rows.some((row) => (row[columns.tier] ?? '').toLowerCase() in PERIOD_LABELS)
@@ -219,7 +279,7 @@ function ratesFromGroup(
   for (const [index, row] of rows.entries()) {
     const floor = promptFloorK(row[columns.tier] ?? '')
     if (floor === null) return null
-    const rates = rowRates(row, columns.levers)
+    const rates = rowRates(row, columns)
     if (!rates) return null
     if (index === 0) {
       if (floor !== 0) return null
@@ -227,65 +287,175 @@ function ratesFromGroup(
       continue
     }
     if (floor <= 0) return null
-    // Prompt length is the request's input. Audio columns are re-quoted in
-    // the same bracket, so they count toward it when the card is compiled.
+    // Prompt length is the request's input. Audio is quoted per bracket
+    // too, so it counts toward it when the card is compiled.
     tiers.push({ minPromptTokens: floor * 1000, rates })
   }
   return Object.keys(base).length > 0 ? { base, tiers } : null
+}
+
+interface DocTable {
+  spec: string
+  /** Title of the innermost tab around the table, or null outside tabs. */
+  tab: string | null
+}
+
+/**
+ * Tables in document order. A tab strip (`tabsZoneId`) lists one
+ * `tabContent` zone per tab; a folded section ("Retiring models") is a
+ * `zoneId` op. Both are read in place.
+ */
+function docTables(
+  doc: ByteplusDoc,
+  zoneId = '0',
+  tab: string | null = null,
+  seen = new Set<string>(),
+): Array<DocTable> {
+  if (seen.has(zoneId)) return []
+  seen.add(zoneId)
+  return (doc.data[zoneId]?.ops ?? []).flatMap((op): Array<DocTable> => {
+    const attributes = op.attributes ?? {}
+    if (attributes.aceTable) return [{ spec: attributes.aceTable, tab }]
+    if (attributes.tabsZoneId) {
+      return docTables(doc, attributes.tabsZoneId, tab, seen)
+    }
+    if (attributes.zoneId) {
+      const title = attributes.tabContent ? (attributes.title ?? null) : tab
+      return docTables(doc, attributes.zoneId, title, seen)
+    }
+    return []
+  })
+}
+
+interface FoundTable {
+  keys: Array<string>
+  rows: Array<Array<string>>
+  tab: string | null
 }
 
 /** Every table whose header (units stripped) names all of `required`. */
 export function tablesWith(
   doc: ByteplusDoc,
   required: Array<string>,
-): Array<{ keys: Array<string>; rows: Array<Array<string>> }> {
-  return (doc.data['0']?.ops ?? []).flatMap((op) => {
-    const spec = op.attributes?.aceTable
-    const rows = spec ? tableRows(doc, spec) : null
+): Array<FoundTable> {
+  return docTables(doc).flatMap(({ spec, tab }) => {
+    const rows = tableRows(doc, spec)
     const keys = rows?.[0]?.map(headerKey)
     if (!rows || !keys || !required.every((key) => keys.includes(key))) {
       return []
     }
-    return [{ keys, rows: rows.slice(1) }]
+    return [{ keys, rows: rows.slice(1), tab }]
   })
 }
 
-/** Page model id → standard online-inference rates. */
+/**
+ * Model id → rates, one group per id (later tier rows leave it blank).
+ * `null` is a group with a cell or bracket this parser cannot read.
+ */
+function tableRates(
+  { keys, rows }: FoundTable,
+  names: Record<string, string>,
+  required: Array<string>,
+): Map<string, ByteplusTokenRates | null> {
+  const out = new Map<string, ByteplusTokenRates | null>()
+  const idAt = keys.indexOf('model id')
+  const columns: RateColumns = {
+    tier: keys.indexOf('prompt length'),
+    levers: {},
+    required,
+  }
+  for (const [key, lever] of Object.entries(names)) {
+    const at = keys.indexOf(key)
+    if (at >= 0) columns.levers[lever] = at
+  }
+  let current: { id: string; rows: Array<Array<string>> } | null = null
+  const groups: Array<{ id: string; rows: Array<Array<string>> }> = []
+  for (const row of rows) {
+    const id = row[idAt] ?? ''
+    if (id !== '') {
+      if (current) groups.push(current)
+      current = { id, rows: [row] }
+    } else if (current) {
+      current.rows.push(row)
+    }
+  }
+  if (current) groups.push(current)
+  for (const group of groups) {
+    if (out.has(group.id)) continue
+    out.set(
+      group.id,
+      /\s/.test(group.id) ? null : ratesFromGroup(group.rows, columns),
+    )
+  }
+  return out
+}
+
+/** Audio rates folded into the same prompt-length brackets, or null. */
+function withAudio(
+  chat: ByteplusTokenRates,
+  audio: ByteplusTokenRates,
+): ByteplusChatRates | null {
+  if ('periods' in chat || 'periods' in audio) return null
+  const floors = (rates: ByteplusChatRates) =>
+    rates.tiers.map((tier) => tier.minPromptTokens).join()
+  if (floors(chat) !== floors(audio)) return null
+  return {
+    base: { ...chat.base, ...audio.base },
+    tiers: chat.tiers.map((tier, index) => ({
+      ...tier,
+      rates: { ...tier.rates, ...audio.tiers[index]?.rates },
+    })),
+  }
+}
+
+/**
+ * Page model id → standard online-inference rates: every Standard-tab
+ * table with the chat header (Model ID, Prompt length, Input, Cached
+ * input, Cache storage, Output), the folded "Retiring models" ones
+ * included, plus the Audio input Standard tab's audio rates, which must
+ * use the same prompt-length brackets. Flex and Batch are not levers.
+ */
 export function parseByteplusPricing(
   doc: ByteplusDoc,
 ): Map<string, ByteplusTokenRates> {
   const out = new Map<string, ByteplusTokenRates>()
-  const tables = tablesWith(doc, [
+  const standard = (required: Array<string>) =>
+    tablesWith(doc, required).filter((table) => table.tab === 'Standard')
+  const chat = standard([
     'model id',
-    'cache-storage',
-    'input (non-audio)',
+    'prompt length',
+    'input',
+    'cached input',
+    'cache storage',
     'output',
   ])
-  for (const { keys, rows } of tables) {
-    if (out.size > 0) break
-    const tier = keys.indexOf('pricing tiers')
-    const levers: Record<string, number> = {}
-    for (const key of Object.keys(LEVERS)) {
-      const at = keys.indexOf(key)
-      if (at >= 0) levers[key] = at
+  for (const table of chat) {
+    for (const [id, rates] of tableRates(table, LEVERS, [
+      'input_tokens',
+      'output_tokens',
+    ])) {
+      if (out.has(id)) continue
+      if (rates) out.set(id, rates)
+      else warnUnread('chat', id, [])
     }
-    if (tier < 0 || levers['input (non-audio)'] === undefined) continue
-    let current: { id: string; rows: Array<Array<string>> } | null = null
-    const groups: Array<{ id: string; rows: Array<Array<string>> }> = []
-    for (const row of rows) {
-      const id = row[keys.indexOf('model id')] ?? ''
-      if (id !== '') {
-        if (current) groups.push(current)
-        current = { id, rows: [row] }
-      } else if (current) {
-        current.rows.push(row)
+  }
+  const audio = standard(['model id', 'prompt length', 'input']).filter(
+    (table) => !table.keys.includes('output'),
+  )
+  for (const table of audio) {
+    for (const [id, rates] of tableRates(table, AUDIO_LEVERS, [
+      'audio_tokens',
+    ])) {
+      const text = out.get(id)
+      const merged = text && rates && withAudio(text, rates)
+      if (merged) {
+        out.set(id, merged)
+      } else {
+        // Unreadable audio, no chat row, or other brackets: no card, so
+        // audio input is never left unpriced on a text-only card.
+        out.delete(id)
+        warnUnread('audio', id, [])
       }
-    }
-    if (current) groups.push(current)
-    for (const group of groups) {
-      if (out.has(group.id) || /\s/.test(group.id)) continue
-      const rates = ratesFromGroup(group.rows, { tier, levers })
-      if (rates) out.set(group.id, rates)
     }
   }
   return out
@@ -466,12 +636,19 @@ export type ByteplusVideoRates = Record<
   Record<string, Record<string, number>>
 >
 
-const VIDEO_VARIANTS: Array<[RegExp, string]> = [
-  [/Input without video: (\d+(?:\.\d+)?)/i, 'no_video'],
-  [/Input with video: (\d+(?:\.\d+)?)/i, 'video'],
-  [/Video with audio: (\d+(?:\.\d+)?)/i, 'audio'],
-  [/Video without audio: (\d+(?:\.\d+)?)/i, 'silent'],
-]
+/** Video header group → service tier. */
+const VIDEO_TIERS: Record<string, string> = {
+  'online inference': 'default',
+  'offline inference': 'flex',
+}
+
+/** Video tab title or sub-header → variant. */
+const VIDEO_VARIANTS: Record<string, string> = {
+  'input without video': 'no_video',
+  'input with video': 'video',
+  'video without audio': 'silent',
+  'video with audio': 'audio',
+}
 
 /** A plain positive decimal, or `null`. */
 function decimal(text: string): number | null {
@@ -479,128 +656,168 @@ function decimal(text: string): number | null {
   return Number.isFinite(value) && value > 0 ? value : null
 }
 
-/** Both halves of a split, or one flat rate — anything else refuses. */
-function variantRates(body: string): Record<string, number> | null {
-  const text = body.trim()
-  const flat = decimal(text)
-  if (flat !== null) return { all: flat }
-  if (/^[\d.]+$/.test(text)) return null
-  const rates: Record<string, number> = {}
-  let rest = text
-  for (const [pattern, variant] of VIDEO_VARIANTS) {
-    rest = rest.replace(pattern, (_, n: string) => {
-      rates[variant] = Number(n)
-      return ''
-    })
-  }
-  const pairs = [
-    ['no_video', 'video'],
-    ['silent', 'audio'],
-  ]
-  const paired = pairs.some(([a = '', b = '']) => {
-    const keys = Object.keys(rates).sort()
-    return keys.join() === [a, b].sort().join()
-  })
-  const usable = Object.values(rates).every((n) => Number.isFinite(n) && n > 0)
-  return rest.trim() === '' && paired && usable ? rates : null
+/** `$6.40` → 6.4, or `null`. */
+function dollars(text: string): number | null {
+  return decimal(text.replace(/^\$/, ''))
+}
+
+/** A cell's text; a merged cell takes its region's first cell in the row. */
+function spanText(row: Array<GridCell>, at: number): string {
+  const cell = row[at]
+  if (!cell?.merge) return cell?.text ?? ''
+  return row.find((other) => other.merge === cell.merge)?.text ?? ''
 }
 
 /**
- * One rate cell → resolution → variant. `undefined` is "Not supported yet";
- * `null` is a cell this parser cannot read. Promo cells quote the list
- * price as "(Original) 5.6 Time limited 25% off"; the list price is kept
- * (the discount is enterprise-only and time-boxed). Promo text with no
- * "(Original)" price beside it may be quoting the discounted rate, so it
- * refuses.
+ * One model row → tier → resolution → variant, or null for a cell this
+ * parser cannot read. A price merged over every column of its tier is the
+ * rate whatever the resolution (`*`), as is a column with no sub-header.
  */
-function videoCell(
-  cell: string,
-): Record<string, Record<string, number>> | null | undefined {
-  const promos = cell.match(/Time limited \d+% off/gi)?.length ?? 0
-  const originals = cell.match(/\(Original\)/gi)?.length ?? 0
-  if (promos !== originals) return null
-  const text = cell
-    .replace(/\(Original\)/gi, '')
-    .replace(/Time limited \d+% off/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  if (/^not supported/i.test(text)) return undefined
-  // [lead, "480p and 720p", body, "1080p", body, …]
-  const parts = text.split(/For ([^:]+?) outputs?:/i)
-  const lead = parts[0]?.trim() ?? ''
-  // A rate with no "For … outputs" applies whatever the resolution.
-  if (lead && parts.length > 1) return null
-  const segments: Array<[Array<string>, string]> = lead ? [[['*'], lead]] : []
-  for (let at = 1; at < parts.length; at += 2) {
-    const named = parts[at]?.toLowerCase().match(/\d+p|4k/g) ?? []
-    segments.push([named, parts[at + 1] ?? ''])
-  }
-  if (segments.length === 0) return null
-  const out: Record<string, Record<string, number>> = {}
-  for (const [resolutions, body] of segments) {
-    const rates = variantRates(body)
-    if (!rates || resolutions.length === 0) return null
-    for (const resolution of resolutions) out[resolution] = rates
+function videoRow(
+  row: Array<GridCell>,
+  sub: Array<GridCell>,
+  tiers: Array<string | undefined>,
+  tabVariant: string | undefined,
+): ByteplusVideoRates | null {
+  const out: ByteplusVideoRates = {}
+  for (const tier of new Set(tiers)) {
+    if (!tier) continue
+    const columns = tiers.flatMap((t, at) => (t === tier ? [at] : []))
+    const [first = 0] = columns
+    const merge = row[first]?.merge
+    const whole =
+      merge !== undefined && columns.every((at) => row[at]?.merge === merge)
+    const priced: Record<string, Record<string, number>> = {}
+    for (const at of whole ? [first] : columns) {
+      const text = spanText(row, at)
+      if (/^not supported/i.test(text)) continue
+      const rate = dollars(text)
+      if (rate === null) return null
+      const label = whole ? '' : spanText(sub, at).toLowerCase()
+      // A column with no sub-header names no resolution only when it is
+      // its tier's one column; beside named ones it is unreadable.
+      if (label === '' && !whole && columns.length > 1) return null
+      const subVariant = VIDEO_VARIANTS[label]
+      const resolutions =
+        subVariant || label === '' ? ['*'] : (label.match(/\d+p|4k/g) ?? [])
+      if (resolutions.length === 0) return null
+      for (const resolution of resolutions) {
+        ;(priced[resolution] ??= {})[subVariant ?? tabVariant ?? 'all'] = rate
+      }
+    }
+    if (Object.keys(priced).length > 0) out[tier] = priced
   }
   return out
 }
 
 /**
- * Video table: `Model ID ‖ Online inference ‖ Offline inference`. The id
- * cell trails a description ("… Pricing varies based on …"); its first word
- * is the id. A model with any unreadable cell gets no rates (and a warning).
- * Only the first matching table is read.
+ * Video tables: a `Model ‖ Online inference ‖ Offline inference` header
+ * whose tier cells are merged over a second header row of resolutions
+ * ("480p and 720p", "1080p", "4K") or of audio variants. The tab ("Input
+ * without video" / "Input with video") names the video variant. One price
+ * per cell, USD per million tokens; "Not supported" leaves that column
+ * out. A model with any other unreadable cell, or two different prices
+ * for one slot, gets no rates (and a warning). A model priced only for
+ * input without video has one rate (`all`); one priced only with video
+ * refuses.
  */
 export function parseByteplusVideo(
   doc: ByteplusDoc,
 ): Map<string, ByteplusVideoRates> {
   const out = new Map<string, ByteplusVideoRates>()
-  const tables = tablesWith(doc, [
-    'model id',
-    'online inference',
-    'offline inference',
-  ])
-  const [table] = tables
-  if (!table) return out
-  const at = (key: string) => table.keys.indexOf(key)
-  for (const row of table.rows) {
-    const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
-    if (!/^[a-z0-9-]+$/.test(id)) continue
-    const online = videoCell(row[at('online inference')] ?? '')
-    const offline = videoCell(row[at('offline inference')] ?? '')
-    if (!online || offline === null) {
-      warnUnread('video', id, row)
-      continue
+  const dropped = new Set<string>()
+  // Ids with an "Input with video" row, priced or "Not supported".
+  const withVideoRows = new Set<string>()
+  for (const { spec, tab } of docTables(doc)) {
+    const grid = tableGrid(doc, spec) ?? []
+    const [head = []] = grid
+    if (headerKey(head[0]?.text ?? '') !== 'model') continue
+    const tiers = head.map(
+      (_, at) => VIDEO_TIERS[headerKey(spanText(head, at))],
+    )
+    if (!tiers.some(Boolean)) continue
+    const hasSub = (grid[1]?.[0]?.text ?? '') === ''
+    const sub = hasSub ? (grid[1] ?? []) : []
+    const tabVariant = VIDEO_VARIANTS[(tab ?? '').toLowerCase()]
+    for (const row of grid.slice(hasSub ? 2 : 1)) {
+      const cell = row[0]?.text ?? ''
+      const id = cell.split(' ')[0] ?? ''
+      if (!/^[a-z0-9-]+$/.test(id)) {
+        if (cell !== '') warnUnread('video', cell, [])
+        continue
+      }
+      if (tabVariant === 'video') withVideoRows.add(id)
+      const rates = videoRow(row, sub, tiers, tabVariant)
+      const held = out.get(id) ?? {}
+      let readable = rates !== null
+      for (const [tier, byResolution] of Object.entries(rates ?? {})) {
+        for (const [resolution, byVariant] of Object.entries(byResolution)) {
+          for (const [variant, rate] of Object.entries(byVariant)) {
+            const slot = ((held[tier] ??= {})[resolution] ??= {})
+            if (slot[variant] !== undefined && slot[variant] !== rate) {
+              readable = false
+            }
+            slot[variant] = rate
+          }
+        }
+      }
+      out.set(id, held)
+      if (!readable) {
+        dropped.add(id)
+        warnUnread(
+          'video',
+          id,
+          row.map((each) => each.text),
+        )
+      }
     }
-    out.set(id, { default: online, ...(offline && { flex: offline }) })
   }
+  for (const [id, rates] of out) {
+    const slots = Object.values(rates).flatMap((byResolution) =>
+      Object.values(byResolution),
+    )
+    const variants = new Set(
+      slots.flatMap((byVariant) => Object.keys(byVariant)),
+    )
+    if (slots.length === 0) out.delete(id)
+    // Video-only rates, or a with-video row that prices nothing: one rate
+    // for every input would misprice video requests.
+    const videoUnpriced = withVideoRows.has(id) && !variants.has('video')
+    if ((variants.has('video') && !variants.has('no_video')) || videoUnpriced) {
+      dropped.add(id)
+      warnUnread('video', id, [])
+    }
+    if (variants.size !== 1 || !variants.has('no_video')) continue
+    for (const byVariant of slots) {
+      for (const [variant, rate] of Object.entries(byVariant)) {
+        byVariant.all = rate
+        delete byVariant[variant]
+      }
+    }
+  }
+  for (const id of dropped) out.delete(id)
   return out
 }
 
 /**
- * Image table: `Model ID ‖ Input image price ‖ Output image price`, USD per
- * image. Only flat rows with free input images are read here; Seedream 5.0
+ * Image table: `Model ID ‖ Input image ‖ Output image`, USD per image
+ * (`$0.035`). Only flat rows with free input images are read here; Seedream 5.0
  * pro's pixel-tiered row is `parseByteplusPixelTiers`. Only the first
  * matching table is read.
  */
 export function parseByteplusImages(doc: ByteplusDoc): Map<string, number> {
   const out = new Map<string, number>()
-  const tables = tablesWith(doc, [
-    'model id',
-    'input image price',
-    'output image price',
-  ])
-  const [table] = tables
+  const [table] = tablesWith(doc, ['model id', 'input image', 'output image'])
   if (!table) return out
   const at = (key: string) => table.keys.indexOf(key)
   for (const row of table.rows) {
     const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
     if (!/^[a-z0-9-]+$/.test(id)) continue
-    const input = (row[at('input image price')] ?? '').trim()
-    const output = decimal((row[at('output image price')] ?? '').trim())
+    const input = (row[at('input image')] ?? '').trim()
+    const output = dollars((row[at('output image')] ?? '').trim())
     if (!/^free$/i.test(input) || output === null) {
       // Pixel-tiered rows belong to `parseByteplusPixelTiers`.
-      const tiered = pixelTierRates(input, row[at('output image price')] ?? '')
+      const tiered = pixelTierRates(input, row[at('output image')] ?? '')
       if (!tiered) warnUnread('image', id, row)
       continue
     }
@@ -748,11 +965,12 @@ export interface ByteplusPixelTiers {
   high: number
 }
 
-const PIXEL_TIER_INPUT = /^First image: Free From the 2nd image: ([\d.]+)$/i
+const PIXEL_TIER_INPUT =
+  /^First image: Free From the second image: \$([\d.]+)(?: Pricing varies by image generation scenario\.)?$/i
 // Layer decomposition is not read: the page says one request's layers can
 // land in different tiers, so the card refuses that mode.
 const PIXEL_TIER_OUTPUT =
-  /^Single image generation: ≤ ([\d.]+) million pixels \(([\d.]+)K or lower\): ([\d.]+) > \1 million pixels \(higher than \2K\): ([\d.]+) Layer decomposition: /i
+  /^Single-image generation: Up to ([\d.]+) million pixels \(([\d.]+)K or lower\): \$([\d.]+) More than \1 million pixels \(higher than \2K\): \$([\d.]+) Layer decomposition: /i
 
 /** One image-table row as pixel tiers, or null for any other wording. */
 function pixelTierRates(
@@ -777,18 +995,14 @@ export function parseByteplusPixelTiers(
   doc: ByteplusDoc,
 ): Map<string, ByteplusPixelTiers> {
   const out = new Map<string, ByteplusPixelTiers>()
-  const [table] = tablesWith(doc, [
-    'model id',
-    'input image price',
-    'output image price',
-  ])
+  const [table] = tablesWith(doc, ['model id', 'input image', 'output image'])
   if (!table) return out
   const at = (key: string) => table.keys.indexOf(key)
   for (const row of table.rows) {
     const id = (row[at('model id')] ?? '').split(' ')[0] ?? ''
     const rates = pixelTierRates(
-      row[at('input image price')] ?? '',
-      row[at('output image price')] ?? '',
+      row[at('input image')] ?? '',
+      row[at('output image')] ?? '',
     )
     if (/^[a-z0-9-]+$/.test(id) && rates) out.set(id, rates)
   }
