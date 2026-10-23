@@ -20,6 +20,10 @@ import {
   extractFalPricing,
 } from '#/server/ingest/extract-fal-pricing.ts'
 import {
+  VERCEL_PRICING_EXTRACT_CRON,
+  extractVercelPricing,
+} from '#/server/ingest/extract-vercel-pricing.ts'
+import {
   SPEC_SYNC_SHARD_CRONS,
   specSyncShard,
   syncAllProviders,
@@ -196,6 +200,16 @@ export default {
       ctx.waitUntil(
         extractFalPricing(syncDeps(env)).then((outcome) => {
           console.log(JSON.stringify({ job: 'fal-pricing-extract', outcome }))
+        }),
+      )
+      return
+    }
+    if (controller.cron === VERCEL_PRICING_EXTRACT_CRON) {
+      ctx.waitUntil(
+        extractVercelPricing(syncDeps(env)).then((outcome) => {
+          console.log(
+            JSON.stringify({ job: 'vercel-pricing-extract', outcome }),
+          )
         }),
       )
       return

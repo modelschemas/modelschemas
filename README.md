@@ -310,7 +310,10 @@ Cron triggers start automatically on deploy: `*/15 * * * *` (models poll +
 webhook drain), four spec-sync shards (`0/10/20/30 5 * * *`) — each shard
 is its own invocation with its own subrequest/CPU budgets, FAL alone in
 shard 0, the rest of the registry round-robined across the other three
-(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`) — and six hourly
+(`SPEC_SYNC_SHARD_CRONS` in `src/server/ingest/sync.ts`) — a daily
+`0 4 * * *` firing for Vercel `/endpoints` price ranges
+(`VERCEL_PRICING_EXTRACT_CRON`; rows with `varies_by_provider` only) —
+and six hourly
 firings `0 6-11 * * *` for the FAL per-endpoint `llms.txt` rate-card
 extract (`FAL_PRICING_EXTRACT_CRONS`), each covering ~250 endpoints so the
 whole FAL roster is walked in one calendar day. Most Pricing sections are a

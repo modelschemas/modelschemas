@@ -77,6 +77,7 @@ export function emptySources(sources: ModelFactSources): boolean {
     sources.maxOutput === undefined &&
     sources.modalities === undefined &&
     sources.pricing === undefined &&
+    sources.pricingRange === undefined &&
     sources.reasoning === undefined &&
     sources.knowledgeCutoff === undefined &&
     sources.openWeights === undefined &&

@@ -2136,6 +2136,76 @@ describe('absent facts (FactAbsence)', () => {
     expect(kept.pricing).not.toBeNull()
     expect(kept.pricingRange).toBeNull()
   })
+
+  it('keeps a range the listing did not fetch while the row still varies (#451)', async () => {
+    const id = 'poll-keep-range'
+    const deps = await freshDeps(id)
+    const range = {
+      currency: 'USD',
+      routes: [
+        {
+          model: 'deepinfra',
+          provider: 'deepinfra',
+          pricing: {
+            currency: 'USD',
+            per: 'token' as const,
+            inputPerMillion: 0.09,
+          },
+        },
+        {
+          model: 'vertex',
+          provider: 'vertex',
+          pricing: {
+            currency: 'USD',
+            per: 'token' as const,
+            inputPerMillion: 0.22,
+          },
+        },
+      ],
+      inputPerMillion: { min: 0.09, max: 0.22 },
+    }
+    const source = {
+      derivation: 'listing' as const,
+      sourceUrl: 'https://ai-gateway.vercel.sh/v1/models/m/endpoints',
+      path: 'data.endpoints[status=0].pricing',
+    }
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'm',
+          activity: 'chat',
+          pricingRange: range,
+          absent: { pricing: 'cleared' },
+          factSources: { pricingRange: source },
+        },
+      ]),
+    )
+    const before = await changesFor(deps, id)
+    const again = await pollWithEvents(
+      deps,
+      stubProvider(id, [
+        {
+          rawId: 'm',
+          activity: 'chat',
+          absent: { pricing: 'cleared' },
+        },
+      ]),
+    )
+    expect(again.outcome).toMatchObject({ updated: 0 })
+    expect(await changesFor(deps, id)).toBe(before)
+    const kept = await storedRow(deps, id, 'm')
+    expect(kept.pricingRange).toEqual(range)
+    expect(kept.factSources).toMatchObject({ pricingRange: source })
+
+    await pollProviderModels(
+      deps,
+      stubProvider(id, [{ rawId: 'm', activity: 'chat', pricing: listing }]),
+    )
+    const cleared = await storedRow(deps, id, 'm')
+    expect(cleared.pricing).not.toBeNull()
+    expect(cleared.pricingRange).toBeNull()
+  })
 })
 
 describe('docs failures (tryDocs)', () => {

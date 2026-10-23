@@ -1158,7 +1158,7 @@ export const openApiDocument = {
       PricingRange: {
         type: 'object',
         description:
-          'A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. Each route is its own model row under the same provider, with its full card; POST /v1/estimate on this row prices the call on every route and returns min and max.',
+          'A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.',
         required: ['currency', 'routes', 'inputPerMillion'],
         properties: {
           currency: { type: 'string', pattern: '^[A-Z]{3}$' },
@@ -1170,7 +1170,18 @@ export const openApiDocument = {
               properties: {
                 model: {
                   type: 'string',
-                  description: "The route's own model id (rawId).",
+                  description:
+                    "The route's catalog rawId, or its gateway provider name when card is inline.",
+                },
+                provider: {
+                  type: 'string',
+                  description:
+                    'Gateway route name (Vercel provider_name) when card is stored on this route instead of a catalog row.',
+                },
+                card: {
+                  $ref: '#/components/schemas/RateCard',
+                  description:
+                    'Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row.',
                 },
                 pricing: { $ref: '#/components/schemas/CompactPricing' },
               },
@@ -1613,7 +1624,8 @@ export const openApiDocument = {
             properties: {
               model: {
                 type: 'string',
-                description: 'The route row this amount was priced on.',
+                description:
+                  'The route this amount was priced on: a catalog rawId, or a gateway provider name when the card is inline on the range.',
               },
             },
           },
@@ -1660,7 +1672,7 @@ export const openApiDocument = {
             type: 'array',
             items: { type: 'string' },
             description:
-              'Every route priced, as model ids under the same provider.',
+              "Every route priced. A catalog rawId, or a gateway provider name when that route's card is inline.",
           },
         },
       },

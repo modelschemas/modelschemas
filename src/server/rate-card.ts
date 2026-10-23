@@ -326,27 +326,55 @@ export function servePricing(
 /**
  * Min/max over the published cards of a routed id's routes (issue #406).
  * A bound, never the billed price: the gateway picks one route per call.
- * `routes[].model` is each route's own row (same provider), which holds
- * the full card. Null unless every route has a linear token card in one
- * currency: a route with no card leaves the bounds unknown.
+ * `routes[].model` is each route's own row (same provider) when this
+ * catalog pins one. A gateway with no per-route row (Vercel) sets
+ * `provider` to that route's name and carries the compiled card inline.
+ * The inline card's `examples` stay empty: a worked example's free-form
+ * params are not part of a route price, and the catalog response has to
+ * stay serializable.
+ * Null unless every route has a linear token card in one currency: a
+ * route with no card, a tier, or a different currency leaves the bounds
+ * unknown.
  */
 export type PricingRange = {
   currency: string
-  routes: Array<{ model: string; pricing: CompactPricing }>
+  routes: Array<{
+    model: string
+    /** Gateway route name when `card` is inline (Vercel `provider_name`). */
+    provider?: string
+    /**
+     * Compiled card for a route that has no catalog row. `examples` is
+     * empty so the catalog response stays serializable.
+     */
+    card?: Omit<RateCard, 'examples'> & { examples: [] }
+    pricing: CompactPricing
+  }>
   inputPerMillion: { min: number; max: number }
   outputPerMillion?: { min: number; max: number }
 }
 
 export function pricingRange(
-  routes: Array<{ model: string; card: RateCard | null }>,
+  routes: Array<{
+    model: string
+    card: RateCard | null
+    /** Set when the card is stored on the range, not on a catalog row. */
+    provider?: string
+  }>,
 ): PricingRange | null {
   if (routes.length < 2) return null
   const priced: PricingRange['routes'] = []
-  for (const { model, card } of routes) {
+  for (const { model, card, provider } of routes) {
     if (!card) return null
     const pricing = projectTokenPricing(card)
     if (pricing.inputPerMillion === undefined || pricing.tiered) return null
-    priced.push({ model, pricing })
+    const inline = provider
+      ? { provider, card: { ...card, examples: [] as [] } }
+      : {}
+    priced.push({
+      model,
+      pricing,
+      ...inline,
+    })
   }
   const currency = priced[0]?.pricing.currency
   if (!currency || priced.some((r) => r.pricing.currency !== currency)) {

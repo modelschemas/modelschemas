@@ -16,6 +16,7 @@ export type IngestJob =
   | 'models-poll'
   | 'spec-sync'
   | 'fal-pricing-extract'
+  | 'vercel-pricing-extract'
   | 'same-as-reconcile'
 
 export type IngestEvent =

@@ -24,6 +24,7 @@ import type { Db } from '#/db/index.ts'
 import { models } from '#/db/schema.ts'
 import { getModelDetail } from '#/server/catalog.ts'
 import { parseStoredRateCard } from '#/server/rate-card.ts'
+import type { PricingRange } from '#/server/rate-card.ts'
 
 export interface EstimateRequestBody {
   provider: string
@@ -154,11 +155,7 @@ export async function estimateCost(
   const card = parseStoredRateCard(model.pricing)
   if (card) return priceCard(card, body)
   if (model.pricingRange) {
-    return priceRoutes(
-      db,
-      body,
-      model.pricingRange.routes.map((route) => route.model),
-    )
+    return priceRoutes(db, body, model.pricingRange.routes)
   }
   return noCard(body)
 }
@@ -285,23 +282,39 @@ function priceCard(
 async function priceRoutes(
   db: Db,
   body: EstimateRequestBody,
-  routes: Array<string>,
+  routes: PricingRange['routes'],
 ): Promise<EstimateOutcome> {
-  const rows = await db
-    .select({ rawId: models.rawId, pricing: models.pricing })
-    .from(models)
-    .where(
-      and(eq(models.providerId, body.provider), inArray(models.rawId, routes)),
-    )
+  const lookups = routes
+    .filter((route) => !route.card)
+    .map((route) => route.model)
+  const rows =
+    lookups.length === 0
+      ? []
+      : await db
+          .select({ rawId: models.rawId, pricing: models.pricing })
+          .from(models)
+          .where(
+            and(
+              eq(models.providerId, body.provider),
+              inArray(models.rawId, lookups),
+            ),
+          )
   const byRaw = new Map(rows.map((row) => [row.rawId, row.pricing]))
   const priced: Array<EstimateResult & { model: string }> = []
+  const names: Array<string> = []
   for (const route of routes) {
-    const routeBody = { ...body, model: route }
-    const card = parseStoredRateCard(byRaw.get(route))
+    // An inline card is the route (Vercel provider_name). A catalog row
+    // is named by its rawId.
+    const name = route.provider ?? route.model
+    names.push(name)
+    const routeBody = { ...body, model: name }
+    const card = route.card
+      ? parseStoredRateCard(route.card)
+      : parseStoredRateCard(byRaw.get(route.model))
     if (!card) return noCard(routeBody)
     const outcome = priceCard(card, routeBody)
     if (!outcome.ok) {
-      return { ...outcome, message: `Route ${route}: ${outcome.message}` }
+      return { ...outcome, message: `Route ${name}: ${outcome.message}` }
     }
     if ('byInput' in outcome.result) {
       // ponytail: no range-per-value shape yet; nest them if a caller needs it.
@@ -309,10 +322,10 @@ async function priceRoutes(
         ok: false,
         status: 422,
         code: 'unbound_input',
-        message: `Route ${route}: rate card requires ${outcome.result.byInput.input}, which was not provided. Pass it on the estimate body. See GET /v1/models/${body.provider}/${route}.`,
+        message: `Route ${name}: rate card requires ${outcome.result.byInput.input}, which was not provided. Pass it on the estimate body. See GET /v1/models/${body.provider}/${route.model}.`,
       }
     }
-    priced.push({ model: route, ...outcome.result })
+    priced.push({ model: name, ...outcome.result })
   }
   const byAmount = [...priced].sort((a, b) => a.amount - b.amount)
   const min = byAmount[0]
@@ -324,8 +337,8 @@ async function priceRoutes(
       ok: false,
       status: 422,
       code: 'mixed_currency',
-      message: `The routes of '${body.provider}/${body.model}' price in different currencies; nothing is converted. Estimate one route: ${routes.join(', ')}.`,
+      message: `The routes of '${body.provider}/${body.model}' price in different currencies; nothing is converted. Estimate one route: ${names.join(', ')}.`,
     }
   }
-  return { ok: true, result: { currency, min, max, routes } }
+  return { ok: true, result: { currency, min, max, routes: names } }
 }

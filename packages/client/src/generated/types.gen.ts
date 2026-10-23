@@ -261,15 +261,23 @@ export type CompactPricing = {
 }
 
 /**
- * A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. Each route is its own model row under the same provider, with its full card; POST /v1/estimate on this row prices the call on every route and returns min and max.
+ * A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.
  */
 export type PricingRange = {
   currency: string
   routes: Array<{
     /**
-     * The route's own model id (rawId).
+     * The route's catalog rawId, or its gateway provider name when card is inline.
      */
     model: string
+    /**
+     * Gateway route name (Vercel provider_name) when card is stored on this route instead of a catalog row.
+     */
+    provider?: string
+    /**
+     * Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row.
+     */
+    card?: RateCard
     pricing: CompactPricing
   }>
   inputPerMillion: PriceBounds
@@ -786,7 +794,7 @@ export type EstimateResult = {
 
 export type EstimateRouteResult = EstimateResult & {
   /**
-   * The route row this amount was priced on.
+   * The route this amount was priced on: a catalog rawId, or a gateway provider name when the card is inline on the range.
    */
   model: string
 }
@@ -818,7 +826,7 @@ export type EstimateRangeResult = {
   min: EstimateRouteResult
   max: EstimateRouteResult
   /**
-   * Every route priced, as model ids under the same provider.
+   * Every route priced. A catalog rawId, or a gateway provider name when that route's card is inline.
    */
   routes: Array<string>
 }
