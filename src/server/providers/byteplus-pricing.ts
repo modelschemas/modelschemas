@@ -767,7 +767,7 @@ export function parseByteplusVideo(
         warnUnread(
           'video',
           id,
-          row.map((cell) => cell.text),
+          row.map((each) => each.text),
         )
       }
     }
