@@ -1,15 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { takeIngestEvents } from '../ingest/ingest-signals.ts'
 import {
+  groqModelReasoning,
   keepValidReasoning,
   openRouterReasoning,
   parseByteplusReasoning,
   parseCohereReasoning,
+  parseGroqPageEfforts,
   parseGroqReasoning,
   parseMistralReasoning,
 } from './reasoning-config.ts'
 import { docFixtureHtml } from './fixtures/byteplus-doc.ts'
+import { docsRun } from './model-facts.ts'
 import { reasoningViolation } from './types.ts'
 
 describe('reasoningViolation', () => {
@@ -407,5 +410,100 @@ describe('parseByteplusReasoning', () => {
         docFixtureHtml(['## Adjust chain-of-thought length', 'none', 'high']),
       ).size,
     ).toBe(0)
+  })
+})
+
+describe('parseGroqPageEfforts', () => {
+  it('reads the model page sentence and fails closed when it changes', () => {
+    // openai/gpt-oss-safeguard-20b.md on 2026-10-23.
+    const line =
+      '* Harmony format for structured reasoning with low/medium/high reasoning effort'
+    expect(parseGroqPageEfforts(line)).toEqual(['low', 'medium', 'high'])
+    expect(parseGroqPageEfforts('Supports configurable reasoning.')).toBeNull()
+    expect(() => parseGroqPageEfforts(line.replace('medium', 'turbo'))).toThrow(
+      /unreadable reasoning effort/,
+    )
+  })
+})
+
+describe('groqModelReasoning', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  const GUIDE = `
+## [Supported Models](#supported-models)
+
+| Model ID | Model |
+| --- | --- |
+| openai/gpt-oss-20b | [GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-oss-20b) |
+| openai/gpt-oss-safeguard-20b | [GPT-OSS-Safeguard 20B](https://console.groq.com/docs/model/openai/gpt-oss-safeguard-20b) |
+| minimaxai/minimax-m2.7 | [MiniMax M2.7](https://console.groq.com/docs/model/minimaxai/minimax-m2.7) |
+
+### [Options for Reasoning Effort (GPT-OSS)](#gpt-oss)
+
+Only supported by [GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-oss-20b).
+
+| Option | Description |
+| --- | --- |
+| low | Low effort |
+| high | High effort |
+`
+
+  function serve(pages: Record<string, string | null>) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const body = url.endsWith('/reasoning.md') ? GUIDE : pages[url]
+        return Promise.resolve(
+          body == null
+            ? new Response('down', { status: 503 })
+            : new Response(body),
+        )
+      }),
+    )
+  }
+  const page = (id: string) => `https://console.groq.com/docs/model/${id}.md`
+  const ids = [
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-safeguard-20b',
+    'minimaxai/minimax-m2.7',
+  ]
+
+  it('reads efforts from the model page of a guide model with no options', async () => {
+    serve({
+      [page('openai/gpt-oss-safeguard-20b')]:
+        'Harmony format with low/medium/high reasoning effort',
+      [page('minimaxai/minimax-m2.7')]: 'A reasoning model.',
+    })
+    const run = docsRun()
+    const reasoning = await groqModelReasoning(undefined, run, ids)
+    expect(reasoning('openai/gpt-oss-safeguard-20b', true)).toEqual({
+      reasoning: {
+        mode: 'effort',
+        mandatory: null,
+        efforts: ['low', 'medium', 'high'],
+      },
+      factSources: {
+        reasoning: expect.objectContaining({
+          sourceUrl: page('openai/gpt-oss-safeguard-20b'),
+          path: 'reasoning',
+        }) as unknown,
+      },
+    })
+    expect(reasoning('minimaxai/minimax-m2.7', true).reasoning).toBeUndefined()
+    expect(reasoning('openai/gpt-oss-20b', true).reasoning?.efforts).toEqual([
+      'low',
+      'high',
+    ])
+    expect(run.failed).toBe(0)
+  })
+
+  it('keeps stored reasoning when a model page fails to load', async () => {
+    serve({ [page('minimaxai/minimax-m2.7')]: 'A reasoning model.' })
+    const run = docsRun()
+    const reasoning = await groqModelReasoning(undefined, run, ids)
+    expect(reasoning('openai/gpt-oss-safeguard-20b', true)).toEqual({
+      absent: { reasoning: 'unavailable' },
+    })
+    expect(run.failed).toBe(1)
   })
 })

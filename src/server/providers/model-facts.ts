@@ -205,7 +205,9 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // header (#439). A v35 entry would keep OCR rows unpriced for six hours.
 // v37: DeepSeek cards store off-peak and peak behind pricing_period (#449).
 // A v36 entry would keep serving the off-peak rate alone for six hours.
-const DOCS_CACHE_VERSION = 'v37'
+// v38: the Groq reasoning guide entry also keeps its Supported Models ids
+// (#432); a v37 entry has no `listed` and would throw.
+const DOCS_CACHE_VERSION = 'v38'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
