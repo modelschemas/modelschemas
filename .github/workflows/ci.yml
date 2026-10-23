@@ -30,6 +30,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history so the changeset check can diff against origin/main.
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
@@ -44,6 +46,13 @@ jobs:
 
       - name: Typecheck
         run: bun run typecheck
+
+      # A PR that changes a published package (packages/*, including the
+      # generated client) needs a changeset, or `bunx changeset --empty`.
+      # Dependabot can't write changesets.
+      - name: Changeset check
+        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+        run: bunx changeset status --since=origin/main
 
       # The committed client must match the spec (PLAN.md task 7.4).
       - name: Client drift check
