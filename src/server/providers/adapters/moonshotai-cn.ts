@@ -1,9 +1,9 @@
 /**
  * Moonshot AI (China). platform.moonshot.cn redirects to platform.kimi.com,
- * whose OpenAPI document names api.moonshot.cn as its server. Model ids and
- * context windows come from the pricing page; activity, reasoning and
- * modalities from the spec's per-model chat request schemas. Output is
- * capped by the context window; no separate limit is published.
+ * whose OpenAPI document names api.moonshot.cn as its server. Model ids
+ * come from the pricing page, which no longer states a context window
+ * (issue #484); activity, reasoning and modalities from the spec's
+ * per-model chat request schemas. No output limit is published.
  * Prices on the pricing page are yuan per 1M tokens, stored as CNY cards.
  * `GET /v1/models` needs a CN key, which is region-bound.
  */
@@ -114,10 +114,9 @@ const OTHER_COLUMNS = new Set(['模型'])
  * of `## 模型定价` (`parseKimiDocTables`). Columns are read by title. A
  * row is priced only when every price cell is a bare `¥12.50 / MTok` (the
  * page states 1 MTok = 1,000,000 tokens). Any other row naming the model
- * leaves it unpriced: another unit, a cell that is not plain text (a
- * struck price), a range, a
- * cell count that differs from the column count, a table with a title this
- * does not know, a table under another `###` of `## 模型定价` (a batch
+ * leaves it unpriced: another unit, a cell that is not text (a struck
+ * price), a range, a cell count that differs from the column count, a
+ * table with a title this does not know, a table under another `###` of `## 模型定价` (a batch
  * price), or a second row for the same id. Tables outside `## 模型定价` are
  * ignored. Throws when a row there has no readable id, or when no row is
  * priced.

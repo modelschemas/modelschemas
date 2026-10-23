@@ -115,6 +115,22 @@ describe('parseKimiDocTables', () => {
     expect(tables[1]?.rows[2]?.[1]).toBe('¥6.50 / MTok')
   })
 
+  it('reads a link only as the id and a tooltip only as a title', () => {
+    const tables = parseKimiDocTables(
+      CN.replace(
+        '`¥1.10 / MTok`',
+        '_jsx(Tooltip,{tip:`限时`,children:`¥1.10 / MTok`})',
+      ).replace(
+        '`¥27.00 / MTok`,_jsx(Tooltip',
+        '_jsx(_components.a,{href:`/x`,children:`¥27.00 / MTok`}),_jsx(Tooltip',
+      ),
+    )
+    expect(tables[1]?.rows[2]?.[0]).toBe('kimi-k2.6')
+    expect(tables[1]?.rows[2]?.[2]).toBeNull()
+    expect(tables[1]?.rows[2]?.[3]).toBeNull()
+    expect(tables[1]?.titles[3]).toBe('缓存命中')
+  })
+
   it('reads a single-child fragment and heading props in any order', () => {
     const tables = parseKimiDocTables(
       CN.replace(

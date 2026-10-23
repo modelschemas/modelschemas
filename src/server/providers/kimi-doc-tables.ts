@@ -23,13 +23,17 @@ export interface KimiDocTable {
   section: string | null
   /** Text of the `###` heading under that section; null when none or not plain text. */
   subsection: string | null
-  /** Column titles; null for a column whose title is not plain text. */
+  /**
+   * Column titles, read as a cell is or as a `Tooltip`'s text; null for a
+   * column whose title is not readable text.
+   */
   titles: Array<string | null>
   /**
    * A cell is its text: a template literal, or a fragment of them joined
    * (`<>{"$"}0.16</>` compiles to `_jsxs(_Fragment,{children:[`$`,`0.16`]})`,
-   * read as `$0.16`), or the text of a link or tooltip. Anything else (a
-   * struck price) is null.
+   * read as `$0.16`). A row's first cell (the model id) may also be a
+   * link, read as its text. Anything else (a struck price, a price behind
+   * a link or a footnote tooltip) is null.
    */
   rows: Array<Array<string | null>>
 }
@@ -38,8 +42,9 @@ export interface KimiDocTable {
 const LITERAL = '`((?:[^`\\\\$]|\\$(?!\\{))*)`'
 const TEXT = new RegExp(`^${LITERAL}$`)
 const FRAGMENT = /^_jsxs?\(_Fragment,\{children:([\s\S]*)\}\)$/
-/** A link or tooltip: its text is its `children`. */
-const WRAPPER = /^_jsxs?\((?:_components\.a|Tooltip),\{/
+/** A link (the id cell) or a tooltip (a column title): its text is its `children`. */
+const LINK = /^_jsxs?\(_components\.a,\{/
+const TOOLTIP = /^_jsxs?\(Tooltip,\{/
 const HEADING = /_jsxs?\((?:Heading|_components\.h(\d)),\{/g
 const TABLE = /_jsxs?\(DocTable,\{/g
 /** DocTable props that style it or group its titles; they move no cell. */
@@ -65,12 +70,13 @@ function items(source: string, open: number): Array<string> {
   return out
 }
 
-function cell(item: string): string | null {
+/** The text of `item`; `wrapper` also unwraps that one component. */
+function cell(item: string, wrapper?: RegExp): string | null {
   const text = TEXT.exec(item)
   if (text) return text[1] ?? ''
-  const wrapper = WRAPPER.exec(item)
-  if (wrapper) {
-    const open = wrapper[0].length - 1
+  const wrapped = wrapper?.exec(item)
+  if (wrapped) {
+    const open = wrapped[0].length - 1
     if (closing(item, open, LABEL) !== item.length - 2) return null
     const children = props(item, open).get('children')
     return children === undefined ? null : cell(children)
@@ -138,13 +144,15 @@ export function parseKimiDocTables(html: string): Array<KimiDocTable> {
       const title = column.startsWith('{')
         ? props(column, 0).get('title')
         : undefined
-      return title === undefined ? null : cell(title)
+      return title === undefined ? null : cell(title, TOOLTIP)
     })
     const cells = items(rows, 0).map((row) => {
       if (!row.startsWith('[')) {
         throw new Error('kimi docs: DocTable row is not an array')
       }
-      return items(row, 0).map(cell)
+      return items(row, 0).map((item, index) =>
+        index === 0 ? cell(item, LINK) : cell(item),
+      )
     })
     marks.push({
       at: match.index,

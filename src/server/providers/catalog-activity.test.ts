@@ -191,6 +191,19 @@ describe('moonshot pricing page', () => {
     expect(parsed.has('kimi-k2.6')).toBe(true)
   })
 
+  it.each([
+    ['a unit suffix', '`$0.16 / MTok (promo)`'],
+    ['another unit', '`$0.16 / KTok`'],
+    ['a yuan price', '`¥0.16 / MTok`'],
+    ['no cache-hit price', '`—`'],
+  ])('leaves a row with %s unpriced', (_name, to) => {
+    const page = MOONSHOT_PAGE.replace('`$0.16 / MTok`', to)
+    expect(page).not.toBe(MOONSHOT_PAGE)
+    const parsed = parseMoonshotPricing(parseKimiDocTables(page))
+    expect(parsed.has('kimi-k2.6')).toBe(false)
+    expect(parsed.has('kimi-k3')).toBe(true)
+  })
+
   it('prices no row of a table with a title it does not know', () => {
     const page = MOONSHOT_PAGE.replace(
       '{title:`Output`,width:`22%`}',

@@ -4,8 +4,9 @@
  * 1,000,000 tokens). Columns are read by title (issue #484). A row is
  * priced only when every price cell is a bare `$0.16 / MTok`, every title
  * is one this knows, and the row has input, output and cache-hit prices,
- * so a struck or footnoted price leaves the row unpriced rather than
- * shifting the others into its lever. `moonshotModelPricing` throws on a
+ * so a struck or footnoted price leaves its row unpriced, and a table
+ * whose first title is not `Model` or that has a title this does not know
+ * (a batch column) prices no row. `moonshotModelPricing` throws on a
  * zero-row parse. The tables are read from the HTML page: its `.md`
  * export renders them empty.
  */
