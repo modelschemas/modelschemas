@@ -53,7 +53,7 @@ Generated artifacts (committed; CI fails on drift):
 
 ```bash
 bun run openapi:emit         # src/server/openapi.ts → openapi.json
-bun run generate:client      # → packages/client/src/generated (hey-api 0.97.2, pinned)
+bun run generate:client      # → packages/client/src/generated (hey-api)
 bun run check:client         # regenerate + git diff --exit-code (CI step)
 bun scripts/emit-skill.ts    # src/server/skill.ts → skill/modelschemas/SKILL.md
 ```

@@ -82,7 +82,7 @@
     "@changesets/cli": "^3.0.3",
     "@cloudflare/vitest-pool-workers": "^0.16.14",
     "@cloudflare/workers-types": "^4.20260611.1",
-    "@hey-api/openapi-ts": "0.97.2",
+    "@hey-api/openapi-ts": "^0.97.2",
     "@modelschemas/client": "workspace:*",
     "@modelschemas/codegen": "workspace:*",
     "@tailwindcss/typography": "^0.5.16",
