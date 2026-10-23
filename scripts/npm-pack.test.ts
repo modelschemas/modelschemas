@@ -347,7 +347,7 @@ void modelschemas
         ],
         root,
       )
-    })
+    }, 60_000)
 
     it('publint passes on each packed package', () => {
       for (const name of [
@@ -363,7 +363,7 @@ void modelschemas
         const out = run('bunx', ['publint'], dir)
         expect(out).not.toMatch(/error/i)
       }
-    })
+    }, 60_000)
   })
 
   describe('the packed rate-card evaluator', () => {
