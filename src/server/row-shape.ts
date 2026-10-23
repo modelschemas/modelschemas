@@ -13,10 +13,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 3,
-  hash: '9cbeb0ea54ff371d27b8503d68f14991dad099c83510026a2886fac803ea7c06',
+  version: 4,
+  hash: 'bcf01bcd5d79933bbda5b7f2d67b2c0cba9a13749d37082bc2215b4a3c49f4cf',
   notes:
-    "Adds deprecation: the provider's deprecations page entry ({ rawId, deprecatedAt, retiresAt, replacedBy, sourceUrl }, each as stated, null where unstated) or null (issue #410). A row with one is deprecated; ids retired before any listing get a row with only these facts.",
+    'pricingRange.routes[] may name a gateway route with provider and an inline card (examples empty) when that route has no catalog row. Vercel varies-by-provider rows use it (issue #451). model is still the catalog rawId when the card lives on a row.',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

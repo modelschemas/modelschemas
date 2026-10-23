@@ -19,9 +19,12 @@
     // lockstep with SPEC_SYNC_SHARD_CRONS in src/server/ingest/sync.ts.
     // FAL llms.txt rate-card extract is its own nightly invocation
     // (FAL_PRICING_EXTRACT_CRON) so it does not spend the 15-min poll or
-    // FAL spec-sync shard's subrequest/CPU budget.
+    // FAL spec-sync shard's subrequest/CPU budget. Vercel per-model
+    // /endpoints prices are one daily firing (VERCEL_PRICING_EXTRACT_CRON)
+    // for the same reason: ~60 subrequests must not share the poll budget.
     "crons": [
       "*/15 * * * *",
+      "0 4 * * *",
       "0 5 * * *",
       "10 5 * * *",
       "20 5 * * *",

@@ -578,6 +578,44 @@ describe('estimateCost on a routed id (#406)', () => {
     expect(max.amount).toBeCloseTo(0.41, 10)
   })
 
+  it('prices inline route cards and names each end by provider (#451)', async () => {
+    await db.insert(models).values(
+      row('qwen', {
+        pricingRange: {
+          currency: 'USD',
+          routes: [
+            {
+              model: 'deepinfra',
+              provider: 'deepinfra',
+              card: { ...(card(0.09, 0.55) as RateCard), examples: [] as [] },
+              pricing: { currency: 'USD', per: 'token' },
+            },
+            {
+              model: 'vertex',
+              provider: 'vertex',
+              card: { ...(card(0.22, 0.88) as RateCard), examples: [] as [] },
+              pricing: { currency: 'USD', per: 'token' },
+            },
+          ],
+          inputPerMillion: { min: 0.09, max: 0.22 },
+        },
+      }),
+    )
+    const outcome = await estimateCost(db, {
+      provider: 'est-gw',
+      model: 'qwen',
+      usage: { input_tokens: 1_000_000, output_tokens: 0 },
+    })
+    if (!outcome.ok || !('min' in outcome.result)) {
+      throw new Error(JSON.stringify(outcome))
+    }
+    expect(outcome.result.routes).toEqual(['deepinfra', 'vertex'])
+    expect(outcome.result.min.model).toBe('deepinfra')
+    expect(outcome.result.min.amount).toBeCloseTo(0.09, 10)
+    expect(outcome.result.max.model).toBe('vertex')
+    expect(outcome.result.max.amount).toBeCloseTo(0.22, 10)
+  })
+
   it('refuses when a route has no card', async () => {
     const outcome = await estimateCost(db, {
       provider: 'est-gw',

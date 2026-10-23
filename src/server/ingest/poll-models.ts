@@ -40,6 +40,7 @@ import type { RateCardRefuse } from '#/server/rate-card.ts'
 import type {
   DocsFailures,
   ModelFact,
+  FactSource,
   ModelFactSources,
   ModelDeprecation,
   ModelInfo,
@@ -864,6 +865,32 @@ export async function pollProviderModels(
       vocabulary,
       now,
     )
+    // A listing that says there is no single price, and does not itself
+    // fetch the per-route prices, keeps a range a separate job stored
+    // (Vercel /endpoints, issue #451). A card on the listing clears it.
+    if (
+      existing &&
+      info.pricingRange === undefined &&
+      info.absent?.pricing === 'cleared'
+    ) {
+      info.pricingRange = existing.pricingRange
+      const priorFacts = existing.factSources
+      const priorRange =
+        priorFacts &&
+        typeof priorFacts === 'object' &&
+        'pricingRange' in priorFacts &&
+        priorFacts.pricingRange &&
+        typeof priorFacts.pricingRange === 'object' &&
+        'derivation' in priorFacts.pricingRange
+          ? (priorFacts.pricingRange as FactSource)
+          : undefined
+      if (priorRange && info.pricingRange) {
+        info.factSources = {
+          ...(info.factSources ?? {}),
+          pricingRange: priorRange,
+        }
+      }
+    }
     // On the provider's deprecations page → deprecated (issue #410).
     if (rowDeprecation(deprecationIndex, id, existing?.deprecation)) {
       info.deprecated = true

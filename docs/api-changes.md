@@ -59,8 +59,11 @@ price. Estimating such a row prices the call on every route and returns
 `{ currency, min, max, routes }` instead of `{ amount, … }`; `min` and
 `max` each carry `model` (the route) and the usual result fields. A route
 with no card refuses the estimate. Check for `min` before reading
-`amount`. Vercel rows whose price varies by route (#346) are `pricing:
-null` with no range yet.
+`amount`. Vercel rows whose price varies by route (#346, #451) are
+`pricing: null` and, after the daily `/endpoints` extract, a
+`pricingRange` whose routes are Vercel `provider_name`s with the card
+inline. An endpoint with `status` other than 0 is omitted and named on
+`factSources.pricingRange` (`skipped status!=0`). It is not a catalog row.
 
 **Breaking (0.1.x):** `POST /v1/estimate` (and `estimate_cost`,
 `estimateCost`) has a third result shape (#450). When the call omits
