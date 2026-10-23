@@ -7,7 +7,7 @@ export default defineConfig({
   input: '../../openapi.json',
   output: {
     path: 'src/generated',
-    format: 'prettier',
+    postProcess: ['prettier'],
     // `.js` is what nodenext loads. The generator would infer this from a
     // nodenext tsconfig, but it finds the repo root config, which is bundler.
     module: { extension: '.js' },

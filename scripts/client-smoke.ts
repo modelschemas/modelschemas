@@ -29,7 +29,11 @@ console.log(
     .join(', ')}`,
 )
 
-const withSchemas = providerList.find((p) => p.counts.schemas > 0)
+// The schema read below names a route only openai and anthropic share, so
+// pick one of them rather than whichever synced provider sorts first.
+const withSchemas = providerList.find(
+  (p) => (p.id === 'openai' || p.id === 'anthropic') && p.counts.schemas > 0,
+)
 if (!withSchemas) {
   console.error('no provider with synced schemas — run an admin sync first')
   process.exit(1)
