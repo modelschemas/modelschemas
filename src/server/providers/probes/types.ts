@@ -38,6 +38,12 @@ export interface ProbeRecord {
   ranBy: string
   request: ProbeRequest
   expect: ProbeExpect
+  /**
+   * The live error stated this model trains on request data and needs the
+   * workspace opt-in. Set only on a call that returned that statement.
+   * Never inferred from an id suffix.
+   */
+  trainsOnRequestData?: true
 }
 
 const DAY_MS = 86_400_000

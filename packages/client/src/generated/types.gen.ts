@@ -480,6 +480,8 @@ export type ModelFactSources = {
   openWeights?: FactSource
   reasoning?: FactSource
   requestMap?: FactSource
+  requiredRequestHeaders?: FactSource
+  trainsOnRequestData?: FactSource
   /**
    * Per-field evidence when a request map combines sources, keyed by ChatRequestMap field.
    */
@@ -571,6 +573,17 @@ export type Model = {
    * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
    */
   requestMap: ChatRequestMap | null
+  /**
+   * Request headers the client must send. description says what to put in the header; these are not constant values (ProviderConnect.requiredHeaders is the constant case). null when the provider publishes none. factSources.requiredRequestHeaders is the source. OpenCode Go: x-opencode-session and User-Agent, https://opencode.ai/docs/go/ "Where can I use it?".
+   */
+  requiredRequestHeaders: Array<{
+    name: string
+    description: string
+  }> | null
+  /**
+   * true when this model's own source states it trains on request data and the workspace must opt in. null when that source does not say so for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.
+   */
+  trainsOnRequestData: boolean | null
   /**
    * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
    */
@@ -686,6 +699,17 @@ export type ExportModel = {
    * How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).
    */
   requestMap: ChatRequestMap | null
+  /**
+   * Request headers the client must send. description says what to put in the header; these are not constant values (ProviderConnect.requiredHeaders is the constant case). null when the provider publishes none. factSources.requiredRequestHeaders is the source. OpenCode Go: x-opencode-session and User-Agent, https://opencode.ai/docs/go/ "Where can I use it?".
+   */
+  requiredRequestHeaders: Array<{
+    name: string
+    description: string
+  }> | null
+  /**
+   * true when this model's own source states it trains on request data and the workspace must opt in. null when that source does not say so for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.
+   */
+  trainsOnRequestData: boolean | null
   /**
    * Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.
    */

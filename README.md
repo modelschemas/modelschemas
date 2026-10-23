@@ -140,6 +140,14 @@ only: the row's price, limits, and other facts stay its own provider's.
   only when the provider itself states the weights can be downloaded, with
   its link; false only when it states they cannot. Never inferred from a
   model name.
+- `requiredRequestHeaders` (`array | null`): headers the client must send
+  when the value is not a constant (`name` plus `description`). Null when
+  the provider publishes none. OpenCode Go lists `x-opencode-session` and
+  `User-Agent` ([Go docs](https://opencode.ai/docs/go/), "Where can I use
+  it?"). The same headers are parameters on each Go operation.
+- `trainsOnRequestData` (`true | null`): true only when that model's own
+  source states it trains on request data. Null otherwise. Never inferred
+  from an id suffix.
 
 `knowledgeCutoff` and `openWeights` are null on every row until provider
 adapters fill them. A row's first `releasedAt` and first `providerMetadata`

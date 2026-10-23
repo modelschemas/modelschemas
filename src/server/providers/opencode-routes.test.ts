@@ -133,6 +133,14 @@ it('checks Go ids against the full documented /inference/go/<protocol>/ path', a
     '/inference/go/google/v1beta/models/gemini-4-argon-contributor:streamGenerateContent',
   ])
   expect(fetched()).toEqual([OPENCODE_GO_ROUTE_DOCS_URL])
+  const parameters = result.specs[0]?.paths?.[
+    '/inference/go/openai/v1/responses'
+  ]?.post?.parameters as Array<{ name: string; required: boolean }>
+  expect(parameters.map((header) => header.name)).toEqual([
+    'x-opencode-session',
+    'User-Agent',
+  ])
+  expect(parameters.every((header) => header.required)).toBe(true)
 })
 it.each([
   ['inference/openai/v1/messages', false],

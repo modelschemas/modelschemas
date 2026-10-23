@@ -144,6 +144,29 @@ const modelFields = {
       "How to build this chat model's request: thinking on/off and shared effort levels (null omits the field), max-token field name, developer vs system role, reasoning_content replay, and related flags. Null until verified. reasoning stays the readable fact (mode, mandatory, efforts).",
     oneOf: [{ $ref: '#/components/schemas/ChatRequestMap' }, { type: 'null' }],
   },
+  requiredRequestHeaders: {
+    description:
+      'Request headers the client must send. description says what to put in the header; these are not constant values (ProviderConnect.requiredHeaders is the constant case). null when the provider publishes none. factSources.requiredRequestHeaders is the source. OpenCode Go: x-opencode-session and User-Agent, https://opencode.ai/docs/go/ "Where can I use it?".',
+    oneOf: [
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['name', 'description'],
+          properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+          },
+        },
+      },
+      { type: 'null' },
+    ],
+  },
+  trainsOnRequestData: {
+    description:
+      "true when this model's own source states it trains on request data and the workspace must opt in. null when that source does not say so for this id. Never inferred from an id suffix. factSources.trainsOnRequestData is the source.",
+    type: ['boolean', 'null'],
+  },
   aliases: {
     description:
       'Caller ids that resolve to this row (for example claude-opus-4-5 → the dated snapshot). null when the provider documents none. GET /v1/models/{provider}/{id} accepts an alias and returns this row, whose rawId is the dated id.',
@@ -234,6 +257,8 @@ const modelRequired = [
   'reasoning',
   'serverTools',
   'requestMap',
+  'requiredRequestHeaders',
+  'trainsOnRequestData',
   'aliases',
   'releasedAt',
   'knowledgeCutoff',
@@ -1465,6 +1490,8 @@ export const openApiDocument = {
           },
           reasoning: { $ref: '#/components/schemas/FactSource' },
           requestMap: { $ref: '#/components/schemas/FactSource' },
+          requiredRequestHeaders: { $ref: '#/components/schemas/FactSource' },
+          trainsOnRequestData: { $ref: '#/components/schemas/FactSource' },
           requestMapFields: {
             type: 'object',
             description:

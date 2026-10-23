@@ -33,6 +33,8 @@ const row: Model = {
   reasoning: null,
   serverTools: null,
   requestMap: null,
+  requiredRequestHeaders: null,
+  trainsOnRequestData: null,
   aliases: null,
   releasedAt: null,
   knowledgeCutoff: null,

@@ -1,5 +1,6 @@
 /** Native OpenCode routes, with unpublished request/response schemas absent. */
 import { markdownSection, markdownTableRows } from './model-facts.ts'
+import { openCodeGoHeaderParameters } from './opencode-go-facts.ts'
 import { probesFor } from './probes/index.ts'
 import { fetchText, PROVENANCE_MARKER, sha256Text } from './types.ts'
 import type {
@@ -87,11 +88,14 @@ export async function openCodeRouteSpec(
   const text = await fetchText(url, { signal: AbortSignal.timeout(30_000) })
   const documented = documentedRoutes(text, url).map(routePattern)
   const method = { url, hash: await sha256Text(text) }
+  const headers = go ? openCodeGoHeaderParameters() : undefined
   const paths: NonNullable<OpenApiDocument['paths']> = {}
   for (const path of routes) {
     const record = probed.get(path)
     if (record) {
-      paths[path] = { post: probeOperation(record) }
+      paths[path] = {
+        post: { ...probeOperation(record), parameters: headers },
+      }
       continue
     }
     if (!documented.some((pattern) => pattern.test(path)))
@@ -101,6 +105,7 @@ export async function openCodeRouteSpec(
         [ROUTE_ONLY_MARKER]: true,
         [ROUTE_ACTIVITY]: 'chat',
         'x-modelschemas-method-source': method,
+        ...(headers ? { parameters: headers } : {}),
         responses: {},
       },
     }

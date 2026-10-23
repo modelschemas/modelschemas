@@ -10,11 +10,9 @@ import type { ProbeRecord } from './types.ts'
  * the route. It is not a published statement that Google's request schema
  * is this API, so the synced operations stay route-only.
  *
- * Every Go request also needs a stable `x-opencode-session` and a
- * client-specific `User-Agent` (https://opencode.ai/docs/go/). Those are
- * not constant header values, and `ProviderConnect.requiredHeaders` only
- * stores name → const. `-contributor` models train on request data and
- * need the workspace privacy opt-in. Neither fact has a catalog field.
+ * Before the workspace allowed training, `:generateContent` returned 400
+ * "This Go model trains on request data…". That statement is
+ * `trainsOnRequestData` on this model only.
  *
  * `authorization` is the env name, never a key.
  */
@@ -55,6 +53,7 @@ export const records: Array<ProbeRecord> = [
       status: 200,
       jsonKeys: ['candidates', 'usageMetadata'],
     },
+    trainsOnRequestData: true,
   },
   {
     id: 'gemini-4-argon-contributor-stream',
