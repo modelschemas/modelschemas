@@ -430,7 +430,12 @@ export function parseByteplusReasoning(
       continue
     }
     if (op.attributes?.heading) break
-    if (BYTEPLUS_EFFORT.test(text) && !efforts.includes(text)) {
+    // Effort names are the value list, which ends where the table begins.
+    if (
+      ids.length === 0 &&
+      BYTEPLUS_EFFORT.test(text) &&
+      !efforts.includes(text)
+    ) {
       efforts.push(text)
     }
     const spec = op.attributes?.aceTable
@@ -520,23 +525,29 @@ export function parseGroqPageEfforts(markdown: string): Array<string> | null {
  * says `reasoning_effort` is GPT-OSS 20B/120B only, while the
  * gpt-oss-safeguard-20b page states low/medium/high, and a live probe on
  * 2026-10-23 accepted them. `mandatory` stays null: no page says `none`
- * is refused. A page that fails to load marks reasoning `unavailable`.
+ * is refused. A guide or page that fails to load marks reasoning
+ * `unavailable` (kept) and is counted in `run`.
  */
 export async function groqModelReasoning(
   kv: KVNamespace | undefined,
   run: DocsRun,
   rawIds: Array<string>,
 ): Promise<(rawId: string, capability: boolean) => Partial<ModelInfo>> {
-  const guide = await cachedDocs(kv, GROQ_REASONING_URL, async () => {
-    const body = await fetchText(GROQ_REASONING_URL)
-    const parsed = parseGroqReasoning(body)
-    assertParsed(parsed, 'groq reasoning page')
-    return {
-      byId: Object.fromEntries(parsed),
-      listed: groqSupportedModels(body).map((model) => model.id),
-      hash: await sha256Text(body),
-    }
-  })
+  // Its own cache key: this entry's shape (with `listed`) is not the plain
+  // reasoning map other loaders cache under the URL.
+  const guide = await tryDocs(run, GROQ_REASONING_URL, (cached) =>
+    cached(kv, `${GROQ_REASONING_URL}#models`, async () => {
+      const body = await fetchText(GROQ_REASONING_URL)
+      const parsed = parseGroqReasoning(body)
+      assertParsed(parsed, 'groq reasoning page')
+      return {
+        byId: Object.fromEntries(parsed),
+        listed: groqSupportedModels(body).map((model) => model.id),
+        hash: await sha256Text(body),
+      }
+    }),
+  )
+  if (!guide) return () => unavailable('reasoning')
   const doc = { ...guide, url: GROQ_REASONING_URL }
   const fromPages = new Map<string, Partial<ModelInfo>>()
   const pageIds = guide.listed.filter(

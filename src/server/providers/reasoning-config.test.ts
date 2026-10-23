@@ -411,6 +411,18 @@ describe('parseByteplusReasoning', () => {
       ).size,
     ).toBe(0)
   })
+
+  it('takes effort names only from the list before the table', () => {
+    const parsed = parseByteplusReasoning(
+      docFixtureHtml([
+        '## Adjust chain-of-thought length',
+        'high',
+        [['Supported models'], ['seed-2-0-lite-260228']],
+        'max',
+      ]),
+    )
+    expect(parsed.get('seed-2-0-lite-260228')?.efforts).toEqual(['high'])
+  })
 })
 
 describe('parseGroqPageEfforts', () => {
@@ -502,6 +514,19 @@ Only supported by [GPT-OSS 20B](https://console.groq.com/docs/model/openai/gpt-o
     const run = docsRun()
     const reasoning = await groqModelReasoning(undefined, run, ids)
     expect(reasoning('openai/gpt-oss-safeguard-20b', true)).toEqual({
+      absent: { reasoning: 'unavailable' },
+    })
+    expect(run.failed).toBe(1)
+  })
+
+  it('keeps stored reasoning when the guide fails to load', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('down', { status: 503 }))),
+    )
+    const run = docsRun()
+    const reasoning = await groqModelReasoning(undefined, run, ids)
+    expect(reasoning('openai/gpt-oss-20b', true)).toEqual({
       absent: { reasoning: 'unavailable' },
     })
     expect(run.failed).toBe(1)
