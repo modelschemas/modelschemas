@@ -1,15 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["eslint", "typescript", "import", "unicorn"],
-  "categories": {
-    "correctness": "off",
-    "suspicious": "off",
-    "pedantic": "off",
-    "perf": "off",
-    "style": "off",
-    "restriction": "off",
-    "nursery": "off"
-  },
   "options": {
     "typeAware": true
   },
@@ -21,51 +12,7 @@
     "examples/*/src/modelschemas/**"
   ],
   "rules": {
-    "eslint/for-direction": "error",
-    "eslint/no-async-promise-executor": "error",
-    "eslint/no-case-declarations": "error",
-    "eslint/no-class-assign": "error",
-    "eslint/no-compare-neg-zero": "error",
-    "eslint/no-cond-assign": "error",
-    "eslint/no-constant-binary-expression": "error",
-    "eslint/no-constant-condition": "error",
-    "eslint/no-control-regex": "error",
-    "eslint/no-debugger": "error",
-    "eslint/no-delete-var": "error",
-    "eslint/no-dupe-else-if": "error",
-    "eslint/no-duplicate-case": "error",
-    "eslint/no-empty-character-class": "error",
-    "eslint/no-empty-pattern": "error",
-    "eslint/no-empty-static-block": "error",
-    "eslint/no-ex-assign": "error",
-    "eslint/no-extra-boolean-cast": "error",
-    "eslint/no-fallthrough": "error",
-    "eslint/no-global-assign": "error",
-    "eslint/no-invalid-regexp": "error",
-    "eslint/no-irregular-whitespace": "error",
-    "eslint/no-loss-of-precision": "error",
-    "eslint/no-misleading-character-class": "error",
-    "eslint/no-nonoctal-decimal-escape": "error",
-    "eslint/no-regex-spaces": "error",
-    "eslint/no-self-assign": "error",
     "eslint/no-shadow": "warn",
-    "eslint/no-shadow-restricted-names": "error",
-    "eslint/no-sparse-arrays": "error",
-    "eslint/no-unsafe-finally": "error",
-    "eslint/no-unsafe-optional-chaining": "error",
-    "eslint/no-unused-labels": "error",
-    "eslint/no-unused-private-class-members": "error",
-    "eslint/no-useless-backreference": "error",
-    "eslint/no-useless-catch": "error",
-    "eslint/no-useless-escape": "error",
-    "eslint/no-var": "error",
-    "eslint/no-with": "error",
-    "eslint/prefer-const": "error",
-    "eslint/require-yield": "error",
-    "eslint/sort-imports": "off",
-    "eslint/use-isnan": "error",
-    "eslint/valid-typeof": "error",
-    "typescript/array-type": "off",
     "typescript/ban-ts-comment": [
       "error",
       {
@@ -91,7 +38,6 @@
     "typescript/no-wrapper-object-types": "error",
     "typescript/prefer-as-const": "error",
     "typescript/prefer-for-of": "warn",
-    "typescript/require-await": "off",
     "typescript/triple-slash-reference": "error",
     "typescript/no-explicit-any": "error",
     "typescript/no-unsafe-assignment": "error",
@@ -107,7 +53,6 @@
     "import/newline-after-import": "error",
     "import/no-commonjs": "error",
     "import/no-duplicates": "error",
-    "import/no-cycle": "off",
     "unicorn/prefer-node-protocol": "error"
   }
 }
