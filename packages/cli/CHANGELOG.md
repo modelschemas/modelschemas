@@ -1,5 +1,15 @@
 # modelschemas
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [653ed60]
+- Updated dependencies [1780348]
+- Updated dependencies [0dbb5aa]
+  - @modelschemas/client@0.2.2
+  - @modelschemas/codegen@0.2.2
+
 ## 0.2.1
 
 ### Patch Changes

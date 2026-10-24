@@ -1,5 +1,17 @@
 # @modelschemas/client
 
+## 0.2.2
+
+### Patch Changes
+
+- 653ed60: `Model` gains `requiredRequestHeaders` and `trainsOnRequestData`, and `FactSource` gains `verifiedAt` for a probe-verified fact. `GET /v1/status` gains `staleProbes`.
+- 1780348: Format the generated client with oxfmt. No API change.
+- 0dbb5aa: Vercel rows whose price varies by route store a `pricingRange` (#451).
+  Each route is a Vercel `provider_name` with its compiled card inline, not
+  a catalog row. `estimateCost` prices those inline cards and names min and
+  max by provider. Endpoints with `status` other than 0 are omitted and
+  named on `factSources.pricingRange`. Model row shape is v4.
+
 ## 0.2.1
 
 ### Patch Changes

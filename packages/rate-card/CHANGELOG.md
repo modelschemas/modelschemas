@@ -1,5 +1,11 @@
 # @modelschemas/rate-card
 
+## 0.2.2
+
+### Patch Changes
+
+- 1780348: Format the generated client with oxfmt. No API change.
+
 ## 0.2.1
 
 ### Patch Changes
