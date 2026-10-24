@@ -466,7 +466,7 @@ describe('replicate chat facts from a model schema', () => {
 
     const dangling = model('openai/gpt-5.4')
     delete (
-      dangling.latest_version?.openapi_schema?.components?.schemas as Record<
+      dangling.latest_version!.openapi_schema!.components!.schemas as Record<
         string,
         unknown
       >
@@ -532,7 +532,7 @@ describe('replicate chat facts from a model schema', () => {
     expect(replicateChatFacts(two)?.reasoning).toBeUndefined()
     const switched = model('deepseek-ai/deepseek-v3.1')
     ;(
-      switched.latest_version?.openapi_schema?.components?.schemas as Record<
+      switched.latest_version!.openapi_schema!.components!.schemas as Record<
         string,
         { enum?: Array<string> }
       >

@@ -102,7 +102,8 @@ function deref(spec: OpenApiDocument, node: unknown): Record<string, unknown> {
   if (typeof ref !== 'string') return obj
   const name = ref.replace('#/components/schemas/', '')
   const components = spec.components as
-    { schemas?: Record<string, unknown> } | undefined
+    | { schemas?: Record<string, unknown> }
+    | undefined
   return (components?.schemas?.[name] ?? {}) as Record<string, unknown>
 }
 

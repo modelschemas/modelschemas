@@ -132,7 +132,7 @@ export function claudeCardModels(
   return ids.map((id) => {
     const at = versions.indexOf(id)
     const next = versions.findIndex(
-      (line, index) => index > at && /^claude-/.test(line),
+      (line, index) => index > at && line.startsWith('claude-'),
     )
     const block =
       at < 0 ? [] : versions.slice(at + 1, next < 0 ? undefined : next)

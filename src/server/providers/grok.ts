@@ -254,7 +254,8 @@ const GROK_IMAGE_QUALITY = {
 export function withGrokImageQuality(spec: OpenApiDocument): OpenApiDocument {
   for (const name of ['GenerateImageRequest', 'EditImageRequest']) {
     const schema = spec.components?.schemas?.[name] as
-      { properties?: Record<string, unknown> } | undefined
+      | { properties?: Record<string, unknown> }
+      | undefined
     const properties = schema?.properties
     if (properties && !('quality' in properties)) {
       properties.quality = GROK_IMAGE_QUALITY
@@ -371,7 +372,7 @@ export function parseGrokVideoPrices(markdown: string): Map<string, number> {
   const out = new Map<string, number>()
   for (const [model = '', cost = ''] of markdownTableRows(markdown)) {
     const rate = cost.match(/^\$([\d.]+)\s*\/\s*sec(ond)?$/)?.[1]
-    if (!/^grok-/.test(model) || rate === undefined) continue
+    if (!model.startsWith('grok-') || rate === undefined) continue
     if (!out.has(model)) out.set(model, Number(rate))
   }
   return out
@@ -422,7 +423,8 @@ export function parseGrokContextWindows(markdown: string): Map<string, number> {
   const out = new Map<string, number>()
   for (const [model = '', context = ''] of markdownTableRows(markdown)) {
     const id = model.replace(/\s*\(.*$/, '').trim()
-    if (!/^grok-/.test(id) || !/^[\d,.]+\s*[kKmM]?$/.test(context)) continue
+    if (!id.startsWith('grok-') || !/^[\d,.]+\s*[kKmM]?$/.test(context))
+      continue
     const tokens = tokenCount(context)
     if (tokens !== null && !out.has(id)) out.set(id, tokens)
   }

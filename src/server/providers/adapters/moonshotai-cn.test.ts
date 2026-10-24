@@ -135,7 +135,7 @@ describe('moonshotCnChatFacts', () => {
     }
     const thinkingOf = (spec: OpenApiDocument, name: string) =>
       (
-        spec.components?.schemas?.[name] as {
+        spec.components!.schemas![name] as {
           allOf: Array<{ properties?: { thinking?: Thinking } }>
         }
       ).allOf[1]?.properties?.thinking as Thinking

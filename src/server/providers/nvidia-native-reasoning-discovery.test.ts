@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, expect, it } from 'vitest'
 import docs from './fixtures/nvidia-native-reasoning-discovery.json'
 import absentBuild from './fixtures/nvidia-build-absent-page.json'
@@ -24,7 +25,7 @@ afterEach(() => {
 })
 function serve(overrides: Record<string, string> = {}) {
   globalThis.fetch = async (input) => {
-    const url = String(input)
+    const url = requestUrl(input)
     const body =
       overrides[url] ??
       native[url] ??

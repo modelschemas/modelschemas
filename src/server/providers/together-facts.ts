@@ -438,10 +438,10 @@ export function applyTogetherDocs(
 ): ModelInfo {
   const next: ModelInfo = {
     ...model,
-    factSources: { ...(model.factSources ?? {}) },
+    factSources: { ...model.factSources },
   }
   const sources: ModelFactSources = next.factSources ?? {}
-  const absent = { ...(model.absent ?? {}) }
+  const absent = { ...model.absent }
   const chatRow = chat?.chat[model.rawId]
   if (model.contextWindow == null) {
     if (chatRow?.contextWindow != null && chat) {
@@ -537,7 +537,7 @@ export function applyTogetherDocs(
       ? { ...next.capabilities, reasoning: true }
       : unionFlag(flags, 'reasoning')
     sources.capabilities = {
-      ...(sources.capabilities ?? {}),
+      ...sources.capabilities,
       reasoning: docsSource(hit.sourceUrl, hit.sourceHash, 'reasoning'),
     }
   } else if (!reasoningPage?.loaded && model.activity === 'chat') {

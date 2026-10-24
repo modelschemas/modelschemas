@@ -136,7 +136,6 @@ export function parseDashscopeModelLimits(
   }
   const parsed = Object.values(models)
   if (
-    parsed.length === 0 ||
     parsed.every((row) => row.contextWindow == null && row.maxOutput == null)
   ) {
     throw new Error('dashscope model page: parsed 0 context-limit rows')

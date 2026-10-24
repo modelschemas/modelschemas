@@ -418,7 +418,7 @@ export function nvidiaInferNamesModel(
   doc: OpenApiDocument,
 ): boolean {
   const stated = nvidiaStatedModelIds(doc)
-  return stated.length === 0 || stated.every((id) => id === rawId)
+  return stated.every((id) => id === rawId)
 }
 
 export function parseNvidiaInfer(markdown: string): NvidiaInferFacts | null {

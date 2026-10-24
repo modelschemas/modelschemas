@@ -161,7 +161,7 @@ Rules:
       (agent-auth adds `agent`, `host`, `grant`, `approval`), migrate. Keep email/password
       enabled (it backs delegated-mode approvals and the dashboard later). Minimal
       `agentAuth({...})` config for now — providerName/description, `modes:
-['autonomous', 'delegated']`, empty capabilities (filled in Phase 5). _Accepts:_
+  ['autonomous', 'delegated']`, empty capabilities (filled in Phase 5). _Accepts:_
       sign-up + session retrieval works through the existing `/api/auth/$` catch-all
       locally; auth tables present in local D1.
   - Note: better-auth 1.6 moved `apiKey` to `@better-auth/api-key` (added as a dep);
@@ -270,7 +270,7 @@ Rules:
     0.4 regression: betterAuth() can't construct at module scope in the built worker
     (workerd forbids global-scope I/O/random) — src/server/auth.ts now lazy-inits via
     getAuth(). Use `wrangler dev -c dist/server/wrangler.json --persist-to
-.wrangler/state` so the built worker shares the root local D1.
+    .wrangler/state` so the built worker shares the root local D1.
 - [x] **2.6 Manual trigger + status.** `POST /v1/admin/sync/{provider}` (admin-key
       gated) and `GET /v1/status` (public: per-provider lastPolledAt/lastSyncedAt/counts).
       _Accepts:_ curl both locally.
@@ -658,8 +658,8 @@ deploy. Re-verify on production at the end.
     change row; worker tests cover both surfaces.
 - [x] **10.2 Link headers (RFC 8288).** Add `Link` response headers on HTML
       pages (via the worker fetch wrapper): `</.well-known/api-catalog>;
-rel="api-catalog"`, `</openapi.json>; rel="service-desc"`, `</docs>;
-rel="service-doc"`, `</llms.txt>; rel="describedby"`. _Accepts:_ curl -I
+  rel="api-catalog"`, `</openapi.json>; rel="service-desc"`, `</docs>;
+  rel="service-doc"`, `</llms.txt>; rel="describedby"`. _Accepts:_ curl -I
       of `/` shows the Link header; JSON endpoints unaffected.
 - [x] **10.3 Discovery trio.** `/.well-known/api-catalog`
       (`application/linkset+json` per RFC 9727: anchor + service-desc/

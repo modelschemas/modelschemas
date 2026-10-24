@@ -264,7 +264,21 @@ describe('byteplus spec generated from the Go SDK', () => {
 
     const { endpoints, warnings } = classifyAndBundle(byteplusProvider, fetched)
     expect(warnings).toEqual([])
-    expect(endpoints.map((e) => [e.dbId, e.activity]).sort()).toEqual([
+    expect(
+      endpoints
+        .map((e): [string, string] => [e.dbId, e.activity])
+        .sort(([aId, aAct], [bId, bAct]) =>
+          aId < bId
+            ? -1
+            : aId > bId
+              ? 1
+              : aAct < bAct
+                ? -1
+                : aAct > bAct
+                  ? 1
+                  : 0,
+        ),
+    ).toEqual([
       ['byteplus/auc/bigmodel/recognize/flash', 'audio'],
       ['byteplus/chat/completions', 'chat'],
       ['byteplus/contents/generations/tasks', 'video'],
@@ -292,7 +306,8 @@ describe('byteplus spec generated from the Go SDK', () => {
     expect(task?.method).toBe('GET')
     expect(task?.input?.required).toEqual(['id'])
     const defs = task?.output?.$defs as
-      Record<string, { properties?: Record<string, unknown> }> | undefined
+      | Record<string, { properties?: Record<string, unknown> }>
+      | undefined
     expect(defs?.Content?.properties?.video_url).toMatchObject({
       type: 'string',
     })

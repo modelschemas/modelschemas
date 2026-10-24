@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, expect, it } from 'vitest'
 import awsDocs from './fixtures/native-reasoning-followup.json'
 import { bedrockReasoning, parseBedrockCard } from './bedrock-cards.ts'
@@ -95,7 +96,7 @@ for (const malformed of [false, true])
       ' native OpenAI pages unavailable rather than returning unknown facts',
     async () => {
       globalThis.fetch = async (input) => {
-        const url = String(input)
+        const url = requestUrl(input)
         if (url === OPENAI_MODELS_INDEX_URL)
           return new Response('[Model](/api/docs/models/gpt-5.md)')
         if (url === OPENAI_PRICING_URL) return new Response(pricing)
@@ -126,7 +127,7 @@ for (const reverse of [false, true])
       const alias =
         'Model ID: `gpt-daybreak-blue-latest`\n\n## Model details\n\n- Default snapshot: `gpt-5.6-sol`\n- Reasoning token support\n'
       globalThis.fetch = async (input) => {
-        const url = String(input)
+        const url = requestUrl(input)
         if (url === OPENAI_MODELS_INDEX_URL)
           return new Response(
             '[Own](/api/docs/models/gpt-5.6-sol.md) [Alias](/api/docs/models/gpt-daybreak-blue-latest.md)',

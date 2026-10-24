@@ -31,7 +31,15 @@ function show(value: unknown, path: string): string {
     return `$${String(Number((value * 1e6).toPrecision(6)))}/M`
   }
   if (typeof value === 'object') return path === 'pricing' ? 'card' : '{…}'
-  return String(value)
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value)
+  }
+  return '{…}'
 }
 
 export function changeDiffs(payload: unknown): Array<ChangeDiff> {

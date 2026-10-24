@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { expect, it, afterEach, vi } from 'vitest'
 import native from './fixtures/nvidia-native-build-spec.json'
 import reference from './fixtures/nvidia-native-reasoning-discovery.json'
@@ -67,7 +68,7 @@ function ownSources(page: string) {
   const requested: string[] = []
   const url = native[rawId].sourceUrl
   globalThis.fetch = async (input) => {
-    const source = String(input)
+    const source = requestUrl(input)
     requested.push(source)
     if (source === NVIDIA_MODELS_URL)
       return new Response(JSON.stringify({ data: [{ id: rawId }] }))
@@ -170,7 +171,7 @@ it('records local native identity failures without charging successful fetch tim
   let now = 100_000
   vi.spyOn(Date, 'now').mockImplementation(() => now)
   globalThis.fetch = async (...args) => {
-    if (String(args[0]) === native[rawId].sourceUrl) now += 20_000
+    if (requestUrl(args[0]) === native[rawId].sourceUrl) now += 20_000
     return fetchSource(...args)
   }
   const listing = await provider.listModels({})
@@ -214,7 +215,7 @@ it('keeps an exact healthy ReadMe contract primary when the competing Build body
   expect(parseNvidiaBuildSpec(native[id].html, id)?.reasoning).toBeUndefined()
   const requested: string[] = []
   globalThis.fetch = async (input) => {
-    const url = String(input)
+    const url = requestUrl(input)
     requested.push(url)
     if (url === NVIDIA_MODELS_URL) return Response.json({ data: [{ id }] })
     if (url === native[id].sourceUrl) return new Response(native[id].html)
@@ -244,7 +245,7 @@ it('never uses a healthy Build body to recover a ReadMe network or malformed-con
     const requested = ownSources(html)
     const nativeFetch = globalThis.fetch
     globalThis.fetch = async (...args) =>
-      String(args[0]) ===
+      requestUrl(args[0]) ===
       'https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3-5-content-safety-infer.md'
         ? bad
         : nativeFetch(...args)
@@ -261,7 +262,7 @@ it('never converts failed complete or partial ReadMe index discovery into unpubl
     const requested = ownSources(html)
     const ownFetch = globalThis.fetch
     globalThis.fetch = async (...args) => {
-      const url = String(args[0])
+      const url = requestUrl(args[0])
       if (NVIDIA_REFERENCE_INDEXES.includes(url)) {
         if (allFailed || url === NVIDIA_REFERENCE_INDEXES[0])
           return new Response('unavailable', { status: 503 })
@@ -285,7 +286,7 @@ it('retains native explicit capability negatives and surfaces a contradictory se
   const requested = ownSources(html)
   const nativeFetch = globalThis.fetch
   globalThis.fetch = async (...args) =>
-    String(args[0]) === native[rawId].sourceUrl + '.md'
+    requestUrl(args[0]) === native[rawId].sourceUrl + '.md'
       ? new Response(
           native[rawId].markdown.replace(
             '**Reasoning:** Supported',
@@ -321,7 +322,7 @@ it('does not turn an absent capability label into an unsupported fact', async ()
   ownSources(html)
   const nativeFetch = globalThis.fetch
   globalThis.fetch = async (...args) =>
-    String(args[0]) === native[rawId].sourceUrl + '.md'
+    requestUrl(args[0]) === native[rawId].sourceUrl + '.md'
       ? new Response(
           native[rawId].markdown.replace('- **Reasoning:** Supported\n', ''),
         )

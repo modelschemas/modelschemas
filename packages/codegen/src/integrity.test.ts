@@ -46,7 +46,7 @@ afterEach(async () => {
 
 function service(body: unknown, status = 200): typeof fetch {
   return (input) => {
-    const { pathname, searchParams } = new URL(String(input))
+    const { pathname, searchParams } = new URL(requestUrl(input))
     expect(pathname).toBe('/v1/schemas/anthropic/chat/v1/messages')
     expect(searchParams.get('kind')).toBe('input')
     expect(searchParams.get('version')).toBe(HASH)
@@ -121,3 +121,9 @@ describe('verifyIntegrity', () => {
     expect(result.problems[0]).toContain('modelschemas pull')
   })
 })
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}

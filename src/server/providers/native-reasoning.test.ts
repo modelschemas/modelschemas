@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, expect, it } from 'vitest'
 import nativeDocs from './fixtures/native-reasoning-docs.json'
 import { parseReasoningEffort } from './openai-model-docs.ts'
@@ -27,7 +28,7 @@ const docs = nativeDocs as Record<string, string>
 const originalFetch = globalThis.fetch
 function serve() {
   globalThis.fetch = async (input) => {
-    const url = String(input)
+    const url = requestUrl(input)
     const body =
       url === openRouterGuide.sourceUrl ? openRouterGuide.markdown : docs[url]
     if (body === undefined) throw new Error(`unexpected native source ${url}`)

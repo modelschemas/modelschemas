@@ -115,7 +115,7 @@ export function overlayModelFacts(
   ...patches: Array<Partial<ModelInfo>>
 ): ModelInfo {
   let next: ModelInfo = { ...model }
-  const factSources: ModelFactSources = { ...(model.factSources ?? {}) }
+  const factSources: ModelFactSources = { ...model.factSources }
   for (const patch of patches) {
     const { factSources: more, absent, ...rest } = patch
     next = { ...next, ...rest }

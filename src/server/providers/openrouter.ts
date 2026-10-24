@@ -6,6 +6,7 @@
  * model like any other endpoint. Fully keyless.
  */
 import type { Activity } from '#/db/schema.ts'
+import { asText } from '#/lib/text.ts'
 import { bearerConnect } from './connect.ts'
 import {
   openrouterGenerationEndpointId,
@@ -128,7 +129,8 @@ export function synthesizeVideoModelEndpoints(
   models: Array<VideoModel>,
 ): void {
   const basePost = spec.paths?.['/videos']?.post as
-    { responses?: unknown } | undefined
+    | { responses?: unknown }
+    | undefined
   const baseRequest = spec.components?.schemas?.VideoGenerationRequest
   if (!basePost || !baseRequest || !spec.paths) return
 
@@ -176,7 +178,7 @@ export function synthesizeVideoModelEndpoints(
       props.frame_images = {
         ...props.frame_images,
         description:
-          `${String(props.frame_images?.description ?? '')} Frame types supported by this model: ${model.supported_frame_images.join(', ')}.`.trim(),
+          `${asText(props.frame_images?.description)} Frame types supported by this model: ${model.supported_frame_images.join(', ')}.`.trim(),
       }
     } else {
       delete props.frame_images
@@ -185,7 +187,7 @@ export function synthesizeVideoModelEndpoints(
       props.provider = {
         ...props.provider,
         description:
-          `${String(props.provider.description ?? '')} Passthrough parameters allowed for this model: ${model.allowed_passthrough_parameters.join(', ')}.`.trim(),
+          `${asText(props.provider.description)} Passthrough parameters allowed for this model: ${model.allowed_passthrough_parameters.join(', ')}.`.trim(),
       }
     }
 

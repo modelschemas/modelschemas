@@ -6,7 +6,13 @@
  */
 
 export type TypeClass =
-  'string' | 'number' | 'boolean' | 'enum' | 'object' | 'array' | 'union'
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'enum'
+  | 'object'
+  | 'array'
+  | 'union'
 
 export interface PropRow {
   name: string

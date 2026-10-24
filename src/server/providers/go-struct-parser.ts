@@ -158,7 +158,7 @@ function parseDeclarations(files: Array<GoSourceFile>): {
         let j = i + 1
         for (; j < lines.length; j++) {
           const body = lines[j] ?? ''
-          if (/^\}/.test(body)) break
+          if (body.startsWith('}')) break
           const parsed = parseFieldLine(body)
           if (!parsed) continue
           const json = parseJsonTag(parsed.tag)
@@ -212,7 +212,7 @@ function parseDeclarations(files: Array<GoSourceFile>): {
       if (/^const\s*\(/.test(line)) {
         for (let j = i + 1; j < lines.length; j++) {
           const body = lines[j] ?? ''
-          if (/^\)/.test(body)) {
+          if (body.startsWith(')')) {
             i = j
             break
           }
@@ -337,7 +337,7 @@ function structToSchema(
 
 function namedScalarToSchema(name: string, decls: Declarations): JsonSchema {
   const scalar = decls.namedScalars.get(name)
-  const base = { ...(GO_PRIMITIVES[scalar?.underlying ?? 'string'] ?? {}) }
+  const base = { ...GO_PRIMITIVES[scalar?.underlying ?? 'string'] }
   const values = decls.enums.get(name)
   return {
     ...base,

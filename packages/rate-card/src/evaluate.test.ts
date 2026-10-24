@@ -349,8 +349,25 @@ describe('refusals', () => {
    * op list is the published one, frozen here on purpose.
    */
   const OPS_0_1_0 = [
-    ...['var', 'missing', '+', '-', '*', '/', 'max', 'min', 'if'],
-    ...['==', '!=', '<', '<=', '>', '>=', 'and', 'or', 'ceil', 'floor'],
+    'var',
+    'missing',
+    '+',
+    '-',
+    '*',
+    '/',
+    'max',
+    'min',
+    'if',
+    '==',
+    '!=',
+    '<',
+    '<=',
+    '>',
+    '>=',
+    'and',
+    'or',
+    'ceil',
+    'floor',
   ]
   const expr010: z.ZodType = z.lazy(() =>
     z.union([

@@ -1366,7 +1366,7 @@ export function copyMistralAliasFacts(
         Object.assign(target, { [fact]: first[fact] })
         const source = first.factSources?.[fact]
         if (!source) continue
-        target.factSources = { ...(target.factSources ?? {}), [fact]: source }
+        target.factSources = { ...target.factSources, [fact]: source }
       }
     }
   }

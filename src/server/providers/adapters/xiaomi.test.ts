@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { readFileSync } from 'node:fs'
 import { Validator } from '@cfworker/json-schema'
 import { price } from '@modelschemas/rate-card'
@@ -29,7 +30,7 @@ afterEach(() => vi.unstubAllGlobals())
 function mockDocs(failedUrl?: string, modelDocument = catalog) {
   const requested: Array<string> = []
   vi.stubGlobal('fetch', (input: string | URL | Request) => {
-    const url = String(input)
+    const url = requestUrl(input)
     requested.push(url)
     if (!url.startsWith('https://mimo.mi.com/static/docs/'))
       throw new Error(`unexpected source ${url}`)

@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, expect, it } from 'vitest'
 import docs from './fixtures/openai-gpt5-guides.json'
 import realtimeDocs from './fixtures/openai-native-realtime-reasoning.json'
@@ -49,7 +50,7 @@ function serve(
   pages: Record<string, string> = {},
 ) {
   globalThis.fetch = (input) => {
-    const url = String(input)
+    const url = requestUrl(input)
     if (url === OPENAI_MODELS_INDEX_URL) {
       const links = [
         '[Mini](/api/docs/models/gpt-5-mini.md)',
@@ -215,7 +216,7 @@ it('keeps the listing when the docs host forbids the index or a page (#371)', as
   serve(allGuides, { 'gpt-5-pro': proPage })
   const served = globalThis.fetch
   globalThis.fetch = (input, init) =>
-    String(input).endsWith('/models/gpt-5-mini.md')
+    requestUrl(input).endsWith('/models/gpt-5-mini.md')
       ? forbidden()
       : served(input, init)
   const pageRun = docsRun()
@@ -237,7 +238,7 @@ it('marks only unpriced rows when the pricing page alone fails (#371)', async ()
   serve(allGuides, { 'gpt-5-pro': proPage })
   const served = globalThis.fetch
   globalThis.fetch = (input, init) =>
-    String(input) === OPENAI_PRICING_URL
+    requestUrl(input) === OPENAI_PRICING_URL
       ? Promise.resolve(new Response('Forbidden', { status: 403 }))
       : served(input, init)
   const run = docsRun()

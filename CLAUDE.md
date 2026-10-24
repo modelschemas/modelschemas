@@ -31,10 +31,10 @@ bun install              # install + link workspace packages
 bun run dev              # local D1 migrate, then dev server on http://localhost:3100 (NOT --bun: bun's ws shim hangs vite)
 bun run test             # vitest, unit + workers projects (NOT --bun: cloudflare pool needs node)
 bun run test src/path/to/file.test.ts       # single test file
-bun --bun run lint       # eslint (no-explicit-any + no-unsafe-* are errors)
+bun --bun run lint       # oxlint --type-aware (no-explicit-any + no-unsafe-* are errors)
 bun run typecheck        # tsc --noEmit (includes packages/*)
-bun --bun run format     # prettier --write + eslint --fix
-bun --bun run check      # prettier --check
+bun --bun run format     # oxfmt + oxlint --fix
+bun --bun run check      # oxfmt --check
 bun --bun run build      # production build (emits dist/server/wrangler.json)
 bun run deploy           # build + wrangler deploy
 bun run npm:pack         # pack public packages to dist/npm (no publish)
@@ -61,8 +61,8 @@ bun scripts/emit-skill.ts    # src/server/skill.ts → skill/modelschemas/SKILL.
 A PR that touches `packages/*` (including the generated client) needs a
 changeset (`bunx changeset`), or `bunx changeset --empty` when nothing
 ships; CI runs `changeset status --since=origin/main` on PRs and fails
-without one. `openapi.json` and `SKILL.md` are prettier-ignored
-(byte-stable emitted artifacts). Lefthook pre-commit runs prettier/eslint/typecheck — never
+without one. `openapi.json` and `SKILL.md` are oxfmt-ignored (byte-stable
+emitted artifacts). Lefthook pre-commit runs oxfmt/oxlint/typecheck — never
 `--no-verify`. The cloudflare vite plugin is skipped under vitest;
 Workers-binding tests (`*.worker.test.ts`) run in workerd via
 `@cloudflare/vitest-pool-workers` (config: `vitest.workers.config.ts`,

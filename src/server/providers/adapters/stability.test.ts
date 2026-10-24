@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { describe, expect, it } from 'vitest'
 
 import { findDanglingRefs } from '#/server/ingest/bundle.ts'
@@ -106,7 +107,7 @@ async function withFetch<T>(
   const original = globalThis.fetch
   const urls: Array<string> = []
   globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const href = String(input)
+    const href = requestUrl(input)
     urls.push(href)
     return Promise.resolve(handler(href, init))
   }
@@ -247,7 +248,21 @@ describe('stability fetchSpec', () => {
 
     const { endpoints, warnings } = classifyAndBundle(provider, fetched)
     expect(warnings).toEqual([])
-    expect(endpoints.map((e) => [e.dbId, e.activity]).sort()).toEqual([
+    expect(
+      endpoints
+        .map((e): [string, string] => [e.dbId, e.activity])
+        .sort(([aId, aAct], [bId, bAct]) =>
+          aId < bId
+            ? -1
+            : aId > bId
+              ? 1
+              : aAct < bAct
+                ? -1
+                : aAct > bAct
+                  ? 1
+                  : 0,
+        ),
+    ).toEqual([
       ['stability/v2beta/audio/stable-audio-2/text-to-audio', 'audio'],
       ['stability/v2beta/stable-image/generate/ultra', 'image'],
     ])

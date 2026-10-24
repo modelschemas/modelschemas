@@ -558,7 +558,7 @@ describe('zai', () => {
     const flags = (id: string) => {
       const model = models.find((row) => row.rawId === id)
       expect(model?.exactCapabilities).toBe(true)
-      return [...(model?.capabilities as Array<string>)].sort()
+      return [...(model!.capabilities as Array<string>)].sort()
     }
     const base = ['max_tokens', 'temperature']
 

@@ -335,7 +335,7 @@ export async function mapConcurrent<T, TResult>(
   limit: number,
   fn: (item: T) => Promise<TResult>,
 ): Promise<Array<TResult>> {
-  const results: Array<TResult> = new Array<TResult>(items.length)
+  const results: Array<TResult> = Array.from({ length: items.length })
   let next = 0
   const worker = async () => {
     while (next < items.length) {

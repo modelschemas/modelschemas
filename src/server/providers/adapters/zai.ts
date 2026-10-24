@@ -26,6 +26,7 @@ import {
 import { compileTokenCard } from '@modelschemas/rate-card'
 
 import type { Activity } from '#/db/schema.ts'
+import { asText } from '#/lib/text.ts'
 
 import { walkRequestSchema } from '../fact-sources.ts'
 import { tokenCount } from '../model-facts.ts'
@@ -604,7 +605,7 @@ export function zaiSpecFacts(
           activity === 'chat'
             ? {
                 caps: parseZaiOutputCaps(
-                  String(at(spec, props.max_tokens, 'description') ?? ''),
+                  asText(at(spec, props.max_tokens, 'description')),
                   wording,
                 ),
                 input: userInputs(spec, props.messages, wording.label),

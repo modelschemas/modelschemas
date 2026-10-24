@@ -2,7 +2,12 @@ import type { ApiModel } from '#/server/catalog.ts'
 
 /** Plain JSON — what server functions may return to loaders. */
 export type Json =
-  string | number | boolean | null | { [key: string]: Json } | Array<Json>
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json }
+  | Array<Json>
 
 /**
  * ApiModel with its `unknown` JSON columns (drizzle json mode) narrowed so

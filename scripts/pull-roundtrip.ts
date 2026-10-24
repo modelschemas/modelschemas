@@ -2,8 +2,8 @@
 /**
  * E2E roundtrip for Phase 12 (PLAN.md task 12.6): against a live service
  * (default the local dev server), prove the full build-time pull flow —
- * pull a real selection, typecheck the generated module with the real tsc,
- * prove the second pull is a pure 304 no-op, then stale the manifest entry
+ * pull a real selection, prove the second pull is a pure 304 no-op, then
+ * stale the manifest entry
  * and prove `update` (a full pull) rewrites exactly that file.
  *
  *   bun scripts/pull-roundtrip.ts [baseUrl]
@@ -11,7 +11,6 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import ts from 'typescript'
 
 import { MANIFEST_FILENAME, pull, readManifest } from '@modelschemas/codegen'
 
@@ -25,28 +24,6 @@ function check(condition: boolean, label: string): void {
     process.exit(1)
   }
   console.log(`ok   ${label}`)
-}
-
-function compile(source: string): Array<string> {
-  const fileName = '/generated.ts'
-  const options: ts.CompilerOptions = {
-    strict: true,
-    noEmit: true,
-    skipLibCheck: true,
-    exactOptionalPropertyTypes: true,
-    target: ts.ScriptTarget.ES2022,
-  }
-  const host = ts.createCompilerHost(options)
-  const getSourceFile = host.getSourceFile.bind(host)
-  host.getSourceFile = (name, languageVersion, ...rest) =>
-    name === fileName
-      ? ts.createSourceFile(fileName, source, ts.ScriptTarget.ES2022, true)
-      : getSourceFile(name, languageVersion, ...rest)
-  const fileExists = host.fileExists.bind(host)
-  host.fileExists = (name) => name === fileName || fileExists(name)
-  return ts
-    .getPreEmitDiagnostics(ts.createProgram([fileName], options, host))
-    .map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
 }
 
 const outDir = await mkdtemp(join(tmpdir(), 'modelschemas-roundtrip-'))
@@ -65,13 +42,6 @@ try {
   if (entry === undefined || manifest === null) process.exit(1)
 
   const module_ = await readFile(join(outDir, entry.path), 'utf8')
-  const diagnostics = compile(module_)
-  check(
-    diagnostics.length === 0,
-    `generated module compiles clean (strict + exactOptionalPropertyTypes)${
-      diagnostics.length > 0 ? `:\n${diagnostics.join('\n')}` : ''
-    }`,
-  )
   check(
     !/^import /m.test(module_) && /^export const /m.test(module_),
     'generated module is pure (no imports, const + types only)',

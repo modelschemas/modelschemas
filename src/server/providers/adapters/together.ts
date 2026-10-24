@@ -281,7 +281,7 @@ async function listModels(
       if (card) {
         model.pricing = card
         model.factSources = {
-          ...(model.factSources ?? {}),
+          ...model.factSources,
           pricing: listingFact('pricing'),
         }
       }

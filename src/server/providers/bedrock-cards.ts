@@ -325,8 +325,16 @@ const inRegion = (all: Array<Quote>) =>
   all.find((quote) => /in-region|regional/i.test(quote.label))
 
 const sameRates = (a: Quote, b: Quote) =>
-  JSON.stringify(Object.entries(a.rates).sort()) ===
-  JSON.stringify(Object.entries(b.rates).sort())
+  JSON.stringify(
+    Object.entries(a.rates).sort(([aKey], [bKey]) =>
+      aKey < bKey ? -1 : aKey > bKey ? 1 : 0,
+    ),
+  ) ===
+  JSON.stringify(
+    Object.entries(b.rates).sort(([aKey], [bKey]) =>
+      aKey < bKey ? -1 : aKey > bKey ? 1 : 0,
+    ),
+  )
 
 export interface BedrockCardPrice {
   base: Record<string, number>

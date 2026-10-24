@@ -1,3 +1,4 @@
+import { bodyText } from '#/lib/text.ts'
 import { describe, expect, it, vi } from 'vitest'
 
 import { verifyExamples } from '@modelschemas/rate-card'
@@ -280,7 +281,7 @@ describe('extractRateCardWithGrok', () => {
       )
       const init = fetchMock.mock.calls[0]?.[1]
       expect(init?.method).toBe('POST')
-      const payload = JSON.parse(String(init?.body)) as {
+      const payload = JSON.parse(bodyText(init?.body)) as {
         model: string
       }
       expect(payload.model).toBe(FAL_PRICING_EXTRACT_MODEL)
@@ -314,7 +315,9 @@ describe('extractRateCardWithGrok', () => {
       const card = await extractRateCardWithGrok(args)
       expect(card).toMatchObject({ price: NANO_BANANA_2.price })
       expect(fetchMock).toHaveBeenCalledTimes(2)
-      const retry = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      const retry = JSON.parse(
+        bodyText(fetchMock.mock.calls[1]?.[1]?.body),
+      ) as {
         model: string
         messages: Array<{ role: string; content: string }>
       }
@@ -362,7 +365,9 @@ describe('extractRateCardWithGrok', () => {
       expect(await extractError(args)).toMatch(
         /^rejected twice: verifyExamples failed/,
       )
-      const retry = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as {
+      const retry = JSON.parse(
+        bodyText(fetchMock.mock.calls[1]?.[1]?.body),
+      ) as {
         messages: Array<{ content: string }>
       }
       expect(retry.messages[3]?.content).toContain('verifyExamples failed')

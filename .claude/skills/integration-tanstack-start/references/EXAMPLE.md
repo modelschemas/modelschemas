@@ -1037,10 +1037,18 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/burrito' | '/profile' | '/api/auth/login' | '/api/burrito/consider'
+    | '/'
+    | '/burrito'
+    | '/profile'
+    | '/api/auth/login'
+    | '/api/burrito/consider'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/burrito' | '/profile' | '/api/auth/login' | '/api/burrito/consider'
+    | '/'
+    | '/burrito'
+    | '/profile'
+    | '/api/auth/login'
+    | '/api/burrito/consider'
   id:
     | '__root__'
     | '/'

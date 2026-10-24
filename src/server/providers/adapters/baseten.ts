@@ -48,8 +48,7 @@ function cells(line: string): Array<string> | null {
     .split('|')
     .slice(1, -1)
     .map((cell) => cell.trim())
-  if (row.length === 0 || row.every((cell) => /^:?-+:?$/.test(cell)))
-    return null
+  if (row.every((cell) => /^:?-+:?$/.test(cell))) return null
   return row
 }
 

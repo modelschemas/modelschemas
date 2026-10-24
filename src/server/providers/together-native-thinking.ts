@@ -90,9 +90,11 @@ export function parseTogetherNativeThinking(
       .replace(/```[\s\S]*?```/g, '')
       .split(/[.!?]\s+|\n/)
       .some((sentence) =>
-        /^Return the complete assistant message on every turn, `reasoning_content` included/.test(
-          sentence.trim(),
-        ),
+        sentence
+          .trim()
+          .startsWith(
+            'Return the complete assistant message on every turn, `reasoning_content` included',
+          ),
       ) &&
     modelsInSamples(history).includes(named)
   )

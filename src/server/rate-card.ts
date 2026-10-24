@@ -204,7 +204,7 @@ export function reconcilePricingSource(
   sources: ModelFactSources | null | undefined,
   card: RateCard | null,
 ): ModelFactSources | null {
-  const next: ModelFactSources = { ...(sources ?? {}) }
+  const next: ModelFactSources = { ...sources }
   if (card === null) delete next.pricing
   else if (next.pricing === undefined) next.pricing = { derivation: 'listing' }
   return emptySources(next) ? null : next

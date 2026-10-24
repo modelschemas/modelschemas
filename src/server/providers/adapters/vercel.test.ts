@@ -158,7 +158,7 @@ describe('vercel', () => {
     })
     // fast and flex are not the standard rate.
     const base = (
-      listed.models[0]?.pricing as {
+      listed.models[0]!.pricing as {
         tables: { rate: { base: Record<string, number> } }
       }
     ).tables.rate.base

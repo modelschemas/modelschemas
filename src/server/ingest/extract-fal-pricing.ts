@@ -572,7 +572,7 @@ async function writePricing(args: {
 }): Promise<boolean> {
   const prior = factSourcesOf(args.candidate.factSources)
   const nextSources: ModelFactSources = {
-    ...(prior ?? {}),
+    ...prior,
     pricing: {
       derivation: 'docs-extracted',
       sourceUrl: args.sourceUrl,
@@ -617,7 +617,7 @@ async function stampPricingHash(args: {
     .update(models)
     .set({
       factSources: {
-        ...(prior ?? {}),
+        ...prior,
         pricing: {
           ...docsExtractedSource(prior),
           derivation: 'docs-extracted',
@@ -636,7 +636,7 @@ async function mapLimit<T, TResult>(
   limit: number,
   fn: (item: T) => Promise<TResult>,
 ): Promise<Array<TResult>> {
-  const out = new Array<TResult>(items.length)
+  const out: Array<TResult> = Array.from({ length: items.length })
   let next = 0
   const workers = Array.from(
     { length: Math.min(limit, items.length) },

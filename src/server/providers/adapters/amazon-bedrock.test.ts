@@ -456,10 +456,10 @@ describe('amazon-bedrock', () => {
       (model) =>
         model.rawId === 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
     )
-    expect((base?.pricing as RateCard).tables.rate?.base).toMatchObject({
+    expect((base!.pricing as RateCard).tables.rate?.base).toMatchObject({
       input_tokens: 9 / 1e6,
     })
-    expect((global?.pricing as RateCard).tables.rate?.base).toMatchObject({
+    expect((global!.pricing as RateCard).tables.rate?.base).toMatchObject({
       input_tokens: 7 / 1e6,
     })
     expect(global?.factSources?.pricing?.sourceUrl).toBe(

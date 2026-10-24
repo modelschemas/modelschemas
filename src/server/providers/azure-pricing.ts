@@ -46,7 +46,10 @@ const LONG = new Set(['longco', 'loco'])
 const STANDARD = new Set(['std', 'shortco', 'shco'])
 
 export type AzureLever =
-  'input_tokens' | 'output_tokens' | 'cache_read_tokens' | 'cache_write_tokens'
+  | 'input_tokens'
+  | 'output_tokens'
+  | 'cache_read_tokens'
+  | 'cache_write_tokens'
 
 export interface AzureSku {
   /** Model words with punctuation dropped: `54mini`, `gpt4o`, `o3`. */
@@ -277,7 +280,11 @@ export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
   }
   // Page order is not stable; hash the meters, sorted.
   const lines = meters.map((m) => JSON.stringify(m)).sort()
-  lines.push(JSON.stringify([...thresholds].sort()))
+  lines.push(
+    JSON.stringify(
+      [...thresholds].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    ),
+  )
   return {
     meters,
     thresholds: Object.fromEntries(thresholds),

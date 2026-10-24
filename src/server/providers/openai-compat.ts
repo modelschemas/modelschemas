@@ -77,7 +77,7 @@ export function filterOpenAiSpec(
   }
   return {
     ...spec,
-    info: { ...(spec.info ?? {}), title: opts.title },
+    info: { ...spec.info, title: opts.title },
     servers: [{ url: opts.serverUrl }],
     paths,
   }

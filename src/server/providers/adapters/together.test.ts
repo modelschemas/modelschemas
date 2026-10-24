@@ -533,7 +533,22 @@ describe('together fetchSpec', () => {
       const { endpoints, warnings } = classifyAndBundle(provider, fetched)
       expect(warnings).toEqual([])
       expect(
-        endpoints.map((endpoint) => [endpoint.dbId, endpoint.activity]).sort(),
+        endpoints
+          .map((endpoint): [string, string] => [
+            endpoint.dbId,
+            endpoint.activity,
+          ])
+          .sort(([aId, aAct], [bId, bAct]) =>
+            aId < bId
+              ? -1
+              : aId > bId
+                ? 1
+                : aAct < bAct
+                  ? -1
+                  : aAct > bAct
+                    ? 1
+                    : 0,
+          ),
       ).toEqual([
         ['together/audio/speech', 'audio'],
         ['together/chat/completions', 'chat'],

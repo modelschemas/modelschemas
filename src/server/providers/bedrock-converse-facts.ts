@@ -43,7 +43,8 @@ function wireFacts(raw: unknown): {
     if (
       typeof member.shape !== 'string' ||
       (member.location !== undefined &&
-        !['uri', 'header', 'querystring'].includes(String(member.location)))
+        (typeof member.location !== 'string' ||
+          !['uri', 'header', 'querystring'].includes(member.location)))
     )
       throw new Error(
         `amazon-bedrock SDK wire map: unreadable Smithy member ${name}`,

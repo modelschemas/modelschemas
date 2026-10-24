@@ -170,7 +170,7 @@ async function maybePrettier(path: string, text: string): Promise<string> {
     const prettier = await import('prettier')
     const config = await prettier.resolveConfig(path)
     return await prettier.format(text, {
-      ...(config ?? {}),
+      ...config,
       parser: 'typescript',
     })
   } catch {
