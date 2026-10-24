@@ -11,6 +11,7 @@ import {
   FAL_PRICING_EXTRACT_MODEL,
   FAL_PRICING_FETCH_CAP,
   FAL_PRICING_FETCH_FAIL_ABORT,
+  EXTRACT_SYSTEM,
   checkExtractedCard,
   isRetryableLlmsStatus,
   extractRateCardWithGrok,
@@ -434,6 +435,44 @@ describe('extractRateCardWithGrok', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('EXTRACT_SYSTEM', () => {
+  // The model copies these, so each must pass the checks its reply does.
+  // A count input binds a list param; without a worked one the model wrote
+  // `{"reference_image_urls": 1}` and `x.length` (#489).
+  const workedExamples = [
+    ...EXTRACT_SYSTEM.matchAll(
+      /Section: "(.+)" Allowed: (.+)\.\n(\{"inputs".+\})$/gm,
+    ),
+  ].map(([, section = '', allowed = '', reply = '']) => ({
+    section,
+    allowed: new Set(allowed.split(', ')),
+    reply,
+  }))
+
+  it('includes a worked count input', () => {
+    expect(workedExamples.length).toBeGreaterThan(1)
+    expect(workedExamples.some(({ reply }) => reply.includes('"count"'))).toBe(
+      true,
+    )
+  })
+
+  it('has worked examples that pass checkExtractedCard', () => {
+    for (const { section, allowed, reply } of workedExamples) {
+      const card = checkExtractedCard(reply, {
+        pricingText: section,
+        requestProperties: allowed,
+        sourceUrl: 'https://fal.ai/models/fal-ai/example/llms.txt',
+        sourceHash: 'e'.repeat(64),
+        now: 1_781_150_000,
+      })
+      if (card === 'unverified' || 'error' in card) {
+        throw new Error(`${section}: ${JSON.stringify(card)}`)
+      }
+      expect(verifyExamples(card).every((r) => r.ok)).toBe(true)
     }
   })
 })
