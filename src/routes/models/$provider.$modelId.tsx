@@ -79,6 +79,8 @@ interface ModelDetailData {
   /** Provider endpoints; for huge providers (FAL) filtered to this model. */
   endpoints: Array<EndpointLink>
   endpointsFiltered: boolean
+  /** Epoch seconds of the status read; `timeAgo` measures from it. */
+  renderedAt: number
 }
 
 const getModelDetail = createServerFn({ method: 'GET' })
@@ -139,6 +141,7 @@ const getModelDetail = createServerFn({ method: 'GET' })
         'unknown',
       endpoints: endpointsFiltered ? matching : all.slice(0, 40),
       endpointsFiltered,
+      renderedAt: status.time,
     }
   })
 
@@ -152,8 +155,14 @@ export const Route = createFileRoute('/models/$provider/$modelId')({
 })
 
 function ModelDetail() {
-  const { model, pricing, providerStatus, endpoints, endpointsFiltered } =
-    Route.useLoaderData()
+  const {
+    model,
+    pricing,
+    providerStatus,
+    endpoints,
+    endpointsFiltered,
+    renderedAt,
+  } = Route.useLoaderData()
   const [view, setView] = useState<ResourceView>('readable')
 
   const modelPathId = model.rawId.includes('/') ? model.id : model.rawId
@@ -208,7 +217,7 @@ function ModelDetail() {
             ],
             ['status', <StatusDot key="s" status={providerStatus} />],
             ['first seen', shortDate(model.firstSeenAt)],
-            ['last seen', timeAgo(model.lastSeenAt)],
+            ['last seen', timeAgo(model.lastSeenAt, renderedAt)],
             ...(model.deprecatedAt
               ? ([
                   [
@@ -338,7 +347,7 @@ function ModelDetail() {
                     <td className="font-mono text-[12.5px]">
                       {model.lastSeenAt}{' '}
                       <span className="text-ink-faint">
-                        — {timeAgo(model.lastSeenAt)}
+                        — {timeAgo(model.lastSeenAt, renderedAt)}
                       </span>
                     </td>
                   </tr>

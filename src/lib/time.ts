@@ -1,7 +1,11 @@
-/** Compact relative time for freshness signals ("6m ago"). */
-export function timeAgo(epochSeconds: number | null): string {
+/**
+ * Compact relative time for freshness signals ("6m ago"), measured from
+ * `now` (epoch seconds). Pages pass the instant their server function ran,
+ * so the server render and the browser's hydration print the same text.
+ */
+export function timeAgo(epochSeconds: number | null, now: number): string {
   if (!epochSeconds) return 'never'
-  const delta = Math.max(0, Math.floor(Date.now() / 1000) - epochSeconds)
+  const delta = Math.max(0, now - epochSeconds)
   if (delta < 90) return `${String(delta)}s ago`
   if (delta < 5400) return `${String(Math.round(delta / 60))}m ago`
   if (delta < 129_600) return `${String(Math.round(delta / 3600))}h ago`

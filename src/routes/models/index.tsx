@@ -42,6 +42,8 @@ interface CatalogData {
   models: Array<SerializableModel>
   providers: Array<string>
   truncated: boolean
+  /** Epoch seconds the server read the catalog; `timeAgo` measures from it. */
+  renderedAt: number
 }
 
 const getCatalog = createServerFn({ method: 'GET' })
@@ -92,6 +94,7 @@ const getCatalog = createServerFn({ method: 'GET' })
       ) as unknown as Array<SerializableModel>,
       providers,
       truncated: result.count > MAX_ROWS,
+      renderedAt: Math.floor(Date.now() / 1000),
     }
   })
 
@@ -333,7 +336,7 @@ function ModelsCatalog() {
                               {shortDate(m.firstSeenAt)}
                             </td>
                             <td className="num text-ink-faint">
-                              {timeAgo(m.lastSeenAt)}
+                              {timeAgo(m.lastSeenAt, data.renderedAt)}
                             </td>
                             <td className="font-mono text-xs">
                               <a className="press-link" href={modelHref(m)}>
