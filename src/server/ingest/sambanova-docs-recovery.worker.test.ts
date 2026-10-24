@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { env } from 'cloudflare:test'
 import { expect, it, vi } from 'vitest'
 import { getDb } from '../../db/index.ts'
@@ -56,7 +57,7 @@ it('clears the previous SambaNova docs outage after a healthy poll', async () =>
   )
   expect(await readDocsFailing(db, provider.id)).toMatchObject({ polls: 1 })
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-    const url = String(input)
+    const url = requestUrl(input)
     if (url === provider.modelsEndpoint) {
       return Response.json({ data: [{ id: 'gpt-oss-120b' }] })
     }

@@ -5,6 +5,7 @@
  * functions directly.
  */
 import type { Db } from '#/db/index.ts'
+import { asText } from '#/lib/text.ts'
 import { activities, changeTypes } from '#/db/schema.ts'
 import type { Activity, ChangeType } from '#/db/schema.ts'
 import { listChanges } from '#/server/changes-api.ts'
@@ -185,8 +186,8 @@ async function callTool(
     case 'get_model': {
       const model = await getModelDetail(
         db,
-        String(args.provider ?? ''),
-        String(args.modelId ?? ''),
+        asText(args.provider),
+        asText(args.modelId),
       )
       if (!model) {
         return toolText(
@@ -219,9 +220,9 @@ async function callTool(
       const kind = args.kind === 'output' ? 'output' : 'input'
       const schema = await getEndpointSchema(
         db,
-        String(args.provider ?? ''),
+        asText(args.provider),
         args.activity as Activity,
-        String(args.endpointId ?? ''),
+        asText(args.endpointId),
         kind,
         args.version as string | undefined,
       )
@@ -238,8 +239,8 @@ async function callTool(
     }
     case 'validate_payload': {
       const outcome = await validatePayload(db, {
-        provider: String(args.provider ?? ''),
-        endpointId: String(args.endpointId ?? ''),
+        provider: asText(args.provider),
+        endpointId: asText(args.endpointId),
         kind: args.kind === 'output' ? 'output' : undefined,
         payload: args.payload,
       })
@@ -250,8 +251,8 @@ async function callTool(
     }
     case 'estimate_cost': {
       const outcome = await estimateCost(db, {
-        provider: String(args.provider ?? ''),
-        model: String(args.model ?? ''),
+        provider: asText(args.provider),
+        model: asText(args.model),
         request: isRecord(args.request) ? args.request : undefined,
         usage: isRecord(args.usage) ? args.usage : undefined,
       })
@@ -330,7 +331,7 @@ export async function handleMcpRequest(
     case 'tools/list':
       return Response.json(rpcResult(rpc.id, { tools: TOOLS }))
     case 'tools/call': {
-      const name = String(rpc.params?.name ?? '')
+      const name = asText(rpc.params?.name)
       const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>
       return Response.json(rpcResult(rpc.id, await callTool(db, name, args)))
     }

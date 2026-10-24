@@ -338,7 +338,7 @@ export function mergeListingAndSchema(
 
   let capabilities: unknown = listing.capabilities ?? null
   const capSources: Record<string, FactSource> = {
-    ...(listed.capabilities ?? {}),
+    ...listed.capabilities,
   }
   if (!closed && walk && walk.flags.length > 0) {
     const have = new Set(isStringArray(capabilities) ? capabilities : [])

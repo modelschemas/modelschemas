@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import directorAsyncApi from '../ingest/fixtures/fal-minimax-h3-max-director.asyncapi.json'
@@ -152,7 +153,7 @@ describe('fal AsyncAPI discovery', () => {
 
   it('probes AsyncAPI only for listed models with no OpenAPI POST', async () => {
     fetchMock.mockImplementation((input) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url.startsWith('https://api.fal.ai/v1/models')) {
         return Promise.resolve(
           jsonBody({
@@ -215,7 +216,7 @@ describe('fal AsyncAPI discovery', () => {
       expect(inputOneOf.length).toBeGreaterThan(0)
     }
 
-    const urls = fetchMock.mock.calls.map((call) => String(call[0]))
+    const urls = fetchMock.mock.calls.map((call) => requestUrl(call[0]))
     expect(
       urls.some((u) => u.includes('fal-ai/flux/dev') && u.includes('llms')),
     ).toBe(false)
@@ -227,7 +228,7 @@ describe('fal AsyncAPI discovery', () => {
 
   it('falls back to the constructed asyncapi.json URL when llms.txt has no link', async () => {
     fetchMock.mockImplementation((input) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url.startsWith('https://api.fal.ai/v1/models')) {
         return Promise.resolve(
           jsonBody({
@@ -260,7 +261,7 @@ describe('fal AsyncAPI discovery', () => {
 
   it('does not fail the fetch when AsyncAPI is missing', async () => {
     fetchMock.mockImplementation((input) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url.startsWith('https://api.fal.ai/v1/models')) {
         return Promise.resolve(
           jsonBody({

@@ -288,7 +288,7 @@ function buildSiblingGet(
     responses: {
       '200': {
         description: 'Queued result',
-        ...(media(endpoint.output) ?? {}),
+        ...media(endpoint.output),
       },
     },
   }

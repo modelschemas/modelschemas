@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { env } from 'cloudflare:test'
 import { expect, it, vi } from 'vitest'
 import { getDb } from '../../db/index.ts'
@@ -42,7 +43,7 @@ it('clears the previous NVIDIA docs outage after a healthy native adapter poll',
     polls: 1,
   })
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-    const url = String(input)
+    const url = requestUrl(input)
     if (url === NVIDIA_MODELS_URL)
       return Response.json({ data: [{ id: rawId }] })
     if (url === own.sourceUrl + '.md') return new Response(own.markdown)

@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 import fixtures from '../fixtures/meta-docs.json'
 import { provider } from './meta.ts'
@@ -16,7 +17,7 @@ const docs = fixtures as Record<string, string>
 function serve(overrides: Record<string, string> = {}) {
   const urls: Array<string> = []
   globalThis.fetch = async (input) => {
-    const url = String(input)
+    const url = requestUrl(input)
     urls.push(url)
     const body = overrides[url] ?? docs[url]
     if (body === undefined) throw new Error(`unexpected source ${url}`)

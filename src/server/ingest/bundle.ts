@@ -140,7 +140,7 @@ export function bundleSchema(
   }
 
   const rewrittenRoot = rewriteRefs(root, rootName)
-  const schema = isObject(rewrittenRoot) ? rewrittenRoot : { ...{} }
+  const schema = isObject(rewrittenRoot) ? rewrittenRoot : {}
   if (!isObject(rewrittenRoot)) {
     warnings.push(`${context}: root schema is not an object`)
     return { schema, warnings }

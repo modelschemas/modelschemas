@@ -75,7 +75,7 @@ function clearUnpriced(
   const byId = new Map(models.map((model) => [model.rawId, model]))
   const clear = (model: ModelInfo | undefined) => {
     if (!model || model.pricing != null) return
-    model.absent = { ...(model.absent ?? {}), pricing: 'cleared' }
+    model.absent = { ...model.absent, pricing: 'cleared' }
   }
   for (const model of models) {
     if (seen.has(model.rawId)) clear(model)
@@ -154,7 +154,7 @@ export const provider: ProviderConfig = {
         if (model.activity !== 'chat') continue
         model.requestMap = mistralRequestMap(wire, model.reasoning)
         model.factSources = {
-          ...(model.factSources ?? {}),
+          ...model.factSources,
           requestMap: {
             derivation: 'docs-derived',
             sourceUrl: MISTRAL_OPENAPI_URL,

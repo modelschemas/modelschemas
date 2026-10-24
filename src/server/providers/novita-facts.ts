@@ -556,7 +556,7 @@ function compiledText(block: string): string {
     const before = block.slice(Math.max(0, i - 40), i)
     if (/(?:children:|[[,])$/.test(before)) {
       const value = block.slice(i + 1, end).replaceAll('\\n', '\n')
-      text += /_components\.code,\{children:$/.test(before)
+      text += before.endsWith('_components.code,{children:')
         ? `\`${value}\``
         : value
     }

@@ -481,7 +481,7 @@ function restorePriorPricing(
   if (typeof previous !== 'object' || previous === null) return next
   const prior = (previous as ModelFactSources).pricing
   if (!prior) return next
-  return { ...(next ?? {}), pricing: prior }
+  return { ...next, pricing: prior }
 }
 
 function listingSourceUrl(provider: ProviderConfig): string {
@@ -886,7 +886,7 @@ export async function pollProviderModels(
           : undefined
       if (priorRange && info.pricingRange) {
         info.factSources = {
-          ...(info.factSources ?? {}),
+          ...info.factSources,
           pricingRange: priorRange,
         }
       }

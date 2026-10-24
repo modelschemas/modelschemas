@@ -129,7 +129,7 @@ export function parseMoonshotCnPricing(
   for (const { section, subsection, titles, rows } of tables) {
     if (section !== '模型定价') continue
     const known =
-      /系列模型$/.test(subsection ?? '') &&
+      (subsection ?? '').endsWith('系列模型') &&
       titles.every(
         (t) => t !== null && (t in PRICE_COLUMNS || OTHER_COLUMNS.has(t)),
       )

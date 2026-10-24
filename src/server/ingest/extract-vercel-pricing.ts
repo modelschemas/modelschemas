@@ -237,7 +237,7 @@ async function extractVercelPricingScoped(
         continue
       }
       const priorFacts = asFacts(row.factSources)
-      const nextFacts: ModelFactSources = { ...(priorFacts ?? {}) }
+      const nextFacts: ModelFactSources = { ...priorFacts }
       if (compiled.range) {
         nextFacts.pricingRange = {
           derivation: 'listing',

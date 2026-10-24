@@ -33,8 +33,8 @@ export function parseGeminiNativeAudioThinking(markdown: string): {
     ),
   )
   const disable = sentences.some((sentence) =>
-    /^You can disable thinking by setting `thinkingBudget` to `0`\./.test(
-      sentence,
+    sentence.startsWith(
+      'You can disable thinking by setting `thinkingBudget` to `0`.',
     ),
   )
   if (!rawId || !budget || !disable)

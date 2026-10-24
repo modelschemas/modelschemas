@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
@@ -58,7 +59,7 @@ describe('extractVercelPricing', () => {
       data: [{ id: RAW, pricing: { varies_by_provider: true } }],
     }
     vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === VERCEL_MODELS_URL) return json(listing)
       if (url.endsWith('/endpoints')) {
         return json(
@@ -89,7 +90,7 @@ describe('extractVercelPricing', () => {
     ).toBeNull()
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === VERCEL_MODELS_URL) return json(listing)
       if (url.endsWith('/endpoints')) {
         return json(
@@ -123,7 +124,7 @@ describe('extractVercelPricing', () => {
     expect(updated.length).toBeGreaterThan(0)
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === VERCEL_MODELS_URL) return json(listing)
       return json({ error: 'down' }, 503)
     })
@@ -137,7 +138,7 @@ describe('extractVercelPricing', () => {
     expect(kept?.pricingRange?.routes).toHaveLength(2)
 
     vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === VERCEL_MODELS_URL) return json(listing)
       if (url.endsWith('/endpoints')) {
         return json(

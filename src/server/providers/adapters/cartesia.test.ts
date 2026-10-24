@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -24,7 +25,7 @@ async function withFetch<T>(
   const original = globalThis.fetch
   const urls: Array<string> = []
   globalThis.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const href = String(input)
+    const href = requestUrl(input)
     urls.push(href)
     return Promise.resolve(handler(href, init))
   }

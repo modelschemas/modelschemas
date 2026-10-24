@@ -17,6 +17,7 @@
  * content, or a value it cannot read throws: nothing is guessed about a
  * component it has not seen.
  */
+import { asText } from '#/lib/text.ts'
 import { literalEnd } from './compiled-mdx.ts'
 
 interface MdxElement {
@@ -365,7 +366,7 @@ function render(value: MdxValue, label: string, inline = false): string {
       return content
     }
     if (keys.join() === 'className' && anyText(props.className ?? null)) {
-      return `<span className="${String(props.className)}">${content}</span>`
+      return `<span className="${asText(props.className)}">${content}</span>`
     }
     return fail('<span> props')
   }
@@ -373,7 +374,7 @@ function render(value: MdxValue, label: string, inline = false): string {
   if (inline && BLOCKS.has(type)) return fail(`<${type}> inside inline content`)
   const children = (asInline: boolean) =>
     props.children === undefined ? '' : render(props.children, label, asInline)
-  const prop = (key: string) => String(props[key])
+  const prop = (key: string) => asText(props[key])
   switch (type) {
     case '_Fragment':
       return children(inline)

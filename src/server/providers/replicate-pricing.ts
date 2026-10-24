@@ -263,7 +263,7 @@ export function replicateBillingFromHtml(
   return billing
 }
 
-function parseJsonObject(text: string, start: number): unknown | null {
+function parseJsonObject(text: string, start: number): unknown {
   let depth = 0
   let inString = false
   let escaped = false

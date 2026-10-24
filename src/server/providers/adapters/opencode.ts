@@ -59,9 +59,8 @@ function withSources(
 ): Array<ModelInfo> {
   return listed.map((model): ModelInfo => {
     const facts = catalog[model.rawId]
-    const absent: NonNullable<ModelInfo['absent']> = {
-      ...(facts?.releasedAt == null ? { releasedAt: 'cleared' } : {}),
-    }
+    const absent: NonNullable<ModelInfo['absent']> = {}
+    if (facts?.releasedAt == null) absent.releasedAt = 'cleared'
     const out: ModelInfo = { ...model, ...facts }
     const card = prices?.get(model.rawId)
     if (!prices) absent.pricing = 'unavailable'

@@ -29,7 +29,7 @@ function fakeService(options: { hash?: string } = {}) {
   const hash = options.hash ?? HASH_A
   const calls: Array<Call> = []
   const fetchImpl: typeof fetch = (input, init) => {
-    const url = String(input)
+    const url = requestUrl(input)
     const headers = new Headers(init?.headers)
     calls.push({
       url,
@@ -262,3 +262,9 @@ describe('checkUpdates', () => {
     expect(await checkUpdates(config({ fetchImpl }))).toEqual([])
   })
 })
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}

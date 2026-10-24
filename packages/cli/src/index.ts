@@ -92,6 +92,19 @@ function makeClient(ctx: Ctx) {
   return createModelschemasClient({ baseUrl: ctx.baseUrl })
 }
 
+function headerFields(
+  headers: HeadersInit | undefined,
+): Record<string, string> {
+  if (headers === undefined) return {}
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries())
+  if (Array.isArray(headers)) return Object.fromEntries(headers)
+  const record: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string') record[key] = value
+  }
+  return record
+}
+
 async function authedFetch(
   ctx: Ctx,
   path: string,
@@ -101,7 +114,7 @@ async function authedFetch(
   return fetch(`${ctx.baseUrl}${path}`, {
     ...init,
     headers: {
-      ...(init?.headers ?? {}),
+      ...headerFields(init?.headers),
       ...(header ? { Authorization: header } : {}),
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
     },

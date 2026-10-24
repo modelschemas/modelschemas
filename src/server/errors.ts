@@ -5,11 +5,28 @@
  * Each link is truncated so query/params dumps can't bloat logs past what
  * Workers Logs stores.
  */
+function describeThrown(value: unknown): string {
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return ''
+  }
+}
+
 export function errorMessage(error: unknown, maxPartLength = 300): string {
   const parts: Array<string> = []
   let current: unknown = error
   while (current !== undefined && current !== null && parts.length < 5) {
-    const text = current instanceof Error ? current.message : String(current)
+    const text =
+      current instanceof Error ? current.message : describeThrown(current)
     parts.push(
       text.length > maxPartLength ? `${text.slice(0, maxPartLength)}…` : text,
     )

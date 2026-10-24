@@ -1,3 +1,4 @@
+import { bodyText, requestUrl } from '#/lib/text.ts'
 import { describe, expect, it } from 'vitest'
 
 import { assertParsed } from '#/server/providers/model-facts.ts'
@@ -142,7 +143,7 @@ describe('posthog capture', () => {
     assertParsed(new Map([['seedream-5-0', 1]]), 'byteplus pricing page')
     const calls: Array<[string, RequestInit | undefined]> = []
     const fetchImpl: typeof fetch = (input, init) => {
-      calls.push([String(input), init])
+      calls.push([requestUrl(input), init])
       return Promise.reject(new Error('down'))
     }
     await expect(
@@ -150,7 +151,7 @@ describe('posthog capture', () => {
     ).resolves.toBeUndefined()
     expect(calls[0]?.[0]).toBe(POSTHOG_CAPTURE_URL)
     expect(calls[0]?.[1]?.method).toBe('POST')
-    const body = JSON.parse(String(calls[0]?.[1]?.body)) as {
+    const body = JSON.parse(bodyText(calls[0]?.[1]?.body)) as {
       batch: Array<{ event: string; properties: { rows: number } }>
     }
     expect(body.batch[0]).toMatchObject({
@@ -194,13 +195,13 @@ describe('posthog capture', () => {
     const urls: Array<string> = []
     let body = ''
     const fetchImpl: typeof fetch = (input, init) => {
-      urls.push(String(input))
-      if (String(input) === CF_TRACE_URL) {
+      urls.push(requestUrl(input))
+      if (requestUrl(input) === CF_TRACE_URL) {
         return Promise.resolve(
           new Response('fl=1\nh=www.cloudflare.com\ncolo=HKG\nloc=US\n'),
         )
       }
-      body = String(init?.body)
+      body = bodyText(init?.body)
       return Promise.resolve(new Response('{}'))
     }
     await captureIngestEvents('phc_test', fetchImpl)
@@ -220,10 +221,10 @@ describe('posthog capture', () => {
     noteIngest(ingestFailedEvent('models-poll', 'anthropic', 'GET → 403'))
     let body = ''
     const fetchImpl: typeof fetch = (input, init) => {
-      if (String(input) === CF_TRACE_URL) {
+      if (requestUrl(input) === CF_TRACE_URL) {
         return Promise.reject(new Error('down'))
       }
-      body = String(init?.body)
+      body = bodyText(init?.body)
       return Promise.resolve(new Response('{}'))
     }
     await captureIngestEvents('phc_test', fetchImpl)
@@ -242,7 +243,7 @@ describe('posthog capture', () => {
     noteIngest(parseRowsEvent('page', 1))
     const urls: Array<string> = []
     const fetchImpl: typeof fetch = (input) => {
-      urls.push(String(input))
+      urls.push(requestUrl(input))
       return Promise.resolve(new Response('{}'))
     }
     await captureIngestEvents('phc_test', fetchImpl)

@@ -131,7 +131,7 @@ export function parseGlmReplay(text: string): Array<string> {
   ]
   const interleaved = text
     .split(/^## /m)
-    .find((part) => /^\*\*Interleaved thinking/.test(part))
+    .find((part) => part.startsWith('**Interleaved thinking'))
   // The native guide names the first supported model explicitly. It does
   // not enumerate variants; only that exact id gets this tool-turn rule.
   const since = interleaved?.match(

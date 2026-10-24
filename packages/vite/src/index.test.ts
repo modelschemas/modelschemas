@@ -23,7 +23,7 @@ function fakeService() {
   let requests = 0
   const fetchImpl: typeof fetch = (input, init) => {
     requests++
-    const { pathname, searchParams } = new URL(String(input))
+    const { pathname, searchParams } = new URL(requestUrl(input))
     const headers = new Headers(init?.headers)
     if (pathname === '/v1/schemas/anthropic') {
       return Promise.resolve(
@@ -169,3 +169,9 @@ describe('build mode', () => {
     expect(offline.requestCount()).toBe(0)
   })
 })
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}

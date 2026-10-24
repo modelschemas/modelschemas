@@ -280,7 +280,11 @@ export async function fetchAzurePrices(): Promise<AzurePriceDoc> {
   }
   // Page order is not stable; hash the meters, sorted.
   const lines = meters.map((m) => JSON.stringify(m)).sort()
-  lines.push(JSON.stringify([...thresholds].sort()))
+  lines.push(
+    JSON.stringify(
+      [...thresholds].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    ),
+  )
   return {
     meters,
     thresholds: Object.fromEntries(thresholds),

@@ -1,3 +1,4 @@
+import { bodyText, requestUrl } from '#/lib/text.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
@@ -1379,8 +1380,8 @@ describe('extractFalPricing failure reasons (#394)', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof fetch>(async (input, init) => {
-        if (String(input) === POSTHOG_CAPTURE_URL) {
-          batches.push(JSON.parse(String(init?.body)) as PostHogBatch)
+        if (requestUrl(input) === POSTHOG_CAPTURE_URL) {
+          batches.push(JSON.parse(bodyText(init?.body)) as PostHogBatch)
         }
         return new Response('', { status: 200 })
       }),

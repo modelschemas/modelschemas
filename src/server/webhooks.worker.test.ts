@@ -1,3 +1,4 @@
+import { bodyText, requestUrl } from '#/lib/text.ts'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { env } from 'cloudflare:test'
 import { eq } from 'drizzle-orm'
@@ -32,8 +33,8 @@ function receiver(status = 200) {
   }> = []
   const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
     received.push({
-      url: String(input),
-      body: String(init?.body ?? ''),
+      url: requestUrl(input),
+      body: bodyText(init?.body),
       signature:
         new Headers(init?.headers).get('x-modelschemas-signature') ?? null,
     })

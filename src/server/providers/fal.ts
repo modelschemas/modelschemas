@@ -512,7 +512,7 @@ async function listModels(
       ...(price === 'unavailable' ? { pricing: 'unavailable' as const } : {}),
     }
     const factSources: ModelFactSources = {
-      ...(facts?.factSources ?? {}),
+      ...facts?.factSources,
       ...(card ? { pricing: card.source } : {}),
     }
     const { factSources: _listedSources, ...rest } = facts ?? {}

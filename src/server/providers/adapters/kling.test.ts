@@ -90,7 +90,21 @@ describe('kling fetchSpec', () => {
 
       const { endpoints, warnings } = classifyAndBundle(provider, fetched)
       expect(warnings).toEqual([])
-      expect(endpoints.map((e) => [e.dbId, e.activity]).sort()).toEqual([
+      expect(
+        endpoints
+          .map((e): [string, string] => [e.dbId, e.activity])
+          .sort(([aId, aAct], [bId, bAct]) =>
+            aId < bId
+              ? -1
+              : aId > bId
+                ? 1
+                : aAct < bAct
+                  ? -1
+                  : aAct > bAct
+                    ? 1
+                    : 0,
+          ),
+      ).toEqual([
         ['kling/v1/images/generations', 'image'],
         ['kling/v1/videos/image2video', 'video'],
         ['kling/v1/videos/text2video', 'video'],

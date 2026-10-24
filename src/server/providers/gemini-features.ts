@@ -226,7 +226,10 @@ export function parseThinkingPage(
   for (const [model = '', , range, disable] of rows) {
     if (!/^\*\*[\d.]+ /.test(model) || !range?.includes('`')) continue
     for (const id of budgetIds(model)) {
-      out.set(id, { mode: 'budget', mandatory: /^N\/A/.test(disable ?? '') })
+      out.set(id, {
+        mode: 'budget',
+        mandatory: (disable ?? '').startsWith('N/A'),
+      })
     }
   }
   return out

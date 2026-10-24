@@ -53,7 +53,7 @@ export function stableJson(value: unknown): string {
 }
 
 /** `lastSeenAt` moves on every poll; `_links` are API navigation. */
-function exportModel({ lastSeenAt, _links, ...model }: ApiModel) {
+function exportModel({ lastSeenAt: _lastSeenAt, _links, ...model }: ApiModel) {
   return model
 }
 

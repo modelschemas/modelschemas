@@ -1,3 +1,4 @@
+import { requestUrl } from '#/lib/text.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   openRouterGatewayEffortWire,
@@ -77,7 +78,7 @@ it('lists actual native nonmandatory toggle with exact guide provenance, preserv
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === 'https://openrouter.ai/api/v1/models')
         return Response.json(docs.nativeModels)
       if (url === docs.sourceUrl) return new Response(docs.markdown)
@@ -125,7 +126,7 @@ it('separates old shapes and effort-only warm cache from a newly toggle-capable 
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === 'https://openrouter.ai/api/v1/models')
         return Response.json(
           phase === 0
@@ -188,7 +189,7 @@ it('sources high only from an actual accepted native enum and leaves another nat
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url === 'https://openrouter.ai/api/v1/models')
         return Response.json(docs.nativeEffortModels)
       if (url === docs.sourceUrl) return new Response(docs.markdown)
