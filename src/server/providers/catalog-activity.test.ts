@@ -227,6 +227,12 @@ describe('cerebras model pages', () => {
         '| [Qwen 3.8 27B](/models/qwen-3.8-27b.md) | `qwen-3.8-27b` | 27 billion |',
       ),
     ).toEqual([{ slug: 'qwen-3.8-27b', id: 'qwen-3.8-27b' }])
+    // As of 2026-10-23 the links carry the docs origin (issue #486).
+    expect(
+      cerebrasCatalogRows(
+        '| [OpenAI GPT OSS](https://inference-docs.cerebras.ai/models/openai-oss.md) | `gpt-oss-120b` | 120 billion |',
+      ),
+    ).toEqual([{ slug: 'openai-oss', id: 'gpt-oss-120b' }])
     const facts = parseCerebrasModelPage(CEREBRAS_PAGE)
     expect(facts?.inputPerMillion).toBe(0.35)
     expect(facts?.outputPerMillion).toBe(0.75)

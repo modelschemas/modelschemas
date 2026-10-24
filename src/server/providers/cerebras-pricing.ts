@@ -155,13 +155,15 @@ function modelInfoBlocks(page: string): Array<string> {
 
 /**
  * Catalog table: link slug plus the backticked API id. Links may end in
- * `.md` (issue #437); the slug drops it so the HTML page is read.
+ * `.md` (issue #437); the slug drops it so the HTML page is read. As of
+ * 2026-10-23 links carry the docs origin (issue #486).
  */
 export function cerebrasCatalogRows(
   markdown: string,
 ): Array<{ slug: string; id: string }> {
   const out: Array<{ slug: string; id: string }> = []
-  const re = /\[[^\]]+\]\(\/models\/([a-z0-9.-]+?)(?:\.md)?\)\s*\|\s*`([^`]+)`/g
+  const re =
+    /\[[^\]]+\]\((?:https:\/\/inference-docs\.cerebras\.ai)?\/models\/([a-z0-9.-]+?)(?:\.md)?\)\s*\|\s*`([^`]+)`/g
   for (const match of markdown.matchAll(re)) {
     if (match[1] && match[2]) out.push({ slug: match[1], id: match[2] })
   }
