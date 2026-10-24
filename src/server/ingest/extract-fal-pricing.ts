@@ -246,13 +246,14 @@ function parseJsonObject(text: string): unknown {
   return JSON.parse(body) as unknown
 }
 
-const EXTRACT_SYSTEM = `You write a modelschemas RateCard — a price calculator — from a FAL model's llms.txt Pricing section.
+export const EXTRACT_SYSTEM = `You write a modelschemas RateCard — a price calculator — from a FAL model's llms.txt Pricing section.
 Return JSON only: {"inputs": {...}, "tables": {...}, "price": <JSONLogic>, "examples": [...]}, optionally "expiresAt" (ISO datetime) when the text names a promo end. Do not include a source object.
 
 inputs: name → {"param": <field>, "kind": "number"|"enum"|"boolean"|"count", "bound": "request"|"usage", "default"?: ..., "values"?: [...] (enum only)}.
 - A request-bound param MUST be one of the allowed request properties (or a dotted child of one). Give it a default when the request may omit it.
 - A quantity the request cannot state (seconds of output, megapixels, characters, tokens) is "bound": "usage" — never invent a request field.
 - So is a priced choice no allowed property sets (an output resolution the request has no field for): a "bound": "usage" enum the caller states, with no default.
+- "count" prices the items of a list param (image_urls, reference_image_urls): {"var": x} is the list's length. An example's params give the list itself ({"image_urls": ["https://example.com/a.png", "https://example.com/b.png"]}), never a number, and there is no ".length". A count input has no default: omit the param for zero items. Per output item (num_images) and any quantity the request does not send as a list (characters, seconds) is "number".
 tables: name → nested {key: number}, read with {"lookup": {"table": name, "keys": [{"var": input}]}}.
 price: JSONLogic over var, +, -, *, /, max, min, if, ==, !=, <, <=, >, >=, and, or, ceil, floor, lookup. {"var": x} reads the input named x. "==" is strict: compare enum inputs to strings.
 examples: [{"params": {param: value}, "usd": number, "quote": text copied verbatim from the section}]. The card is rejected unless evaluating price on each example's params reproduces usd within 1%.
@@ -264,7 +265,10 @@ Rules:
 - Return {"unverified": true} ONLY when the section names no positive price (empty, zeros, or "see pricing page" boilerplate).
 
 Example. Section: "Your request will cost $0.08 per image. 2K outputs are charged at 1.5 times the standard rate. If web search is used, an additional $0.015 will be charged." Allowed: num_images, resolution, enable_web_search.
-{"inputs":{"num_images":{"param":"num_images","kind":"number","bound":"request","default":1},"resolution":{"param":"resolution","kind":"enum","bound":"request","values":["1K","2K"],"default":"1K"},"enable_web_search":{"param":"enable_web_search","kind":"boolean","bound":"request","default":false}},"tables":{"multiplier":{"1K":1,"2K":1.5}},"price":{"+":[{"*":[{"var":"num_images"},0.08,{"lookup":{"table":"multiplier","keys":[{"var":"resolution"}]}}]},{"if":[{"var":"enable_web_search"},0.015,0]}]},"examples":[{"params":{"num_images":1},"usd":0.08,"quote":"Your request will cost $0.08 per image"},{"params":{"resolution":"2K"},"usd":0.12,"quote":"2K outputs are charged at 1.5 times the standard rate"},{"params":{"enable_web_search":true},"usd":0.095,"quote":"If web search is used, an additional $0.015 will be charged"}]}`
+{"inputs":{"num_images":{"param":"num_images","kind":"number","bound":"request","default":1},"resolution":{"param":"resolution","kind":"enum","bound":"request","values":["1K","2K"],"default":"1K"},"enable_web_search":{"param":"enable_web_search","kind":"boolean","bound":"request","default":false}},"tables":{"multiplier":{"1K":1,"2K":1.5}},"price":{"+":[{"*":[{"var":"num_images"},0.08,{"lookup":{"table":"multiplier","keys":[{"var":"resolution"}]}}]},{"if":[{"var":"enable_web_search"},0.015,0]}]},"examples":[{"params":{"num_images":1},"usd":0.08,"quote":"Your request will cost $0.08 per image"},{"params":{"resolution":"2K"},"usd":0.12,"quote":"2K outputs are charged at 1.5 times the standard rate"},{"params":{"enable_web_search":true},"usd":0.095,"quote":"If web search is used, an additional $0.015 will be charged"}]}
+
+Example. Section: "Each edit costs $0.10, plus $0.02 per reference image." Allowed: prompt, reference_image_urls.
+{"inputs":{"reference_images":{"param":"reference_image_urls","kind":"count","bound":"request"}},"tables":{},"price":{"+":[0.1,{"*":[{"var":"reference_images"},0.02]}]},"examples":[{"params":{},"usd":0.1,"quote":"Each edit costs $0.10"},{"params":{"reference_image_urls":["https://example.com/a.png","https://example.com/b.png"]},"usd":0.14,"quote":"plus $0.02 per reference image"}]}`
 
 function extractUserPrompt(
   pricingText: string,
