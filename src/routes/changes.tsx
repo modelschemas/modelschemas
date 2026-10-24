@@ -52,6 +52,8 @@ interface ChangesData {
   count: number
   changes: Array<ChangeRow>
   nextCursor: string | null
+  /** Epoch seconds the server read the feed; `timeAgo` measures from it. */
+  renderedAt: number
 }
 
 const getChanges = createServerFn({ method: 'GET' })
@@ -61,8 +63,11 @@ const getChanges = createServerFn({ method: 'GET' })
     const { getDb } = await import('#/db/index.ts')
     const { listChanges } = await import('#/server/changes-api.ts')
     const outcome = await listChanges(getDb(env), { ...data, limit: 50 })
-    if (!outcome.ok) return { count: 0, changes: [], nextCursor: null }
+    const renderedAt = Math.floor(Date.now() / 1000)
+    if (!outcome.ok)
+      return { count: 0, changes: [], nextCursor: null, renderedAt }
     return {
+      renderedAt,
       count: outcome.result.count,
       nextCursor: outcome.result.nextCursor,
       changes: outcome.result.changes.map((c) => ({
@@ -201,7 +206,7 @@ function Changes() {
                     data.changes.map((change) => (
                       <tr key={change.id}>
                         <td className="font-mono text-xs whitespace-nowrap text-ink-faint">
-                          {timeAgo(change.createdAt)}
+                          {timeAgo(change.createdAt, data.renderedAt)}
                         </td>
                         <td
                           className={`font-mono text-xs whitespace-nowrap ${CHANGE_STYLES[change.type] ?? 'text-ink-soft'}`}

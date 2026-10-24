@@ -241,9 +241,13 @@ function Landing() {
             </span>
             <span>
               polled{' '}
-              <b className="font-semibold text-ink">{timeAgo(lastPolledAt)}</b>{' '}
+              <b className="font-semibold text-ink">
+                {timeAgo(lastPolledAt, status.time)}
+              </b>{' '}
               · specs synced{' '}
-              <b className="font-semibold text-ink">{timeAgo(lastSyncedAt)}</b>
+              <b className="font-semibold text-ink">
+                {timeAgo(lastSyncedAt, status.time)}
+              </b>
             </span>
           </div>
         </header>
@@ -348,10 +352,10 @@ function Landing() {
                       )}
                     </td>
                     <td className="num text-ink-faint" data-label="polled">
-                      {timeAgo(p.lastPolledAt)}
+                      {timeAgo(p.lastPolledAt, status.time)}
                     </td>
                     <td className="num text-ink-faint max-[899px]:hidden">
-                      {timeAgo(p.lastSyncedAt)}
+                      {timeAgo(p.lastSyncedAt, status.time)}
                     </td>
                   </tr>
                 ))}
@@ -381,7 +385,7 @@ function Landing() {
                     {changes.map((change) => (
                       <tr key={change.id}>
                         <td className="font-mono text-xs whitespace-nowrap text-ink-faint">
-                          {timeAgo(change.createdAt)}
+                          {timeAgo(change.createdAt, status.time)}
                         </td>
                         <td className="max-w-[38em] truncate">
                           <ChangeSummary change={change} />
