@@ -454,6 +454,10 @@ describe('EXTRACT_SYSTEM', () => {
   }))
 
   it('includes a worked count input', () => {
+    // Every "Example." in the prompt is parsed, none skipped by the regex.
+    expect(workedExamples).toHaveLength(
+      EXTRACT_SYSTEM.match(/^Example\. /gm)?.length ?? 0,
+    )
     expect(workedExamples.length).toBeGreaterThan(1)
     expect(workedExamples.some(({ reply }) => reply.includes('"count"'))).toBe(
       true,
@@ -461,6 +465,7 @@ describe('EXTRACT_SYSTEM', () => {
   })
 
   it('has worked examples that pass checkExtractedCard', () => {
+    expect(workedExamples.length).toBeGreaterThan(0)
     for (const { section, allowed, reply } of workedExamples) {
       const card = checkExtractedCard(reply, {
         pricingText: section,
