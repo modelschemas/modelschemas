@@ -1,10 +1,12 @@
 /**
  * Kimi prices from the international pricing page (issue #109). Amounts
- * are USD per 1M tokens. K2 rows are cache-hit / cache-miss / output.
- * K3 rows add cache-write TTLs, by position. A row is priced only when
- * every cell between its unit and its context window is a bare `$0.16`,
- * so a struck or footnoted price leaves the row unpriced rather than
- * shifting the others into its lever. `moonshotModelPricing` throws on a
+ * are USD per 1M tokens (`$0.16 / MTok`; the page states 1 MTok =
+ * 1,000,000 tokens). Columns are read by title (issue #484). A row is
+ * priced only when every price cell is a bare `$0.16 / MTok`, every title
+ * is one this knows, and the row has input, output and cache-hit prices,
+ * so a struck or footnoted price leaves its row unpriced, and a table
+ * whose first title is not `Model` or that has a title this does not know
+ * (a batch column) prices no row. `moonshotModelPricing` throws on a
  * zero-row parse. The tables are read from the HTML page: its `.md`
  * export renders them empty.
  */
@@ -26,52 +28,49 @@ export interface MoonshotRates {
   cacheWrite1h?: number
 }
 
-/** The amounts, or null when any cell is not a bare dollar amount. */
-function dollars(cells: Array<string | null>): Array<number> | null {
-  const amounts = cells.map((cell) => cell?.match(/^\$(\d+(?:\.\d+)?)$/)?.[1])
-  return amounts.every((amount) => amount !== undefined)
-    ? amounts.map(Number)
-    : null
+/** Price column title → the rate it states. */
+const PRICE_COLUMNS: Record<string, keyof MoonshotRates> = {
+  Input: 'input',
+  Output: 'output',
+  'Cached Input': 'cacheRead',
+  '5m writes': 'cacheWrite',
+  '1h writes': 'cacheWrite1h',
 }
+const ID_COLUMN = 'Model'
 
 /** Model id → USD per million tokens. */
 export function parseMoonshotPricing(
   tables: Array<KimiDocTable>,
 ): Map<string, MoonshotRates> {
   const out = new Map<string, MoonshotRates>()
-  for (const [id, unit, ...cells] of tables.flatMap((table) => table.rows)) {
-    const context = /^[\d,]+ tokens$/.test(cells.at(-1) ?? '')
-    const amounts = dollars(context ? cells.slice(0, -1) : cells)
+  for (const { titles, rows } of tables) {
     if (
-      !id?.startsWith('kimi-') ||
-      unit !== '1M tokens' ||
-      out.has(id) ||
-      amounts === null
+      titles[0] !== ID_COLUMN ||
+      !titles
+        .slice(1)
+        .every((title) => title !== null && title in PRICE_COLUMNS)
     ) {
       continue
     }
-    if (amounts.length === 3) {
-      const [cacheRead, input, output] = amounts
+    for (const [id, ...cells] of rows) {
+      if (!id?.startsWith('kimi-') || out.has(id)) continue
+      const rates: Partial<MoonshotRates> = {}
+      cells.forEach((cell, index) => {
+        const lever = PRICE_COLUMNS[titles[index + 1] ?? '']
+        const amount = cell?.match(/^\$(\d+(?:\.\d+)?) \/ MTok$/)?.[1]
+        if (lever && amount !== undefined) rates[lever] = Number(amount)
+      })
+      const { input, output, cacheRead } = rates
       if (
-        cacheRead === undefined ||
+        cells.length !== titles.length - 1 ||
+        Object.keys(rates).length !== cells.length ||
         input === undefined ||
-        output === undefined
+        output === undefined ||
+        cacheRead === undefined
       ) {
         continue
       }
-      out.set(id, { cacheRead, input, output })
-    } else if (amounts.length === 5) {
-      const [cacheWrite, cacheWrite1h, cacheRead, input, output] = amounts
-      if (
-        cacheWrite === undefined ||
-        cacheWrite1h === undefined ||
-        cacheRead === undefined ||
-        input === undefined ||
-        output === undefined
-      ) {
-        continue
-      }
-      out.set(id, { cacheWrite, cacheWrite1h, cacheRead, input, output })
+      out.set(id, { ...rates, input, output, cacheRead })
     }
   }
   return out

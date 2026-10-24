@@ -115,18 +115,21 @@ async function listModels(
     return { models: [], ...skippedResult('anthropic', 'ANTHROPIC_API_KEY') }
   }
   const headers = { 'x-api-key': key, 'anthropic-version': ANTHROPIC_VERSION }
+  // The docs host serves a page with no tables to the regions the API
+  // refuses, so docs loads leave from the same place as the listing (#482).
+  const egress = usEgressFetch(env)
   // A failed docs load leaves the facts it feeds unavailable on every row;
   // the Models API listing itself is never wrapped.
   const docs = docsRun()
   const [pricing, features, aliasMap] = await Promise.all([
     tryDocs(docs, ANTHROPIC_PRICING_URL, (cached) =>
-      anthropicModelPricing(kv, cached),
+      anthropicModelPricing(kv, cached, egress),
     ),
     tryDocs(docs, ANTHROPIC_THINKING_URL, (cached) =>
-      anthropicModelFeatures(kv, cached),
+      anthropicModelFeatures(kv, cached, egress),
     ),
     tryDocs(docs, ANTHROPIC_MODELS_OVERVIEW_URL, (cached) =>
-      anthropicAliasMap(kv, cached),
+      anthropicAliasMap(kv, cached, egress),
     ),
   ])
   const lost: Array<ModelFact> = [
@@ -143,7 +146,7 @@ async function listModels(
     const body = (await fetchJson(
       url.toString(),
       { headers },
-      usEgressFetch(env),
+      egress,
     )) as AnthropicModelList
     for (const m of body.data ?? []) {
       const input = ['text']

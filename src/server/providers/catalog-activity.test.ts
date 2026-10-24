@@ -51,7 +51,7 @@ const FIREWORKS_MD = `
 | Less than 4B parameters | $0.10 |
 `
 
-// The compiled MDX body of platform.kimi.ai/docs/pricing/chat (2026-10-20).
+// The compiled MDX body of platform.kimi.ai/docs/pricing/chat (2026-10-23).
 const MOONSHOT_PAGE = readFileSync(
   new URL('./fixtures/platform.kimi.ai-pricing-chat.html.txt', import.meta.url),
   'utf8',
@@ -159,7 +159,7 @@ describe('fireworks pricing page', () => {
 })
 
 describe('moonshot pricing page', () => {
-  it('reads K2 cache columns and K3 cache-write columns', () => {
+  it('reads K2 cache columns and K3 cache-write columns by title', () => {
     const parsed = parseMoonshotPricing(parseKimiDocTables(MOONSHOT_PAGE))
     expect(parsed.get('kimi-k2.6')).toEqual({
       cacheRead: 0.16,
@@ -181,14 +181,38 @@ describe('moonshot pricing page', () => {
     const struck = (amount: string) =>
       `_jsx(_components.del,{children:\`$${amount}\`})`
     const page = MOONSHOT_PAGE.replace(
-      '_jsxs(_Fragment,{children:[`$`,`0.30`]}),_jsxs(_Fragment,{children:[`$`,`3.00`]}),_jsxs(_Fragment,{children:[`$`,`15.00`]})',
+      '`$3.00 / MTok`,`$15.00 / MTok`,`$0.30 / MTok`',
       () =>
-        `${struck('0.30')},${struck('3.00')},_jsxs(_Fragment,{children:[\`$\`,\`15.00\`]})`,
+        `${struck('3.00 / MTok')},${struck('15.00 / MTok')},\`$0.30 / MTok\``,
     )
     expect(page).not.toBe(MOONSHOT_PAGE)
     const parsed = parseMoonshotPricing(parseKimiDocTables(page))
     expect(parsed.has('kimi-k3')).toBe(false)
     expect(parsed.has('kimi-k2.6')).toBe(true)
+  })
+
+  it.each([
+    ['a unit suffix', '`$0.16 / MTok (promo)`'],
+    ['another unit', '`$0.16 / KTok`'],
+    ['a yuan price', '`¥0.16 / MTok`'],
+    ['no cache-hit price', '`—`'],
+  ])('leaves a row with %s unpriced', (_name, to) => {
+    const page = MOONSHOT_PAGE.replace('`$0.16 / MTok`', to)
+    expect(page).not.toBe(MOONSHOT_PAGE)
+    const parsed = parseMoonshotPricing(parseKimiDocTables(page))
+    expect(parsed.has('kimi-k2.6')).toBe(false)
+    expect(parsed.has('kimi-k3')).toBe(true)
+  })
+
+  it('prices no row of a table with a title it does not know', () => {
+    const page = MOONSHOT_PAGE.replace(
+      '{title:`Output`,width:`22%`}',
+      '{title:`Batch output`,width:`22%`}',
+    )
+    expect(page).not.toBe(MOONSHOT_PAGE)
+    const parsed = parseMoonshotPricing(parseKimiDocTables(page))
+    expect(parsed.has('kimi-k2.6')).toBe(false)
+    expect(parsed.has('kimi-k3')).toBe(true)
   })
 })
 
@@ -203,6 +227,12 @@ describe('cerebras model pages', () => {
         '| [Qwen 3.8 27B](/models/qwen-3.8-27b.md) | `qwen-3.8-27b` | 27 billion |',
       ),
     ).toEqual([{ slug: 'qwen-3.8-27b', id: 'qwen-3.8-27b' }])
+    // As of 2026-10-23 the links carry the docs origin (issue #486).
+    expect(
+      cerebrasCatalogRows(
+        '| [OpenAI GPT OSS](https://inference-docs.cerebras.ai/models/openai-oss.md) | `gpt-oss-120b` | 120 billion |',
+      ),
+    ).toEqual([{ slug: 'openai-oss', id: 'gpt-oss-120b' }])
     const facts = parseCerebrasModelPage(CEREBRAS_PAGE)
     expect(facts?.inputPerMillion).toBe(0.35)
     expect(facts?.outputPerMillion).toBe(0.75)

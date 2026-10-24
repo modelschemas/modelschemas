@@ -20,6 +20,7 @@ import {
 } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
+import type { Fetcher } from './us-egress.ts'
 
 export const ANTHROPIC_PRICING_URL =
   'https://platform.claude.com/docs/en/about-claude/pricing.md'
@@ -88,9 +89,10 @@ type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources'>
 export async function anthropicModelPricing(
   kv?: KVNamespace,
   cached: typeof cachedDocs = cachedDocs,
+  fetcher: Fetcher = fetch,
 ): Promise<(displayName: string | null | undefined) => PricedFacts> {
   const doc = await cached(kv, ANTHROPIC_PRICING_URL, async () => {
-    const markdown = await fetchText(ANTHROPIC_PRICING_URL)
+    const markdown = await fetchText(ANTHROPIC_PRICING_URL, undefined, fetcher)
     const parsed = parseAnthropicPricing(markdown)
     assertParsed(parsed, 'anthropic pricing page')
     return {

@@ -58,8 +58,11 @@ bun run check:client         # regenerate + git diff --exit-code (CI step)
 bun scripts/emit-skill.ts    # src/server/skill.ts → skill/modelschemas/SKILL.md
 ```
 
-`openapi.json` and `SKILL.md` are oxfmt-ignored (byte-stable emitted
-artifacts). Lefthook pre-commit runs oxfmt/oxlint/typecheck — never
+A PR that touches `packages/*` (including the generated client) needs a
+changeset (`bunx changeset`), or `bunx changeset --empty` when nothing
+ships; CI runs `changeset status --since=origin/main` on PRs and fails
+without one. `openapi.json` and `SKILL.md` are oxfmt-ignored (byte-stable
+emitted artifacts). Lefthook pre-commit runs oxfmt/oxlint/typecheck — never
 `--no-verify`. The cloudflare vite plugin is skipped under vitest;
 Workers-binding tests (`*.worker.test.ts`) run in workerd via
 `@cloudflare/vitest-pool-workers` (config: `vitest.workers.config.ts`,

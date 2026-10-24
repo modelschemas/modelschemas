@@ -18,7 +18,7 @@ import {
 } from './moonshotai-cn.ts'
 
 /**
- * The compiled MDX body of platform.kimi.com/docs/pricing/chat (2026-10-20),
+ * The compiled MDX body of platform.kimi.com/docs/pricing/chat (2026-10-23),
  * plus a priced id the chat spec does not map. Prices are yuan.
  */
 const PRICING = readFileSync(
@@ -28,9 +28,11 @@ const PRICING = readFileSync(
   ),
   'utf8',
 ).replace(
-  '[`kimi-k2.6`,`1M tokens`,`¥1.10`,`¥6.50`,`¥27.00`,`262,144 tokens`]',
-  '[`kimi-k2.6`,`1M tokens`,`¥1.10`,`¥6.50`,`¥27.00`,`262,144 tokens`],[`kimi-unmapped`,`1M tokens`,`¥1.00`,`¥2.00`,`¥3.00`,`8,192 tokens`]',
+  '`¥6.50 / MTok`,`¥27.00 / MTok`,`¥1.10 / MTok`]',
+  '`¥6.50 / MTok`,`¥27.00 / MTok`,`¥1.10 / MTok`],[`kimi-unmapped`,`¥2.00 / MTok`,`¥3.00 / MTok`,`¥1.00 / MTok`]',
 )
+
+const K3_IDS = ['kimi-k3.1-pro', 'kimi-k3.1-pro-highspeed', 'kimi-k3']
 
 const prices = (page: string) =>
   parseMoonshotCnPricing(parseKimiDocTables(page))
@@ -250,16 +252,19 @@ describe('moonshotai-cn', () => {
       KIMI_CN_THINKING_URL,
     ])
     expect(models.map((model) => model.rawId)).toEqual([
+      'kimi-k3.1-pro',
+      'kimi-k3.1-pro-highspeed',
       'kimi-k3',
       'kimi-k2.7-code',
       'kimi-k2.7-code-highspeed',
       'kimi-k2.6',
       'kimi-unmapped',
     ])
-    expect(models[0]).toMatchObject({
+    expect(models[2]).toMatchObject({
       rawId: 'kimi-k3',
       activity: 'chat',
-      contextWindow: 1048576,
+      // The table no longer states a context window (issue #484).
+      contextWindow: null,
       capabilities: ['reasoning'],
       // ¥20 in, ¥100 out, ¥2 cache hit, ¥20 / ¥40 cache write per 1M.
       pricing: {
@@ -278,24 +283,20 @@ describe('moonshotai-cn', () => {
         source: { url: MOONSHOT_CN_PRICING_URL },
       },
     })
-    expect(models[0]?.factSources?.pricing).toMatchObject({
+    expect(models[2]?.factSources?.pricing).toMatchObject({
       derivation: 'docs-derived',
       sourceUrl: MOONSHOT_CN_PRICING_URL,
       sourceHash: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
     })
-    expect(models[0]?.maxOutput).toBeUndefined()
-    expect(models[0]?.factSources?.contextWindow).toMatchObject({
-      derivation: 'docs-derived',
-      sourceUrl: MOONSHOT_CN_PRICING_URL,
-    })
+    expect(models[2]?.maxOutput).toBeUndefined()
+    expect(models[2]?.factSources?.contextWindow).toBeUndefined()
     for (const model of models) {
       expect(model.pricing).toMatchObject({
         price: { currency: ['CNY', expect.anything() as unknown] },
       })
     }
     // A priced id the chat spec does not map stays unclassified.
-    expect(models[4]?.activity).toBeUndefined()
-    expect(models[4]?.contextWindow).toBe(8192)
+    expect(models[6]?.activity).toBeUndefined()
   })
 
   it('syncs the published spec and binds chat rows to its chat route', async () => {
@@ -321,6 +322,8 @@ describe('parseMoonshotCnPricing', () => {
   it('reads each column by its title', () => {
     const parsed = prices(PRICING)
     expect([...parsed.keys()]).toEqual([
+      'kimi-k3.1-pro',
+      'kimi-k3.1-pro-highspeed',
       'kimi-k3',
       'kimi-k2.7-code',
       'kimi-k2.7-code-highspeed',
@@ -335,19 +338,15 @@ describe('parseMoonshotCnPricing', () => {
   })
 
   it.each([
-    [
-      'a unit suffix',
-      '`¥6.50`,`¥27.00`,`262,144 tokens`],[`kimi-unmapped`',
-      '`¥6.50/千`,`¥27.00`,`262,144 tokens`],[`kimi-unmapped`',
-    ],
-    ['two prices in one cell', '`¥1.10`', '`¥2.20 ¥1.10`'],
-    ['a dollar price', '`¥1.10`', '`$1.10`'],
+    ['a unit suffix', '`¥1.10 / MTok`', '`¥1.10 / MTok（限时）`'],
+    ['two prices in one cell', '`¥1.10 / MTok`', '`¥2.20 ¥1.10 / MTok`'],
+    ['a dollar price', '`¥1.10 / MTok`', '`$1.10 / MTok`'],
     [
       'a cell that is not text',
-      '`¥1.10`',
-      '_jsx(_components.del,{children:`¥1.10`})',
+      '`¥1.10 / MTok`',
+      '_jsx(_components.del,{children:`¥1.10 / MTok`})',
     ],
-    ['another unit', '[`kimi-k2.6`,`1M tokens`', '[`kimi-k2.6`,`1K tokens`'],
+    ['another unit', '`¥1.10 / MTok`', '`¥1.10 / KTok`'],
   ])('leaves a row with %s unpriced', (_name, from, to) => {
     const page = PRICING.replace(from, to)
     expect(page).not.toBe(PRICING)
@@ -358,31 +357,30 @@ describe('parseMoonshotCnPricing', () => {
 
   it('prices no row of a table with a column it does not know', () => {
     const page = PRICING.replace(
-      '{title:`输出价格`,width:`14%`}',
-      '{title:`输出价格（批量）`,width:`14%`}',
+      '{title:`输出`,width:`22%`}',
+      '{title:`输出（批量）`,width:`22%`}',
     )
     expect(page).not.toBe(PRICING)
-    expect([...prices(page).keys()]).toEqual(['kimi-k3'])
+    expect([...prices(page).keys()]).toEqual(K3_IDS)
   })
 
   it('never stores a batch table as the standard price', () => {
     const batch = PRICING.replace(
       '_jsx(Heading,{level:`2`,id:`计费基本概念`',
       '_jsx(Heading,{level:`3`,id:`批量价格`,children:`批量价格`}),' +
-        '_jsx(DocTable,{columns:[{title:`模型`},{title:`计费单位`},' +
-        '{title:`输入价格（缓存命中）`},{title:`输入价格（缓存未命中）`},' +
-        '{title:`输出价格`},{title:`上下文窗口`}],' +
-        'rows:[[`kimi-k2.6`,`1M tokens`,`¥0.55`,`¥3.25`,`¥13.50`,`262,144 tokens`]]}),' +
+        '_jsx(DocTable,{columns:[{title:`模型`},{title:`输入`},' +
+        '{title:`输出`},{title:`缓存命中`}],' +
+        'rows:[[`kimi-k2.6`,`¥3.25 / MTok`,`¥13.50 / MTok`,`¥0.55 / MTok`]]}),' +
         '_jsx(Heading,{level:`2`,id:`计费基本概念`',
     )
     expect(batch).not.toBe(PRICING)
     // Beside the standard row, and with the standard table retitled.
     expect(prices(batch).has('kimi-k2.6')).toBe(false)
     const retitled = batch.replace(
-      '{title:`输出价格`,width:`14%`}',
-      '{title:`输出价格（标准）`,width:`14%`}',
+      '{title:`输出`,width:`22%`}',
+      '{title:`输出（标准）`,width:`22%`}',
     )
-    expect([...prices(retitled).keys()]).toEqual(['kimi-k3'])
+    expect([...prices(retitled).keys()]).toEqual(K3_IDS)
     // The same tables outside `## 模型定价` are not prices at all.
     expect(() =>
       prices(PRICING.replace('children:`模型定价`', 'children:`批量定价`')),

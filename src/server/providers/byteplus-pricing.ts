@@ -57,11 +57,17 @@ export const BYTEPLUS_VIDEO_GUIDE_URL =
   'https://docs.byteplus.com/en/docs/modelark/video-generation-tutorial'
 
 /**
- * seed-translation's own model page (#411). The pricing page has no row for
- * it; this page's "Model Price" table quotes the one model it documents.
+ * Undated page id → its own model page. The pricing page has no row for
+ * these; each page's price table quotes the one model it documents.
+ * seed-translation never had a row (#411); gpt-oss-120b's was removed on
+ * 2026-10-23 while its model page kept the price (#479).
  */
-export const BYTEPLUS_SEED_TRANSLATION_URL =
-  'https://docs.byteplus.com/en/docs/ModelArk/recommended-models-seed-translation'
+export const BYTEPLUS_MODEL_PAGES: Record<string, string> = {
+  'seed-translation':
+    'https://docs.byteplus.com/en/docs/ModelArk/recommended-models-seed-translation',
+  'gpt-oss-120b':
+    'https://docs.byteplus.com/en/docs/ModelArk/recommended-models-gpt-oss-120b',
+}
 
 /** "also supports" aliases. Not a price source. */
 export const BYTEPLUS_MODEL_LIST_URL =
@@ -521,21 +527,49 @@ export function compilePeriodCard(
   }
 }
 
-/** Model-page price header (units kept: the cells have no parentheses). */
-const MODEL_PAGE_LEVERS: Record<string, string> = {
-  'input usd/m tokens': 'input_tokens',
-  'input hits cache usd/m tokens': 'cache_read_tokens',
-  'output unit price usd/m tokens': 'output_tokens',
+/**
+ * Model-page price headers (units kept: the cells have no parentheses).
+ * Where a lever lists two spellings, seed-translation writes the first and
+ * gpt-oss-120b the second. "[Batch]" columns are other headers, so they
+ * are never read; cache storage is per token-hour and not a lever.
+ */
+const MODEL_PAGE_LEVERS: Record<string, Array<string>> = {
+  input_tokens: ['input usd/m tokens', 'input unit price usd/m tokens'],
+  cache_read_tokens: [
+    'input hits cache usd/m tokens',
+    'input cache hits usd/m tokens',
+  ],
+  output_tokens: ['output unit price usd/m tokens'],
+}
+
+/** Lever → column; input and output required, cached input optional. */
+function modelPageColumns(keys: Array<string>): Record<string, number> | null {
+  const columns: Record<string, number> = {}
+  for (const [lever, headers] of Object.entries(MODEL_PAGE_LEVERS)) {
+    const at = keys.flatMap((key, index) =>
+      headers.includes(key) ? [index] : [],
+    )
+    if (at.length > 1) return null
+    if (at[0] !== undefined) columns[lever] = at[0]
+  }
+  return columns.input_tokens !== undefined &&
+    columns.output_tokens !== undefined
+    ? columns
+    : null
 }
 
 /**
  * The single price row of a one-model doc page. Throws unless exactly one
- * table with one row quotes both input and output.
+ * table, with one row, has one input and one output column (cached input
+ * optional; a lever matching two columns disqualifies the table).
  */
 export function parseByteplusModelPage(
   doc: ByteplusDoc,
 ): Record<string, number> {
-  const tables = tablesWith(doc, Object.keys(MODEL_PAGE_LEVERS))
+  const tables = tablesWith(doc, []).flatMap((table) => {
+    const columns = modelPageColumns(table.keys)
+    return columns ? [{ ...table, columns }] : []
+  })
   const row = tables.length === 1 ? tables[0] : undefined
   if (!row || row.rows.length !== 1) {
     throw new Error(
@@ -543,8 +577,9 @@ export function parseByteplusModelPage(
     )
   }
   const rates: Record<string, number> = {}
-  for (const [key, lever] of Object.entries(MODEL_PAGE_LEVERS)) {
-    const cell = row.rows[0]?.[row.keys.indexOf(key)] ?? ''
+  for (const [lever, at] of Object.entries(row.columns)) {
+    const key = row.keys[at] ?? lever
+    const cell = row.rows[0]?.[at] ?? ''
     const value = usdPerMillion(cell)
     if (value === null) {
       throw new Error(`byteplus model page: unreadable ${key} "${cell}"`)
@@ -1364,16 +1399,17 @@ interface CachedModelPage {
   extractedAt: string
 }
 
-/** seed-translation's page, or null (counted in `run`) when it fails. */
-function seedTranslationPage(
+/** One model page, or null (counted in `run`) when it fails. */
+function modelPage(
   run: DocsRun,
+  url: string,
   kv?: KVNamespace,
 ): Promise<CachedModelPage | null> {
-  return tryDocs(run, BYTEPLUS_SEED_TRANSLATION_URL, (cached) =>
-    cached<CachedModelPage>(kv, BYTEPLUS_SEED_TRANSLATION_URL, async () => {
+  return tryDocs(run, url, (cached) =>
+    cached<CachedModelPage>(kv, url, async () => {
       const content = pricingContent(
-        await fetchByteplusDoc(BYTEPLUS_SEED_TRANSLATION_URL),
-        'byteplus seed-translation page',
+        await fetchByteplusDoc(url),
+        `byteplus model page ${url}`,
       )
       return {
         rates: parseByteplusModelPage(JSON.parse(content) as ByteplusDoc),
@@ -1499,7 +1535,14 @@ export async function byteplusModelPricing(
     },
   )
   const guide = await seedanceGuide(kv)
-  const translation = await seedTranslationPage(run, kv)
+  const pages = new Map(
+    await Promise.all(
+      Object.entries(BYTEPLUS_MODEL_PAGES).map(
+        async ([id, url]) =>
+          [id, { url, page: await modelPage(run, url, kv) }] as const,
+      ),
+    ),
+  )
   const geometry = new Map(Object.entries(guide?.geometry ?? {}))
   const rates = new Map(Object.entries(doc.rates))
   const video = new Map(Object.entries(doc.video))
@@ -1554,26 +1597,26 @@ export async function byteplusModelPricing(
       source,
     )
   }
-  const translationIds = new Map([['seed-translation', true]])
   return (rawId) => {
     const tools = doc.serverTools?.[rawId]
-    const isTranslation = byteplusRatesFor(rawId, translationIds) === true
+    const own = byteplusRatesFor(rawId, pages)
+    const page = own?.page ?? null
     // Page failed this poll: keep the stored card (`tryDocs` counted it).
-    const lost = isTranslation && !translation ? unavailable('pricing') : {}
-    const page = isTranslation ? translation : null
-    const pricing = page
-      ? compileTokenCard(page.rates, [], {
-          url: BYTEPLUS_SEED_TRANSLATION_URL,
-          hash: page.hash,
-          extractedAt: page.extractedAt,
-        })
-      : isTranslation
-        ? null
-        : card(rawId)
+    const lost = own && !page ? unavailable('pricing') : {}
+    // A model with its own page is priced from it alone, never the pricing page.
+    const pricing = !own
+      ? card(rawId)
+      : page
+        ? compileTokenCard(page.rates, [], {
+            url: own.url,
+            hash: page.hash,
+            extractedAt: page.extractedAt,
+          })
+        : null
     const pricingFacts = !pricing
       ? {}
-      : page
-        ? tagDocsFacts({ pricing }, BYTEPLUS_SEED_TRANSLATION_URL, page.hash)
+      : own && page
+        ? tagDocsFacts({ pricing }, own.url, page.hash)
         : tagDocsFacts({ pricing }, BYTEPLUS_PRICING_URL, doc.hash)
     const toolFacts =
       tools && tools.length > 0

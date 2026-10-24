@@ -823,8 +823,9 @@ export async function sha256Text(text: string): Promise<string> {
 export async function fetchText(
   url: string,
   init?: RequestInit,
+  fetcher: Fetcher = fetch,
 ): Promise<string> {
-  const response = await fetch(url, init)
+  const response = await fetcher(url, init)
   if (!response.ok) throw await fetchFailure(url, response)
   return response.text()
 }
