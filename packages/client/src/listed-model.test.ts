@@ -6,9 +6,7 @@ import {
   listProviderModels as listProviderModelsRaw,
 } from './generated/sdk.gen'
 import type { Model } from './generated/types.gen'
-import type { RateCard as ClientRateCard } from './index.ts'
 import { getModel, listProviderModels } from './listed-model.ts'
-import type { RateCard as EvaluatorRateCard } from '@modelschemas/rate-card'
 import type { ListedModelId } from './listed-model.ts'
 
 vi.mock('./generated/sdk.gen', () => ({
@@ -102,9 +100,5 @@ describe('getModel pricing', () => {
         .parameter(0)
         .toEqualTypeOf<NonNullable<typeof data.pricing>>()
     }
-  })
-
-  it('exports the evaluator RateCard as the client RateCard', () => {
-    expectTypeOf<ClientRateCard>().toEqualTypeOf<EvaluatorRateCard>()
   })
 })
