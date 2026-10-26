@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { anthropicCapabilities } from './anthropic.ts'
-import { parseAnthropicPricing } from './anthropic-pricing.ts'
+import {
+  anthropicModelPricing,
+  parseAnthropicPricing,
+} from './anthropic-pricing.ts'
 import { ANTHROPIC_PRICING_PAGE } from './fixtures/anthropic-pricing.ts'
 import { geminiModelPricing, parseGeminiPricing } from './gemini-pricing.ts'
 import { geminiCapabilities } from './gemini.ts'
@@ -22,6 +25,7 @@ import {
   undatedId,
 } from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
+import { parseStoredRateCard } from '../rate-card.ts'
 import { openAiCompatModelFacts } from './openai-compat.ts'
 import {
   pageSlugFor,
@@ -870,14 +874,16 @@ describe('anthropic pricing page', () => {
   it('reads HTML-footnoted cache rates from the upstream table', () => {
     const rows = parseAnthropicPricing(ANTHROPIC_PRICING_PAGE)
     expect(rows.size).toBe(18)
-    expect(rows.get('claude opus 5.5')?.cache_read_tokens).toBeCloseTo(
+    expect(rows.get('claude opus 5.5')?.rates.cache_read_tokens).toBeCloseTo(
       0.2e-6,
       15,
     )
-    expect(rows.get('claude fable 5.1')?.cache_read_tokens).toBe(0.25e-6)
-    expect(rows.get('claude sonnet 5')?.input_tokens).toBe(2e-6)
-    expect(rows.get('claude sonnet 5')?.output_tokens).toBe(10e-6)
-    for (const [name, rates] of rows) {
+    expect(rows.get('claude fable 5.1')?.rates.cache_read_tokens).toBe(0.25e-6)
+    expect(rows.get('claude sonnet 5')?.rates.input_tokens).toBe(2e-6)
+    expect(rows.get('claude sonnet 5')?.rates.output_tokens).toBe(10e-6)
+    for (const [name, row] of rows) {
+      expect(row.tiers, name).toEqual([])
+      const rates = row.rates
       if ('cache_write_tokens' in rates || 'cache_write_1h_tokens' in rates) {
         expect(
           rates.cache_read_tokens,
@@ -906,14 +912,17 @@ describe('anthropic pricing page', () => {
   it('keys rows by display name and reads every lever column', () => {
     const rows = parseAnthropicPricing(page)
     expect(rows.get('claude fable 5.1')).toEqual({
-      input_tokens: 10e-6,
-      cache_write_tokens: 12.5e-6,
-      cache_write_1h_tokens: 20e-6,
-      cache_read_tokens: 0.25e-6,
-      output_tokens: 50e-6,
+      rates: {
+        input_tokens: 10e-6,
+        cache_write_tokens: 12.5e-6,
+        cache_write_1h_tokens: 20e-6,
+        cache_read_tokens: 0.25e-6,
+        output_tokens: 50e-6,
+      },
+      tiers: [],
     })
     // The name cell's retirement link is not part of the key.
-    expect(rows.get('claude opus 4')?.input_tokens).toBe(15e-6)
+    expect(rows.get('claude opus 4')?.rates.input_tokens).toBe(15e-6)
     // Batch rates live in another section and are not levers.
     expect(rows.size).toBe(2)
   })
@@ -922,6 +931,91 @@ describe('anthropic pricing page', () => {
     expect(parseAnthropicPricing('# Pricing\n\n## Something else\n').size).toBe(
       0,
     )
+  })
+
+  const haiku = `# Pricing
+
+## Model pricing
+
+| Model | Base input tokens | 5m cache writes | 1h cache writes | Cache hits and refreshes | Output tokens |
+| --- | --- | --- | --- | --- | --- |
+| Claude Haiku 4.5 | $1 / MTok | $1.25 / MTok | $2 / MTok | $0.10 / MTok | $5 / MTok |
+| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.50 / MTok | $0.625 / MTok | $1 / MTok | $0.05 / MTok | $2.50 / MTok |
+| Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $0.10 / MTok | $0.125 / MTok | $0.20 / MTok | $0.01 / MTok | $0.50 / MTok |
+
+## Batch pricing
+
+| Model | Batch input | Batch output |
+| --- | --- | --- |
+| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.25 / MTok | $1.25 / MTok |
+`
+
+  it('prices Haiku 5.5 over 100k prompt tokens, counting cache with input', async () => {
+    const rows = parseAnthropicPricing(haiku)
+    expect(rows.get('claude haiku 5.5')?.tiers).toEqual([
+      {
+        minPromptTokens: 100_000,
+        rates: {
+          input_tokens: 0.5 / 1e6,
+          cache_write_tokens: 0.625 / 1e6,
+          cache_write_1h_tokens: 1 / 1e6,
+          cache_read_tokens: 0.05 / 1e6,
+          output_tokens: 2.5 / 1e6,
+        },
+      },
+    ])
+    const pricingFor = await anthropicModelPricing(
+      undefined,
+      async (_kv, _url, load) => load(),
+      async () => new Response(haiku),
+    )
+    const card = parseStoredRateCard(pricingFor('Claude Haiku 5.5').pricing)
+    if (!card) throw new Error('did not compile')
+    const at = (usage: Record<string, number>) => price(card, {}, usage)
+    // 150k input at the short rate is a fifth of the long rate.
+    expect(at({ input_tokens: 150_000, output_tokens: 0 })).toBeCloseTo(0.075)
+    expect(at({ input_tokens: 100_000, output_tokens: 0 })).toBeCloseTo(0.01)
+    expect(at({ input_tokens: 100_001, output_tokens: 0 })).toBeCloseTo(
+      0.0500005,
+    )
+    // Output length is not prompt length.
+    expect(at({ input_tokens: 1, output_tokens: 200_000 })).toBeCloseTo(
+      0.1000001,
+    )
+    // The 1-hour cache write is what crosses 100k.
+    expect(
+      at({
+        input_tokens: 40_000,
+        cache_read_tokens: 30_000,
+        cache_write_tokens: 20_000,
+        cache_write_1h_tokens: 10_001,
+        output_tokens: 0,
+      }),
+    ).toBeCloseTo(0.044001)
+    expect(rows.get('claude haiku 4.5')?.tiers).toEqual([])
+  })
+
+  it('refuses a prompt-length row that has no pair', () => {
+    const alone = haiku.replace(
+      '| Claude Haiku 5.5 (for prompts over 100,000 tokens) | $0.50 / MTok | $0.625 / MTok | $1 / MTok | $0.05 / MTok | $2.50 / MTok |\n',
+      '',
+    )
+    expect(() => parseAnthropicPricing(alone)).toThrow(
+      /claude haiku 5\.5 prompt-length rows do not pair/,
+    )
+    expect(() =>
+      parseAnthropicPricing(
+        haiku.replace('over 100,000 tokens', 'over 200,000 tokens'),
+      ),
+    ).toThrow(/prompt-length rows do not pair/)
+    expect(() =>
+      parseAnthropicPricing(
+        haiku.replace(
+          'for prompts over 100,000 tokens',
+          'for prompts above 100k tokens',
+        ),
+      ),
+    ).toThrow(/unreadable prompt-length row/)
   })
 })
 

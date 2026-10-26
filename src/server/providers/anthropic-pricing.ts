@@ -5,11 +5,17 @@
  * column per lever. A parse of zero rows throws rather than nulling stored
  * cards; a model the table does not name simply gets none.
  *
- * Batch, tool-use (search, code execution) and long-context premiums are
- * priced elsewhere on the page and are not levers here: a card quotes the
- * standard per-token rates.
+ * Batch and tool-use (search, code execution) prices live in other sections
+ * and are not levers here. A model the table splits into "up to N tokens"
+ * and "over N tokens" rows (Claude Haiku 5.5, issue #481) is one card: the
+ * short row is the base, and the long row is a prompt-length tier at N.
+ * The tier fires when input plus cache reads and cache writes are over N,
+ * which is the prompt total `compileTokenCard` already sums, and it
+ * re-quotes the whole request. A split the table does not pair throws, so
+ * a short row is never stored on its own.
  */
 import { compileTokenCard } from '@modelschemas/rate-card'
+import type { TokenRateTier } from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import {
@@ -47,15 +53,82 @@ function perToken(cell: string | undefined): number | null {
   return amount === undefined ? null : Number(amount.replace(/,/g, '')) / 1e6
 }
 
+/** One display name's base rates and any prompt-length re-quote. */
+export interface AnthropicModelRates {
+  rates: Record<string, number>
+  tiers: Array<TokenRateTier>
+}
+
+interface PendingRates {
+  base: Record<string, number> | null
+  long: Record<string, number> | null
+  /** Token count on an "up to" row, when that row was read. */
+  upTo: number | null
+  /** Token count on an "over" row, when that row was read. */
+  over: number | null
+}
+
+/**
+ * `(for prompts up to 100,000 tokens)` / `(for prompts over 100,000 tokens)`.
+ * Retirement links stay on the display name and are not a prompt band.
+ */
+function promptBand(name: string): {
+  key: string
+  upTo: number | null
+  over: number | null
+} {
+  const labeled =
+    /^(.*?)\s+\(for prompts (up to|over) ([\d,]+) tokens\)$/i.exec(name)
+  if (labeled?.[1] && labeled[2] && labeled[3]) {
+    const count = Number(labeled[3].replace(/,/g, ''))
+    if (!Number.isInteger(count) || count <= 0) {
+      throw new Error(
+        `anthropic pricing page: unreadable prompt-length row "${name}"`,
+      )
+    }
+    const over = labeled[2].toLowerCase() === 'over'
+    return {
+      key: labeled[1].trim().toLowerCase(),
+      upTo: over ? null : count,
+      over: over ? count : null,
+    }
+  }
+  if (/for prompts/i.test(name)) {
+    throw new Error(
+      `anthropic pricing page: unreadable prompt-length row "${name}"`,
+    )
+  }
+  return {
+    key: name
+      .replace(/\s*[([].*$/, '')
+      .trim()
+      .toLowerCase(),
+    upTo: null,
+    over: null,
+  }
+}
+
+function sameLevers(
+  left: Record<string, number>,
+  right: Record<string, number>,
+): boolean {
+  const leftKeys = Object.keys(left)
+  return (
+    leftKeys.length === Object.keys(right).length &&
+    leftKeys.every((key) => right[key] !== undefined)
+  )
+}
+
 /**
  * Display name (lowercased) → per-token rates. The name cell carries
  * markdown links for retired/limited models (`Claude Opus 4 ([retired…])`);
- * only the plain name before them keys the row.
+ * only the plain name before them keys the row. Two rows that name the
+ * same model on either side of one prompt length collapse into one entry.
  */
 export function parseAnthropicPricing(
   markdown: string,
-): Map<string, Record<string, number>> {
-  const out = new Map<string, Record<string, number>>()
+): Map<string, AnthropicModelRates> {
+  const pending = new Map<string, PendingRates>()
   let levers: Array<string | null> = []
   for (const cells of markdownTableRows(
     markdownSection(markdown, 'Model pricing'),
@@ -66,19 +139,72 @@ export function parseAnthropicPricing(
       continue
     }
     if (levers.length === 0) continue
-    const key = name
-      .replace(/\s*[([].*$/, '')
-      .trim()
-      .toLowerCase()
+    const band = promptBand(name)
     const rates: Record<string, number> = {}
     values.forEach((cell, index) => {
       const target = levers[index]
       const rate = perToken(cell)
       if (target && rate !== null) rates[target] = rate
     })
-    if (key && Object.keys(rates).length > 0 && !out.has(key)) {
-      out.set(key, rates)
+    if (!band.key || Object.keys(rates).length === 0) continue
+    const entry = pending.get(band.key) ?? {
+      base: null,
+      long: null,
+      upTo: null,
+      over: null,
     }
+    const labeled = band.upTo !== null || band.over !== null
+    const stored = entry.base !== null || entry.long !== null
+    if (labeled !== (entry.upTo !== null || entry.over !== null) && stored) {
+      throw new Error(
+        `anthropic pricing page: ${band.key} prompt-length rows do not pair`,
+      )
+    }
+    if (band.upTo !== null) {
+      if (entry.upTo !== null) {
+        throw new Error(
+          `anthropic pricing page: ${band.key} prompt-length rows do not pair`,
+        )
+      }
+      entry.base = rates
+      entry.upTo = band.upTo
+    } else if (band.over !== null) {
+      if (entry.over !== null) {
+        throw new Error(
+          `anthropic pricing page: ${band.key} prompt-length rows do not pair`,
+        )
+      }
+      entry.long = rates
+      entry.over = band.over
+    } else if (entry.base === null) {
+      entry.base = rates
+    }
+    pending.set(band.key, entry)
+  }
+
+  const out = new Map<string, AnthropicModelRates>()
+  for (const [key, entry] of pending) {
+    const banded = entry.upTo !== null || entry.over !== null
+    if (!banded) {
+      if (entry.base) out.set(key, { rates: entry.base, tiers: [] })
+      continue
+    }
+    if (
+      !entry.base ||
+      !entry.long ||
+      entry.upTo === null ||
+      entry.over === null ||
+      entry.upTo !== entry.over ||
+      !sameLevers(entry.base, entry.long)
+    ) {
+      throw new Error(
+        `anthropic pricing page: ${key} prompt-length rows do not pair`,
+      )
+    }
+    out.set(key, {
+      rates: entry.base,
+      tiers: [{ minPromptTokens: entry.over, rates: entry.long }],
+    })
   }
   return out
 }
@@ -102,9 +228,9 @@ export async function anthropicModelPricing(
     }
   })
   return (displayName) => {
-    const rates = doc.rates[(displayName ?? '').trim().toLowerCase()]
-    const pricing = rates
-      ? compileTokenCard(rates, [], {
+    const row = doc.rates[(displayName ?? '').trim().toLowerCase()]
+    const pricing = row
+      ? compileTokenCard(row.rates, row.tiers, {
           url: ANTHROPIC_PRICING_URL,
           hash: doc.hash,
           extractedAt: doc.extractedAt,
