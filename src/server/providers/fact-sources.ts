@@ -81,6 +81,7 @@ export function emptySources(sources: ModelFactSources): boolean {
     sources.reasoning === undefined &&
     sources.knowledgeCutoff === undefined &&
     sources.openWeights === undefined &&
+    sources.trainsOnRequestData === undefined &&
     sources.requestMap === undefined &&
     (sources.capabilities === undefined ||
       Object.keys(sources.capabilities).length === 0) &&

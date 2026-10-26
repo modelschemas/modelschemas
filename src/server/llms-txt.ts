@@ -29,7 +29,9 @@ spec syncs daily. Responses are JSON unless noted (\`text/typescript\`,
   \`priceClearsRefused\`, \`updateStorm\`, or \`staleProbes\` while its
   stored docs facts or prices may be stale, one poll rewrote most of its
   live rows, or a probe record is older than 90 days. A model row's
-  \`requiredRequestHeaders\` lists headers whose values are not constants.
+  \`requiredRequestHeaders\` lists client-supplied connect headers.
+  \`trainsOnRequestData: true\` means that id's own source says it trains
+  on request data.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as \`{endpointId}\`: it aliases onto that

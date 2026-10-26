@@ -55,6 +55,15 @@ const ROUTE_DOCS = `# Go
 | Mini   | mini     | \`https://opencode.ai/inference/go/anthropic/v1/messages\`       |
 | Gemini | gemini   | \`https://opencode.ai/inference/go/google/v1beta/models/gemini\` |
 | Kimi   | kimi     | \`https://opencode.ai/inference/go/openai/v1/chat/completions\`  |
+
+## Privacy
+
+| Model  | Model training | Data retention |
+| ------ | -------------- | -------------- |
+| Mini   | Yes            | Not ZDR        |
+| GPT    | Not used       | 30 days        |
+| Gemini | Not used       | 0 days         |
+| Kimi   | Not used       | 0 days         |
 `
 
 const originalFetch = globalThis.fetch
@@ -101,8 +110,16 @@ describe('opencode-go', () => {
       displayName: 'Mini',
       activity: 'chat',
       pricing: null,
+      trainsOnRequestData: true,
       schemaEndpointId: 'inference/go/anthropic/v1/messages',
     })
+    expect(byId.mini?.factSources?.trainsOnRequestData).toMatchObject({
+      derivation: 'docs-derived',
+      sourceUrl: 'https://opencode.ai/docs/go/',
+      path: 'Privacy',
+    })
+    expect(byId.kimi?.trainsOnRequestData).toBeNull()
+    expect(byId.gpt?.trainsOnRequestData).toBeNull()
     expect(byId.mini?.factSources?.schemaEndpointId).toMatchObject({
       derivation: 'listing',
       sourceUrl: OPENCODE_CATALOG_URL,
@@ -127,8 +144,12 @@ describe('opencode-go', () => {
       rawId: 'absent',
       releasedAt: null,
       pricing: null,
+      trainsOnRequestData: null,
       absent: { releasedAt: 'cleared' },
     })
+    expect(
+      provider.connect?.requiredHeaders?.map((header) => header.name),
+    ).toEqual(['x-opencode-session', 'User-Agent'])
     expect(provider.modelsEndpoint).toBe(OPENCODE_GO_MODELS_URL)
     expect(
       spec.specs[0]?.paths?.['/inference/go/anthropic/v1/messages']?.post,
@@ -148,6 +169,7 @@ describe('opencode-go', () => {
     })
     expect(spec.specs[0]?.paths?.['/v1/messages']).toBeUndefined()
     expect(urls.filter((url) => url.includes('/docs/'))).toEqual([
+      OPENCODE_GO_ROUTE_DOCS_URL,
       OPENCODE_GO_ROUTE_DOCS_URL,
     ])
     expect(urls).toContain(OPENCODE_GO_MODELS_URL)

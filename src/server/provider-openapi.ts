@@ -17,10 +17,15 @@ import {
 } from '#/server/catalog.ts'
 import { contentHash } from '#/server/kv.ts'
 import { getProvider } from '#/server/providers/index.ts'
-import { MAX_SPEC_PATHS, resolveSpecGrain } from '#/server/providers/connect.ts'
+import {
+  MAX_SPEC_PATHS,
+  requiredHeaderParameters,
+  resolveSpecGrain,
+} from '#/server/providers/connect.ts'
 import type {
   ProviderConfig,
   ProviderConnect,
+  RequiredHeader,
 } from '#/server/providers/types.ts'
 import { hasAsyncApiFlag } from '#/server/ingest/asyncapi.ts'
 import { providerExists, publicEndpointId } from '#/server/schemas-api.ts'
@@ -65,15 +70,9 @@ export function pathParamsFromPath(
 }
 
 export function headerParams(
-  headers: Record<string, string> | undefined,
+  headers: Array<RequiredHeader> | undefined,
 ): Array<Record<string, unknown>> {
-  if (!headers) return []
-  return Object.entries(headers).map(([name, value]) => ({
-    name,
-    in: 'header',
-    required: true,
-    schema: { type: 'string', const: value },
-  }))
+  return requiredHeaderParameters(headers)
 }
 
 /** Pin `properties.model` to a live enum (or a single id). */

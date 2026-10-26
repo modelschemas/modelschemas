@@ -181,6 +181,7 @@ function comparable(
     knowledgeCutoff: info.knowledgeCutoff ?? null,
     openWeights: info.openWeights ?? null,
     weightsUrl: info.weightsUrl ?? null,
+    trainsOnRequestData: info.trainsOnRequestData ?? null,
     providerMetadata: info.providerMetadata ?? null,
     pricingRange: storedRange(info),
   }
@@ -319,6 +320,7 @@ function settleStatedFacts(
 
   const openWeights = info.openWeights ?? null
   const weightsUrl = openWeights === true ? (info.weightsUrl ?? null) : null
+  const trainsOnRequestData = info.trainsOnRequestData ?? null
 
   return {
     ...info,
@@ -327,6 +329,7 @@ function settleStatedFacts(
     knowledgeCutoff,
     openWeights,
     weightsUrl,
+    trainsOnRequestData,
   }
 }
 
@@ -540,6 +543,7 @@ function storedFacts(
     releasedAt: row?.releasedAt ?? null,
     knowledgeCutoff: row?.knowledgeCutoff ?? null,
     openWeights: row?.openWeights ?? null,
+    trainsOnRequestData: row?.trainsOnRequestData ?? null,
     providerMetadata: row?.providerMetadata ?? null,
   }
 }
@@ -554,6 +558,7 @@ const SOURCED_FACTS = [
   'requestMap',
   'knowledgeCutoff',
   'openWeights',
+  'trainsOnRequestData',
 ] as const
 
 /** The facts `enrichListed` fills from the bound request schema. */
@@ -926,6 +931,7 @@ export async function pollProviderModels(
         knowledgeCutoff: info.knowledgeCutoff ?? null,
         openWeights: info.openWeights ?? null,
         weightsUrl: info.weightsUrl ?? null,
+        trainsOnRequestData: info.trainsOnRequestData ?? null,
         // Providers that report a release date get it as firstSeenAt, so
         // models predating our monitoring carry their historical date.
         firstSeenAt: usableReleasedAt(info, now) ?? now,
@@ -963,6 +969,7 @@ export async function pollProviderModels(
       knowledgeCutoff: existing.knowledgeCutoff,
       openWeights: existing.openWeights,
       weightsUrl: existing.weightsUrl,
+      trainsOnRequestData: existing.trainsOnRequestData,
       providerMetadata: existing.providerMetadata,
       pricingRange: existing.pricingRange,
     }
@@ -1048,6 +1055,7 @@ export async function pollProviderModels(
         knowledgeCutoff: info.knowledgeCutoff ?? null,
         openWeights: info.openWeights ?? null,
         weightsUrl: info.weightsUrl ?? null,
+        trainsOnRequestData: info.trainsOnRequestData ?? null,
         // A model that reappears (or upstream re-activates) clears
         // its deprecation; an upstream-deprecated one gains it.
         deprecatedAt:

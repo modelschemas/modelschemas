@@ -1,7 +1,12 @@
 /**
  * Connect-profile helpers + defaults for assembled provider OpenAPI docs.
  */
-import type { ProviderConfig, ProviderConnect, SpecGrain } from './types.ts'
+import type {
+  ProviderConfig,
+  ProviderConnect,
+  RequiredHeader,
+  SpecGrain,
+} from './types.ts'
 
 /** Refuse assembly above this many classified generation endpoints. */
 export const MAX_SPEC_PATHS = 40
@@ -40,6 +45,29 @@ export function headerApiKeyConnect(
     security: [{ apiKey: [] }],
     ...extra,
   }
+}
+
+/** OpenAPI header parameters. A constant becomes `schema.const`; a client-supplied header does not. */
+export function requiredHeaderParameters(
+  headers: Array<RequiredHeader> | undefined,
+): Array<Record<string, unknown>> {
+  if (!headers) return []
+  return headers.map((header) =>
+    'value' in header
+      ? {
+          name: header.name,
+          in: 'header',
+          required: true,
+          schema: { type: 'string', const: header.value },
+        }
+      : {
+          name: header.name,
+          in: 'header',
+          required: true,
+          description: header.description,
+          schema: { type: 'string' },
+        },
+  )
 }
 
 export function resolveSpecGrain(
