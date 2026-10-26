@@ -13,7 +13,8 @@
  * tokens get their own lever only when the card reads it; otherwise they
  * stay in their total,
  * which is how the source bills them. A usage object in the card's own
- * vocabulary passes through unchanged.
+ * vocabulary passes through, except a zero lever the card does not read,
+ * which is dropped.
  */
 import { RateCardError, cardParams, isRecord } from './evaluate.ts'
 import type { RateCard } from './card.ts'
@@ -395,23 +396,36 @@ const NORMALIZERS: Record<NativeFormat, Normalizer> = {
 }
 
 /**
+ * Drop a zero lever the card does not read. The same object when nothing
+ * drops, so a card-lever payload with no such zero stays the caller's.
+ */
+function withoutUnreadZeros(reads: ReadonlySet<string>, levers: Vars): Vars {
+  const dropped = Object.keys(levers).filter(
+    (lever) => levers[lever] === 0 && !reads.has(lever),
+  )
+  if (dropped.length === 0) return levers
+  const kept = { ...levers }
+  for (const lever of dropped) delete kept[lever]
+  return kept
+}
+
+/**
  * `usage` in the card's lever vocabulary. A native OpenAI (Responses or
  * Chat Completions), Anthropic or Gemini (`usageMetadata`) usage object is
  * mapped to disjoint levers; card levers pass through. A zero lever the
- * card does not read is dropped, so a card with no cache rate still prices
- * a call that cached nothing. Throws `mixed-usage` for a payload that mixes
- * native fields and card levers.
+ * card does not read is dropped, whether it arrived as a card lever or
+ * from a native usage object, so a card with no cache rate still prices a
+ * call that cached nothing. A non-zero lever the card does not read is
+ * left in place; `priceDetailed` throws `unknown-usage-key` for it.
+ * Throws `mixed-usage` for a payload that mixes native fields and card
+ * levers.
  */
 export function normalizeUsage(
   card: Pick<RateCard, 'inputs'>,
   usage: Vars,
 ): Vars {
   const format = usageFormat(card, usage)
-  if (format === 'card') return usage
   const reads = new Set(cardParams(card).usage)
-  return Object.fromEntries(
-    Object.entries(NORMALIZERS[format](usage, reads)).filter(
-      ([lever, n]) => n !== 0 || reads.has(lever),
-    ),
-  )
+  const levers = format === 'card' ? usage : NORMALIZERS[format](usage, reads)
+  return withoutUnreadZeros(reads, levers)
 }

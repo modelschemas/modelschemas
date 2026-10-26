@@ -32,7 +32,8 @@ const { amount, currency, estimated } = evaluateCard(model.pricing, {
 returns those plus `usd` on a USD card, `cardSource`, `defaulted`, and
 `ignored`. One fixture suite runs each case through both and requires the
 same amount, currency, and `estimated`. It throws `RateCardError` instead
-of returning a number it cannot stand behind.
+of returning a number it cannot stand behind. A zero usage lever the card
+does not read is dropped. A non-zero one throws `unknown-usage-key`.
 
 ## Versions
 
@@ -110,8 +111,9 @@ because card levers do not overlap. Anthropic cache
 counts become `cache_read_tokens`, `cache_write_tokens` and
 `cache_write_1h_tokens`. Reasoning, audio, image and video counts move to
 their own lever only when the card reads it. A usage object in card
-levers passes through unchanged. A payload that mixes native fields and
-card levers throws `mixed-usage`. `usageFormat(card, usage)` names the
+levers passes through, except a zero lever the card does not read, which
+is dropped. A payload that mixes native fields and card levers throws
+`mixed-usage`. `usageFormat(card, usage)` names the
 format it read.
 
 ## Currency
