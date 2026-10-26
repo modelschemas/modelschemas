@@ -462,6 +462,9 @@ export const models = sqliteTable(
     // Stated by the provider itself, never inferred; null = unstated.
     openWeights: integer('open_weights', { mode: 'boolean' }),
     weightsUrl: text('weights_url'),
+    // True when this id's own source states it trains on request data.
+    // Null when that source says it does not, or does not mention the id.
+    trainsOnRequestData: integer('trains_on_request_data', { mode: 'boolean' }),
     // Upstream release date when the provider reports one (backdated by the
     // poller, issue #1); otherwise when our poller first observed the model.
     firstSeenAt: integer('first_seen_at').notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE `models` ADD `trains_on_request_data` integer;

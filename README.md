@@ -140,14 +140,19 @@ only: the row's price, limits, and other facts stay its own provider's.
   only when the provider itself states the weights can be downloaded, with
   its link; false only when it states they cannot. Never inferred from a
   model name.
-- `requiredRequestHeaders` (`array | null`): headers the client must send
-  when the value is not a constant (`name` plus `description`). Null when
-  the provider publishes none. OpenCode Go lists `x-opencode-session` and
-  `User-Agent` ([Go docs](https://opencode.ai/docs/go/), "Where can I use
-  it?"). The same headers are parameters on each Go operation.
-- `trainsOnRequestData` (`true | null`): true only when that model's own
-  source states it trains on request data. Null otherwise. Never inferred
-  from an id suffix.
+- `requiredRequestHeaders` (`array | null`): the client-supplied entries of
+  the provider connect profile `requiredHeaders` (`name` plus the rule for
+  the value). A constant header, such as `anthropic-version`, stays on
+  `GET /v1/openapi/{provider}` as `schema.const` and is not copied here.
+  Null when the provider publishes none. OpenCode Go lists
+  `x-opencode-session` and `User-Agent`
+  ([Go docs](https://opencode.ai/docs/go/), "Where can I use it?"). The
+  same headers are parameters on each Go operation.
+- `trainsOnRequestData` (`true | null`): true when that model's own source
+  states it trains on request data. OpenCode Go reads the Privacy table
+  (Yes). An id that table does not name can still be true from that id's
+  probe record. Null when the table says Not used, or no source states it.
+  Never inferred from an id suffix.
 
 `knowledgeCutoff` and `openWeights` are null on every row until provider
 adapters fill them. A row's first `releasedAt` and first `providerMetadata`

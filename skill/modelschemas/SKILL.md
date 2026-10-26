@@ -19,10 +19,11 @@ availability and schema questions.
 2. **Read without auth.** All reads are public at a low rate limit (60/h per
    IP). Go straight to:
    - `GET /v1/models?activity=chat&q=claude` — what can I use right now.
-     `requiredRequestHeaders` names headers whose values are not constants
-     (OpenCode Go: `x-opencode-session` and `User-Agent`).
+     `requiredRequestHeaders` names client-supplied connect headers
+     (OpenCode Go: `x-opencode-session` and `User-Agent`). Constant
+     headers stay on `GET /v1/openapi/{provider}`.
      `trainsOnRequestData: true` means that id's own source says it trains
-     on request data.
+     on request data (OpenCode Go: the Privacy table, else that id's probe).
      A row's `capabilities` is a map: `true` = the provider states
      support, `false` = it states none, key absent = unknown (never read a
      missing key as false). `?capability=tools` keeps rows where it is true.
@@ -120,7 +121,9 @@ spec syncs daily. Responses are JSON unless noted (`text/typescript`,
   `priceClearsRefused`, `updateStorm`, or `staleProbes` while its
   stored docs facts or prices may be stale, one poll rewrote most of its
   live rows, or a probe record is older than 90 days. A model row's
-  `requiredRequestHeaders` lists headers whose values are not constants.
+  `requiredRequestHeaders` lists client-supplied connect headers.
+  `trainsOnRequestData: true` means that id's own source says it trains
+  on request data.
 - Fetch a self-contained JSON Schema (refs bundled under $defs) for any
   provider generation endpoint — request (input) and response (output).
   A listed model rawId also works as `{endpointId}`: it aliases onto that

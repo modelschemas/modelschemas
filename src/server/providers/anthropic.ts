@@ -195,7 +195,7 @@ export const anthropicProvider: ProviderConfig = {
   defaultDerivation: 'upstream-spec',
   specGrain: 'provider',
   connect: headerApiKeyConnect('https://api.anthropic.com', 'x-api-key', {
-    requiredHeaders: { 'anthropic-version': ANTHROPIC_VERSION },
+    requiredHeaders: [{ name: 'anthropic-version', value: ANTHROPIC_VERSION }],
   }),
   fetchSpec,
   listModels,

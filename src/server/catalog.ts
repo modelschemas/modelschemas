@@ -123,10 +123,20 @@ function modelFactSources(
   const stored = (row.factSources as ModelFactSources | null) ?? null
   const go = openCodeGoFacts(row.providerId, row.rawId).factSources
   const withGo = Object.keys(go).length === 0 ? stored : { ...stored, ...go }
-  if (match === null) return withGo
+  // A privacy-table yes is stored on the row and wins over the probe.
+  // A probe still fills an id the table does not name.
+  const trainingSource =
+    row.trainsOnRequestData === true && stored?.trainsOnRequestData
+      ? stored.trainsOnRequestData
+      : withGo?.trainsOnRequestData
+  const merged =
+    trainingSource && withGo
+      ? { ...withGo, trainsOnRequestData: trainingSource }
+      : withGo
+  if (match === null) return merged
   const source = row.upstreamSource as FactSource
   return {
-    ...withGo,
+    ...merged,
     sameAs: match === 'published' ? source : { ...source, normalized: true },
   }
 }
@@ -182,7 +192,8 @@ function toApiModel(
     serverTools: row.serverTools,
     requestMap: row.requestMap,
     requiredRequestHeaders: go.requiredRequestHeaders,
-    trainsOnRequestData: go.trainsOnRequestData,
+    trainsOnRequestData:
+      row.trainsOnRequestData === true ? true : go.trainsOnRequestData,
     aliases: storedAliases(row.aliases),
     releasedAt: row.releasedAt,
     knowledgeCutoff: row.knowledgeCutoff,

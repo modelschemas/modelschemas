@@ -28,13 +28,28 @@ describe('path + header helpers', () => {
     expect(pathParamsFromPath('/v1/messages')).toEqual([])
   })
 
-  it('emits required header consts', () => {
-    expect(headerParams({ 'anthropic-version': '2023-06-01' })).toEqual([
+  it('emits a constant header as const and a client-supplied header as a rule', () => {
+    expect(
+      headerParams([
+        { name: 'anthropic-version', value: '2023-06-01' },
+        {
+          name: 'x-opencode-session',
+          description: 'A stable session id the client chooses.',
+        },
+      ]),
+    ).toEqual([
       {
         name: 'anthropic-version',
         in: 'header',
         required: true,
         schema: { type: 'string', const: '2023-06-01' },
+      },
+      {
+        name: 'x-opencode-session',
+        in: 'header',
+        required: true,
+        description: 'A stable session id the client chooses.',
+        schema: { type: 'string' },
       },
     ])
   })
@@ -94,7 +109,9 @@ describe('connect profiles', () => {
   it('carries Anthropic version + x-api-key and FAL sibling GET', () => {
     const anthropic = resolveConnect(anthropicProvider)
     expect(anthropic?.servers[0]?.url).toBe('https://api.anthropic.com')
-    expect(anthropic?.requiredHeaders?.['anthropic-version']).toBe('2023-06-01')
+    expect(anthropic?.requiredHeaders).toEqual([
+      { name: 'anthropic-version', value: '2023-06-01' },
+    ])
     expect(
       anthropic?.securitySchemes.apiKey &&
         anthropic.securitySchemes.apiKey.type === 'apiKey'

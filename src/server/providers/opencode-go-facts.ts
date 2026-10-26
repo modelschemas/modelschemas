@@ -1,40 +1,37 @@
 /**
- * Facts OpenCode publishes for every Go request, plus a training opt-in
- * only where a probe record states it for that exact id (issue #461).
+ * Facts OpenCode publishes for every Go request, plus training on request
+ * data where the Go privacy table names that id (issue #463). A probe
+ * record still states it for an id the table does not mention.
  */
-import type { FactSource, ModelFactSources } from './types.ts'
+import { markdownSection, markdownTableRows } from './model-facts.ts'
+import { requiredHeaderParameters } from './connect.ts'
 import { probesFor } from './probes/index.ts'
+import type { FactSource, ModelFactSources, RequiredHeader } from './types.ts'
 
-/** https://opencode.ai/docs/go/ "Where can I use it?" */
+/** https://opencode.ai/docs/go/ */
 export const OPENCODE_GO_DOCS_URL = 'https://opencode.ai/docs/go/'
 
-export interface RequiredRequestHeader {
-  name: string
-  /** What the client must send. No constant: the client chooses the value. */
-  description: string
-}
-
-export const OPENCODE_GO_REQUIRED_HEADERS: Array<RequiredRequestHeader> = [
+export const OPENCODE_GO_REQUIRED_HEADERS: Array<RequiredHeader> = [
   {
     name: 'x-opencode-session',
     description:
-      'A stable session id the client chooses. Go rejects a request that omits it.',
+      'A stable session id the client chooses for each conversation.',
   },
   {
     name: 'User-Agent',
-    description: 'A client-specific User-Agent.',
+    description:
+      'A client-specific User-Agent, such as my-coding-agent/1.0, not a generic SDK or HTTP-library name.',
   },
 ]
 
 /** OpenAPI header parameters for every Go operation. Values are not constants. */
 export function openCodeGoHeaderParameters(): Array<Record<string, unknown>> {
-  return OPENCODE_GO_REQUIRED_HEADERS.map((header) => ({
-    name: header.name,
-    in: 'header',
-    required: true,
-    description: `${header.description} ${OPENCODE_GO_DOCS_URL}`,
-    schema: { type: 'string' },
-  }))
+  return requiredHeaderParameters(OPENCODE_GO_REQUIRED_HEADERS).map(
+    (parameter) => ({
+      ...parameter,
+      description: `${String(parameter.description)} ${OPENCODE_GO_DOCS_URL}`,
+    }),
+  )
 }
 
 const HEADER_SOURCE: FactSource = {
@@ -43,11 +40,57 @@ const HEADER_SOURCE: FactSource = {
   path: 'Where can I use it?',
 }
 
+function cellId(cell: string | undefined): string {
+  return (cell ?? '').replace(/^`|`$/g, '').trim()
+}
+
+/**
+ * Privacy table joined to the Endpoints table on the model name.
+ * `true` is "Yes". `false` is "Not used". Throws when a section, a row,
+ * or a training cell is not the shape the page publishes.
+ */
+export function parseGoTraining(text: string): Map<string, boolean> {
+  const endpoints = markdownSection(text, 'Endpoints')
+  const privacy = markdownSection(text, 'Privacy')
+  if (endpoints === '' || privacy === '') {
+    throw new Error('opencode-go: go docs have no Endpoints or Privacy section')
+  }
+  const ids = new Map<string, string>()
+  for (const cells of markdownTableRows(endpoints)) {
+    if (cells[0] === 'Model') continue
+    const name = cells[0]
+    const id = cellId(cells[1])
+    if (!name || id === '') continue
+    ids.set(name, id)
+  }
+  const training = new Map<string, boolean>()
+  for (const cells of markdownTableRows(privacy)) {
+    if (cells[0] === 'Model') continue
+    const name = cells[0]
+    const stated = cells[1]
+    if (!name) continue
+    if (stated !== 'Yes' && stated !== 'Not used') {
+      throw new Error(
+        `opencode-go: privacy training cell ${JSON.stringify(stated)} for ${name}`,
+      )
+    }
+    const id = ids.get(name)
+    if (!id) {
+      throw new Error(`opencode-go: privacy model ${name} has no endpoint id`)
+    }
+    training.set(id, stated === 'Yes')
+  }
+  if (training.size === 0) {
+    throw new Error('opencode-go: privacy table names no models')
+  }
+  return training
+}
+
 export function openCodeGoFacts(
   providerId: string,
   rawId: string,
 ): {
-  requiredRequestHeaders: Array<RequiredRequestHeader> | null
+  requiredRequestHeaders: Array<RequiredHeader> | null
   trainsOnRequestData: boolean | null
   factSources: Pick<
     ModelFactSources,

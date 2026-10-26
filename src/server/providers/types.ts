@@ -321,6 +321,7 @@ export type ModelFact =
   | 'releasedAt'
   | 'knowledgeCutoff'
   | 'openWeights'
+  | 'trainsOnRequestData'
   | 'providerMetadata'
 
 /**
@@ -368,6 +369,8 @@ export type ModelFact =
  * | `knowledgeCutoff`  | null                                             |
  * | `openWeights`      | null, and `weightsUrl` with it: the pair is one  |
  * |                    | fact, marked absent as `openWeights`             |
+ * | `trainsOnRequestData` | null. A probe can still set it at read time  |
+ * |                    | when this poll did not state the id              |
  * | `providerMetadata` | null                                             |
  *
  * `cleared` nulls each of them and `unavailable` keeps the stored value and
@@ -440,6 +443,12 @@ export interface ModelInfo {
   openWeights?: boolean | null
   /** Where the provider says the weights are; stored only with `openWeights: true`. */
   weightsUrl?: string | null
+  /**
+   * True only when this id's own source states it trains on request data.
+   * Null when that source states it does not, or does not mention the id.
+   * Never inferred from a name suffix.
+   */
+  trainsOnRequestData?: boolean | null
   /**
    * Provider-hosted tool type ids the model accepts in `tools`
    * (`web_search_20250305`, `google_search`, …). Null when unknown.
@@ -616,6 +625,15 @@ export interface ListModelsResult {
  */
 export type SpecGrain = 'provider' | 'model'
 
+/**
+ * One required request header. `value` is a constant the client copies
+ * (`anthropic-version`). `description` is the rule when the client chooses
+ * the value (`x-opencode-session`). Exactly one of the two.
+ */
+export type RequiredHeader =
+  | { name: string; value: string }
+  | { name: string; description: string }
+
 /** OpenAPI 3 security scheme subset we emit on assembled provider specs. */
 export type OpenApiSecurityScheme =
   | {
@@ -640,8 +658,11 @@ export interface ProviderConnect {
   servers: Array<{ url: string; description?: string }>
   securitySchemes: Record<string, OpenApiSecurityScheme>
   security: Array<Record<string, Array<string>>>
-  /** Header name → const value (e.g. `anthropic-version`). */
-  requiredHeaders?: Record<string, string>
+  /**
+   * Headers every request must send. A `value` is constant; a
+   * `description` is the rule for a value the client chooses.
+   */
+  requiredHeaders?: Array<RequiredHeader>
   /**
    * Include sibling `GET {path}/requests/{request_id}` carrying the output
    * schema (FAL queue). The POST keeps the input schema only.

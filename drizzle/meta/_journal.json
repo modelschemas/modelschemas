@@ -120,6 +120,13 @@
       "when": 1792671501627,
       "tag": "0016_model_deprecation",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792999012375,
+      "tag": "0017_opposite_banshee",
+      "breakpoints": true
     }
   ]
 }
