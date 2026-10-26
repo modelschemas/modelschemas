@@ -25,6 +25,7 @@ import {
   undatedId,
 } from './model-facts.ts'
 import { price } from '@modelschemas/rate-card'
+import { evaluateCard } from '@modelschemas/rate-card/evaluator'
 import { parseStoredRateCard } from '../rate-card.ts'
 import { openAiCompatModelFacts } from './openai-compat.ts'
 import {
@@ -1423,6 +1424,70 @@ describe('gemini pricing page', () => {
       })
       // Named but refused by the parser: the stored card is kept.
       expect(pricing('lyria-3.5')).toEqual({})
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('prices an automatically routed id at the successor standard rate', async () => {
+    const tokens = (input: string, output: string) =>
+      `<tr><td>Input price</td><td>Free</td><td>${input}</td></tr>
+       <tr><td>Output price</td><td>Free</td><td>${output}</td></tr>`
+    const page =
+      section('gemini-3.8-flash', tokens('$0.75', '$3.75')) +
+      section('gemini-3.6-flash', tokens('$0.50', '$3.00')) +
+      section('gemini-omni-1.1-flash', tokens('$1.00', '$2.00')) +
+      section(
+        'lyria-3.5',
+        `<tr><td>Lyria 3.5 (Full Song)</td><td>Not available</td><td>$0.08 per song</td></tr>`,
+      )
+    const deprecations = [
+      '| `gemini-3.7-flash` | August 13, 2026 | N/A | `gemini-3.8-flash` (the endpoint is not shutting down and automatically routes API requests to `gemini-3.8-flash`) |',
+      '| `gemini-3.5-flash` | May 19, 2026 | N/A | `gemini-3.6-flash` (automatically routes API requests to `gemini-3.6-flash`) |',
+      '| `gemini-omni-flash-preview` | June 30, 2026 | October 22, 2026 | `gemini-omni-1.1-flash` |',
+      '| `lyria-routed` | June 1, 2026 | N/A | `lyria-3.5` (automatically routes API requests to `lyria-3.5`) |',
+    ].join('\n')
+    vi.stubGlobal('fetch', (url: string) =>
+      Promise.resolve(
+        new Response(
+          String(url).includes('deprecations') ? deprecations : page,
+        ),
+      ),
+    )
+    try {
+      const pricing = await geminiModelPricing()
+      const quote = (rawId: string) => {
+        const card = parseStoredRateCard(pricing(rawId).pricing)
+        if (!card) throw new Error(`${rawId} has no card`)
+        return evaluateCard(card, {
+          usage: { input_tokens: 1_000_000, output_tokens: 1_000_000 },
+        })
+      }
+      expect(quote('gemini-3.7-flash')).toMatchObject({
+        amount: 4.5,
+        currency: 'USD',
+        estimated: [],
+      })
+      expect(pricing('gemini-3.7-flash').factSources?.pricing?.path).toBe(
+        'routed to gemini-3.8-flash',
+      )
+      expect(quote('gemini-3.5-flash')).toMatchObject({
+        amount: 3.5,
+        currency: 'USD',
+        estimated: [],
+      })
+      expect(pricing('gemini-3.5-flash').factSources?.pricing?.path).toBe(
+        'routed to gemini-3.6-flash',
+      )
+      expect(pricing('gemini-3.8-flash').factSources?.pricing?.path).toBe(
+        'Pricing',
+      )
+      // A replacement that is not automatic routing is not a rate.
+      expect(pricing('gemini-omni-flash-preview')).toEqual({
+        absent: { pricing: 'cleared' },
+      })
+      // The successor is named and the parser refused its card: keep stored.
+      expect(pricing('lyria-routed')).toEqual({})
     } finally {
       vi.unstubAllGlobals()
     }
