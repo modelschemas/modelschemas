@@ -151,6 +151,9 @@
     "packages/client": {
       "name": "@modelschemas/client",
       "version": "0.2.1",
+      "dependencies": {
+        "@modelschemas/rate-card": "workspace:*",
+      },
     },
     "packages/codegen": {
       "name": "@modelschemas/codegen",

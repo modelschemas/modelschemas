@@ -2,6 +2,7 @@
  * Structural brand so zero-import generated request types match this package.
  * Provenance only — not liveness.
  */
+import type { RateCard } from '@modelschemas/rate-card'
 import {
   getModel as getModelRaw,
   listModels as listModelsRaw,
@@ -12,6 +13,7 @@ import type {
   GetModelData,
   ListModelsData,
   ListProviderModelsData,
+  CompactPricing,
   Model,
   ModelDetail,
   ModelList,
@@ -22,13 +24,21 @@ export type ListedModelId<TProvider extends string = string> = string & {
   readonly __modelschemasListed: TProvider
 }
 
+/**
+ * The generated `pricing` is `unknown` inside (the spec cannot express the
+ * card language), so served rows retype it as the evaluator's RateCard:
+ * narrow with `'price' in row.pricing` and pass it to `evaluateCard`.
+ */
+type ListedPricing = RateCard | CompactPricing | null
+
 /** A served model row whose rawId is branded with its provider. */
 export type ListedModel<
   TProvider extends string = string,
   TRow extends Model = Model,
-> = Omit<TRow, 'provider' | 'rawId'> & {
+> = Omit<TRow, 'provider' | 'rawId' | 'pricing'> & {
   provider: TProvider
   rawId: ListedModelId<TProvider>
+  pricing: ListedPricing
 }
 
 /** A model list response whose rows carry branded rawIds. */
@@ -51,7 +61,13 @@ function brandModel<TProvider extends string, TRow extends Model>(
   provider: TProvider,
   row: TRow,
 ): ListedModel<TProvider, TRow> {
-  return { ...row, provider, rawId: asListedModelId(provider, row.rawId) }
+  return {
+    ...row,
+    provider,
+    rawId: asListedModelId(provider, row.rawId),
+    // The service stores only cards that parse as rate-card's RateCard.
+    pricing: row.pricing as ListedPricing,
+  }
 }
 
 function brandModelList<
