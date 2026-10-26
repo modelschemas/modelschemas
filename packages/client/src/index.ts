@@ -26,6 +26,10 @@ export {
   validatePayload,
 } from './generated/index.js'
 export type * from './generated/index.js'
+// One RateCard: the evaluator's definition shadows the generated one above
+// (the spec types `price` and `tables` as unknown), so the type a caller
+// imports here is the type `evaluateCard` takes.
+export type { RateCard } from '@modelschemas/rate-card'
 export { createClient, createConfig }
 export {
   asListedModelId,
