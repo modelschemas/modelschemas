@@ -259,6 +259,75 @@ export function anthropicServerTools(rawId: string): {
   return { serverTools, sources }
 }
 
+const SAMPLING = ['temperature', 'top_p', 'top_k']
+const GUIDES = 'https://platform.claude.com/docs/en/models'
+
+// ponytail: hand-written from the migration guides on 2026-10-26. The guides
+// state sampling in prose, as a change to make when moving to a newer model,
+// so both lists are read from them rather than quoted: Fable 5, Opus 4.7/4.8,
+// Sonnet 5 and Mythos follow the guides' "Opus 4.7 and later" and carried-over
+// restriction wording. An id in neither list stays unstated, so re-verify on
+// each launch (new Claude models reject it).
+/** A 400 on Opus 4.7 and later and on every Claude 5 model. */
+const SAMPLING_REJECTED = [
+  'claude-fable-5-1',
+  'claude-fable-5',
+  'claude-mythos-5-1',
+  'claude-mythos-5',
+  'claude-opus-5-5',
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-sonnet-5-5',
+  'claude-sonnet-5',
+  'claude-haiku-5-5',
+]
+/** Models the guides tell the reader to strip sampling from when migrating. */
+const SAMPLING_ACCEPTED = [
+  'claude-opus-4-6',
+  'claude-opus-4-5-20251101',
+  'claude-opus-4-1-20250805',
+  'claude-opus-4-20250514',
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4-20250514',
+  'claude-haiku-4-5-20251001',
+]
+
+/** The family's own migration guide, where the removal is stated. */
+function samplingGuide(rawId: string): string {
+  const guide = rawId.includes('sonnet')
+    ? 'sonnet-5-5'
+    : rawId.includes('haiku')
+      ? 'haiku-5-5'
+      : rawId.includes('fable') || rawId.includes('mythos')
+        ? 'fable-5-1'
+        : 'opus-5-5'
+  return `${GUIDES}/${guide}/migration-guide`
+}
+
+/** Sampling flags the guides state for a model: `true` list, `false` list. */
+export function anthropicSampling(rawId: string): {
+  supported: Array<string>
+  unsupported: Array<string>
+  sources: Record<string, FactSource>
+} {
+  const rejected = SAMPLING_REJECTED.includes(rawId)
+  if (!rejected && !SAMPLING_ACCEPTED.includes(rawId)) {
+    return { supported: [], unsupported: [], sources: {} }
+  }
+  const source: FactSource = {
+    derivation: 'docs-derived',
+    sourceUrl: samplingGuide(rawId),
+    path: rejected ? 'sampling parameters' : 'migrating from earlier models',
+  }
+  return {
+    supported: rejected ? [] : SAMPLING,
+    unsupported: rejected ? SAMPLING : [],
+    sources: Object.fromEntries(SAMPLING.map((flag) => [flag, source])),
+  }
+}
+
 /** Reasoning + server tools for one listed model, with provenance. */
 export async function anthropicModelFeatures(
   kv?: KVNamespace,

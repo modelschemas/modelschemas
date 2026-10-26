@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   anthropicReasoning,
+  anthropicSampling,
   anthropicServerTools,
   parseThinkingTable,
 } from './anthropic-features.ts'
@@ -84,6 +85,37 @@ describe('anthropic features (issue #77)', () => {
     const unknown = anthropicServerTools('claude-new-model')
     expect(unknown.serverTools).toContain('bash_20250124')
     expect(unknown.serverTools).not.toContain('code_execution_20250825')
+  })
+
+  it('states sampling support for the ids the migration guides name', () => {
+    for (const id of [
+      'claude-sonnet-5-5',
+      'claude-opus-5-5',
+      'claude-fable-5-1',
+    ]) {
+      expect(anthropicSampling(id).unsupported).toContain('temperature')
+      expect(anthropicSampling(id).supported).toEqual([])
+    }
+    for (const id of [
+      'claude-sonnet-4-5-20250929',
+      'claude-haiku-4-5-20251001',
+    ]) {
+      expect(anthropicSampling(id).supported).toEqual([
+        'temperature',
+        'top_p',
+        'top_k',
+      ])
+    }
+    expect(
+      anthropicSampling('claude-haiku-4-5-20251001').sources.temperature
+        ?.sourceUrl,
+    ).toMatch(/haiku-5-5\/migration-guide$/)
+    const none = anthropicSampling('claude-new-model')
+    expect([none.supported, none.unsupported, none.sources]).toEqual([
+      [],
+      [],
+      {},
+    ])
   })
 })
 

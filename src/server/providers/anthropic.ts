@@ -7,6 +7,7 @@ import type { Activity } from '#/db/schema.ts'
 import {
   ANTHROPIC_THINKING_URL,
   anthropicModelFeatures,
+  anthropicSampling,
   anthropicServerTools,
 } from './anthropic-features.ts'
 import { docsReport, docsRun, tryDocs, unavailable } from './model-facts.ts'
@@ -93,7 +94,7 @@ interface AnthropicModelList {
 /**
  * Request features the Models API capability tree states. The tree does
  * not cover tool use, sampling params, or whether thinking can be turned
- * off (Fable/Mythos) — those live in prose docs and stay unset here.
+ * off (Fable/Mythos) — those live in prose docs (`anthropicSampling`).
  */
 export function anthropicCapabilities(m: AnthropicModel): Array<string> | null {
   const caps = m.capabilities
@@ -158,6 +159,11 @@ async function listModels(
         reasoning: null,
         ...toolsOnly(m.id),
       }
+      const sampling = anthropicSampling(m.id)
+      const listed = [
+        ...(anthropicCapabilities(m) ?? []),
+        ...sampling.supported,
+      ]
       models.push({
         rawId: m.id,
         displayName: m.display_name ?? null,
@@ -167,11 +173,16 @@ async function listModels(
         contextWindow: m.max_input_tokens ?? null,
         maxOutput: m.max_tokens ?? null,
         modalities: m.capabilities ? { input, output: ['text'] } : null,
-        capabilities: m.capabilities ? anthropicCapabilities(m) : null,
+        capabilities: listed.length > 0 ? listed : null,
+        unsupportedCapabilities: sampling.unsupported,
         pricing: priced.pricing,
         reasoning: feat.reasoning,
         serverTools: feat.serverTools,
-        factSources: { ...priced.factSources, ...feat.factSources },
+        factSources: {
+          ...priced.factSources,
+          ...feat.factSources,
+          capabilities: sampling.sources,
+        },
         ...(lost.length > 0 ? unavailable(...lost) : {}),
       })
     }
