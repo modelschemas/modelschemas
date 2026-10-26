@@ -40,6 +40,12 @@ it('keeps the poll when the docs host serves pages with no tables', async () => 
     expect(model?.rawId).toBe('claude-opus-5-5')
     expect(model?.pricing).toBeUndefined()
     expect(model?.reasoning).toBeNull()
+    expect(model?.capabilities).toBeNull()
+    expect(model?.unsupportedCapabilities).toEqual([
+      'temperature',
+      'top_p',
+      'top_k',
+    ])
     const tools = anthropicServerTools('claude-opus-5-5').serverTools
     expect(tools.length).toBeGreaterThan(0)
     expect(model?.serverTools).toEqual(tools)

@@ -170,7 +170,8 @@ ones).
   lists them). `models.reasoning` and
   `models.serverTools` (provider tool type ids) come from docs: OpenAI and
   xAI model pages, Gemini model pages + thinking tables, the Anthropic
-  Models API + thinking table; Anthropic tools are a hand-written table
+  Models API + thinking table; Anthropic tools and sampling support
+  (`temperature`/`top_p`/`top_k`, `false` where the migration guides say 400) are hand-written tables
   in `anthropic-features.ts` (re-verify on each Claude launch).
 - **Stated facts** (`settleStatedFacts` in `poll-models.ts`; contract in
   the `FactAbsence` comment in `providers/types.ts`): `models.capabilities`
