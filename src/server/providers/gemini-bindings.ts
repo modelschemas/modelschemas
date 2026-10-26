@@ -29,6 +29,9 @@ export const GEMMA_MODEL_CARD_URL =
 
 const CHANGELOG_MARK = 'This page documents updates to the Gemini API'
 
+/** Opening sentence of the deprecations page. An error document lacks it. */
+const DEPRECATIONS_MARK = 'This page lists the known deprecation schedules'
+
 const ID = String.raw`[a-z0-9][a-z0-9.-]+`
 
 export interface GemmaModalities {
@@ -195,12 +198,21 @@ export function parseGemmaModalities(
   return out
 }
 
-/** Throws when the fetch fails. An empty route map is a real "no routing". */
+/**
+ * Throws when the fetch fails or the body is not the deprecations page.
+ * A real page that names no automatic route returns `{}`, and the poll
+ * may then clear those cards.
+ */
 export async function geminiAutomaticRoutes(
   kv?: KVNamespace,
 ): Promise<Record<string, string>> {
   const doc = await cachedDocs(kv, GEMINI_DEPRECATIONS_URL, async () => {
     const markdown = await fetchText(GEMINI_DEPRECATIONS_URL)
+    if (!markdown.includes(DEPRECATIONS_MARK)) {
+      throw new Error(
+        'gemini deprecations: not the Gemini API deprecations page',
+      )
+    }
     return {
       routes: Object.fromEntries(parseAutomaticRoutes(markdown)),
       hash: await sha256Text(markdown),

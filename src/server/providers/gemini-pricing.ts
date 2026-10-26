@@ -508,8 +508,9 @@ export async function geminiModelPricing(
         extractedAt: new Date().toISOString(),
       }
     }),
-    // A failed fetch throws, so a blip cannot clear the routed cards.
-    // A page that parses zero routes is Google stating no automatic routing.
+    // A failed fetch, or a body that is not the deprecations page, throws,
+    // so a blip cannot clear the routed cards. A real page that names no
+    // automatic route is Google stating no automatic routing.
     geminiAutomaticRoutes(kv),
   ])
   const routeTo = new Map(Object.entries(routes))

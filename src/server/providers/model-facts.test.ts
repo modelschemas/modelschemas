@@ -1413,7 +1413,16 @@ describe('gemini pricing page', () => {
     const perSong = `<tr><td>Lyria 3.5 (Full Song)</td><td>Not available</td><td>$0.08 per song</td></tr>`
     const page =
       section('gemini-3.6-flash', tokens) + section('lyria-3.5', perSong)
-    vi.stubGlobal('fetch', () => Promise.resolve(new Response(page)))
+    const deprecations =
+      'This page lists the known deprecation schedules.\n\n' +
+      '| `gemini-2.0-flash` | February 5, 2025 | June 1, 2026 | `gemini-3.6-flash` |\n'
+    vi.stubGlobal('fetch', (url: string) =>
+      Promise.resolve(
+        new Response(
+          String(url).includes('deprecations') ? deprecations : page,
+        ),
+      ),
+    )
     try {
       const pricing = await geminiModelPricing()
       expect(pricing('gemini-3.6-flash').pricing).toBeTruthy()
@@ -1442,6 +1451,7 @@ describe('gemini pricing page', () => {
         `<tr><td>Lyria 3.5 (Full Song)</td><td>Not available</td><td>$0.08 per song</td></tr>`,
       )
     const deprecations = [
+      'This page lists the known deprecation schedules.',
       '| `gemini-3.7-flash` | August 13, 2026 | N/A | `gemini-3.8-flash` (the endpoint is not shutting down and automatically routes API requests to `gemini-3.8-flash`) |',
       '| `gemini-3.5-flash` | May 19, 2026 | N/A | `gemini-3.6-flash` (automatically routes API requests to `gemini-3.6-flash`) |',
       '| `gemini-omni-flash-preview` | June 30, 2026 | October 22, 2026 | `gemini-omni-1.1-flash` |',
@@ -1488,6 +1498,22 @@ describe('gemini pricing page', () => {
       })
       // The successor is named and the parser refused its card: keep stored.
       expect(pricing('lyria-routed')).toEqual({})
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('throws when the deprecations body is not the deprecations page', async () => {
+    const page = section(
+      'gemini-3.6-flash',
+      `<tr><td>Input price</td><td>Free</td><td>$0.75</td></tr>
+       <tr><td>Output price</td><td>Free</td><td>$3.75</td></tr>`,
+    )
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(page)))
+    try {
+      await expect(geminiModelPricing()).rejects.toThrow(
+        /not the Gemini API deprecations page/,
+      )
     } finally {
       vi.unstubAllGlobals()
     }
