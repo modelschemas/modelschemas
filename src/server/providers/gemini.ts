@@ -6,6 +6,10 @@
  */
 import type { Activity } from '#/db/schema.ts'
 import { supportedFlags } from '#/lib/capabilities.ts'
+import {
+  attachGeminiPublishedFacts,
+  geminiPublishedBindings,
+} from './gemini-bindings.ts'
 import { geminiModelFeatures } from './gemini-features.ts'
 import { geminiModelPricing } from './gemini-pricing.ts'
 import {
@@ -312,6 +316,7 @@ async function listModels(
   }
   const pricingPromise = geminiModelPricing(kv)
   const wirePromise = geminiWire(kv)
+  const bindingsPromise = geminiPublishedBindings(kv)
   const listed: Array<GeminiModel> = []
   let pageToken: string | undefined
   do {
@@ -328,66 +333,76 @@ async function listModels(
     pageToken = body.nextPageToken
   } while (pageToken)
   const rawIdOf = (m: GeminiModel) => m.name.replace(/^models\//, '')
-  const [pricing, wire, { features, docsFailures }] = await Promise.all([
-    pricingPromise,
-    wirePromise,
-    geminiModelFeatures(listed.map(rawIdOf), kv),
-  ])
+  const [pricing, wire, { features, docsFailures }, bindings] =
+    await Promise.all([
+      pricingPromise,
+      wirePromise,
+      geminiModelFeatures(listed.map(rawIdOf), kv),
+      bindingsPromise,
+    ])
+  const models = listed.map((m) => {
+    const rawId = rawIdOf(m)
+    const methods = m.supportedGenerationMethods ?? []
+    const activity = geminiModelActivity(rawId, methods)
+    const priced = pricing(rawId)
+    const feat = features(rawId, m.thinking)
+    const capabilities = [
+      ...new Set([
+        ...(geminiCapabilities(m) ?? []),
+        ...(feat.capabilities ?? []),
+      ]),
+    ]
+    const usesConfig =
+      methods.includes('generateContent') ||
+      methods.includes('bidiGenerateContent')
+    const requestMap =
+      activity === 'chat' && usesConfig
+        ? geminiRequestMap(wire.fields, feat.reasoning, feat.budget)
+        : null
+    return {
+      rawId,
+      displayName: m.displayName ?? null,
+      activity,
+      schemaEndpointId:
+        activity === null
+          ? null
+          : geminiGenerationEndpointId(activity, methods),
+      contextWindow: m.inputTokenLimit ?? null,
+      maxOutput: m.outputTokenLimit ?? null,
+      modalities: feat.modalities,
+      capabilities: capabilities.length ? capabilities : null,
+      ...(m.thinking === false
+        ? { unsupportedCapabilities: ['reasoning'] }
+        : {}),
+      // Gemini's API has no release timestamp: curated dates first, then
+      // the MM-YYYY month embedded in preview ids.
+      releasedAt:
+        curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
+        geminiIdSuffixDate(rawId),
+      pricing: priced.pricing,
+      reasoning: feat.reasoning,
+      serverTools: feat.serverTools,
+      ...(requestMap ? { requestMap } : {}),
+      factSources: {
+        ...priced.factSources,
+        ...feat.factSources,
+        ...(requestMap ? { requestMap: wire.source } : {}),
+      },
+      ...(priced.absent || feat.absent
+        ? { absent: { ...priced.absent, ...feat.absent } }
+        : {}),
+    }
+  })
   return {
-    docsFailures,
-    models: listed.map((m) => {
-      const rawId = rawIdOf(m)
-      const methods = m.supportedGenerationMethods ?? []
-      const activity = geminiModelActivity(rawId, methods)
-      const priced = pricing(rawId)
-      const feat = features(rawId, m.thinking)
-      const capabilities = [
-        ...new Set([
-          ...(geminiCapabilities(m) ?? []),
-          ...(feat.capabilities ?? []),
-        ]),
-      ]
-      const usesConfig =
-        methods.includes('generateContent') ||
-        methods.includes('bidiGenerateContent')
-      const requestMap =
-        activity === 'chat' && usesConfig
-          ? geminiRequestMap(wire.fields, feat.reasoning, feat.budget)
-          : null
-      return {
-        rawId,
-        displayName: m.displayName ?? null,
-        activity,
-        schemaEndpointId:
-          activity === null
-            ? null
-            : geminiGenerationEndpointId(activity, methods),
-        contextWindow: m.inputTokenLimit ?? null,
-        maxOutput: m.outputTokenLimit ?? null,
-        modalities: feat.modalities,
-        capabilities: capabilities.length ? capabilities : null,
-        ...(m.thinking === false
-          ? { unsupportedCapabilities: ['reasoning'] }
-          : {}),
-        // Gemini's API has no release timestamp: curated dates first, then
-        // the MM-YYYY month embedded in preview ids.
-        releasedAt:
-          curatedReleasedAt(GEMINI_RELEASE_DATES, rawId) ??
-          geminiIdSuffixDate(rawId),
-        pricing: priced.pricing,
-        reasoning: feat.reasoning,
-        serverTools: feat.serverTools,
-        ...(requestMap ? { requestMap } : {}),
-        factSources: {
-          ...priced.factSources,
-          ...feat.factSources,
-          ...(requestMap ? { requestMap: wire.source } : {}),
-        },
-        ...(priced.absent || feat.absent
-          ? { absent: { ...priced.absent, ...feat.absent } }
-          : {}),
-      }
-    }),
+    docsFailures: {
+      failed: docsFailures.failed + bindings.docsFailures.failed,
+      skipped: docsFailures.skipped + bindings.docsFailures.skipped,
+      first: [...docsFailures.first, ...bindings.docsFailures.first].slice(
+        0,
+        5,
+      ),
+    },
+    models: attachGeminiPublishedFacts(models, bindings),
   }
 }
 

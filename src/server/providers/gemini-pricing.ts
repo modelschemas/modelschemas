@@ -19,6 +19,7 @@ import type {
   UnitCardSpec,
 } from '@modelschemas/rate-card'
 
+import { geminiAutomaticRoutes } from './gemini-bindings.ts'
 import { tagDocsFacts } from './fact-sources.ts'
 import {
   assertParsed,
@@ -400,8 +401,10 @@ function headingIds(chunk: string): Array<string> {
 
 /**
  * Every id a section heading names, including sections `parseGeminiPricing`
- * refuses. A listed id missing from this is one the page no longer prices
- * (issue #300: deprecated ids routed to a successor), not a parser miss.
+ * refuses. A listed id missing from this is one the page no longer prices.
+ * `geminiModelPricing` still copies a successor's Standard card when the
+ * deprecations page says API requests are automatically routed to that id
+ * (issue #497). A recommended replacement is not a rate (issue #300).
  */
 export function geminiNamedIds(html: string): Array<string> {
   return [...new Set(html.split(SECTION).slice(1).flatMap(headingIds))]
@@ -493,17 +496,24 @@ type PricedFacts = Pick<ModelInfo, 'pricing' | 'factSources' | 'absent'>
 export async function geminiModelPricing(
   kv?: KVNamespace,
 ): Promise<(rawId: string) => PricedFacts> {
-  const doc = await cachedDocs(kv, GEMINI_PRICING_URL, async () => {
-    const html = await fetchText(GEMINI_PRICING_URL)
-    const parsed = parseGeminiPricing(html)
-    assertParsed(parsed, 'gemini pricing page')
-    return {
-      rates: Object.fromEntries(parsed),
-      named: geminiNamedIds(html),
-      hash: await sha256Text(html),
-      extractedAt: new Date().toISOString(),
-    }
-  })
+  const [doc, routes] = await Promise.all([
+    cachedDocs(kv, GEMINI_PRICING_URL, async () => {
+      const html = await fetchText(GEMINI_PRICING_URL)
+      const parsed = parseGeminiPricing(html)
+      assertParsed(parsed, 'gemini pricing page')
+      return {
+        rates: Object.fromEntries(parsed),
+        named: geminiNamedIds(html),
+        hash: await sha256Text(html),
+        extractedAt: new Date().toISOString(),
+      }
+    }),
+    // A failed fetch, or a body that is not the deprecations page, throws,
+    // so a blip cannot clear the routed cards. A real page that names no
+    // automatic route is Google stating no automatic routing.
+    geminiAutomaticRoutes(kv),
+  ])
+  const routeTo = new Map(Object.entries(routes))
   const card = (rawId: string): RateCard | null => {
     const rates = doc.rates[rawId]
     if (!rates) return null
@@ -517,18 +527,40 @@ export async function geminiModelPricing(
       ? compileUnitCard(rates.unit, source)
       : compileTokenCard(rates.base, rates.tiers, source)
   }
+  const familyOf = (rawId: string) => rawId.replace(/-preview.*$/, '')
+  const named = (rawId: string | undefined) =>
+    rawId !== undefined && doc.named.includes(rawId)
+  const priced = (pricing: RateCard, path?: string): PricedFacts => {
+    const factSources = tagDocsFacts({ pricing }, GEMINI_PRICING_URL, doc.hash)
+    if (path && factSources.pricing) {
+      factSources.pricing = { ...factSources.pricing, path }
+    }
+    return { pricing, factSources }
+  }
   return (rawId) => {
     // `gemini-2.5-flash-preview-09-2025` is priced by its family row.
-    const family = rawId.replace(/-preview.*$/, '')
-    const pricing = card(rawId) ?? card(family)
-    if (!pricing) {
-      return doc.named.includes(rawId) || doc.named.includes(family)
-        ? {}
-        : { absent: { pricing: 'cleared' } }
+    const family = familyOf(rawId)
+    const own = card(rawId) ?? (family === rawId ? null : card(family))
+    if (own) return priced(own)
+    // One hop, and only when the deprecations page says requests are
+    // automatically routed. The successor's own family card counts; its
+    // replacement does not.
+    const target = routeTo.get(rawId)
+    const targetFamily = target === undefined ? undefined : familyOf(target)
+    const pricedId =
+      target !== undefined && card(target)
+        ? target
+        : targetFamily !== undefined &&
+            targetFamily !== target &&
+            card(targetFamily)
+          ? targetFamily
+          : null
+    if (pricedId) {
+      const pricing = card(pricedId)
+      return pricing ? priced(pricing, `routed to ${pricedId}`) : {}
     }
-    return {
-      pricing,
-      factSources: tagDocsFacts({ pricing }, GEMINI_PRICING_URL, doc.hash),
-    }
+    return named(rawId) || named(family) || named(target) || named(targetFamily)
+      ? {}
+      : { absent: { pricing: 'cleared' } }
   }
 }
