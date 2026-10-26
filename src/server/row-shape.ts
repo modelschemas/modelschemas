@@ -14,9 +14,9 @@ import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
   version: 6,
-  hash: '3b5f4cab233cbb1730604f76aa82601a1676d68bbc3ecae70aae2e3d92916f5e',
+  hash: '495a6663cac69e9fa5f5cc654b41ae9f77e31f30b1c0d29f26a2eb7898712572',
   notes:
-    'pricing and PricingRange.routes[].card: RateCard now types its price (RateCardPrice), tables (RateCardTable) and inputs (a union by kind) instead of leaving them open. Cards served are unchanged (issue #494).',
+    'pricing and PricingRange.routes[].card: RateCard now types its price (RateCardPrice), tables (RateCardTable) and inputs (a union by kind) instead of leaving them open. reasoning is the ModelReasoning component; requestMap.thinking.off is an object or null. Cards and rows served are unchanged (issue #494).',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

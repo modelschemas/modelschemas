@@ -215,12 +215,10 @@ describe('provider-scoped queries', () => {
     ]
     expect(rows).toEqual([toggle, toggle, unstated, unstated])
 
-    const schema = openApiDocument.components.schemas.Model.properties.reasoning
-    const validator = new Validator(
-      schema as unknown as Schema,
-      '2020-12',
-      false,
-    )
+    const schema = (
+      openApiDocument.components.schemas as Record<string, unknown>
+    ).ModelReasoning
+    const validator = new Validator(schema as Schema, '2020-12', false)
     for (const row of rows) expect(validator.validate(row).errors).toEqual([])
     expect(validator.validate({ mode: 'switch', mandatory: false }).valid).toBe(
       false,

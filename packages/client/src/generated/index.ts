@@ -106,6 +106,7 @@ export type {
   ModelFactSources,
   ModelLinks,
   ModelList,
+  ModelReasoning,
   PriceBounds,
   PricingRange,
   ProviderModelList,

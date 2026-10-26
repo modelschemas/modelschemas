@@ -251,61 +251,83 @@ export type ValidateResult = {
 }
 
 /**
- * List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.
+ * JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.
  */
-export type CompactPricing = {
-  /**
-   * ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.
-   */
-  currency: string
-  per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
-  inputPerMillion?: number
-  outputPerMillion?: number
-  tiered?: true
+export type RateCardExpr =
+  | number
+  | string
+  | boolean
+  | {
+      lookup: {
+        table: string
+        keys: Array<RateCardExpr>
+        default?: RateCardExpr
+      }
+    }
+  | {
+      [key: string]: RateCardExpr | Array<RateCardExpr>
+    }
+
+/**
+ * A named lookup table: numbers, nested to any depth.
+ */
+export type RateCardTable = {
+  [key: string]: number | RateCardTable
+}
+
+export type RateCardSourceRef = {
+  url: string
+  hash: string
 }
 
 /**
- * A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.
+ * An input of an estimate: any kind except one with an estimate.
  */
-export type PricingRange = {
-  currency: string
-  routes: Array<{
-    /**
-     * The route's catalog rawId, or its gateway provider name when card is inline.
-     */
-    model: string
-    /**
-     * Gateway route name (Vercel provider_name) when card is stored on this route instead of a catalog row.
-     */
-    provider?: string
-    /**
-     * Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row.
-     */
-    card?: RateCard
-    pricing: CompactPricing
-  }>
-  inputPerMillion: PriceBounds
-  outputPerMillion?: PriceBounds
-}
-
-export type PriceBounds = {
-  min: number
-  max: number
-}
+export type RateCardEstimateInput =
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'number'
+      default?: number
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'enum'
+      values: Array<string>
+      default?: string
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'boolean'
+      default?: boolean
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'count'
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'dimensions'
+      presets?: {
+        [key: string]: [number, number]
+      }
+      levels?: Array<string>
+      default?: string
+    }
 
 /**
- * A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples.
+ * Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then.
  */
-export type RateCard = {
+export type RateCardEstimate = {
   inputs: {
-    [key: string]: RateCardInput
+    [key: string]: RateCardEstimateInput
   }
-  tables: {
-    [key: string]: RateCardTable
-  }
-  price: RateCardPrice
-  examples: Array<RateCardExample>
-  source: RateCardSource
+  value: RateCardExpr
+  source: RateCardSourceRef
 }
 
 /**
@@ -349,98 +371,6 @@ export type RateCardInput =
     }
 
 /**
- * Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then.
- */
-export type RateCardEstimate = {
-  inputs: {
-    [key: string]: RateCardEstimateInput
-  }
-  value: RateCardExpr
-  source: RateCardSourceRef
-}
-
-/**
- * An input of an estimate: any kind except one with an estimate.
- */
-export type RateCardEstimateInput =
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'number'
-      default?: number
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'enum'
-      values: Array<string>
-      default?: string
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'boolean'
-      default?: boolean
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'count'
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'dimensions'
-      presets?: {
-        [key: string]: [number, number]
-      }
-      levels?: Array<string>
-      default?: string
-    }
-
-/**
- * JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.
- */
-export type RateCardExpr =
-  | number
-  | string
-  | boolean
-  | {
-      lookup: {
-        table: string
-        keys: Array<RateCardExpr>
-        default?: RateCardExpr
-      }
-    }
-  | {
-      [key: string]: RateCardExpr | Array<RateCardExpr>
-    }
-
-export type RateCardSourceRef = {
-  url: string
-  hash: string
-}
-
-/**
- * A named lookup table: numbers, nested to any depth.
- */
-export type RateCardTable = {
-  [key: string]: number | RateCardTable
-}
-
-/**
- * The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency.
- */
-export type RateCardPrice = RateCardCurrencyPrice | RateCardExpr
-
-/**
- * A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused.
- */
-export type RateCardCurrencyPrice = {
-  currency: [string, RateCardExpr]
-}
-
-/**
  * A worked example from the source page's own text.
  */
 export type RateCardExample = {
@@ -452,6 +382,18 @@ export type RateCardExample = {
 }
 
 /**
+ * A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused.
+ */
+export type RateCardCurrencyPrice = {
+  currency: [string, RateCardExpr]
+}
+
+/**
+ * The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency.
+ */
+export type RateCardPrice = RateCardCurrencyPrice | RateCardExpr
+
+/**
  * Where the card was read from.
  */
 export type RateCardSource = {
@@ -459,6 +401,70 @@ export type RateCardSource = {
   hash: string
   extractedAt: string
   expiresAt?: string
+}
+
+/**
+ * A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples.
+ */
+export type RateCard = {
+  inputs: {
+    [key: string]: RateCardInput
+  }
+  tables: {
+    [key: string]: RateCardTable
+  }
+  price: RateCardPrice
+  examples: Array<RateCardExample>
+  source: RateCardSource
+}
+
+/**
+ * List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.
+ */
+export type CompactPricing = {
+  /**
+   * ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.
+   */
+  currency: string
+  per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
+  inputPerMillion?: number
+  outputPerMillion?: number
+  tiered?: true
+}
+
+export type PriceBounds = {
+  min: number
+  max: number
+}
+
+/**
+ * A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.
+ */
+export type PricingRange = {
+  currency: string
+  routes: Array<{
+    /**
+     * The route's catalog rawId, or its gateway provider name when card is inline.
+     */
+    model: string
+    /**
+     * Gateway route name (Vercel `provider_name`) when card is stored on this route instead of a catalog row.
+     */
+    provider?: string
+    /**
+     * Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. `examples` is empty so the catalog response stays serializable.
+     */
+    card?: RateCard
+    pricing: CompactPricing
+  }>
+  inputPerMillion: PriceBounds
+  outputPerMillion?: PriceBounds
+}
+
+export type ModelReasoning = {
+  mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+  mandatory: boolean | null
+  efforts?: Array<string>
 }
 
 /**
@@ -475,7 +481,9 @@ export type ChatRequestMap = {
     /**
      * Request body that turns thinking off, or null when silence is off.
      */
-    off: unknown
+    off: {
+      [key: string]: unknown
+    } | null
     /**
      * Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.
      */
@@ -673,11 +681,7 @@ export type Model = {
   /**
    * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
    */
-  reasoning: {
-    mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
-    mandatory: boolean | null
-    efforts?: Array<string>
-  } | null
+  reasoning: ModelReasoning | null
   /**
    * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
    */
@@ -799,11 +803,7 @@ export type ExportModel = {
   /**
    * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
    */
-  reasoning: {
-    mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
-    mandatory: boolean | null
-    efforts?: Array<string>
-  } | null
+  reasoning: ModelReasoning | null
   /**
    * Provider-hosted tool type ids the model accepts in the request's tools array (web_search_20250305, google_search, x_search, …), or null when unknown. factSources.serverTools holds one source per id.
    */

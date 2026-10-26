@@ -1,5 +1,6 @@
 import type { Activity } from '#/db/schema.ts'
 import type { PricingRange } from '#/server/rate-card.ts'
+import type { ModelReasoning } from '#/server/api-schemas.ts'
 import type { ChatRequestMap } from './request-map.ts'
 import type { Fetcher } from './us-egress.ts'
 
@@ -261,11 +262,7 @@ export interface UpstreamModelIdentity {
  * Many rows written before this rule infer `true` from a level list with
  * no `none`; docs/api-changes.md lists the providers.
  */
-export interface ModelReasoning {
-  mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
-  mandatory: boolean | null
-  efforts?: Array<string>
-}
+export type { ModelReasoning }
 
 const REASONING_MODES = ['adaptive', 'budget', 'effort', 'toggle']
 

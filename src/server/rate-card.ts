@@ -14,6 +14,7 @@ import {
 import { rateCardSchema } from '@modelschemas/rate-card/schema'
 import type { RateCard } from '@modelschemas/rate-card'
 
+import type { CompactPricing, PricingRange } from '#/server/api-schemas.ts'
 import { contentHash, stableStringify } from '#/server/kv.ts'
 import { emptySources } from '#/server/providers/fact-sources.ts'
 import type { ModelFactSources } from '#/server/providers/types.ts'
@@ -42,22 +43,7 @@ const CARD_LEVEL_LEVERS = new Set([
   'input_video_duration',
 ])
 
-/**
- * What a list row says about a stored card. `null` on the row means no
- * card; this means there is one. Token cards carry their per-million rates
- * when those are linear (`tiered` marks a long-prompt re-quote above some
- * threshold — the rates shown are the base); everything else names the
- * unit it bills by and points at the full card. `currency` is the
- * ISO-4217 code the rates are in; rows in different currencies do not
- * compare.
- */
-export type CompactPricing = {
-  currency: string
-  per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
-  inputPerMillion?: number
-  outputPerMillion?: number
-  tiered?: true
-}
+export type { CompactPricing }
 
 export function parseStoredRateCard(value: unknown): RateCard | null {
   const parsed = rateCardSchema.safeParse(value)
@@ -323,35 +309,7 @@ export function servePricing(
   return projectTokenPricing(card)
 }
 
-/**
- * Min/max over the published cards of a routed id's routes (issue #406).
- * A bound, never the billed price: the gateway picks one route per call.
- * `routes[].model` is each route's own row (same provider) when this
- * catalog pins one. A gateway with no per-route row (Vercel) sets
- * `provider` to that route's name and carries the compiled card inline.
- * The inline card's `examples` stay empty: a worked example's free-form
- * params are not part of a route price, and the catalog response has to
- * stay serializable.
- * Null unless every route has a linear token card in one currency: a
- * route with no card, a tier, or a different currency leaves the bounds
- * unknown.
- */
-export type PricingRange = {
-  currency: string
-  routes: Array<{
-    model: string
-    /** Gateway route name when `card` is inline (Vercel `provider_name`). */
-    provider?: string
-    /**
-     * Compiled card for a route that has no catalog row. `examples` is
-     * empty so the catalog response stays serializable.
-     */
-    card?: Omit<RateCard, 'examples'> & { examples: [] }
-    pricing: CompactPricing
-  }>
-  inputPerMillion: { min: number; max: number }
-  outputPerMillion?: { min: number; max: number }
-}
+export type { PricingRange }
 
 export function pricingRange(
   routes: Array<{

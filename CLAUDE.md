@@ -218,6 +218,13 @@ ones).
   (@cfworker/json-schema), `POST /v1/estimate` (`@modelschemas/rate-card`),
   cursor-paginated `/v1/changes`, subscriptions.
   Errors are always `{ error: { code, message } }` with remediation hints.
+- **Spec components from zod**: the RateCard family (`packages/rate-card`)
+  and `CompactPricing`, `PricingRange`, `ModelReasoning`, `ChatRequestMap`
+  (`src/server/api-schemas.ts`) are zod schemas with a `.meta` id; the TS
+  types are inferred from them and `openapi.ts` writes every id'd schema
+  into `components.schemas`. Change the zod schema, not a hand-written
+  component (the rest of `openapi.ts` is still hand-written). A spec change
+  to a served row needs the `MODEL_ROW_SHAPE` bump.
 - **MCP** (`src/server/mcp.ts`, route `/mcp`): stateless streamable-HTTP
   JSON-RPC wrapping the same service functions.
 - **Auth** (`src/lib/auth.ts` factory → lazy runtime instance in

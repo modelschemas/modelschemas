@@ -1555,108 +1555,301 @@
           }
         }
       },
-      "CompactPricing": {
-        "type": "object",
-        "description": "List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.",
-        "required": [
-          "currency",
-          "per"
-        ],
-        "properties": {
-          "currency": {
-            "type": "string",
-            "pattern": "^[A-Z]{3}$",
-            "description": "ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted."
-          },
-          "per": {
-            "type": "string",
-            "enum": [
-              "token",
-              "second",
-              "character",
-              "image",
-              "request",
-              "unit"
-            ]
-          },
-          "inputPerMillion": {
+      "RateCardExpr": {
+        "description": "JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.",
+        "anyOf": [
+          {
             "type": "number"
           },
-          "outputPerMillion": {
-            "type": "number"
+          {
+            "type": "string"
           },
-          "tiered": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          }
-        }
-      },
-      "PricingRange": {
-        "type": "object",
-        "description": "A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.",
-        "required": [
-          "currency",
-          "routes",
-          "inputPerMillion"
-        ],
-        "properties": {
-          "currency": {
-            "type": "string",
-            "pattern": "^[A-Z]{3}$"
+          {
+            "type": "boolean"
           },
-          "routes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "model",
-                "pricing"
-              ],
-              "properties": {
-                "model": {
-                  "type": "string",
-                  "description": "The route's catalog rawId, or its gateway provider name when card is inline."
+          {
+            "type": "object",
+            "properties": {
+              "lookup": {
+                "type": "object",
+                "properties": {
+                  "table": {
+                    "type": "string"
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/RateCardExpr"
+                    }
+                  },
+                  "default": {
+                    "$ref": "#/components/schemas/RateCardExpr"
+                  }
                 },
-                "provider": {
-                  "type": "string",
-                  "description": "Gateway route name (Vercel provider_name) when card is stored on this route instead of a catalog row."
-                },
-                "card": {
-                  "$ref": "#/components/schemas/RateCard",
-                  "description": "Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row."
-                },
-                "pricing": {
-                  "$ref": "#/components/schemas/CompactPricing"
-                }
+                "required": [
+                  "table",
+                  "keys"
+                ],
+                "additionalProperties": false
               }
+            },
+            "required": [
+              "lookup"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "var",
+                "missing",
+                "+",
+                "-",
+                "*",
+                "/",
+                "max",
+                "min",
+                "if",
+                "==",
+                "!=",
+                "<",
+                "<=",
+                ">",
+                ">=",
+                "and",
+                "or",
+                "ceil",
+                "floor"
+              ]
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RateCardExpr"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RateCardExpr"
+                  }
+                }
+              ]
             }
-          },
-          "inputPerMillion": {
-            "$ref": "#/components/schemas/PriceBounds"
-          },
-          "outputPerMillion": {
-            "$ref": "#/components/schemas/PriceBounds"
           }
-        }
+        ]
       },
-      "PriceBounds": {
+      "RateCardTable": {
+        "description": "A named lookup table: numbers, nested to any depth.",
         "type": "object",
-        "required": [
-          "min",
-          "max"
-        ],
-        "properties": {
-          "min": {
-            "type": "number"
-          },
-          "max": {
-            "type": "number"
-          }
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/components/schemas/RateCardTable"
+            }
+          ]
         }
       },
-      "RateCard": {
+      "RateCardSourceRef": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "url",
+          "hash"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardEstimateInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "number"
+              },
+              "default": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "enum"
+              },
+              "values": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "param",
+              "kind",
+              "values"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "boolean"
+              },
+              "default": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "count"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "dimensions"
+              },
+              "presets": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                }
+              },
+              "levels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "An input of an estimate: any kind except one with an estimate."
+      },
+      "RateCardEstimate": {
         "type": "object",
         "properties": {
           "inputs": {
@@ -1665,40 +1858,23 @@
               "type": "string"
             },
             "additionalProperties": {
-              "$ref": "#/components/schemas/RateCardInput"
+              "$ref": "#/components/schemas/RateCardEstimateInput"
             }
           },
-          "tables": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RateCardTable"
-            }
-          },
-          "price": {
-            "$ref": "#/components/schemas/RateCardPrice"
-          },
-          "examples": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RateCardExample"
-            }
+          "value": {
+            "$ref": "#/components/schemas/RateCardExpr"
           },
           "source": {
-            "$ref": "#/components/schemas/RateCardSource"
+            "$ref": "#/components/schemas/RateCardSourceRef"
           }
         },
         "required": [
           "inputs",
-          "tables",
-          "price",
-          "examples",
+          "value",
           "source"
         ],
         "additionalProperties": false,
-        "description": "A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples."
+        "description": "Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then."
       },
       "RateCardInput": {
         "oneOf": [
@@ -1876,359 +2052,6 @@
         ],
         "description": "A lever the price reads: a number, enum, boolean, list count or dimensions."
       },
-      "RateCardEstimate": {
-        "type": "object",
-        "properties": {
-          "inputs": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RateCardEstimateInput"
-            }
-          },
-          "value": {
-            "$ref": "#/components/schemas/RateCardExpr"
-          },
-          "source": {
-            "$ref": "#/components/schemas/RateCardSourceRef"
-          }
-        },
-        "required": [
-          "inputs",
-          "value",
-          "source"
-        ],
-        "additionalProperties": false,
-        "description": "Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then."
-      },
-      "RateCardEstimateInput": {
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "param": {
-                "type": "string",
-                "minLength": 1
-              },
-              "bound": {
-                "type": "string",
-                "enum": [
-                  "request",
-                  "usage"
-                ]
-              },
-              "kind": {
-                "type": "string",
-                "const": "number"
-              },
-              "default": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "param",
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "param": {
-                "type": "string",
-                "minLength": 1
-              },
-              "bound": {
-                "type": "string",
-                "enum": [
-                  "request",
-                  "usage"
-                ]
-              },
-              "kind": {
-                "type": "string",
-                "const": "enum"
-              },
-              "values": {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "default": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "param",
-              "kind",
-              "values"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "param": {
-                "type": "string",
-                "minLength": 1
-              },
-              "bound": {
-                "type": "string",
-                "enum": [
-                  "request",
-                  "usage"
-                ]
-              },
-              "kind": {
-                "type": "string",
-                "const": "boolean"
-              },
-              "default": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "param",
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "param": {
-                "type": "string",
-                "minLength": 1
-              },
-              "bound": {
-                "type": "string",
-                "enum": [
-                  "request",
-                  "usage"
-                ]
-              },
-              "kind": {
-                "type": "string",
-                "const": "count"
-              }
-            },
-            "required": [
-              "param",
-              "kind"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "param": {
-                "type": "string",
-                "minLength": 1
-              },
-              "bound": {
-                "type": "string",
-                "enum": [
-                  "request",
-                  "usage"
-                ]
-              },
-              "kind": {
-                "type": "string",
-                "const": "dimensions"
-              },
-              "presets": {
-                "type": "object",
-                "propertyNames": {
-                  "type": "string"
-                },
-                "additionalProperties": {
-                  "type": "array",
-                  "prefixItems": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "number"
-                    }
-                  ]
-                }
-              },
-              "levels": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "default": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "param",
-              "kind"
-            ],
-            "additionalProperties": false
-          }
-        ],
-        "description": "An input of an estimate: any kind except one with an estimate."
-      },
-      "RateCardExpr": {
-        "description": "JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.",
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "string"
-          },
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "lookup": {
-                "type": "object",
-                "properties": {
-                  "table": {
-                    "type": "string"
-                  },
-                  "keys": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "$ref": "#/components/schemas/RateCardExpr"
-                    }
-                  },
-                  "default": {
-                    "$ref": "#/components/schemas/RateCardExpr"
-                  }
-                },
-                "required": [
-                  "table",
-                  "keys"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "required": [
-              "lookup"
-            ],
-            "additionalProperties": false
-          },
-          {
-            "type": "object",
-            "propertyNames": {
-              "type": "string",
-              "enum": [
-                "var",
-                "missing",
-                "+",
-                "-",
-                "*",
-                "/",
-                "max",
-                "min",
-                "if",
-                "==",
-                "!=",
-                "<",
-                "<=",
-                ">",
-                ">=",
-                "and",
-                "or",
-                "ceil",
-                "floor"
-              ]
-            },
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/RateCardExpr"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/RateCardExpr"
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      },
-      "RateCardSourceRef": {
-        "type": "object",
-        "properties": {
-          "url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "hash": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
-          }
-        },
-        "required": [
-          "url",
-          "hash"
-        ],
-        "additionalProperties": false
-      },
-      "RateCardTable": {
-        "description": "A named lookup table: numbers, nested to any depth.",
-        "type": "object",
-        "propertyNames": {
-          "type": "string"
-        },
-        "additionalProperties": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "$ref": "#/components/schemas/RateCardTable"
-            }
-          ]
-        }
-      },
-      "RateCardPrice": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/RateCardCurrencyPrice"
-          },
-          {
-            "$ref": "#/components/schemas/RateCardExpr"
-          }
-        ],
-        "description": "The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency."
-      },
-      "RateCardCurrencyPrice": {
-        "type": "object",
-        "properties": {
-          "currency": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "type": "string"
-              },
-              {
-                "$ref": "#/components/schemas/RateCardExpr"
-              }
-            ]
-          }
-        },
-        "required": [
-          "currency"
-        ],
-        "additionalProperties": false,
-        "description": "A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused."
-      },
       "RateCardExample": {
         "type": "object",
         "properties": {
@@ -2255,6 +2078,38 @@
         ],
         "additionalProperties": false,
         "description": "A worked example from the source page's own text."
+      },
+      "RateCardCurrencyPrice": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/RateCardExpr"
+              }
+            ]
+          }
+        },
+        "required": [
+          "currency"
+        ],
+        "additionalProperties": false,
+        "description": "A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused."
+      },
+      "RateCardPrice": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RateCardCurrencyPrice"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardExpr"
+          }
+        ],
+        "description": "The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency."
       },
       "RateCardSource": {
         "type": "object",
@@ -2286,33 +2141,295 @@
         "additionalProperties": false,
         "description": "Where the card was read from."
       },
+      "RateCard": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardInput"
+            }
+          },
+          "tables": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardTable"
+            }
+          },
+          "price": {
+            "$ref": "#/components/schemas/RateCardPrice"
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateCardExample"
+            }
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateCardSource"
+          }
+        },
+        "required": [
+          "inputs",
+          "tables",
+          "price",
+          "examples",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples."
+      },
+      "CompactPricing": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted."
+          },
+          "per": {
+            "type": "string",
+            "enum": [
+              "token",
+              "second",
+              "character",
+              "image",
+              "request",
+              "unit"
+            ]
+          },
+          "inputPerMillion": {
+            "type": "number"
+          },
+          "outputPerMillion": {
+            "type": "number"
+          },
+          "tiered": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "currency",
+          "per"
+        ],
+        "additionalProperties": false,
+        "description": "List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1."
+      },
+      "PriceBounds": {
+        "type": "object",
+        "properties": {
+          "min": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "additionalProperties": false
+      },
+      "PricingRange": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "description": "The route's catalog rawId, or its gateway provider name when card is inline."
+                },
+                "provider": {
+                  "description": "Gateway route name (Vercel `provider_name`) when card is stored on this route instead of a catalog row.",
+                  "type": "string"
+                },
+                "card": {
+                  "description": "Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. `examples` is empty so the catalog response stays serializable.",
+                  "$ref": "#/components/schemas/RateCard"
+                },
+                "pricing": {
+                  "$ref": "#/components/schemas/CompactPricing"
+                }
+              },
+              "required": [
+                "model",
+                "pricing"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "inputPerMillion": {
+            "$ref": "#/components/schemas/PriceBounds"
+          },
+          "outputPerMillion": {
+            "$ref": "#/components/schemas/PriceBounds"
+          }
+        },
+        "required": [
+          "currency",
+          "routes",
+          "inputPerMillion"
+        ],
+        "additionalProperties": false,
+        "description": "A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max."
+      },
+      "ModelReasoning": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "adaptive",
+              "budget",
+              "effort",
+              "toggle"
+            ]
+          },
+          "mandatory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "efforts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "mode",
+          "mandatory"
+        ],
+        "additionalProperties": false
+      },
       "ChatRequestMap": {
         "type": "object",
-        "description": "Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field.",
         "properties": {
           "thinking": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "object",
-                "required": [
-                  "on",
-                  "off",
-                  "levels"
-                ],
                 "properties": {
                   "on": {
                     "type": "object",
-                    "description": "Request body for thinking on at effort high.",
-                    "additionalProperties": true
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {},
+                    "description": "Request body for thinking on at effort high."
                   },
                   "off": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
                     "description": "Request body that turns thinking off, or null when silence is off."
                   },
                   "levels": {
-                    "description": "Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.",
-                    "oneOf": [
+                    "anyOf": [
                       {
                         "type": "object",
+                        "properties": {
+                          "off": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "minimal": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "low": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "medium": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "high": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "xhigh": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "max": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
                         "required": [
                           "off",
                           "minimal",
@@ -2322,57 +2439,21 @@
                           "xhigh",
                           "max"
                         ],
-                        "properties": {
-                          "off": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "minimal": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "low": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "medium": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "high": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "xhigh": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "max": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          }
-                        }
+                        "additionalProperties": false
                       },
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified."
                   }
-                }
+                },
+                "required": [
+                  "on",
+                  "off",
+                  "levels"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "null"
@@ -2380,69 +2461,103 @@
             ]
           },
           "maxTokensField": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "max_completion_tokens",
-              "max_tokens",
-              null
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "max_completion_tokens",
+                  "max_tokens"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "developerRole": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "replayReasoningContent": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "store": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "strictTools": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "sessionAffinity": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "cacheControl": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "anthropic",
-              null
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "anthropic"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "toolStream": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "reasoningEffort": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           }
-        }
+        },
+        "additionalProperties": false,
+        "description": "Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field."
       },
       "HalLink": {
         "type": "object",
@@ -2853,34 +2968,7 @@
             "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.",
             "oneOf": [
               {
-                "type": "object",
-                "required": [
-                  "mode",
-                  "mandatory"
-                ],
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "adaptive",
-                      "budget",
-                      "effort",
-                      "toggle"
-                    ]
-                  },
-                  "mandatory": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "efforts": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/ModelReasoning"
               },
               {
                 "type": "null"
@@ -3228,34 +3316,7 @@
             "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.",
             "oneOf": [
               {
-                "type": "object",
-                "required": [
-                  "mode",
-                  "mandatory"
-                ],
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "adaptive",
-                      "budget",
-                      "effort",
-                      "toggle"
-                    ]
-                  },
-                  "mandatory": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "efforts": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/ModelReasoning"
               },
               {
                 "type": "null"
