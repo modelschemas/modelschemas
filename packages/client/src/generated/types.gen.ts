@@ -259,8 +259,17 @@ export type RateCardExpr =
   | boolean
   | {
       lookup: {
+        /**
+         * A key of the card `tables`.
+         */
         table: string
+        /**
+         * One key expression per table level, outermost first.
+         */
         keys: Array<RateCardExpr>
+        /**
+         * Used when a key is absent from the table.
+         */
         default?: RateCardExpr
       }
     }
@@ -268,138 +277,163 @@ export type RateCardExpr =
       [key: string]: RateCardExpr | Array<RateCardExpr>
     }
 
-/**
- * A named lookup table: numbers, nested to any depth.
- */
 export type RateCardTable = {
   [key: string]: number | RateCardTable
 }
 
 export type RateCardSourceRef = {
   url: string
+  /**
+   * sha256 of the fetched text.
+   */
   hash: string
+}
+
+/**
+ * Request-body or usage-object field this lever reads (`image_urls`). JSONLogic `{ var }` uses the input's object key, which may differ.
+ */
+export type RateCardParam = string
+
+/**
+ * Where `price` reads `param` from. request (the default): a real request-body field (`duration`, `image_size`). usage: a quantity the caller supplies because it is not on the request (`input_tokens`).
+ */
+export type RateCardBound = 'request' | 'usage'
+
+export type RateCardNumberInput = {
+  param: RateCardParam
+  bound?: RateCardBound
+  kind: 'number'
+  default?: number
+}
+
+export type RateCardEnumInput = {
+  param: RateCardParam
+  bound?: RateCardBound
+  kind: 'enum'
+  values: Array<string>
+  /**
+   * One of `values`.
+   */
+  default?: string
+}
+
+export type RateCardBooleanInput = {
+  param: RateCardParam
+  bound?: RateCardBound
+  kind: 'boolean'
+  default?: boolean
+}
+
+/**
+ * Length of a list param (`image_urls`), 0 when absent.
+ */
+export type RateCardCountInput = {
+  param: RateCardParam
+  bound?: RateCardBound
+  kind: 'count'
+}
+
+/**
+ * Takes `{width, height}`, a `WxH` string or a preset name, and binds `<name>.width` / `<name>.height`.
+ */
+export type RateCardDimensionsInput = {
+  param: RateCardParam
+  bound?: RateCardBound
+  kind: 'dimensions'
+  /**
+   * Preset name to [width, height].
+   */
+  presets?: {
+    [key: string]: [number, number]
+  }
+  /**
+   * Names the provider sizes itself (Ark's `2K`); bound as `<name>.level`, with no width or height.
+   */
+  levels?: Array<string>
+  /**
+   * A preset or level name.
+   */
+  default?: string
 }
 
 /**
  * An input of an estimate: any kind except one with an estimate.
  */
 export type RateCardEstimateInput =
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'number'
-      default?: number
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'enum'
-      values: Array<string>
-      default?: string
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'boolean'
-      default?: boolean
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'count'
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'dimensions'
-      presets?: {
-        [key: string]: [number, number]
-      }
-      levels?: Array<string>
-      default?: string
-    }
+  | RateCardNumberInput
+  | RateCardEnumInput
+  | RateCardBooleanInput
+  | RateCardCountInput
+  | RateCardDimensionsInput
 
 /**
- * Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then.
+ * The source-published way to estimate a number the caller did not supply. Used only when the input is absent; the result then names the input as estimated, never as a billed price. An input with an estimate has no default.
  */
 export type RateCardEstimate = {
+  /**
+   * Bound only when the estimate runs. Names may not repeat a card input.
+   */
   inputs: {
     [key: string]: RateCardEstimateInput
   }
+  /**
+   * Expression yielding the estimated number; it also reads the card's own bound inputs.
+   */
   value: RateCardExpr
   source: RateCardSourceRef
 }
 
-/**
- * A lever the price reads: a number, enum, boolean, list count or dimensions.
- */
-export type RateCardInput =
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'number'
-      default?: number
-      estimate?: RateCardEstimate
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'enum'
-      values: Array<string>
-      default?: string
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'boolean'
-      default?: boolean
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'count'
-    }
-  | {
-      param: string
-      bound?: 'request' | 'usage'
-      kind: 'dimensions'
-      presets?: {
-        [key: string]: [number, number]
-      }
-      levels?: Array<string>
-      default?: string
-    }
+export type RateCardEstimatedNumberInput = {
+  param: RateCardParam
+  bound?: RateCardBound
+  kind: 'number'
+  default?: number
+  estimate?: RateCardEstimate
+}
 
-/**
- * A worked example from the source page's own text.
- */
+export type RateCardInput =
+  | RateCardEstimatedNumberInput
+  | RateCardEnumInput
+  | RateCardBooleanInput
+  | RateCardCountInput
+  | RateCardDimensionsInput
+
 export type RateCardExample = {
+  /**
+   * Flat bag of request-body fields plus usage quantities, keyed by each input's `param`. `verifyExamples` feeds it as both `request` and `usage`.
+   */
   params: {
     [key: string]: unknown
   }
+  /**
+   * In the card's currency; the name predates `currency`.
+   */
   usd: number
+  /**
+   * The sentence in the source text this example comes from.
+   */
   quote: string
 }
 
-/**
- * A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused.
- */
 export type RateCardCurrencyPrice = {
   currency: [string, RateCardExpr]
 }
 
 /**
- * The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency.
+ * Yields USD, or, wrapped as { currency: [ISO 4217 code, expression] }, that currency. The wrapper is the only place a card states a currency; any other spelling is refused, and an evaluator that does not know the wrapper refuses the card.
  */
 export type RateCardPrice = RateCardCurrencyPrice | RateCardExpr
 
-/**
- * Where the card was read from.
- */
 export type RateCardSource = {
   url: string
+  /**
+   * sha256 of the source text the card was read from.
+   */
   hash: string
   extractedAt: string
+  /**
+   * When the text names a promo end; re-extract after this.
+   */
   expiresAt?: string
 }
 
@@ -407,13 +441,22 @@ export type RateCardSource = {
  * A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples.
  */
 export type RateCard = {
+  /**
+   * The levers the price reads, by the name `{ var }` uses in `price`.
+   */
   inputs: {
     [key: string]: RateCardInput
   }
+  /**
+   * Named lookup tables for `{ lookup }` nodes in `price`.
+   */
   tables: {
     [key: string]: RateCardTable
   }
   price: RateCardPrice
+  /**
+   * The source page's own worked examples; the card is stored only if it reproduces every one.
+   */
   examples: Array<RateCardExample>
   source: RateCardSource
 }
@@ -426,12 +469,27 @@ export type CompactPricing = {
    * ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.
    */
   currency: string
+  /**
+   * The unit the card bills by. token: inputPerMillion and outputPerMillion are set when the rates are linear. Every other value: fetch the full card.
+   */
   per: 'token' | 'second' | 'character' | 'image' | 'request' | 'unit'
+  /**
+   * Price per million input tokens at the base tier, in `currency`. per=token only.
+   */
   inputPerMillion?: number
+  /**
+   * Price per million output tokens at the base tier, in `currency`. per=token only.
+   */
   outputPerMillion?: number
+  /**
+   * Present when the card re-quotes the rates above some prompt-length threshold. The rates shown are the base tier; fetch the card for the rest.
+   */
   tiered?: true
 }
 
+/**
+ * A bound over route prices, per million tokens: never the billed price.
+ */
 export type PriceBounds = {
   min: number
   max: number
@@ -441,6 +499,9 @@ export type PriceBounds = {
  * A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.
  */
 export type PricingRange = {
+  /**
+   * ISO-4217 code every route is priced in. A range is only built when the routes share one.
+   */
   currency: string
   routes: Array<{
     /**
@@ -452,18 +513,33 @@ export type PricingRange = {
      */
     provider?: string
     /**
-     * Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. `examples` is empty so the catalog response stays serializable.
+     * Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. Its `examples` is empty.
      */
     card?: RateCard
     pricing: CompactPricing
   }>
+  /**
+   * Bounds over the routes' input price per million tokens.
+   */
   inputPerMillion: PriceBounds
+  /**
+   * Bounds over the routes' output price per million tokens, when every route states one.
+   */
   outputPerMillion?: PriceBounds
 }
 
 export type ModelReasoning = {
+  /**
+   * The one control the request exposes. adaptive: the model decides (Anthropic thinking.type adaptive, or a switch with an auto value). budget: a token budget (thinking.budget_tokens, Gemini thinkingBudget). effort: a level (reasoning_effort, Gemini thinkingLevel). toggle: an on/off switch and nothing else (thinking.type enabled|disabled, enable_thinking); it says nothing about the default when the field is omitted.
+   */
   mode: 'adaptive' | 'budget' | 'effort' | 'toggle'
+  /**
+   * true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated; do not read it as false, test mandatory === false before offering an off option. A toggle is never stored with null.
+   */
   mandatory: boolean | null
+  /**
+   * The accepted effort values as published, an off value such as none included. Never present on a toggle.
+   */
   efforts?: Array<string>
 }
 
@@ -479,7 +555,7 @@ export type ChatRequestMap = {
       [key: string]: unknown
     }
     /**
-     * Request body that turns thinking off, or null when silence is off.
+     * Request body that turns thinking off, or null when silence is off (the model does not think unless asked).
      */
     off: {
       [key: string]: unknown
@@ -497,14 +573,29 @@ export type ChatRequestMap = {
       max: string | null
     } | null
   } | null
+  /**
+   * Name of the request field that caps output tokens.
+   */
   maxTokensField?: 'max_completion_tokens' | 'max_tokens' | null
+  /**
+   * true when the model wants `role: "developer"` instead of `system`; false when it rejects it.
+   */
   developerRole?: boolean | null
+  /**
+   * true when the provider needs the previous turn's `reasoning_content` replayed on the assistant message.
+   */
   replayReasoningContent?: boolean | null
   store?: boolean | null
   strictTools?: boolean | null
   sessionAffinity?: boolean | null
   cacheControl?: 'anthropic' | null
+  /**
+   * true when the model takes `tool_stream: true` alongside `stream: true` (Z.AI GLM). null: unverified.
+   */
   toolStream?: boolean | null
+  /**
+   * false when the provider rejects a top-level `reasoning_effort` field.
+   */
   reasoningEffort?: boolean | null
 }
 
@@ -679,7 +770,7 @@ export type Model = {
     [key: string]: unknown
   } | null
   /**
-   * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
+   * How thinking is configured, or null when the model does not reason or its source names no request field for it. Rows from some providers still carry a mandatory true inferred from a level list with no off value; the README release notes list them.
    */
   reasoning: ModelReasoning | null
   /**
@@ -801,7 +892,7 @@ export type ExportModel = {
     [key: string]: unknown
   } | null
   /**
-   * How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.
+   * How thinking is configured, or null when the model does not reason or its source names no request field for it. Rows from some providers still carry a mandatory true inferred from a level list with no off value; the README release notes list them.
    */
   reasoning: ModelReasoning | null
   /**

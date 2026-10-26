@@ -2,11 +2,14 @@
  * Served shapes that the server also builds as TypeScript values. Each is a
  * zod schema with a `.meta` id: the TS type is inferred from it and
  * `openapi.ts` writes the component from it, so the spec and the types
- * cannot drift. No imports beyond zod and the rate-card schema, so the spec
+ * cannot drift. Every field carries a `description` because agents read the
+ * served schema. No imports beyond zod and the rate-card schema, so the spec
  * emitter loads it without the server.
  */
 import { rateCardSchema } from '@modelschemas/rate-card/schema'
 import { z } from 'zod'
+
+const currencyCode = z.string().regex(/^[A-Z]{3}$/)
 
 /**
  * What a list row says about a stored card. `null` on the row means no
@@ -19,17 +22,28 @@ import { z } from 'zod'
  */
 export const compactPricingSchema = z
   .object({
-    currency: z
-      .string()
-      .regex(/^[A-Z]{3}$/)
+    currency: currencyCode.meta({
+      description:
+        'ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.',
+    }),
+    per: z
+      .enum(['token', 'second', 'character', 'image', 'request', 'unit'])
       .meta({
         description:
-          'ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.',
+          'The unit the card bills by. token: inputPerMillion and outputPerMillion are set when the rates are linear. Every other value: fetch the full card.',
       }),
-    per: z.enum(['token', 'second', 'character', 'image', 'request', 'unit']),
-    inputPerMillion: z.number().optional(),
-    outputPerMillion: z.number().optional(),
-    tiered: z.literal(true).optional(),
+    inputPerMillion: z.number().optional().meta({
+      description:
+        'Price per million input tokens at the base tier, in `currency`. per=token only.',
+    }),
+    outputPerMillion: z.number().optional().meta({
+      description:
+        'Price per million output tokens at the base tier, in `currency`. per=token only.',
+    }),
+    tiered: z.literal(true).optional().meta({
+      description:
+        'Present when the card re-quotes the rates above some prompt-length threshold. The rates shown are the base tier; fetch the card for the rest.',
+    }),
   })
   .meta({
     id: 'CompactPricing',
@@ -39,8 +53,15 @@ export const compactPricingSchema = z
 export type CompactPricing = z.infer<typeof compactPricingSchema>
 
 const priceBoundsSchema = z
-  .object({ min: z.number(), max: z.number() })
-  .meta({ id: 'PriceBounds' })
+  .object({
+    min: z.number(),
+    max: z.number(),
+  })
+  .meta({
+    id: 'PriceBounds',
+    description:
+      'A bound over route prices, per million tokens: never the billed price.',
+  })
 
 /**
  * Null unless every route has a linear token card in one currency: a
@@ -49,7 +70,10 @@ const priceBoundsSchema = z
  */
 export const pricingRangeSchema = z
   .object({
-    currency: z.string().regex(/^[A-Z]{3}$/),
+    currency: currencyCode.meta({
+      description:
+        'ISO-4217 code every route is priced in. A range is only built when the routes share one.',
+    }),
     routes: z.array(
       z.object({
         model: z.string().meta({
@@ -62,13 +86,18 @@ export const pricingRangeSchema = z
         }),
         card: rateCardSchema.optional().meta({
           description:
-            'Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. `examples` is empty so the catalog response stays serializable.',
+            'Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. Its `examples` is empty.',
         }),
         pricing: compactPricingSchema,
       }),
     ),
-    inputPerMillion: priceBoundsSchema,
-    outputPerMillion: priceBoundsSchema.optional(),
+    inputPerMillion: priceBoundsSchema.meta({
+      description: "Bounds over the routes' input price per million tokens.",
+    }),
+    outputPerMillion: priceBoundsSchema.optional().meta({
+      description:
+        "Bounds over the routes' output price per million tokens, when every route states one.",
+    }),
   })
   .meta({
     id: 'PricingRange',
@@ -103,9 +132,18 @@ export type PricingRange = Omit<PricingRangeShape, 'routes'> & {
  */
 export const modelReasoningSchema = z
   .object({
-    mode: z.enum(['adaptive', 'budget', 'effort', 'toggle']),
-    mandatory: z.boolean().nullable(),
-    efforts: z.array(z.string()).optional(),
+    mode: z.enum(['adaptive', 'budget', 'effort', 'toggle']).meta({
+      description:
+        'The one control the request exposes. adaptive: the model decides (Anthropic thinking.type adaptive, or a switch with an auto value). budget: a token budget (thinking.budget_tokens, Gemini thinkingBudget). effort: a level (reasoning_effort, Gemini thinkingLevel). toggle: an on/off switch and nothing else (thinking.type enabled|disabled, enable_thinking); it says nothing about the default when the field is omitted.',
+    }),
+    mandatory: z.boolean().nullable().meta({
+      description:
+        "true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated; do not read it as false, test mandatory === false before offering an off option. A toggle is never stored with null.",
+    }),
+    efforts: z.array(z.string()).optional().meta({
+      description:
+        'The accepted effort values as published, an off value such as none included. Never present on a toggle.',
+    }),
   })
   .meta({ id: 'ModelReasoning' })
 export type ModelReasoning = z.infer<typeof modelReasoningSchema>
@@ -131,33 +169,45 @@ export type EffortLevelMap = z.infer<typeof effortLevelMapSchema>
 export const chatRequestMapSchema = z.object({
   thinking: z
     .object({
-      /** Request body for "thinking on, effort high". */
       on: z.record(z.string(), z.unknown()).meta({
         description: 'Request body for thinking on at effort high.',
       }),
-      /** Explicit off, when silence would make the model think. */
       off: z.record(z.string(), z.unknown()).nullable().meta({
         description:
-          'Request body that turns thinking off, or null when silence is off.',
+          'Request body that turns thinking off, or null when silence is off (the model does not think unless asked).',
       }),
-      /** Shared levels → the value this model accepts. null when unverified. */
       levels: effortLevelMapSchema.nullable().meta({
         description:
           'Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.',
       }),
     })
     .nullable(),
-  maxTokensField: z.enum(['max_completion_tokens', 'max_tokens']).nullable(),
-  /** True when the model wants `role: "developer"`; false when it rejects it. */
-  developerRole: z.boolean().nullable(),
-  replayReasoningContent: z.boolean().nullable(),
+  maxTokensField: z
+    .enum(['max_completion_tokens', 'max_tokens'])
+    .nullable()
+    .meta({
+      description: 'Name of the request field that caps output tokens.',
+    }),
+  developerRole: z.boolean().nullable().meta({
+    description:
+      'true when the model wants `role: "developer"` instead of `system`; false when it rejects it.',
+  }),
+  replayReasoningContent: z.boolean().nullable().meta({
+    description:
+      "true when the provider needs the previous turn's `reasoning_content` replayed on the assistant message.",
+  }),
   store: z.boolean().nullable(),
   strictTools: z.boolean().nullable(),
   sessionAffinity: z.boolean().nullable(),
   cacheControl: z.literal('anthropic').nullable(),
-  toolStream: z.boolean().nullable(),
-  /** False when the provider rejects a top-level `reasoning_effort` field. */
-  reasoningEffort: z.boolean().nullable(),
+  toolStream: z.boolean().nullable().meta({
+    description:
+      'true when the model takes `tool_stream: true` alongside `stream: true` (Z.AI GLM). null: unverified.',
+  }),
+  reasoningEffort: z.boolean().nullable().meta({
+    description:
+      'false when the provider rejects a top-level `reasoning_effort` field.',
+  }),
 })
 export type ChatRequestMap = z.infer<typeof chatRequestMapSchema>
 export type ThinkingRequest = NonNullable<ChatRequestMap['thinking']>
