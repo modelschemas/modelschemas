@@ -260,13 +260,15 @@ export function anthropicServerTools(rawId: string): {
 }
 
 const SAMPLING = ['temperature', 'top_p', 'top_k']
-const SAMPLING_DOC =
-  'https://platform.claude.com/docs/en/models/opus-5-5/migration-guide'
+const GUIDES = 'https://platform.claude.com/docs/en/models'
 
 // ponytail: hand-written from the migration guides on 2026-10-26. The guides
-// state sampling in prose, per model; an id in neither list stays unstated, so
-// re-verify on each launch (new Claude models reject it).
-/** "Remove `temperature`, `top_p`, and `top_k`": a 400 on Opus 4.7 and later. */
+// state sampling in prose, as a change to make when moving to a newer model,
+// so both lists are read from them rather than quoted: Fable 5, Opus 4.7/4.8,
+// Sonnet 5 and Mythos follow the guides' "Opus 4.7 and later" and carried-over
+// restriction wording. An id in neither list stays unstated, so re-verify on
+// each launch (new Claude models reject it).
+/** A 400 on Opus 4.7 and later and on every Claude 5 model. */
 const SAMPLING_REJECTED = [
   'claude-fable-5-1',
   'claude-fable-5',
@@ -280,7 +282,7 @@ const SAMPLING_REJECTED = [
   'claude-sonnet-5',
   'claude-haiku-5-5',
 ]
-/** The guide's "Opus 4.6 or earlier" and "Sonnet 4.6 breaking changes" cases. */
+/** Models the guides tell the reader to strip sampling from when migrating. */
 const SAMPLING_ACCEPTED = [
   'claude-opus-4-6',
   'claude-opus-4-5-20251101',
@@ -291,6 +293,18 @@ const SAMPLING_ACCEPTED = [
   'claude-sonnet-4-20250514',
   'claude-haiku-4-5-20251001',
 ]
+
+/** The family's own migration guide, where the removal is stated. */
+function samplingGuide(rawId: string): string {
+  const guide = rawId.includes('sonnet')
+    ? 'sonnet-5-5'
+    : rawId.includes('haiku')
+      ? 'haiku-5-5'
+      : rawId.includes('fable') || rawId.includes('mythos')
+        ? 'fable-5-1'
+        : 'opus-5-5'
+  return `${GUIDES}/${guide}/migration-guide`
+}
 
 /** Sampling flags the guides state for a model: `true` list, `false` list. */
 export function anthropicSampling(rawId: string): {
@@ -304,10 +318,8 @@ export function anthropicSampling(rawId: string): {
   }
   const source: FactSource = {
     derivation: 'docs-derived',
-    sourceUrl: SAMPLING_DOC,
-    path: rejected
-      ? 'sampling parameters removed'
-      : 'Claude Opus 4.6 or earlier',
+    sourceUrl: samplingGuide(rawId),
+    path: rejected ? 'sampling parameters' : 'migrating from earlier models',
   }
   return {
     supported: rejected ? [] : SAMPLING,

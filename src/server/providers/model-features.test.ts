@@ -106,6 +106,10 @@ describe('anthropic features (issue #77)', () => {
         'top_k',
       ])
     }
+    expect(
+      anthropicSampling('claude-haiku-4-5-20251001').sources.temperature
+        ?.sourceUrl,
+    ).toMatch(/haiku-5-5\/migration-guide$/)
     const none = anthropicSampling('claude-new-model')
     expect([none.supported, none.unsupported, none.sources]).toEqual([
       [],
