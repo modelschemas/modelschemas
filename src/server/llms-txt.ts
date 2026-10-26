@@ -124,7 +124,8 @@ mixes them gets 422 mixed_usage.
   \`audio_tokens\`, \`image_tokens\` or \`web_searches\`; a count in one of
   these is not also in \`input_tokens\` or \`output_tokens\`. The model's
   \`pricing.inputs\` (GET /v1/models/{provider}/{id}) lists the levers its
-  card reads.
+  card reads. A zero card lever the card does not read is dropped. A
+  non-zero one is 422 \`unknown_usage_key\`.
 
 | Native field | Card lever |
 | --- | --- |

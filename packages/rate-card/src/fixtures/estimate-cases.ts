@@ -175,6 +175,29 @@ export const ESTIMATE_CASES: readonly EstimateCase[] = [
     expected: { error: 'unknown-usage-key', apiError: 'unknown_usage_key' },
   },
   {
+    name: 'a zero card lever the card does not read is dropped',
+    card: GPT_5,
+    usage: {
+      input_tokens: 2000,
+      output_tokens: 800,
+      cache_read_tokens: 10_000,
+      cache_write_1h_tokens: 0,
+    },
+    // 2000 × 1.25/M + 10000 × 0.125/M + 800 × 10/M
+    expected: { amount: 0.01175, currency: 'USD', estimated: [] },
+  },
+  {
+    name: 'a non-zero card lever the card does not read is refused',
+    card: GPT_5,
+    usage: {
+      input_tokens: 2000,
+      output_tokens: 800,
+      cache_read_tokens: 10_000,
+      cache_write_1h_tokens: 5,
+    },
+    expected: { error: 'unknown-usage-key', apiError: 'unknown_usage_key' },
+  },
+  {
     name: 'cached tokens on a card with no cache rate are refused',
     card: NO_CACHE_RATE,
     usage: {

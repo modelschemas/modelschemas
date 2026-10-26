@@ -223,6 +223,33 @@ describe('normalizeUsage', () => {
     expect(normalizeUsage(GPT_5, usage)).toBe(usage)
   })
 
+  it('drops a zero card lever the card does not read', () => {
+    const usage = {
+      input_tokens: 2000,
+      output_tokens: 800,
+      cache_read_tokens: 10_000,
+      cache_write_1h_tokens: 0,
+    }
+    expect(usageFormat(GPT_5, usage)).toBe('card')
+    expect(normalizeUsage(GPT_5, usage)).toEqual({
+      input_tokens: 2000,
+      output_tokens: 800,
+      cache_read_tokens: 10_000,
+    })
+    // A zero the card reads stays, so its default is not applied instead.
+    const readZero = {
+      input_tokens: 2000,
+      output_tokens: 800,
+      cache_read_tokens: 0,
+    }
+    expect(normalizeUsage(GPT_5, readZero)).toBe(readZero)
+    // 2000 × 1.25/M + 10000 × 0.125/M + 800 × 10/M
+    expect(amount(GPT_5, usage)).toBeCloseTo(0.01175, 10)
+    expect(() => amount(GPT_5, { ...usage, cache_write_1h_tokens: 5 })).toThrow(
+      expect.objectContaining({ code: 'unknown-usage-key' }),
+    )
+  })
+
   it('reads a native key as a card lever when the card reads it', () => {
     const video = card({ completion_tokens: 2.5e-6 })
     expect(usageFormat(video, { completion_tokens: 1000 })).toBe('card')

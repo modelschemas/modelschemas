@@ -55,8 +55,9 @@ availability and schema questions.
    omitted required choice input (enum or boolean, such as BytePlus
    `pricing_period`) → `{currency, byInput: {input, values}}`, one result
    per allowed value; pass it to get one price. Missing quantities, or two
-   omitted choices → 422; a usage key the card does not read → 422
-   `unknown_usage_key`; no card → 404 `unknown_pricing`. `usage` is
+   omitted choices → 422; a non-zero usage key the card does not read →
+   422 `unknown_usage_key` (a zero card lever the card does not read is
+   dropped); no card → 404 `unknown_pricing`. `usage` is
    the provider's own usage object (OpenAI Responses or Chat, Anthropic,
    Gemini `usageMetadata`) or card levers whose counts do not overlap
    (`input_tokens` excludes `cache_read_tokens`), never both → 422
@@ -214,7 +215,8 @@ mixes them gets 422 mixed_usage.
   `audio_tokens`, `image_tokens` or `web_searches`; a count in one of
   these is not also in `input_tokens` or `output_tokens`. The model's
   `pricing.inputs` (GET /v1/models/{provider}/{id}) lists the levers its
-  card reads.
+  card reads. A zero card lever the card does not read is dropped. A
+  non-zero one is 422 `unknown_usage_key`.
 
 | Native field | Card lever |
 | --- | --- |

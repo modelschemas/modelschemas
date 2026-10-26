@@ -50,7 +50,8 @@ export type CardEvaluation = Pick<
  * `cardSource`, `defaulted`, and `ignored`. `usage`
  * is card levers or the provider's own usage object (`normalizeUsage`).
  * Throws `RateCardError` rather than return a number it cannot stand
- * behind.
+ * behind. A zero usage lever the card does not read is dropped. A
+ * non-zero one throws `unknown-usage-key`.
  */
 export function evaluateCard(
   card: RateCard,
