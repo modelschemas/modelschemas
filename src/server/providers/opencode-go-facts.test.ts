@@ -66,6 +66,24 @@ describe('parseGoTraining', () => {
     expect(training.has('gemini-4-argon-contributor')).toBe(false)
   })
 
+  it('throws when a privacy training cell is empty', () => {
+    expect(() =>
+      parseGoTraining(`
+## Endpoints
+
+| Model | Model ID |
+| ----- | -------- |
+| Mini | mini |
+
+## Privacy
+
+| Model | Model training |
+| ----- | -------------- |
+| Mini | |
+`),
+    ).toThrow(/Mini/)
+  })
+
   it('throws when a privacy name has no endpoint id', () => {
     expect(() =>
       parseGoTraining(`

@@ -68,7 +68,7 @@ export function parseGoTraining(text: string): Map<string, boolean> {
     if (cells[0] === 'Model') continue
     const name = cells[0]
     const stated = cells[1]
-    if (!name || !stated) continue
+    if (!name) continue
     if (stated !== 'Yes' && stated !== 'Not used') {
       throw new Error(
         `opencode-go: privacy training cell ${JSON.stringify(stated)} for ${name}`,
