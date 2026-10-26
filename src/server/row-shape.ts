@@ -13,10 +13,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 5,
-  hash: '881ff4bcc2a958ff643bbac81d25abe254805639ce1309fa6e4598c7cfbf0aa4',
+  version: 6,
+  hash: '3b5f4cab233cbb1730604f76aa82601a1676d68bbc3ecae70aae2e3d92916f5e',
   notes:
-    'Adds requiredRequestHeaders (name and description, null when none) and trainsOnRequestData (true or null). FactSource gains verifiedAt for a probe-verified fact (issue #461).',
+    'pricing and PricingRange.routes[].card: RateCard now types its price (RateCardPrice), tables (RateCardTable) and inputs (a union by kind) instead of leaving them open. Cards served are unchanged (issue #494).',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */

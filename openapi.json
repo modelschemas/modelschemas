@@ -1656,13 +1656,608 @@
           }
         }
       },
-      "RateCardSource": {
+      "RateCard": {
         "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardInput"
+            }
+          },
+          "tables": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardTable"
+            }
+          },
+          "price": {
+            "$ref": "#/components/schemas/RateCardPrice"
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateCardExample"
+            }
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateCardSource"
+          }
+        },
+        "required": [
+          "inputs",
+          "tables",
+          "price",
+          "examples",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples."
+      },
+      "RateCardInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "number"
+              },
+              "default": {
+                "type": "number"
+              },
+              "estimate": {
+                "$ref": "#/components/schemas/RateCardEstimate"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "enum"
+              },
+              "values": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "param",
+              "kind",
+              "values"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "boolean"
+              },
+              "default": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "count"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "dimensions"
+              },
+              "presets": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                }
+              },
+              "levels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "A lever the price reads: a number, enum, boolean, list count or dimensions."
+      },
+      "RateCardEstimate": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardEstimateInput"
+            }
+          },
+          "value": {
+            "$ref": "#/components/schemas/RateCardExpr"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateCardSourceRef"
+          }
+        },
+        "required": [
+          "inputs",
+          "value",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then."
+      },
+      "RateCardEstimateInput": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "number"
+              },
+              "default": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "enum"
+              },
+              "values": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "param",
+              "kind",
+              "values"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "boolean"
+              },
+              "default": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "count"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "param": {
+                "type": "string",
+                "minLength": 1
+              },
+              "bound": {
+                "type": "string",
+                "enum": [
+                  "request",
+                  "usage"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "const": "dimensions"
+              },
+              "presets": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ]
+                }
+              },
+              "levels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "param",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "An input of an estimate: any kind except one with an estimate."
+      },
+      "RateCardExpr": {
+        "description": "JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.",
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "lookup": {
+                "type": "object",
+                "properties": {
+                  "table": {
+                    "type": "string"
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/RateCardExpr"
+                    }
+                  },
+                  "default": {
+                    "$ref": "#/components/schemas/RateCardExpr"
+                  }
+                },
+                "required": [
+                  "table",
+                  "keys"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "lookup"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "var",
+                "missing",
+                "+",
+                "-",
+                "*",
+                "/",
+                "max",
+                "min",
+                "if",
+                "==",
+                "!=",
+                "<",
+                "<=",
+                ">",
+                ">=",
+                "and",
+                "or",
+                "ceil",
+                "floor"
+              ]
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RateCardExpr"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RateCardExpr"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "RateCardSourceRef": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
         "required": [
           "url",
-          "hash",
-          "extractedAt"
+          "hash"
         ],
+        "additionalProperties": false
+      },
+      "RateCardTable": {
+        "description": "A named lookup table: numbers, nested to any depth.",
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/components/schemas/RateCardTable"
+            }
+          ]
+        }
+      },
+      "RateCardPrice": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RateCardCurrencyPrice"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardExpr"
+          }
+        ],
+        "description": "The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency."
+      },
+      "RateCardCurrencyPrice": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/RateCardExpr"
+              }
+            ]
+          }
+        },
+        "required": [
+          "currency"
+        ],
+        "additionalProperties": false,
+        "description": "A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused."
+      },
+      "RateCardExample": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "usd": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "params",
+          "usd",
+          "quote"
+        ],
+        "additionalProperties": false,
+        "description": "A worked example from the source page's own text."
+      },
+      "RateCardSource": {
+        "type": "object",
         "properties": {
           "url": {
             "type": "string",
@@ -1674,132 +2269,22 @@
           },
           "extractedAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           },
           "expiresAt": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
           }
-        }
-      },
-      "RateCardExample": {
-        "type": "object",
+        },
         "required": [
-          "params",
-          "usd",
-          "quote"
+          "url",
+          "hash",
+          "extractedAt"
         ],
-        "properties": {
-          "params": {
-            "type": "object"
-          },
-          "usd": {
-            "type": "number",
-            "description": "In the card's currency; the name predates currency."
-          },
-          "quote": {
-            "type": "string"
-          }
-        }
-      },
-      "RateCardInput": {
-        "type": "object",
-        "required": [
-          "param",
-          "kind"
-        ],
-        "properties": {
-          "param": {
-            "type": "string"
-          },
-          "bound": {
-            "type": "string",
-            "enum": [
-              "request",
-              "usage"
-            ]
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "number",
-              "enum",
-              "boolean",
-              "count",
-              "dimensions"
-            ]
-          },
-          "estimate": {
-            "type": "object",
-            "description": "Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.",
-            "required": [
-              "inputs",
-              "value",
-              "source"
-            ],
-            "properties": {
-              "inputs": {
-                "type": "object",
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/RateCardInput"
-                }
-              },
-              "value": {
-                "description": "JSONLogic expression over the closed op set."
-              },
-              "source": {
-                "type": "object",
-                "required": [
-                  "url",
-                  "hash"
-                ],
-                "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "hash": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}$"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "RateCard": {
-        "type": "object",
-        "required": [
-          "inputs",
-          "tables",
-          "price",
-          "examples",
-          "source"
-        ],
-        "properties": {
-          "inputs": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RateCardInput"
-            }
-          },
-          "tables": {
-            "type": "object"
-          },
-          "price": {
-            "description": "JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { \"currency\": [\"CNY\", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card."
-          },
-          "examples": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RateCardExample"
-            }
-          },
-          "source": {
-            "$ref": "#/components/schemas/RateCardSource"
-          }
-        }
+        "additionalProperties": false,
+        "description": "Where the card was read from."
       },
       "ChatRequestMap": {
         "type": "object",

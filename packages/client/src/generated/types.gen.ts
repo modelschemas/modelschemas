@@ -293,59 +293,172 @@ export type PriceBounds = {
   max: number
 }
 
-export type RateCardSource = {
-  url: string
-  hash: string
-  extractedAt: string
-  expiresAt?: string
-}
-
-export type RateCardExample = {
-  params: {
-    [key: string]: unknown
-  }
-  /**
-   * In the card's currency; the name predates currency.
-   */
-  usd: number
-  quote: string
-}
-
-export type RateCardInput = {
-  param: string
-  bound?: 'request' | 'usage'
-  kind: 'number' | 'enum' | 'boolean' | 'count' | 'dimensions'
-  /**
-   * Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.
-   */
-  estimate?: {
-    inputs: {
-      [key: string]: RateCardInput
-    }
-    /**
-     * JSONLogic expression over the closed op set.
-     */
-    value: unknown
-    source: {
-      url: string
-      hash: string
-    }
-  }
-}
-
+/**
+ * A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples.
+ */
 export type RateCard = {
   inputs: {
     [key: string]: RateCardInput
   }
   tables: {
-    [key: string]: unknown
+    [key: string]: RateCardTable
   }
-  /**
-   * JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { "currency": ["CNY", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card.
-   */
-  price: unknown
+  price: RateCardPrice
   examples: Array<RateCardExample>
   source: RateCardSource
+}
+
+/**
+ * A lever the price reads: a number, enum, boolean, list count or dimensions.
+ */
+export type RateCardInput =
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'number'
+      default?: number
+      estimate?: RateCardEstimate
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'enum'
+      values: Array<string>
+      default?: string
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'boolean'
+      default?: boolean
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'count'
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'dimensions'
+      presets?: {
+        [key: string]: [number, number]
+      }
+      levels?: Array<string>
+      default?: string
+    }
+
+/**
+ * Number inputs only: the source-published way to estimate the value when the caller omits it. Its own inputs bind only then.
+ */
+export type RateCardEstimate = {
+  inputs: {
+    [key: string]: RateCardEstimateInput
+  }
+  value: RateCardExpr
+  source: RateCardSourceRef
+}
+
+/**
+ * An input of an estimate: any kind except one with an estimate.
+ */
+export type RateCardEstimateInput =
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'number'
+      default?: number
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'enum'
+      values: Array<string>
+      default?: string
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'boolean'
+      default?: boolean
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'count'
+    }
+  | {
+      param: string
+      bound?: 'request' | 'usage'
+      kind: 'dimensions'
+      presets?: {
+        [key: string]: [number, number]
+      }
+      levels?: Array<string>
+      default?: string
+    }
+
+/**
+ * JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.
+ */
+export type RateCardExpr =
+  | number
+  | string
+  | boolean
+  | {
+      lookup: {
+        table: string
+        keys: Array<RateCardExpr>
+        default?: RateCardExpr
+      }
+    }
+  | {
+      [key: string]: RateCardExpr | Array<RateCardExpr>
+    }
+
+export type RateCardSourceRef = {
+  url: string
+  hash: string
+}
+
+/**
+ * A named lookup table: numbers, nested to any depth.
+ */
+export type RateCardTable = {
+  [key: string]: number | RateCardTable
+}
+
+/**
+ * The price expression, yielding USD, or wrapped in { currency: [code, expression] } for another currency.
+ */
+export type RateCardPrice = RateCardCurrencyPrice | RateCardExpr
+
+/**
+ * A price in another currency: { currency: [ISO 4217 code, expression] }. Any other currency spelling is refused.
+ */
+export type RateCardCurrencyPrice = {
+  currency: [string, RateCardExpr]
+}
+
+/**
+ * A worked example from the source page's own text.
+ */
+export type RateCardExample = {
+  params: {
+    [key: string]: unknown
+  }
+  usd: number
+  quote: string
+}
+
+/**
+ * Where the card was read from.
+ */
+export type RateCardSource = {
+  url: string
+  hash: string
+  extractedAt: string
+  expiresAt?: string
 }
 
 /**

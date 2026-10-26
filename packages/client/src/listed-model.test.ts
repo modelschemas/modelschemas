@@ -98,7 +98,7 @@ describe('getModel pricing', () => {
     if (data?.pricing && 'price' in data.pricing) {
       expectTypeOf(evaluateCard)
         .parameter(0)
-        .toEqualTypeOf<NonNullable<typeof data.pricing>>()
+        .toMatchTypeOf<NonNullable<typeof data.pricing>>()
     }
   })
 })

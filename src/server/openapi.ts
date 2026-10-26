@@ -5,6 +5,34 @@
  * operation MUST carry a unique operationId.
  */
 
+import { rateCardSchema } from '@modelschemas/rate-card/schema'
+import { z } from 'zod'
+
+/**
+ * RateCard, RateCardInput, RateCardEstimate, RateCardExpr, … as components,
+ * written from the zod schema that gates every stored card, so the spec and
+ * the evaluator's types cannot drift. The ids come from `.meta` there.
+ */
+const {
+  $schema: _,
+  $defs,
+  ...rateCardRoot
+} = z.toJSONSchema(rateCardSchema, {
+  io: 'output',
+  unrepresentable: 'any',
+  target: 'draft-2020-12',
+})
+// `currency: never` is how the zod schema refuses a top-level currency; as
+// JSON Schema it is `{ not: {} }`, which generates `unknown`. The root's
+// additionalProperties: false refuses it just the same.
+delete (rateCardRoot.properties as Record<string, unknown>).currency
+const rateCardComponents = JSON.parse(
+  JSON.stringify({ RateCard: rateCardRoot, ...$defs }).replaceAll(
+    '#/$defs/',
+    '#/components/schemas/',
+  ),
+) as Record<string, object>
+
 const activityEnum = [
   'chat',
   'image',
@@ -1226,87 +1254,7 @@ export const openApiDocument = {
         required: ['min', 'max'],
         properties: { min: { type: 'number' }, max: { type: 'number' } },
       },
-      RateCardSource: {
-        type: 'object',
-        required: ['url', 'hash', 'extractedAt'],
-        properties: {
-          url: { type: 'string', format: 'uri' },
-          hash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-          extractedAt: { type: 'string', format: 'date-time' },
-          expiresAt: { type: 'string', format: 'date-time' },
-        },
-      },
-      RateCardExample: {
-        type: 'object',
-        required: ['params', 'usd', 'quote'],
-        properties: {
-          params: { type: 'object' },
-          usd: {
-            type: 'number',
-            description: "In the card's currency; the name predates currency.",
-          },
-          quote: { type: 'string' },
-        },
-      },
-      RateCardInput: {
-        type: 'object',
-        required: ['param', 'kind'],
-        properties: {
-          param: { type: 'string' },
-          bound: { type: 'string', enum: ['request', 'usage'] },
-          kind: {
-            type: 'string',
-            enum: ['number', 'enum', 'boolean', 'count', 'dimensions'],
-          },
-          estimate: {
-            type: 'object',
-            description:
-              'Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.',
-            required: ['inputs', 'value', 'source'],
-            properties: {
-              inputs: {
-                type: 'object',
-                additionalProperties: {
-                  $ref: '#/components/schemas/RateCardInput',
-                },
-              },
-              value: {
-                description: 'JSONLogic expression over the closed op set.',
-              },
-              source: {
-                type: 'object',
-                required: ['url', 'hash'],
-                properties: {
-                  url: { type: 'string', format: 'uri' },
-                  hash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-                },
-              },
-            },
-          },
-        },
-      },
-      RateCard: {
-        type: 'object',
-        required: ['inputs', 'tables', 'price', 'examples', 'source'],
-        properties: {
-          inputs: {
-            type: 'object',
-            additionalProperties: {
-              $ref: '#/components/schemas/RateCardInput',
-            },
-          },
-          tables: { type: 'object' },
-          price: {
-            description:
-              'JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { "currency": ["CNY", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card.',
-          },
-          examples: {
-            type: 'array',
-            items: { $ref: '#/components/schemas/RateCardExample' },
-          },
-          source: { $ref: '#/components/schemas/RateCardSource' },
-        },
-      },
+      ...rateCardComponents,
       ChatRequestMap: {
         type: 'object',
         description:
