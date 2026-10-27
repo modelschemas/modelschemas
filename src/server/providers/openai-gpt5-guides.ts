@@ -12,6 +12,7 @@
  */
 import type { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
+import type { Fetcher } from './us-egress.ts'
 
 export const OPENAI_GPT5_GUIDE_URL =
   'https://developers.openai.com/api/docs/guides/latest-model/gpt-5.md'
@@ -117,11 +118,14 @@ export function loadGuide<T>(
   kv: KVNamespace | undefined,
   url: string,
   parse: (markdown: string) => T,
+  fetcher: Fetcher = fetch,
 ): Promise<{ parsed: T; hash: string }> {
   return cached(kv, url, async () => {
-    const markdown = await fetchText(url, {
-      signal: AbortSignal.timeout(20_000),
-    })
+    const markdown = await fetchText(
+      url,
+      { signal: AbortSignal.timeout(20_000) },
+      fetcher,
+    )
     return { parsed: parse(markdown), hash: await sha256Text(markdown) }
   })
 }
