@@ -1,5 +1,6 @@
 import { cachedDocs, markdownTableRows } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
+import type { Fetcher } from './us-egress.ts'
 
 export const OPENAI_REALTIME_EFFORT_URL =
   'https://developers.openai.com/api/docs/guides/realtime-models-prompting.md'
@@ -37,13 +38,16 @@ export async function openaiRealtimeEfforts(
   rawIds: ReadonlyArray<string>,
   kv?: KVNamespace,
   cached: typeof cachedDocs = cachedDocs,
+  fetcher: Fetcher = fetch,
 ) {
   // Model names select an own guide; its literal model ID alone binds the result.
   if (!rawIds.some(openaiRealtimeSelects)) return null
   return cached(kv, OPENAI_REALTIME_EFFORT_URL, async () => {
-    const markdown = await fetchText(OPENAI_REALTIME_EFFORT_URL, {
-      signal: AbortSignal.timeout(20_000),
-    })
+    const markdown = await fetchText(
+      OPENAI_REALTIME_EFFORT_URL,
+      { signal: AbortSignal.timeout(20_000) },
+      fetcher,
+    )
     return {
       ...parseOpenAiRealtimeEfforts(markdown),
       hash: await sha256Text(markdown),

@@ -40,12 +40,13 @@ import {
 } from './openai-gpt5-guides.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { FactSource, ModelInfo, ModelReasoning } from './types.ts'
+import type { Fetcher } from './us-egress.ts'
 
 export const OPENAI_MODELS_INDEX_URL =
   'https://developers.openai.com/api/docs/models.md'
 export const OPENAI_PRICING_URL =
   'https://developers.openai.com/api/docs/pricing.md'
-const OPENAI_MODEL_PAGE = (slug: string) =>
+export const OPENAI_MODEL_PAGE = (slug: string) =>
   `https://developers.openai.com/api/docs/models/${slug}.md`
 
 /** Page slugs linked from the models index. */
@@ -586,16 +587,21 @@ const PAGE_FACTS = [
  * realtime id whose effort-mode page lists no efforts).
  * A failed family or sampling guide marks `absent` on the ids it speaks for.
  * A failed GPT-5.1 guide does not: the family list stays, with mandatory null.
+ * Every load goes through `fetcher`; the poll passes the US egress, since
+ * the docs host answered 403 to loads from hkg1 (#505).
  */
 export async function openaiModelFacts(
   rawIds: Array<string>,
   kv?: KVNamespace,
   run: DocsRun = docsRun(),
+  fetcher: Fetcher = fetch,
 ): Promise<(rawId: string) => OpenAiDocsFacts> {
   const indexed = await tryDocs(run, OPENAI_MODELS_INDEX_URL, (cached) =>
     cached(kv, OPENAI_MODELS_INDEX_URL, async () => {
       const parsed = [
-        ...parseModelIndex(await fetchText(OPENAI_MODELS_INDEX_URL)),
+        ...parseModelIndex(
+          await fetchText(OPENAI_MODELS_INDEX_URL, undefined, fetcher),
+        ),
       ]
       if (parsed.length === 0) {
         throw new Error('openai models index: parsed 0 page slugs')
@@ -613,7 +619,7 @@ export async function openaiModelFacts(
   ]
   const searchDoc = await tryDocs(run, OPENAI_PRICING_URL, (cached) =>
     cached(kv, OPENAI_PRICING_URL, async () => {
-      const markdown = await fetchText(OPENAI_PRICING_URL)
+      const markdown = await fetchText(OPENAI_PRICING_URL, undefined, fetcher)
       const parsed = parseOpenAiSearchPricing(markdown)
       assertParsed(parsed, 'openai pricing page search rows')
       return {
@@ -626,7 +632,11 @@ export async function openaiModelFacts(
   const pageLoads = await mapConcurrent(needed, 8, async (slug) => {
     const page = await tryDocs(run, OPENAI_MODEL_PAGE(slug), (cached) =>
       cached(kv, OPENAI_MODEL_PAGE(slug), async () => {
-        const markdown = await fetchText(OPENAI_MODEL_PAGE(slug))
+        const markdown = await fetchText(
+          OPENAI_MODEL_PAGE(slug),
+          undefined,
+          fetcher,
+        )
         const parsed = parseModelPage(markdown)
         if (!parsed) {
           throw new Error(`openai model page ${slug}: no Model ID`)
@@ -696,7 +706,7 @@ export async function openaiModelFacts(
   const realtimeListed = rawIds.some(openaiRealtimeSelects)
   const realtime = realtimeListed
     ? await tryDocs(run, OPENAI_REALTIME_EFFORT_URL, (cached) =>
-        openaiRealtimeEfforts(rawIds, kv, cached),
+        openaiRealtimeEfforts(rawIds, kv, cached, fetcher),
       )
     : null
   if (realtime) {
@@ -720,10 +730,22 @@ export async function openaiModelFacts(
   const guides = rawIds.some(gpt5GuideSelects)
     ? await Promise.all([
         tryDocs(run, OPENAI_GPT5_GUIDE_URL, (cached) =>
-          loadGuide(cached, kv, OPENAI_GPT5_GUIDE_URL, parseGpt5FamilyGuide),
+          loadGuide(
+            cached,
+            kv,
+            OPENAI_GPT5_GUIDE_URL,
+            parseGpt5FamilyGuide,
+            fetcher,
+          ),
         ),
         tryDocs(run, OPENAI_GPT51_GUIDE_URL, (cached) =>
-          loadGuide(cached, kv, OPENAI_GPT51_GUIDE_URL, parseGpt51NoneGuide),
+          loadGuide(
+            cached,
+            kv,
+            OPENAI_GPT51_GUIDE_URL,
+            parseGpt51NoneGuide,
+            fetcher,
+          ),
         ),
         tryDocs(run, OPENAI_GPT52_GUIDE_URL, (cached) =>
           loadGuide(
@@ -731,6 +753,7 @@ export async function openaiModelFacts(
             kv,
             OPENAI_GPT52_GUIDE_URL,
             parseGpt52SamplingGuide,
+            fetcher,
           ),
         ),
       ])

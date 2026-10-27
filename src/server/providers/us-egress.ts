@@ -15,10 +15,11 @@ export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>
  * only moves fetch handlers, so the models poll has no fixed location.
  * A Durable Object is created near its `locationHint` on the first `get()`
  * and does not move afterwards, so routing the keyed listing calls through
- * one fixes where they egress. Anthropic's docs loads go the same way: its
+ * one fixes where they egress. Docs loads go the same way: Anthropic's
  * docs host serves pages with no tables to the regions its API refuses
- * (#482). (The `us` jurisdiction would be a hard guarantee, but workerd
- * does not implement it, so `bun run dev` would throw.)
+ * (#482), and OpenAI's docs host answers 403 from hkg1 (#505). (The `us`
+ * jurisdiction would be a hard guarantee, but workerd does not implement
+ * it, so `bun run dev` would throw.)
  *
  * Outside the Workers runtime (bun scripts, node unit tests) there is no
  * binding and the global fetch runs from the caller's own machine. Inside

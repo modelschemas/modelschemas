@@ -18,9 +18,11 @@ import type {
   ListModelsResult,
   OpenApiOperation,
   ProviderConfig,
+  ProviderEnvironment,
   ProviderSecrets,
   SpecFetchResult,
 } from './types.ts'
+import { usEgressFetch } from './us-egress.ts'
 
 export const OPENAI_SPEC_URL =
   'https://raw.githubusercontent.com/openai/openai-node/main/api_reference/openapi.transformed.yml'
@@ -72,7 +74,7 @@ interface OpenAiModelList {
 }
 
 async function listModels(
-  env: ProviderSecrets,
+  env: ProviderEnvironment,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
   const key = env.OPENAI_API_KEY
@@ -84,10 +86,14 @@ async function listModels(
   })) as OpenAiModelList
   const listed = body.data ?? []
   const docs = docsRun()
+  // developers.openai.com answered 403 to docs loads from Cloudflare's hkg1
+  // colo, where the cron can land, so docs loads leave from the US egress
+  // (#505). The listing call worked from there and stays on the global fetch.
   const facts = await openaiModelFacts(
     listed.map((m) => m.id),
     kv,
     docs,
+    usEgressFetch(env),
   )
   return {
     docsFailures: docsReport(docs),
