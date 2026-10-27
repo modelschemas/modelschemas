@@ -100,7 +100,10 @@ describe('DashScope China native source parsing', () => {
     const glm = rows.find((row) => row.rawId === 'ZHIPU/GLM-5.3')!
     expect(glm.displayName).toBe('ZHIPU/GLM-5.3')
     expect(glm.activity).toBe('chat')
-    expect(rows.some((row) => row.rawId === 'minimax-m3-1-flash')).toBe(false)
+    expect(rows).toHaveLength(33)
+    expect(rows.find((row) => row.rawId === 'qwen3.8-max')?.activity).toBe(
+      'chat',
+    )
     const anchored = applyCnCatalog([], {
       ...doc('models'),
       text: '## 文本生成\n<a href="https://bailian.console.aliyun.com/cn-beijing/model/market/detail/kimi%2Fkimi-k3">Kimi K3</a>',

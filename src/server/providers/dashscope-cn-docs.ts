@@ -593,23 +593,25 @@ export function applyCnCardFacts(models: ModelInfo[], doc: CnDoc): ModelInfo[] {
 }
 
 const CN_CONSOLE_DETAIL =
-  /^https:\/\/bailian\.console\.aliyun\.com\/cn-beijing\/model\/market\/detail\/[^"?#]+$/
+  'https:\\/\\/bailian\\.console\\.aliyun\\.com\\/cn-beijing\\/model\\/market\\/detail\\/[^"?#]+'
 
 /**
  * Beijing console links on the selection page: `<a href>name</a>`, or the
- * MDX `<Card title="name" href>` the page has used since 2026-10-27.
+ * MDX `<Card title="name" href>` the page uses as of 2026-10-27.
  */
 function cnConsoleLinks(text: string) {
   const links: { href: string; name: string; index: number }[] = []
   for (const anchor of text.matchAll(
-    /<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g,
+    new RegExp(
+      `<a\\b[^>]*href="(${CN_CONSOLE_DETAIL})"[^>]*>([\\s\\S]*?)<\\/a>`,
+      'g',
+    ),
   ))
-    if (CN_CONSOLE_DETAIL.test(anchor[1]!))
-      links.push({ href: anchor[1]!, name: anchor[2]!, index: anchor.index })
+    links.push({ href: anchor[1]!, name: anchor[2]!, index: anchor.index })
   for (const card of text.matchAll(/<Card\b([^>]*)>/g)) {
-    const href = /\bhref="([^"]+)"/.exec(card[1]!)?.[1]
-    if (!href || !CN_CONSOLE_DETAIL.test(href)) continue
-    const name = /\btitle="([^"]*)"/.exec(card[1]!)?.[1]
+    const href = /(?:^|\s)href="([^"]+)"/.exec(card[1]!)?.[1]
+    if (!href || !new RegExp(`^${CN_CONSOLE_DETAIL}$`).test(href)) continue
+    const name = /(?:^|\s)title="([^"]*)"/.exec(card[1]!)?.[1]
     if (name === undefined) fail('native console card has no title')
     links.push({ href, name, index: card.index })
   }
