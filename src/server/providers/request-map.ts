@@ -1,48 +1,15 @@
-/**
- * How a caller turns a shared chat intent into one provider's request body
- * (issue #95). `reasoning` stays the readable fact. This object is the wire
- * map. Unverified providers and non-chat rows are null — no guessed body.
- * Unverified flags inside a verified map are null, not a default.
- */
+import { effortLevelMapSchema } from '#/server/api-schemas.ts'
+import type {
+  ChatRequestMap,
+  EffortLevelMap,
+  ThinkingRequest,
+} from '#/server/api-schemas.ts'
 
-export const SHARED_EFFORT_LEVELS = [
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-] as const
+export type { ChatRequestMap, EffortLevelMap, ThinkingRequest }
+
+export const SHARED_EFFORT_LEVELS = effortLevelMapSchema.keyof().options
 
 export type SharedEffortLevel = (typeof SHARED_EFFORT_LEVELS)[number]
-
-/** Value this model accepts for a shared level. null means omit the field. */
-export type EffortLevelMap = Record<SharedEffortLevel, string | null>
-
-export interface ThinkingRequest {
-  /** Request body for "thinking on, effort high". */
-  on: Record<string, unknown>
-  /** Explicit off, when silence would make the model think. */
-  off: Record<string, unknown> | null
-  /** Shared levels → the value this model accepts. null when unverified. */
-  levels: EffortLevelMap | null
-}
-
-export interface ChatRequestMap {
-  thinking: ThinkingRequest | null
-  maxTokensField: 'max_completion_tokens' | 'max_tokens' | null
-  /** True when the model wants `role: "developer"`; false when it rejects it. */
-  developerRole: boolean | null
-  replayReasoningContent: boolean | null
-  store: boolean | null
-  strictTools: boolean | null
-  sessionAffinity: boolean | null
-  cacheControl: 'anthropic' | null
-  toolStream: boolean | null
-  /** False when the provider rejects a top-level `reasoning_effort` field. */
-  reasoningEffort: boolean | null
-}
 
 const OPENAI_ON = { reasoning_effort: 'high' }
 const DEEPSEEK_ON = {

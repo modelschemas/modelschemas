@@ -5,6 +5,36 @@
  * operation MUST carry a unique operationId.
  */
 
+import { z } from 'zod'
+
+import '#/server/api-schemas.ts'
+
+/**
+ * Every schema with a `.meta` id (RateCard and its parts, CompactPricing,
+ * PricingRange, ModelReasoning, ChatRequestMap) as a component, written from
+ * the zod schemas the server and the evaluator validate with, so the spec
+ * and the types cannot drift.
+ */
+const { schemas: zodComponents } = z.toJSONSchema(z.globalRegistry, {
+  io: 'output',
+  unrepresentable: 'any',
+  target: 'draft-2020-12',
+  uri: (id) => `#/components/schemas/${id}`,
+})
+// Each component is not its own document.
+for (const schema of Object.values(zodComponents)) {
+  delete schema.$schema
+  delete schema.$id
+}
+const rateCard = zodComponents.RateCard
+if (!rateCard?.properties?.currency) {
+  throw new Error('RateCard component lost its `currency` property')
+}
+// `currency: never` is how the zod schema refuses a top-level currency; as
+// JSON Schema it is `{ not: {} }`, which generates `unknown`. The root's
+// additionalProperties: false refuses it just the same.
+delete rateCard.properties.currency
+
 const activityEnum = [
   'chat',
   'image',
@@ -116,22 +146,8 @@ const modelFields = {
   },
   reasoning: {
     description:
-      "How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.",
-    oneOf: [
-      {
-        type: 'object',
-        required: ['mode', 'mandatory'],
-        properties: {
-          mode: {
-            type: 'string',
-            enum: ['adaptive', 'budget', 'effort', 'toggle'],
-          },
-          mandatory: { type: ['boolean', 'null'] },
-          efforts: { type: 'array', items: { type: 'string' } },
-        },
-      },
-      { type: 'null' },
-    ],
+      'How thinking is configured, or null when the model does not reason or its source names no request field for it. Rows from some providers still carry a mandatory true inferred from a level list with no off value; the README release notes list them.',
+    oneOf: [{ $ref: '#/components/schemas/ModelReasoning' }, { type: 'null' }],
   },
   serverTools: {
     description:
@@ -1164,219 +1180,7 @@ export const openApiDocument = {
           },
         },
       },
-      CompactPricing: {
-        type: 'object',
-        description:
-          'List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.',
-        required: ['currency', 'per'],
-        properties: {
-          currency: {
-            type: 'string',
-            pattern: '^[A-Z]{3}$',
-            description:
-              'ISO-4217 code the rates are in. Rows in different currencies do not compare; nothing is converted.',
-          },
-          per: {
-            type: 'string',
-            enum: ['token', 'second', 'character', 'image', 'request', 'unit'],
-          },
-          inputPerMillion: { type: 'number' },
-          outputPerMillion: { type: 'number' },
-          tiered: { type: 'boolean', enum: [true] },
-        },
-      },
-      PricingRange: {
-        type: 'object',
-        description:
-          'A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.',
-        required: ['currency', 'routes', 'inputPerMillion'],
-        properties: {
-          currency: { type: 'string', pattern: '^[A-Z]{3}$' },
-          routes: {
-            type: 'array',
-            items: {
-              type: 'object',
-              required: ['model', 'pricing'],
-              properties: {
-                model: {
-                  type: 'string',
-                  description:
-                    "The route's catalog rawId, or its gateway provider name when card is inline.",
-                },
-                provider: {
-                  type: 'string',
-                  description:
-                    'Gateway route name (Vercel provider_name) when card is stored on this route instead of a catalog row.',
-                },
-                card: {
-                  $ref: '#/components/schemas/RateCard',
-                  description:
-                    'Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row.',
-                },
-                pricing: { $ref: '#/components/schemas/CompactPricing' },
-              },
-            },
-          },
-          inputPerMillion: { $ref: '#/components/schemas/PriceBounds' },
-          outputPerMillion: { $ref: '#/components/schemas/PriceBounds' },
-        },
-      },
-      PriceBounds: {
-        type: 'object',
-        required: ['min', 'max'],
-        properties: { min: { type: 'number' }, max: { type: 'number' } },
-      },
-      RateCardSource: {
-        type: 'object',
-        required: ['url', 'hash', 'extractedAt'],
-        properties: {
-          url: { type: 'string', format: 'uri' },
-          hash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-          extractedAt: { type: 'string', format: 'date-time' },
-          expiresAt: { type: 'string', format: 'date-time' },
-        },
-      },
-      RateCardExample: {
-        type: 'object',
-        required: ['params', 'usd', 'quote'],
-        properties: {
-          params: { type: 'object' },
-          usd: {
-            type: 'number',
-            description: "In the card's currency; the name predates currency.",
-          },
-          quote: { type: 'string' },
-        },
-      },
-      RateCardInput: {
-        type: 'object',
-        required: ['param', 'kind'],
-        properties: {
-          param: { type: 'string' },
-          bound: { type: 'string', enum: ['request', 'usage'] },
-          kind: {
-            type: 'string',
-            enum: ['number', 'enum', 'boolean', 'count', 'dimensions'],
-          },
-          estimate: {
-            type: 'object',
-            description:
-              'Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.',
-            required: ['inputs', 'value', 'source'],
-            properties: {
-              inputs: {
-                type: 'object',
-                additionalProperties: {
-                  $ref: '#/components/schemas/RateCardInput',
-                },
-              },
-              value: {
-                description: 'JSONLogic expression over the closed op set.',
-              },
-              source: {
-                type: 'object',
-                required: ['url', 'hash'],
-                properties: {
-                  url: { type: 'string', format: 'uri' },
-                  hash: { type: 'string', pattern: '^[0-9a-f]{64}$' },
-                },
-              },
-            },
-          },
-        },
-      },
-      RateCard: {
-        type: 'object',
-        required: ['inputs', 'tables', 'price', 'examples', 'source'],
-        properties: {
-          inputs: {
-            type: 'object',
-            additionalProperties: {
-              $ref: '#/components/schemas/RateCardInput',
-            },
-          },
-          tables: { type: 'object' },
-          price: {
-            description:
-              'JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { "currency": ["CNY", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card.',
-          },
-          examples: {
-            type: 'array',
-            items: { $ref: '#/components/schemas/RateCardExample' },
-          },
-          source: { $ref: '#/components/schemas/RateCardSource' },
-        },
-      },
-      ChatRequestMap: {
-        type: 'object',
-        description:
-          'Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field.',
-        properties: {
-          thinking: {
-            oneOf: [
-              {
-                type: 'object',
-                required: ['on', 'off', 'levels'],
-                properties: {
-                  on: {
-                    type: 'object',
-                    description: 'Request body for thinking on at effort high.',
-                    additionalProperties: true,
-                  },
-                  off: {
-                    description:
-                      'Request body that turns thinking off, or null when silence is off.',
-                  },
-                  levels: {
-                    description:
-                      'Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.',
-                    oneOf: [
-                      {
-                        type: 'object',
-                        required: [
-                          'off',
-                          'minimal',
-                          'low',
-                          'medium',
-                          'high',
-                          'xhigh',
-                          'max',
-                        ],
-                        properties: {
-                          off: { type: ['string', 'null'] },
-                          minimal: { type: ['string', 'null'] },
-                          low: { type: ['string', 'null'] },
-                          medium: { type: ['string', 'null'] },
-                          high: { type: ['string', 'null'] },
-                          xhigh: { type: ['string', 'null'] },
-                          max: { type: ['string', 'null'] },
-                        },
-                      },
-                      { type: 'null' },
-                    ],
-                  },
-                },
-              },
-              { type: 'null' },
-            ],
-          },
-          maxTokensField: {
-            type: ['string', 'null'],
-            enum: ['max_completion_tokens', 'max_tokens', null],
-          },
-          developerRole: { type: ['boolean', 'null'] },
-          replayReasoningContent: { type: ['boolean', 'null'] },
-          store: { type: ['boolean', 'null'] },
-          strictTools: { type: ['boolean', 'null'] },
-          sessionAffinity: { type: ['boolean', 'null'] },
-          cacheControl: {
-            type: ['string', 'null'],
-            enum: ['anthropic', null],
-          },
-          toolStream: { type: ['boolean', 'null'] },
-          reasoningEffort: { type: ['boolean', 'null'] },
-        },
-      },
+      ...zodComponents,
       HalLink: {
         type: 'object',
         required: ['href', 'method', 'contentType'],

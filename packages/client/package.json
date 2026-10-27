@@ -42,5 +42,8 @@
       "./package.json": "./package.json"
     }
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "devDependencies": {
+    "@modelschemas/rate-card": "workspace:*"
+  }
 }

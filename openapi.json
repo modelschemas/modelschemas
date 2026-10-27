@@ -1555,13 +1555,527 @@
           }
         }
       },
+      "RateCardExpr": {
+        "description": "JSONLogic expression over the closed op set: a literal, a `lookup` into a named table, or one op applied to its arguments.",
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "lookup": {
+                "type": "object",
+                "properties": {
+                  "table": {
+                    "type": "string",
+                    "description": "A key of the card `tables`."
+                  },
+                  "keys": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/RateCardExpr"
+                    },
+                    "description": "One key expression per table level, outermost first."
+                  },
+                  "default": {
+                    "description": "Used when a key is absent from the table.",
+                    "$ref": "#/components/schemas/RateCardExpr"
+                  }
+                },
+                "required": [
+                  "table",
+                  "keys"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "lookup"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "var",
+                "missing",
+                "+",
+                "-",
+                "*",
+                "/",
+                "max",
+                "min",
+                "if",
+                "==",
+                "!=",
+                "<",
+                "<=",
+                ">",
+                ">=",
+                "and",
+                "or",
+                "ceil",
+                "floor"
+              ]
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/RateCardExpr"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RateCardExpr"
+                  }
+                }
+              ]
+            },
+            "description": "Exactly one core op (var, missing, +, -, *, /, max, min, if, ==, !=, <, <=, >, >=, and, or, ceil, floor) applied to an expression or a list of them."
+          }
+        ]
+      },
+      "RateCardTable": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string"
+        },
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "$ref": "#/components/schemas/RateCardTable"
+            }
+          ]
+        }
+      },
+      "RateCardSourceRef": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "sha256 of the fetched text."
+          }
+        },
+        "required": [
+          "url",
+          "hash"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardParam": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Request-body or usage-object field this lever reads (`image_urls`). JSONLogic `{ var }` uses the input's object key, which may differ."
+      },
+      "RateCardBound": {
+        "type": "string",
+        "enum": [
+          "request",
+          "usage"
+        ],
+        "description": "Where `price` reads `param` from. request (the default): a real request-body field (`duration`, `image_size`). usage: a quantity the caller supplies because it is not on the request (`input_tokens`)."
+      },
+      "RateCardNumberInput": {
+        "type": "object",
+        "properties": {
+          "param": {
+            "$ref": "#/components/schemas/RateCardParam"
+          },
+          "bound": {
+            "$ref": "#/components/schemas/RateCardBound"
+          },
+          "kind": {
+            "type": "string",
+            "const": "number"
+          },
+          "default": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "param",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardEnumInput": {
+        "type": "object",
+        "properties": {
+          "param": {
+            "$ref": "#/components/schemas/RateCardParam"
+          },
+          "bound": {
+            "$ref": "#/components/schemas/RateCardBound"
+          },
+          "kind": {
+            "type": "string",
+            "const": "enum"
+          },
+          "values": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {
+            "description": "One of `values`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "param",
+          "kind",
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardBooleanInput": {
+        "type": "object",
+        "properties": {
+          "param": {
+            "$ref": "#/components/schemas/RateCardParam"
+          },
+          "bound": {
+            "$ref": "#/components/schemas/RateCardBound"
+          },
+          "kind": {
+            "type": "string",
+            "const": "boolean"
+          },
+          "default": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "param",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardCountInput": {
+        "type": "object",
+        "properties": {
+          "param": {
+            "$ref": "#/components/schemas/RateCardParam"
+          },
+          "bound": {
+            "$ref": "#/components/schemas/RateCardBound"
+          },
+          "kind": {
+            "type": "string",
+            "const": "count"
+          }
+        },
+        "required": [
+          "param",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "description": "Length of a list param (`image_urls`), 0 when absent."
+      },
+      "RateCardDimensionsInput": {
+        "type": "object",
+        "properties": {
+          "param": {
+            "$ref": "#/components/schemas/RateCardParam"
+          },
+          "bound": {
+            "$ref": "#/components/schemas/RateCardBound"
+          },
+          "kind": {
+            "type": "string",
+            "const": "dimensions"
+          },
+          "presets": {
+            "description": "Preset name to [width, height].",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          },
+          "levels": {
+            "description": "Names the provider sizes itself (Ark's `2K`); bound as `<name>.level`, with no width or height.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {
+            "description": "A preset or level name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "param",
+          "kind"
+        ],
+        "additionalProperties": false,
+        "description": "Takes `{width, height}`, a `WxH` string or a preset name, and binds `<name>.width` / `<name>.height`."
+      },
+      "RateCardEstimateInput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RateCardNumberInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardEnumInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardBooleanInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardCountInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardDimensionsInput"
+          }
+        ],
+        "description": "An input of an estimate: any kind except one with an estimate."
+      },
+      "RateCardEstimate": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardEstimateInput"
+            },
+            "description": "Bound only when the estimate runs. Names may not repeat a card input."
+          },
+          "value": {
+            "description": "Expression yielding the estimated number; it also reads the card's own bound inputs.",
+            "$ref": "#/components/schemas/RateCardExpr"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateCardSourceRef"
+          }
+        },
+        "required": [
+          "inputs",
+          "value",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "The source-published way to estimate a number the caller did not supply. Used only when the input is absent; the result then names the input as estimated, never as a billed price. An input with an estimate has no default."
+      },
+      "RateCardEstimatedNumberInput": {
+        "type": "object",
+        "properties": {
+          "param": {
+            "$ref": "#/components/schemas/RateCardParam"
+          },
+          "bound": {
+            "$ref": "#/components/schemas/RateCardBound"
+          },
+          "kind": {
+            "type": "string",
+            "const": "number"
+          },
+          "default": {
+            "type": "number"
+          },
+          "estimate": {
+            "$ref": "#/components/schemas/RateCardEstimate"
+          }
+        },
+        "required": [
+          "param",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardInput": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RateCardEstimatedNumberInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardEnumInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardBooleanInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardCountInput"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardDimensionsInput"
+          }
+        ]
+      },
+      "RateCardExample": {
+        "type": "object",
+        "properties": {
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "description": "Flat bag of request-body fields plus usage quantities, keyed by each input's `param`. `verifyExamples` feeds it as both `request` and `usage`."
+          },
+          "usd": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "In the card's currency; the name predates `currency`."
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The sentence in the source text this example comes from."
+          }
+        },
+        "required": [
+          "params",
+          "usd",
+          "quote"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardCurrencyPrice": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/RateCardExpr"
+              }
+            ]
+          }
+        },
+        "required": [
+          "currency"
+        ],
+        "additionalProperties": false
+      },
+      "RateCardPrice": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/RateCardCurrencyPrice"
+          },
+          {
+            "$ref": "#/components/schemas/RateCardExpr"
+          }
+        ],
+        "description": "Yields USD, or, wrapped as { currency: [ISO 4217 code, expression] }, that currency. The wrapper is the only place a card states a currency; any other spelling is refused, and an evaluator that does not know the wrapper refuses the card."
+      },
+      "RateCardSource": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "sha256 of the source text the card was read from."
+          },
+          "extractedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "expiresAt": {
+            "description": "When the text names a promo end; re-extract after this.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "url",
+          "hash",
+          "extractedAt"
+        ],
+        "additionalProperties": false
+      },
+      "RateCard": {
+        "type": "object",
+        "properties": {
+          "inputs": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardInput"
+            },
+            "description": "The levers the price reads, by the name `{ var }` uses in `price`."
+          },
+          "tables": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RateCardTable"
+            },
+            "description": "Named lookup tables for `{ lookup }` nodes in `price`."
+          },
+          "price": {
+            "$ref": "#/components/schemas/RateCardPrice"
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RateCardExample"
+            },
+            "description": "The source page's own worked examples; the card is stored only if it reproduces every one."
+          },
+          "source": {
+            "$ref": "#/components/schemas/RateCardSource"
+          }
+        },
+        "required": [
+          "inputs",
+          "tables",
+          "price",
+          "examples",
+          "source"
+        ],
+        "additionalProperties": false,
+        "description": "A provider price as data: a JSONLogic expression over named inputs and lookup tables, checked against the source examples."
+      },
       "CompactPricing": {
         "type": "object",
-        "description": "List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1.",
-        "required": [
-          "currency",
-          "per"
-        ],
         "properties": {
           "currency": {
             "type": "string",
@@ -1577,76 +2091,32 @@
               "image",
               "request",
               "unit"
-            ]
+            ],
+            "description": "The unit the card bills by. token: inputPerMillion and outputPerMillion are set when the rates are linear. Every other value: fetch the full card."
           },
           "inputPerMillion": {
+            "description": "Price per million input tokens at the base tier, in `currency`. per=token only.",
             "type": "number"
           },
           "outputPerMillion": {
+            "description": "Price per million output tokens at the base tier, in `currency`. per=token only.",
             "type": "number"
           },
           "tiered": {
+            "description": "Present when the card re-quotes the rates above some prompt-length threshold. The rates shown are the base tier; fetch the card for the rest.",
             "type": "boolean",
-            "enum": [
-              true
-            ]
+            "const": true
           }
-        }
-      },
-      "PricingRange": {
-        "type": "object",
-        "description": "A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max.",
+        },
         "required": [
           "currency",
-          "routes",
-          "inputPerMillion"
+          "per"
         ],
-        "properties": {
-          "currency": {
-            "type": "string",
-            "pattern": "^[A-Z]{3}$"
-          },
-          "routes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "model",
-                "pricing"
-              ],
-              "properties": {
-                "model": {
-                  "type": "string",
-                  "description": "The route's catalog rawId, or its gateway provider name when card is inline."
-                },
-                "provider": {
-                  "type": "string",
-                  "description": "Gateway route name (Vercel provider_name) when card is stored on this route instead of a catalog row."
-                },
-                "card": {
-                  "$ref": "#/components/schemas/RateCard",
-                  "description": "Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row."
-                },
-                "pricing": {
-                  "$ref": "#/components/schemas/CompactPricing"
-                }
-              }
-            }
-          },
-          "inputPerMillion": {
-            "$ref": "#/components/schemas/PriceBounds"
-          },
-          "outputPerMillion": {
-            "$ref": "#/components/schemas/PriceBounds"
-          }
-        }
+        "additionalProperties": false,
+        "description": "List-row summary of a stored rate card. per=token cards carry per-million rates at the base tier (tiered marks a long-prompt re-quote above some threshold; fetch the card for it). Other values name the unit the card bills by; the full card is on the detail route or ?pricing=1."
       },
       "PriceBounds": {
         "type": "object",
-        "required": [
-          "min",
-          "max"
-        ],
         "properties": {
           "min": {
             "type": "number"
@@ -1654,180 +2124,212 @@
           "max": {
             "type": "number"
           }
-        }
-      },
-      "RateCardSource": {
-        "type": "object",
+        },
         "required": [
-          "url",
-          "hash",
-          "extractedAt"
+          "min",
+          "max"
         ],
-        "properties": {
-          "url": {
-            "type": "string",
-            "format": "uri"
-          },
-          "hash": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$"
-          },
-          "extractedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
+        "additionalProperties": false,
+        "description": "A bound over route prices, per million tokens: never the billed price."
       },
-      "RateCardExample": {
+      "PricingRange": {
         "type": "object",
-        "required": [
-          "params",
-          "usd",
-          "quote"
-        ],
         "properties": {
-          "params": {
-            "type": "object"
-          },
-          "usd": {
-            "type": "number",
-            "description": "In the card's currency; the name predates currency."
-          },
-          "quote": {
-            "type": "string"
-          }
-        }
-      },
-      "RateCardInput": {
-        "type": "object",
-        "required": [
-          "param",
-          "kind"
-        ],
-        "properties": {
-          "param": {
-            "type": "string"
-          },
-          "bound": {
+          "currency": {
             "type": "string",
-            "enum": [
-              "request",
-              "usage"
-            ]
+            "pattern": "^[A-Z]{3}$",
+            "description": "ISO-4217 code every route is priced in. A range is only built when the routes share one."
           },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "number",
-              "enum",
-              "boolean",
-              "count",
-              "dimensions"
-            ]
-          },
-          "estimate": {
-            "type": "object",
-            "description": "Number inputs only: the source-published way to estimate this value when the caller omits it. Its own inputs bind only then, and POST /v1/estimate lists the param under estimated. Estimate inputs never carry an estimate of their own.",
-            "required": [
-              "inputs",
-              "value",
-              "source"
-            ],
-            "properties": {
-              "inputs": {
-                "type": "object",
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/RateCardInput"
-                }
-              },
-              "value": {
-                "description": "JSONLogic expression over the closed op set."
-              },
-              "source": {
-                "type": "object",
-                "required": [
-                  "url",
-                  "hash"
-                ],
-                "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "hash": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}$"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "RateCard": {
-        "type": "object",
-        "required": [
-          "inputs",
-          "tables",
-          "price",
-          "examples",
-          "source"
-        ],
-        "properties": {
-          "inputs": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RateCardInput"
-            }
-          },
-          "tables": {
-            "type": "object"
-          },
-          "price": {
-            "description": "JSONLogic expression over the closed op set, yielding USD. A card in another currency wraps it as { \"currency\": [\"CNY\", <expression>] } (ISO 4217); that wrapper is the only place a card states its currency, and an evaluator that does not know it refuses the card."
-          },
-          "examples": {
+          "routes": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RateCardExample"
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "description": "The route's catalog rawId, or its gateway provider name when card is inline."
+                },
+                "provider": {
+                  "description": "Gateway route name (Vercel `provider_name`) when card is stored on this route instead of a catalog row.",
+                  "type": "string"
+                },
+                "card": {
+                  "description": "Compiled card for a route with no catalog row. Estimate prices this card. Absent when model names a row. Its `examples` is empty.",
+                  "$ref": "#/components/schemas/RateCard"
+                },
+                "pricing": {
+                  "$ref": "#/components/schemas/CompactPricing"
+                }
+              },
+              "required": [
+                "model",
+                "pricing"
+              ],
+              "additionalProperties": false
             }
           },
-          "source": {
-            "$ref": "#/components/schemas/RateCardSource"
+          "inputPerMillion": {
+            "description": "Bounds over the routes' input price per million tokens.",
+            "$ref": "#/components/schemas/PriceBounds"
+          },
+          "outputPerMillion": {
+            "description": "Bounds over the routes' output price per million tokens, when every route states one.",
+            "$ref": "#/components/schemas/PriceBounds"
           }
-        }
+        },
+        "required": [
+          "currency",
+          "routes",
+          "inputPerMillion"
+        ],
+        "additionalProperties": false,
+        "description": "A routed model id with no single billed price: the gateway picks one route per call, and each route bills its own published card. min/max are bounds over those cards, never the billed price. A route is either its own model row under the same provider (model is that rawId) or, when the gateway has no per-route row, a provider name with the compiled card inline. POST /v1/estimate on this row prices the call on every route and returns min and max."
+      },
+      "ModelReasoning": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "adaptive",
+              "budget",
+              "effort",
+              "toggle"
+            ],
+            "description": "The one control the request exposes. adaptive: the model decides (Anthropic thinking.type adaptive, or a switch with an auto value). budget: a token budget (thinking.budget_tokens, Gemini thinkingBudget). effort: a level (reasoning_effort, Gemini thinkingLevel). toggle: an on/off switch and nothing else (thinking.type enabled|disabled, enable_thinking); it says nothing about the default when the field is omitted."
+          },
+          "mandatory": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated; do not read it as false, test mandatory === false before offering an off option. A toggle is never stored with null."
+          },
+          "efforts": {
+            "description": "The accepted effort values as published, an off value such as none included. Never present on a toggle.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "mode",
+          "mandatory"
+        ],
+        "additionalProperties": false
       },
       "ChatRequestMap": {
         "type": "object",
-        "description": "Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field.",
         "properties": {
           "thinking": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "object",
-                "required": [
-                  "on",
-                  "off",
-                  "levels"
-                ],
                 "properties": {
                   "on": {
                     "type": "object",
-                    "description": "Request body for thinking on at effort high.",
-                    "additionalProperties": true
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {},
+                    "description": "Request body for thinking on at effort high."
                   },
                   "off": {
-                    "description": "Request body that turns thinking off, or null when silence is off."
-                  },
-                  "levels": {
-                    "description": "Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified.",
-                    "oneOf": [
+                    "anyOf": [
                       {
                         "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Request body that turns thinking off, or null when silence is off (the model does not think unless asked)."
+                  },
+                  "levels": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "off": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "minimal": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "low": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "medium": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "high": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "xhigh": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "max": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
                         "required": [
                           "off",
                           "minimal",
@@ -1837,57 +2339,21 @@
                           "xhigh",
                           "max"
                         ],
-                        "properties": {
-                          "off": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "minimal": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "low": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "medium": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "high": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "xhigh": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          },
-                          "max": {
-                            "type": [
-                              "string",
-                              "null"
-                            ]
-                          }
-                        }
+                        "additionalProperties": false
                       },
                       {
                         "type": "null"
                       }
-                    ]
+                    ],
+                    "description": "Shared effort levels to the value this model accepts. null omits the field. The object itself is null when the subset is unverified."
                   }
-                }
+                },
+                "required": [
+                  "on",
+                  "off",
+                  "levels"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "null"
@@ -1895,69 +2361,108 @@
             ]
           },
           "maxTokensField": {
-            "type": [
-              "string",
-              "null"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "max_completion_tokens",
+                  "max_tokens"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
-            "enum": [
-              "max_completion_tokens",
-              "max_tokens",
-              null
-            ]
+            "description": "Name of the request field that caps output tokens."
           },
           "developerRole": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "true when the model wants `role: \"developer\"` instead of `system`; false when it rejects it."
           },
           "replayReasoningContent": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "true when the provider needs the previous turn's `reasoning_content` replayed on the assistant message."
           },
           "store": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "strictTools": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "sessionAffinity": {
-            "type": [
-              "boolean",
-              "null"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "cacheControl": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "anthropic",
-              null
+            "anyOf": [
+              {
+                "type": "string",
+                "const": "anthropic"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "toolStream": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "true when the model takes `tool_stream: true` alongside `stream: true` (Z.AI GLM). null: unverified."
           },
           "reasoningEffort": {
-            "type": [
-              "boolean",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "false when the provider rejects a top-level `reasoning_effort` field."
           }
-        }
+        },
+        "additionalProperties": false,
+        "description": "Verified chat request wire map. A null field is unverified, not a guess. thinking.levels null means the level subset is unverified; a null level value means omit that field."
       },
       "HalLink": {
         "type": "object",
@@ -2365,37 +2870,10 @@
             "additionalProperties": true
           },
           "reasoning": {
-            "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.",
+            "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. Rows from some providers still carry a mandatory true inferred from a level list with no off value; the README release notes list them.",
             "oneOf": [
               {
-                "type": "object",
-                "required": [
-                  "mode",
-                  "mandatory"
-                ],
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "adaptive",
-                      "budget",
-                      "effort",
-                      "toggle"
-                    ]
-                  },
-                  "mandatory": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "efforts": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/ModelReasoning"
               },
               {
                 "type": "null"
@@ -2740,37 +3218,10 @@
             "additionalProperties": true
           },
           "reasoning": {
-            "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. mode names the one control the request exposes: adaptive (the model decides; Anthropic thinking.type adaptive, or a switch with an auto value), budget (a token budget: thinking.budget_tokens, Gemini thinkingBudget), effort (a level: reasoning_effort, Gemini thinkingLevel) or toggle (an on/off switch and nothing else: thinking.type enabled|disabled, enable_thinking; it says nothing about the default when the field is omitted). mandatory has one meaning on every mode. true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated. null must not be read as false: test mandatory === false before offering an off option. A toggle is never stored with mandatory null. efforts: the accepted effort values as published, an off value such as none included; never present on toggle. Rows from some providers still carry a true inferred from a level list with no off value; the README release notes list them.",
+            "description": "How thinking is configured, or null when the model does not reason or its source names no request field for it. Rows from some providers still carry a mandatory true inferred from a level list with no off value; the README release notes list them.",
             "oneOf": [
               {
-                "type": "object",
-                "required": [
-                  "mode",
-                  "mandatory"
-                ],
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "adaptive",
-                      "budget",
-                      "effort",
-                      "toggle"
-                    ]
-                  },
-                  "mandatory": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "efforts": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/ModelReasoning"
               },
               {
                 "type": "null"

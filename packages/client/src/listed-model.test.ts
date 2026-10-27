@@ -1,3 +1,4 @@
+import { evaluateCard } from '@modelschemas/rate-card/evaluator'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import {
@@ -86,5 +87,21 @@ describe('getModel', () => {
     })
     expect(data?.discrepancies).toEqual([])
     expectTypeOf(data?.provider).toEqualTypeOf<'anthropic' | undefined>()
+  })
+})
+
+describe('getModel pricing', () => {
+  it('narrows to a card evaluateCard accepts with no cast', async () => {
+    const { data } = await getModel({
+      path: { provider: 'anthropic', modelId: 'claude-sonnet-4-5' },
+    })
+    if (data?.pricing && 'price' in data.pricing) {
+      expectTypeOf(evaluateCard)
+        .parameter(0)
+        .toMatchTypeOf<NonNullable<typeof data.pricing>>()
+      expectTypeOf(data.pricing).toMatchTypeOf<
+        Parameters<typeof evaluateCard>[0]
+      >()
+    }
   })
 })
