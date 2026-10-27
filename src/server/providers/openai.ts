@@ -86,9 +86,9 @@ async function listModels(
   })) as OpenAiModelList
   const listed = body.data ?? []
   const docs = docsRun()
-  // developers.openai.com answers 403 to the regions OpenAI does not serve,
-  // and the cron can land in one (hkg1), so docs loads leave from the US
-  // egress (#505).
+  // developers.openai.com answered 403 to docs loads from Cloudflare's hkg1
+  // colo, where the cron can land, so docs loads leave from the US egress
+  // (#505). The listing call worked from there and stays on the global fetch.
   const facts = await openaiModelFacts(
     listed.map((m) => m.id),
     kv,

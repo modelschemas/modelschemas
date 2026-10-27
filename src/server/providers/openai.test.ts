@@ -6,6 +6,7 @@ import {
 } from './openai-gpt5-guides.ts'
 import {
   OPENAI_MODELS_INDEX_URL,
+  OPENAI_MODEL_PAGE,
   OPENAI_PRICING_URL,
 } from './openai-model-docs.ts'
 import { OPENAI_REALTIME_EFFORT_URL } from './openai-realtime-efforts.ts'
@@ -48,7 +49,7 @@ it('loads the docs through the US egress (#505)', async () => {
       expect.arrayContaining([
         OPENAI_MODELS_INDEX_URL,
         OPENAI_PRICING_URL,
-        'https://developers.openai.com/api/docs/models/gpt-5-mini.md',
+        OPENAI_MODEL_PAGE('gpt-5-mini'),
         OPENAI_REALTIME_EFFORT_URL,
         OPENAI_GPT5_GUIDE_URL,
         OPENAI_GPT51_GUIDE_URL,

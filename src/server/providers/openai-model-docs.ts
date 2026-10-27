@@ -46,7 +46,7 @@ export const OPENAI_MODELS_INDEX_URL =
   'https://developers.openai.com/api/docs/models.md'
 export const OPENAI_PRICING_URL =
   'https://developers.openai.com/api/docs/pricing.md'
-const OPENAI_MODEL_PAGE = (slug: string) =>
+export const OPENAI_MODEL_PAGE = (slug: string) =>
   `https://developers.openai.com/api/docs/models/${slug}.md`
 
 /** Page slugs linked from the models index. */
@@ -588,7 +588,7 @@ const PAGE_FACTS = [
  * A failed family or sampling guide marks `absent` on the ids it speaks for.
  * A failed GPT-5.1 guide does not: the family list stays, with mandatory null.
  * Every load goes through `fetcher`; the poll passes the US egress, since
- * the docs host answers 403 to the regions OpenAI does not serve (#505).
+ * the docs host answered 403 to loads from hkg1 (#505).
  */
 export async function openaiModelFacts(
   rawIds: Array<string>,

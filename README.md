@@ -446,8 +446,10 @@ is token-auth only and is not used for releases.
      moved or is down; check `providers.spec_source_url` (seeded from
      `src/db/seed-providers.ts`) against the provider's docs.
    - Anthropic `403 forbidden` or Gemini
-     `User location is not supported` on the models poll → the provider
-     refused the caller's region. Their listing calls (and Anthropic's and OpenAI's docs pages) go through the `US_EGRESS`
+     `User location is not supported` on the models poll, or an OpenAI
+     `docsFailures` entry `403 Forbidden … hkg1::` → the host refused the
+     caller's region. Their listing calls (and Anthropic's and OpenAI's
+     docs pages) go through the `US_EGRESS`
      Durable Object (`src/server/providers/us-egress.ts`), created with
      `locationHint: 'enam'`. The hint is best effort and an object never
      moves, so if this persists, change its name (`provider-egress`) so
