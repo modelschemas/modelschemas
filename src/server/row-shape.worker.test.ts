@@ -29,7 +29,7 @@ async function shapeRows() {
 }
 
 describe('recordRowShape', () => {
-  it('announces a shape once per provider, then only when the hash moves', async () => {
+  it('announces a shape once per provider, then only when the version moves', async () => {
     const providerCount = (await db.select().from(providers)).length
     expect(await recordRowShape(db, NOW)).toBe(providerCount)
     expect(await recordRowShape(db, NOW + 900)).toBe(0)
@@ -54,6 +54,10 @@ describe('recordRowShape', () => {
     })
     expect(await recordRowShape(db, NOW + 1200)).toBe(1)
     expect(await recordRowShape(db, NOW + 1500)).toBe(0)
+
+    // The emitter respelling the same shape moves the hash, not the version.
+    const respelled = { ...MODEL_ROW_SHAPE, hash: 'a'.repeat(64) }
+    expect(await recordRowShape(db, NOW + 1600, respelled)).toBe(0)
 
     const next = { version: 99, hash: 'b'.repeat(64), notes: 'next' }
     expect(await recordRowShape(db, NOW + 1800, next)).toBe(providerCount + 1)
