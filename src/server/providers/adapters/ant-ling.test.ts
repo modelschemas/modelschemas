@@ -430,11 +430,22 @@ it('reads each price unit from its own column and lists per-image rows without a
   const { models } = await provider.listModels(nativeEnv)
   const ming = models.find((m) => m.rawId === 'Ming-Image-0.1-Design')
   expect(ming?.pricing).toBeNull()
-  expect(ming?.absent?.pricing).toBe('unavailable')
+  expect(ming?.absent).toBeUndefined()
   expect(models.find((m) => m.rawId === 'Ling-2.6-1T')?.pricing).not.toBeNull()
   expect(() =>
     nativePrices(withImage.replace('<td>image</td>', '<td>1K characters</td>')),
   ).toThrow('unreadable direct price units for Ming-Image-0.1-Design')
+  expect(() =>
+    nativePrices(
+      withImage.replace(
+        '<td>—</td><td>—</td><td><del>',
+        '<td>¥0.01</td><td>—</td><td><del>',
+      ),
+    ),
+  ).toThrow('unreadable direct price units for Ming-Image-0.1-Design')
+  expect(() =>
+    nativePrices(withImage.replace('<span>¥0.03</span>', '<span>free</span>')),
+  ).toThrow('unreadable current CNY price')
   expect(() =>
     nativePrices(source.replace('<td>1M tokens</td>', '<td>1K tokens</td>')),
   ).toThrow('unreadable direct price units')

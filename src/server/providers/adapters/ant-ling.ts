@@ -251,7 +251,8 @@ export const provider: ProviderConfig = {
           const declaredText =
             apiIds.has(model.rawId) && apiOverview.includes('Text Conversation')
           // Text-only rows are sourced from the native text-conversation scope;
-          // a newer price-only ID has no API-scoped modality statement yet.
+          // a price-only ID (a newer chat ID, a per-image Ming-Image row) has
+          // no API-scoped modality statement.
           const modalities = declaredText
             ? {
                 input: accepts.get(model.rawId) ?? ['text'],
@@ -277,15 +278,13 @@ export const provider: ProviderConfig = {
             modalities,
             capabilities,
             pricing: cards.get(model.rawId) ?? null,
-            // The page states a per-image price no token card can carry:
-            // unavailable, not cleared, since the source does not lack it.
-            absent: cards.has(model.rawId)
-              ? undefined
-              : {
-                  pricing: perImage.has(model.rawId)
-                    ? ('unavailable' as const)
-                    : ('cleared' as const),
-                },
+            // A per-image price is stated but no token card carries it, so
+            // no reason is given: a new row stays null, and a stored card
+            // hidden behind one is kept with a pricing_lost signal.
+            absent:
+              cards.has(model.rawId) || perImage.has(model.rawId)
+                ? undefined
+                : { pricing: 'cleared' as const },
             schemaEndpointId: apiIds.has(model.rawId) ? nativeEndpointId : null,
             reasoning,
             requestMap,

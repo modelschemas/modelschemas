@@ -89,7 +89,7 @@ function cny(cell: string): number {
  * The direct Model Pricing table. Each price sits beside its own Unit cell:
  * a row priced per 1M tokens on all three is a token quote; a row with only
  * an output price per `image` is listed in `perImage` with no quote, since a
- * token card cannot carry it. Any other unit layout throws.
+ * token card cannot carry it (its price must still read). Any other unit layout throws.
  */
 export function nativePriceTable(html: string): {
   tokens: Map<string, NativePrice>
@@ -110,14 +110,11 @@ export function nativePriceTable(html: string): {
     const id = text(row[0] ?? '')
     if (!id || tokens.has(id) || perImage.has(id))
       fail('missing or duplicate direct model ID')
-    const [input, output, cache] = [2, 4, 6].map((i) => row[i] ?? '')
-    const [inUnit, outUnit, cacheUnit] = [3, 5, 7].map((i) =>
-      text(row[i] ?? ''),
-    )
-    if (input === undefined || output === undefined || cache === undefined)
-      fail('missing direct price')
+    const cell = (i: number) => row[i] ?? fail('direct price row missing cells')
+    const [input, output, cache] = [cell(2), cell(4), cell(6)]
+    const [inUnit, outUnit, cacheUnit] = [3, 5, 7].map((i) => text(cell(i)))
     if ([inUnit, outUnit, cacheUnit].every((unit) => unit === TOKEN_UNIT)) {
-      const amounts = [input, output, cache].map((cell) => cny(cell) / 1e6)
+      const amounts = [input, output, cache].map((amount) => cny(amount) / 1e6)
       tokens.set(id, {
         rates: {
           input_tokens: amounts[0] ?? fail('missing direct price'),
