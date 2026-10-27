@@ -121,7 +121,7 @@ function narrowValidateInput(input: unknown): ValidateInput {
 }
 
 export const validateVideoRequest = createServerFn({ method: 'POST' })
-  .inputValidator(narrowValidateInput)
+  .validator(narrowValidateInput)
   .handler(async ({ data }): Promise<ValidationOutcome> => {
     const client = makeClient()
     const result = await validatePayload({

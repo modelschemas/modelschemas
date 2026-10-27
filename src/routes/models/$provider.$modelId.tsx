@@ -84,7 +84,7 @@ interface ModelDetailData {
 }
 
 const getModelDetail = createServerFn({ method: 'GET' })
-  .inputValidator((params: { provider: string; modelId: string }) => params)
+  .validator((params: { provider: string; modelId: string }) => params)
   .handler(async ({ data }): Promise<ModelDetailData | null> => {
     const { env } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')
