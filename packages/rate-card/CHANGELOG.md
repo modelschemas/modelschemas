@@ -1,5 +1,18 @@
 # @modelschemas/rate-card
 
+## 0.2.2
+
+### Patch Changes
+
+- efd04aa: The OpenAPI `RateCard` schemas are now written from the rate-card zod schema (named `RateCard`, `RateCardInput`, `RateCardExpr`, `RateCardTable`, `RateCardPrice`, …), so the client's generated `RateCard` has typed `price` and `tables` and `getModel`'s `pricing` goes to `evaluateCard` after `'price' in pricing`, with no cast. The generated `RateCardInput` is now a union by `kind`, and `RateCardSource`/`RateCardExample` gain descriptions. `rateCardSchema` carries `.meta` ids; validation is unchanged.
+
+  `CompactPricing`, `PricingRange`, `ModelReasoning` and `ChatRequestMap` are written from the same zod schemas the server builds them with. `ChatRequestMap.thinking.off` is now typed as an object or null (it was `unknown`); `ModelReasoning` and `PriceBounds` are named types. No served value changes, but the spec now closes these components and the rest of the RateCard family to extra fields (`additionalProperties: false`), as zod writes it for an output schema; a validator built from the spec rejects a field the server adds later.
+
+- 1780348: Format the generated client with oxfmt. No API change.
+- a8dcd8b: `evaluateCard` drops a zero usage lever the card does not read (#495).
+  A non-zero lever the card does not read still throws `unknown-usage-key`.
+  `POST /v1/estimate` does the same, because it shares `normalizeUsage`.
+
 ## 0.2.1
 
 ### Patch Changes
