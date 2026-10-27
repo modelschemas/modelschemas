@@ -1,5 +1,22 @@
 # @modelschemas/client
 
+## 0.2.2
+
+### Patch Changes
+
+- efd04aa: The OpenAPI `RateCard` schemas are now written from the rate-card zod schema (named `RateCard`, `RateCardInput`, `RateCardExpr`, `RateCardTable`, `RateCardPrice`, …), so the client's generated `RateCard` has typed `price` and `tables` and `getModel`'s `pricing` goes to `evaluateCard` after `'price' in pricing`, with no cast. The generated `RateCardInput` is now a union by `kind`, and `RateCardSource`/`RateCardExample` gain descriptions. `rateCardSchema` carries `.meta` ids; validation is unchanged.
+
+  `CompactPricing`, `PricingRange`, `ModelReasoning` and `ChatRequestMap` are written from the same zod schemas the server builds them with. `ChatRequestMap.thinking.off` is now typed as an object or null (it was `unknown`); `ModelReasoning` and `PriceBounds` are named types. No served value changes, but the spec now closes these components and the rest of the RateCard family to extra fields (`additionalProperties: false`), as zod writes it for an output schema; a validator built from the spec rejects a field the server adds later.
+
+- 653ed60: `Model` gains `requiredRequestHeaders` and `trainsOnRequestData`, and `FactSource` gains `verifiedAt` for a probe-verified fact. `GET /v1/status` gains `staleProbes`.
+- 667b1d7: OpenCode Go required headers are the client-supplied half of the provider connect profile. `trainsOnRequestData` is true when that model's Go privacy row says Yes.
+- 1780348: Format the generated client with oxfmt. No API change.
+- 0dbb5aa: Vercel rows whose price varies by route store a `pricingRange` (#451).
+  Each route is a Vercel `provider_name` with its compiled card inline, not
+  a catalog row. `estimateCost` prices those inline cards and names min and
+  max by provider. Endpoints with `status` other than 0 are omitted and
+  named on `factSources.pricingRange`. Model row shape is v4.
+
 ## 0.2.1
 
 ### Patch Changes
