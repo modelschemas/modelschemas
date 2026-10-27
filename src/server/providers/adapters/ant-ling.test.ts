@@ -421,6 +421,32 @@ it('fails missing sale amounts, missing price sections and changed field types',
     ),
   ).toThrow('unknown native field type')
 })
+it('reads each price unit from its own column and lists per-image rows without a token card', async () => {
+  const source = native[ANT_PRICE] ?? ''
+  const image =
+    '<tr><td><strong>Ming-Image-0.1-Design</strong></td><td>Design image generation</td><td>—</td><td>—</td><td><del>¥0.10</del> <span>¥0.03</span></td><td>image</td><td>—</td><td>—</td></tr>'
+  const withImage = source.replace('</tbody>', `${image}</tbody>`)
+  serve({ [ANT_PRICE]: withImage })
+  const { models } = await provider.listModels(nativeEnv)
+  const ming = models.find((m) => m.rawId === 'Ming-Image-0.1-Design')
+  expect(ming?.pricing).toBeNull()
+  expect(ming?.absent?.pricing).toBe('unavailable')
+  expect(models.find((m) => m.rawId === 'Ling-2.6-1T')?.pricing).not.toBeNull()
+  expect(() =>
+    nativePrices(withImage.replace('<td>image</td>', '<td>1K characters</td>')),
+  ).toThrow('unreadable direct price units for Ming-Image-0.1-Design')
+  expect(() =>
+    nativePrices(source.replace('<td>1M tokens</td>', '<td>1K tokens</td>')),
+  ).toThrow('unreadable direct price units')
+  expect(() =>
+    nativePrices(
+      source.replace(
+        '<th>Input Price</th><th>Unit</th>',
+        '<th>Input (per 1M tokens)</th>',
+      ),
+    ),
+  ).toThrow('direct pricing headers changed')
+})
 it('fails an empty native catalog instead of silently retiring stored rows', async () => {
   serve({
     [ANT_OPENAI]: '<article><h2 id="request-body">Request Body</h2></article>',

@@ -76,45 +76,69 @@ export interface NativePrice {
   rates: Record<string, number>
   free: boolean
 }
-export function nativePrices(html: string): Map<string, NativePrice> {
+const TOKEN_UNIT = '1M tokens'
+const PRICE_HEADER =
+  'Model|Use Case|Input Price|Unit|Output Price|Unit|Cache Read|Unit'
+function cny(cell: string): number {
+  const current = text(cell.replace(/<del\b[\s\S]*?<\/del>/g, ''))
+  const price = /^¥(\d+(?:\.\d+)?)$/.exec(current)
+  if (!price) fail('unreadable current CNY price')
+  return Number(price[1])
+}
+/**
+ * The direct Model Pricing table. Each price sits beside its own Unit cell:
+ * a row priced per 1M tokens on all three is a token quote; a row with only
+ * an output price per `image` is listed in `perImage` with no quote, since a
+ * token card cannot carry it. Any other unit layout throws.
+ */
+export function nativePriceTable(html: string): {
+  tokens: Map<string, NativePrice>
+  perImage: Set<string>
+} {
   const body = section(article(html), 'model-pricing')
   if (!text(body).includes('All prices below are in CNY'))
     fail('direct pricing currency not CNY')
   const table = body.match(/<table\b[\s\S]*?<\/table>/)?.[0]
   if (!table) fail('missing direct price table')
   const all = rows(table)
-  if (
-    all[0]?.map(text).join('|') !==
-    'Model|Use Case|Input (per 1M tokens)|Output (per 1M tokens)|Cache Read (per 1M tokens)'
-  )
+  if (all[0]?.map(text).join('|') !== PRICE_HEADER)
     fail('direct pricing headers changed')
-  const out = new Map<string, NativePrice>()
+  const tokens = new Map<string, NativePrice>()
+  const perImage = new Set<string>()
   for (const row of all.slice(1)) {
-    if (row.length !== 5) fail('direct price row missing cells')
+    if (row.length !== 8) fail('direct price row missing cells')
     const id = text(row[0] ?? '')
-    if (!id || out.has(id)) fail('missing or duplicate direct model ID')
-    const amounts = row.slice(2).map((cell) => {
-      const current = text(cell.replace(/<del\b[\s\S]*?<\/del>/g, ''))
-      const price = /^¥(\d+(?:\.\d+)?)$/.exec(current)
-      if (!price) fail('unreadable current CNY price')
-      return Number(price[1]) / 1e6
-    })
-    const input = amounts[0],
-      output = amounts[1],
-      cache = amounts[2]
+    if (!id || tokens.has(id) || perImage.has(id))
+      fail('missing or duplicate direct model ID')
+    const [input, output, cache] = [2, 4, 6].map((i) => row[i] ?? '')
+    const [inUnit, outUnit, cacheUnit] = [3, 5, 7].map((i) =>
+      text(row[i] ?? ''),
+    )
     if (input === undefined || output === undefined || cache === undefined)
       fail('missing direct price')
-    out.set(id, {
-      rates: {
-        input_tokens: input,
-        output_tokens: output,
-        cache_read_tokens: cache,
-      },
-      free: amounts.every((a) => a === 0),
-    })
+    if ([inUnit, outUnit, cacheUnit].every((unit) => unit === TOKEN_UNIT)) {
+      const amounts = [input, output, cache].map((cell) => cny(cell) / 1e6)
+      tokens.set(id, {
+        rates: {
+          input_tokens: amounts[0] ?? fail('missing direct price'),
+          output_tokens: amounts[1] ?? fail('missing direct price'),
+          cache_read_tokens: amounts[2] ?? fail('missing direct price'),
+        },
+        free: amounts.every((a) => a === 0),
+      })
+    } else if (
+      outUnit === 'image' &&
+      [text(input), inUnit, text(cache), cacheUnit].every((v) => v === '—')
+    ) {
+      cny(output) // an unreadable per-image price still throws
+      perImage.add(id)
+    } else fail(`unreadable direct price units for ${id}`)
   }
-  if (!out.size) fail('direct price table empty')
-  return out
+  if (!tokens.size) fail('direct price table empty')
+  return { tokens, perImage }
+}
+export function nativePrices(html: string): Map<string, NativePrice> {
+  return nativePriceTable(html).tokens
 }
 export function priceCards(
   prices: Map<string, NativePrice>,
@@ -372,7 +396,8 @@ export function antModelRows(
   contexts: Map<string, number>,
 ): Array<ModelInfo> {
   const apiIds = new Set(nativeModelIds(api))
-  const ids = [...new Set([...apiIds, ...nativePrices(pricing).keys()])]
+  const { tokens, perImage } = nativePriceTable(pricing)
+  const ids = [...new Set([...apiIds, ...tokens.keys(), ...perImage])]
   return ids.map((rawId) => ({
     rawId,
     displayName: null,

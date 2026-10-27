@@ -23,7 +23,7 @@ import {
   overviewContextIds,
   antModelRows,
   nativeModelIds,
-  nativePrices,
+  nativePriceTable,
   priceCards,
   nativeContexts,
   nativeFields,
@@ -142,7 +142,7 @@ export const provider: ProviderConfig = {
       throw new Error('ant-ling: missing loaded source')
     const overviewIds = overviewContextIds(overview.html)
     const contexts = nativeContexts(overview.html, ling.html)
-    const quotes = nativePrices(pricing.html)
+    const { tokens: quotes, perImage } = nativePriceTable(pricing.html)
     const cards = priceCards(quotes, {
       url: ANT_PRICE,
       hash: pricing.hash,
@@ -277,9 +277,15 @@ export const provider: ProviderConfig = {
             modalities,
             capabilities,
             pricing: cards.get(model.rawId) ?? null,
+            // The page states a per-image price no token card can carry:
+            // unavailable, not cleared, since the source does not lack it.
             absent: cards.has(model.rawId)
               ? undefined
-              : { pricing: 'cleared' as const },
+              : {
+                  pricing: perImage.has(model.rawId)
+                    ? ('unavailable' as const)
+                    : ('cleared' as const),
+                },
             schemaEndpointId: apiIds.has(model.rawId) ? nativeEndpointId : null,
             reasoning,
             requestMap,
