@@ -13,10 +13,10 @@ import { changes, providers } from '#/db/schema.ts'
 import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
-  version: 6,
-  hash: '6bcd64247124d2ae2a7cf021fc43e3fb1386df0d3299c31aeed38ba6ad5f4216',
+  version: 7,
+  hash: '6972e446bcb1d63b016cea01a498d12d502b1dc167c0c6cfcfbc33a96ae14ee4',
   notes:
-    'pricing and PricingRange.routes[].card: RateCard now types its price (RateCardPrice), tables (RateCardTable) and inputs (a union by kind) instead of leaving them open. reasoning is the ModelReasoning component; requestMap.thinking.off is an object or null. Cards and rows served are unchanged (issue #494).',
+    'Spec emitter only (zod 4.6): nullable fields are written as type arrays (["boolean","null"]) instead of anyOf, tuples carry items: false with minItems/maxItems, and the date-time pattern requires seconds. No served value or field changes.',
 } as const
 
 /** Every component schema a /v1 model row response is built from. */
