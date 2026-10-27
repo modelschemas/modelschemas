@@ -65,7 +65,7 @@ without one. `openapi.json` and `SKILL.md` are oxfmt-ignored (byte-stable
 emitted artifacts). Lefthook pre-commit runs oxfmt/oxlint/typecheck — never
 `--no-verify`. The cloudflare vite plugin is skipped under vitest;
 Workers-binding tests (`*.worker.test.ts`) run in workerd via
-`@cloudflare/vitest-pool-workers` (config: `vitest.workers.config.ts`,
+`@cloudflare/vitest-plugin` (config: `vitest.workers.config.ts`,
 migrations auto-applied via TEST_MIGRATIONS).
 
 Local verification flows: `bun scripts/agent-roundtrip.ts` (agent-auth
