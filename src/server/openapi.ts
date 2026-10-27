@@ -26,10 +26,14 @@ for (const schema of Object.values(zodComponents)) {
   delete schema.$schema
   delete schema.$id
 }
+const rateCard = zodComponents.RateCard
+if (!rateCard?.properties?.currency) {
+  throw new Error('RateCard component lost its `currency` property')
+}
 // `currency: never` is how the zod schema refuses a top-level currency; as
 // JSON Schema it is `{ not: {} }`, which generates `unknown`. The root's
 // additionalProperties: false refuses it just the same.
-delete zodComponents.RateCard?.properties?.currency
+delete rateCard.properties.currency
 
 const activityEnum = [
   'chat',

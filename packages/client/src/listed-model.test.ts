@@ -99,6 +99,9 @@ describe('getModel pricing', () => {
       expectTypeOf(evaluateCard)
         .parameter(0)
         .toMatchTypeOf<NonNullable<typeof data.pricing>>()
+      expectTypeOf(data.pricing).toMatchTypeOf<
+        Parameters<typeof evaluateCard>[0]
+      >()
     }
   })
 })
