@@ -1820,7 +1820,10 @@
                 {
                   "type": "number"
                 }
-              ]
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
             }
           },
           "levels": {
@@ -1977,7 +1980,10 @@
               {
                 "$ref": "#/components/schemas/RateCardExpr"
               }
-            ]
+            ],
+            "items": false,
+            "minItems": 2,
+            "maxItems": 2
           }
         },
         "required": [
@@ -2011,13 +2017,13 @@
           "extractedAt": {
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           },
           "expiresAt": {
             "description": "When the text names a promo end; re-extract after this.",
             "type": "string",
             "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
           }
         },
         "required": [
@@ -2199,15 +2205,11 @@
             "description": "The one control the request exposes. adaptive: the model decides (Anthropic thinking.type adaptive, or a switch with an auto value). budget: a token budget (thinking.budget_tokens, Gemini thinkingBudget). effort: a level (reasoning_effort, Gemini thinkingLevel). toggle: an on/off switch and nothing else (thinking.type enabled|disabled, enable_thinking); it says nothing about the default when the field is omitted."
           },
           "mandatory": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated; do not read it as false, test mandatory === false before offering an off option. A toggle is never stored with null."
+            "description": "true: the provider states thinking cannot be turned off for this model (on a toggle: the off value is rejected, so send on or omit the field). false: the provider states it can be, in prose or by an off value in this model's own schema or level list. null: unstated; do not read it as false, test mandatory === false before offering an off option. A toggle is never stored with null.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "efforts": {
             "description": "The accepted effort values as published, an off value such as none included. Never present on a toggle.",
@@ -2260,73 +2262,45 @@
                         "type": "object",
                         "properties": {
                           "off": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "minimal": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "low": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "medium": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "high": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "xhigh": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           },
                           "max": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "null"
-                              }
+                            "type": [
+                              "string",
+                              "null"
                             ]
                           }
                         },
@@ -2376,55 +2350,35 @@
             "description": "Name of the request field that caps output tokens."
           },
           "developerRole": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "true when the model wants `role: \"developer\"` instead of `system`; false when it rejects it."
+            "description": "true when the model wants `role: \"developer\"` instead of `system`; false when it rejects it.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "replayReasoningContent": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "true when the provider needs the previous turn's `reasoning_content` replayed on the assistant message."
+            "description": "true when the provider needs the previous turn's `reasoning_content` replayed on the assistant message.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "store": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "boolean",
+              "null"
             ]
           },
           "strictTools": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "boolean",
+              "null"
             ]
           },
           "sessionAffinity": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
+            "type": [
+              "boolean",
+              "null"
             ]
           },
           "cacheControl": {
@@ -2439,26 +2393,18 @@
             ]
           },
           "toolStream": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "true when the model takes `tool_stream: true` alongside `stream: true` (Z.AI GLM). null: unverified."
+            "description": "true when the model takes `tool_stream: true` alongside `stream: true` (Z.AI GLM). null: unverified.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "reasoningEffort": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "false when the provider rejects a top-level `reasoning_effort` field."
+            "description": "false when the provider rejects a top-level `reasoning_effort` field.",
+            "type": [
+              "boolean",
+              "null"
+            ]
           }
         },
         "additionalProperties": false,

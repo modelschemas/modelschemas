@@ -13,7 +13,7 @@ const config = defineConfig({
     devtools(),
     // The Cloudflare plugin rejects vitest's resolve.external defaults, so it
     // must be skipped under vitest (Workers-runtime tests need
-    // @cloudflare/vitest-pool-workers instead — see PLAN.md task 0.3).
+    // @cloudflare/vitest-plugin instead — see PLAN.md task 0.3).
     ...(process.env.VITEST
       ? []
       : [cloudflare({ viteEnvironment: { name: 'ssr' } })]),

@@ -1,10 +1,13 @@
 /**
  * The served model row's shape version (issue #412). `hash` is the
  * description-free hash of the row schemas in openapi.ts; row-shape.test.ts
- * fails when they change and this record does not. On a change: bump
- * `version`, set `hash` to the value the test prints, rewrite `notes`, and
- * add a changeset for @modelschemas/client. The models-poll cron then
- * writes a `catalog.shape_changed` row to /v1/changes.
+ * fails when they change and this record does not. When a served field
+ * changed: bump `version`, set `hash` to the value the test prints, rewrite
+ * `notes`, and add a changeset for @modelschemas/client; the models-poll
+ * cron then writes a `catalog.shape_changed` row per provider to
+ * /v1/changes. When only the emitter respelled the same shape (a zod bump
+ * that canonical() does not yet absorb): set `hash` alone — announcements
+ * key on `version`, so nothing is written.
  */
 import { and, desc, eq, ne, sql } from 'drizzle-orm'
 
@@ -14,7 +17,7 @@ import { openApiDocument } from '#/server/openapi.ts'
 
 export const MODEL_ROW_SHAPE = {
   version: 6,
-  hash: '6bcd64247124d2ae2a7cf021fc43e3fb1386df0d3299c31aeed38ba6ad5f4216',
+  hash: '86ecb32cc63c129da79519d506678a0c6b912f4c113e7bf202a98ac0b8909879',
   notes:
     'pricing and PricingRange.routes[].card: RateCard now types its price (RateCardPrice), tables (RateCardTable) and inputs (a union by kind) instead of leaving them open. reasoning is the ModelReasoning component; requestMap.thinking.off is an object or null. Cards and rows served are unchanged (issue #494).',
 } as const
@@ -33,12 +36,26 @@ interface JsonObject {
   [key: string]: Json
 }
 
+// zod 4.6 respelled three things 4.3 wrote; the hash reads both the same
+// so the emitter alone never moves the hash again: a `type` array is an
+// `anyOf` of bare types, a tuple carries no `items: false` +
+// `minItems`/`maxItems`, and a `format` says what its `pattern` spells.
 // Descriptions are prose: rewording one is not a shape change.
 function canonical(value: Json): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value.type) && value.anyOf === undefined) {
+    const { type, ...rest } = value
+    return canonical({ ...rest, anyOf: type.map((t) => ({ type: t })) })
+  }
+  const tuple = value.prefixItems !== undefined
+  const formatted = typeof value.format === 'string'
   const entries = Object.entries(value)
     .filter(([key]) => key !== 'description')
+    .filter(
+      ([key]) => !tuple || !['items', 'minItems', 'maxItems'].includes(key),
+    )
+    .filter(([key]) => !formatted || key !== 'pattern')
     .sort(([a], [b]) => (a < b ? -1 : 1))
   return `{${entries.map(([key, v]) => `${JSON.stringify(key)}:${canonical(v)}`).join(',')}}`
 }
@@ -72,7 +89,7 @@ export async function modelRowShapeHash(
 
 /**
  * Writes a `catalog.shape_changed` row for each provider that has none for
- * the current hash: every provider when the shape moves, and a provider
+ * the current version: every provider when the version moves, and a provider
  * added later on its first poll. Returns the rows written. Rows of one
  * announcement share `payload.contentHash`; dedupe on it when reading
  * across providers.
@@ -82,6 +99,7 @@ export async function recordRowShape(
   now = Math.floor(Date.now() / 1000),
   shape: { version: number; hash: string; notes: string } = MODEL_ROW_SHAPE,
 ): Promise<number> {
+  const versionOf = sql`json_extract(${changes.payload}, '$.version')`
   const hashOf = sql`json_extract(${changes.payload}, '$.contentHash')`
   const isShape = eq(changes.type, 'catalog.shape_changed')
   const announced = new Set(
@@ -89,7 +107,7 @@ export async function recordRowShape(
       await db
         .selectDistinct({ providerId: changes.providerId })
         .from(changes)
-        .where(and(isShape, eq(hashOf, shape.hash)))
+        .where(and(isShape, eq(versionOf, shape.version)))
     ).map((row) => row.providerId),
   )
   const ids = (await db.select({ id: providers.id }).from(providers)).filter(
@@ -99,7 +117,7 @@ export async function recordRowShape(
   const [previous] = await db
     .select({ hash: hashOf })
     .from(changes)
-    .where(and(isShape, ne(hashOf, shape.hash)))
+    .where(and(isShape, ne(versionOf, shape.version)))
     .orderBy(desc(changes.createdAt))
     .limit(1)
   const previousHash = typeof previous?.hash === 'string' ? previous.hash : null

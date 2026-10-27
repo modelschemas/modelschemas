@@ -16,7 +16,7 @@ describe('MODEL_ROW_SHAPE', () => {
     const hash = await modelRowShapeHash()
     expect(
       hash,
-      'The served model row changed shape. Bump MODEL_ROW_SHAPE.version, set its hash to this value, rewrite notes, and add a @modelschemas/client changeset (README "API stability").',
+      'The row schemas changed. If a served field changed: bump MODEL_ROW_SHAPE.version, set its hash to this value, rewrite notes, and add a @modelschemas/client changeset (README "API stability"). If only the emitter respelled the same shape: set the hash alone.',
     ).toBe(MODEL_ROW_SHAPE.hash)
   })
 

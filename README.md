@@ -182,8 +182,10 @@ and `@modelschemas/client` types its responses from it.
   removed, renamed, retyped or moved to another field) bumps
   `MODEL_ROW_SHAPE.version` in `src/server/row-shape.ts` and ships with a
   `@modelschemas/client` changeset. `row-shape.test.ts` hashes the row
-  schemas (descriptions excluded) and fails until the record matches, so a
-  shape change cannot merge without one.
+  schemas (descriptions and the emitter's spelling excluded) and fails
+  until the record matches, so a shape change cannot merge without one. A
+  hash that moves with no served change (a zod bump respelling the same
+  schema) is re-recorded under the same version and announces nothing.
 - **The feed announces it.** The first models poll after the deploy
   (within 15 minutes) writes one `catalog.shape_changed` change per
   provider, `subjectId: "model-row"`, with

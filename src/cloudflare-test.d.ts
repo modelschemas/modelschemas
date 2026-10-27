@@ -1,8 +1,8 @@
 // Minimal typing for the `cloudflare:test` module provided at runtime by
-// @cloudflare/vitest-pool-workers. Binding types come from the generated
+// @cloudflare/vitest-plugin. Binding types come from the generated
 // worker-configuration.d.ts globals (wrangler types).
 declare module 'cloudflare:test' {
-  import type { D1Migration } from '@cloudflare/vitest-pool-workers'
+  import type { D1Migration } from '@cloudflare/vitest-plugin'
 
   interface ProvidedEnv {
     SCHEMA_CACHE: KVNamespace
