@@ -592,29 +592,53 @@ export function applyCnCardFacts(models: ModelInfo[], doc: CnDoc): ModelInfo[] {
   })
 }
 
+const CN_CONSOLE_DETAIL =
+  'https:\\/\\/bailian\\.console\\.aliyun\\.com\\/cn-beijing\\/model\\/market\\/detail\\/[^"?#]+'
+
+/**
+ * Beijing console links on the selection page: `<a href>name</a>`, or the
+ * MDX `<Card title="name" href>` the page uses as of 2026-10-27.
+ */
+function cnConsoleLinks(text: string) {
+  const links: { href: string; name: string; index: number }[] = []
+  for (const anchor of text.matchAll(
+    new RegExp(
+      `<a\\b[^>]*href="(${CN_CONSOLE_DETAIL})"[^>]*>([\\s\\S]*?)<\\/a>`,
+      'g',
+    ),
+  ))
+    links.push({ href: anchor[1]!, name: anchor[2]!, index: anchor.index })
+  for (const card of text.matchAll(/<Card\b([^>]*)>/g)) {
+    const href = /(?:^|\s)href="([^"]+)"/.exec(card[1]!)?.[1]
+    if (!href || !new RegExp(`^${CN_CONSOLE_DETAIL}$`).test(href)) continue
+    const name = /(?:^|\s)title="([^"]*)"/.exec(card[1]!)?.[1]
+    if (name === undefined) fail('native console card has no title')
+    links.push({ href, name, index: card.index })
+  }
+  return links.sort((a, b) => a.index - b.index)
+}
+
 /** Native CN console links publish their exact encoded model ids. */
 export function applyCnCatalog(models: ModelInfo[], doc: CnDoc): ModelInfo[] {
   const out = new Map(models.map((model) => [model.rawId, model]))
   let count = 0
-  for (const anchor of doc.text.matchAll(
-    /<a\b[^>]*href="(https:\/\/bailian\.console\.aliyun\.com\/cn-beijing\/model\/market\/detail\/[^"?#]+)"[^>]*>([\s\S]*?)<\/a>/g,
-  )) {
-    const encoded = new URL(anchor[1]!).pathname.split('/detail/')[1]
+  for (const link of cnConsoleLinks(doc.text)) {
+    const encoded = new URL(link.href).pathname.split('/detail/')[1]
     if (!encoded) fail('empty native console id')
     const rawId = decodeURIComponent(encoded)
     if (!/^[a-z][a-z0-9_./-]+$/i.test(rawId))
       fail('malformed native console id')
     count++
     if (out.has(rawId)) {
-      out.get(rawId)!.displayName = cnText(anchor[2]!) || null
+      out.get(rawId)!.displayName = cnText(link.name) || null
       continue
     }
-    const prior = doc.text.slice(0, anchor.index)
+    const prior = doc.text.slice(0, link.index)
     const major = [...prior.matchAll(/^## (.*)$/gm)].at(-1)?.[1] ?? ''
     const ambiguous = /图像与视频|向量与重排序/.test(major)
     out.set(rawId, {
       rawId,
-      displayName: cnText(anchor[2]!) || null,
+      displayName: cnText(link.name) || null,
       activity: ambiguous ? null : activity(major),
       pricing: null,
       absent: { pricing: 'cleared' },
