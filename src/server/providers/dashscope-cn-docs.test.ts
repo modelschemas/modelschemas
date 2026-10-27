@@ -95,6 +95,26 @@ describe('DashScope China native source parsing', () => {
       ),
     ).toBe(true)
   })
+  it('reads Beijing console ids from selection-page cards and anchors', () => {
+    const rows = applyCnCatalog([], doc('models'))
+    const glm = rows.find((row) => row.rawId === 'ZHIPU/GLM-5.3')!
+    expect(glm.displayName).toBe('ZHIPU/GLM-5.3')
+    expect(glm.activity).toBe('chat')
+    expect(rows.some((row) => row.rawId === 'minimax-m3-1-flash')).toBe(false)
+    const anchored = applyCnCatalog([], {
+      ...doc('models'),
+      text: '## 文本生成\n<a href="https://bailian.console.aliyun.com/cn-beijing/model/market/detail/kimi%2Fkimi-k3">Kimi K3</a>',
+    })
+    expect(anchored.map((row) => [row.rawId, row.displayName])).toEqual([
+      ['kimi/kimi-k3', 'Kimi K3'],
+    ])
+    expect(() =>
+      applyCnCatalog([], {
+        ...doc('models'),
+        text: '<Card href="https://bailian.console.aliyun.com/cn-beijing/model/market/detail/qwen3.8-max">x</Card>',
+      }),
+    ).toThrow('card has no title')
+  })
   it('expands sourced spans and balances nested model-family tabs', () => {
     expect(
       cnTable(
