@@ -83,11 +83,11 @@ async function runQuote(raw: unknown): Promise<Quote> {
 }
 
 const quoteRateCard = createServerFn({ method: 'POST' })
-  .inputValidator((data: unknown) => data)
+  .validator((data: unknown) => data)
   .handler(({ data }) => runQuote(data))
 
 const getCalculator = createServerFn({ method: 'GET' })
-  .inputValidator((params: { provider: string; modelId: string }) => params)
+  .validator((params: { provider: string; modelId: string }) => params)
   .handler(async ({ data }): Promise<CalculatorData | null> => {
     const { env } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')

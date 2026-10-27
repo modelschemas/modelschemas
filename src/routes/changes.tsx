@@ -57,7 +57,7 @@ interface ChangesData {
 }
 
 const getChanges = createServerFn({ method: 'GET' })
-  .inputValidator((query: ChangesSearch) => query)
+  .validator((query: ChangesSearch) => query)
   .handler(async ({ data }): Promise<ChangesData> => {
     const { env } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')

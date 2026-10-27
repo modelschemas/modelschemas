@@ -47,7 +47,7 @@ interface CatalogData {
 }
 
 const getCatalog = createServerFn({ method: 'GET' })
-  .inputValidator((filters: CatalogSearch) => filters)
+  .validator((filters: CatalogSearch) => filters)
   .handler(async ({ data }): Promise<CatalogData> => {
     const { env } = await import('cloudflare:workers')
     const { getDb } = await import('#/db/index.ts')

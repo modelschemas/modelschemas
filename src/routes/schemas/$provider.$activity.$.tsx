@@ -38,7 +38,7 @@ interface SchemaSearch {
 }
 
 const getSchema = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     (params: {
       provider: string
       activity: string
