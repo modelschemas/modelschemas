@@ -10,13 +10,15 @@ import {
 } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
 import type { ModelInfo } from './types.ts'
-import { VERTEX_PRICING_URL } from './vertex-pricing.ts'
 import { htmlText, normModelName } from './vertex-text.ts'
 
 const HOST = 'https://docs.cloud.google.com'
 const ROOT = '/gemini-enterprise-agent-platform/models/partner-models/claude'
 export const VERTEX_CLAUDE_URL = `${HOST}${ROOT}`
 export const VERTEX_CLAUDE_REQUEST_URL = `${VERTEX_CLAUDE_URL}/use-claude`
+/** Partner-model prices; the Gemini pricing page carries no Claude table. */
+export const VERTEX_CLAUDE_PRICING_URL =
+  'https://cloud.google.com/model-garden/partner-models/pricing'
 
 export function claudeCardPaths(html: string): string[] {
   const article = html.match(/<article\b[\s\S]*?<\/article>/i)?.[0]
@@ -284,10 +286,10 @@ export async function vertexClaudeModels(
         return claudeCardModels(html, url, await sha256Text(html))
       })
     ).flat()
-    const pricesText = await fetchText(VERTEX_PRICING_URL)
+    const pricesText = await fetchText(VERTEX_CLAUDE_PRICING_URL)
     const hash = await sha256Text(pricesText)
     const prices = claudeGlobalPrices(pricesText, {
-      url: VERTEX_PRICING_URL,
+      url: VERTEX_CLAUDE_PRICING_URL,
       hash,
       extractedAt: new Date().toISOString(),
     })
@@ -303,7 +305,7 @@ export async function vertexClaudeModels(
         absent: { pricing: pricing ? undefined : 'cleared' },
         factSources: {
           ...row.factSources,
-          ...tagDocsFacts({ pricing }, VERTEX_PRICING_URL, hash),
+          ...tagDocsFacts({ pricing }, VERTEX_CLAUDE_PRICING_URL, hash),
         },
       })
     }

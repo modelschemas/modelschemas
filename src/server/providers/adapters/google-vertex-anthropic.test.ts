@@ -4,7 +4,6 @@ import {
   VERTEX_CLAUDE_URL,
   VERTEX_CLAUDE_REQUEST_URL,
 } from '../vertex-claude.ts'
-import { VERTEX_PRICING_URL } from '../vertex-pricing.ts'
 
 import { SKIP_REASON, provider } from './google-vertex-anthropic.ts'
 
@@ -27,7 +26,8 @@ describe('google-vertex-anthropic', () => {
     const pages: Record<string, string> = {
       [VERTEX_CLAUDE_URL]: `<article><a href="${path}">Claude Sonnet 4.6</a></article>`,
       [`https://docs.cloud.google.com${path}`]: fixture('sonnet-4-6'),
-      [VERTEX_PRICING_URL]: fixture('global-pricing'),
+      'https://cloud.google.com/model-garden/partner-models/pricing':
+        fixture('global-pricing'),
       [VERTEX_CLAUDE_REQUEST_URL]:
         'Google request examples: :rawPredict with anthropic_version',
     }
