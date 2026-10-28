@@ -3,7 +3,7 @@ import { fetchText, sha256Text } from './types.ts'
 import type { Fetcher } from './us-egress.ts'
 
 export const OPENAI_REALTIME_EFFORT_URL =
-  'https://developers.openai.com/api/docs/guides/realtime-models-prompting.md'
+  'https://developers.openai.com/api/docs/guides/voice-prompting.md'
 export function parseOpenAiRealtimeEfforts(markdown: string): {
   rawId: string
   efforts: string[]
