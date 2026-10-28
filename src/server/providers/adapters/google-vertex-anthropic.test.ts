@@ -51,6 +51,14 @@ describe('google-vertex-anthropic', () => {
       serverTools: null,
     })
     expect(listed.models[0]?.pricing).not.toBeNull()
+    expect(listed.models[0]?.pricing).toMatchObject({
+      source: {
+        url: 'https://cloud.google.com/model-garden/partner-models/pricing',
+      },
+    })
+    expect(listed.models[0]?.factSources?.pricing?.sourceUrl).toBe(
+      'https://cloud.google.com/model-garden/partner-models/pricing',
+    )
     expect(spec.skipped).toBe(SKIP_REASON)
     expect(spec.specs).toEqual([])
     expect(spec.sources[0]?.url).toBe(VERTEX_CLAUDE_REQUEST_URL)
