@@ -41,3 +41,24 @@ it('fails on unavailable own guide', async () => {
   globalThis.fetch = async () => new Response('unavailable', { status: 503 })
   await expect(openaiRealtimeEfforts(['gpt-realtime-2'])).rejects.toThrow('503')
 })
+it('loads the guide from its current path, not the retired one (#521)', async () => {
+  const fetched: string[] = []
+  const fetcher = async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : String(input)
+    fetched.push(url)
+    return url ===
+      'https://developers.openai.com/api/docs/guides/voice-prompting.md'
+      ? new Response(docs.markdown)
+      : new Response('Not Found', { status: 404 })
+  }
+  const result = await openaiRealtimeEfforts(
+    ['gpt-realtime-2'],
+    undefined,
+    undefined,
+    fetcher,
+  )
+  expect(result?.efforts).toEqual(['minimal', 'low', 'medium', 'high', 'xhigh'])
+  expect(fetched).toEqual([
+    'https://developers.openai.com/api/docs/guides/voice-prompting.md',
+  ])
+})
