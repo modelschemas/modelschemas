@@ -5,6 +5,7 @@ import {
   MINIMAX_PRICING_AUDIO_MDX,
   MINIMAX_PRICING_LLM_MDX,
   minimaxPricingHtml,
+  minimaxPricingRscHtml,
 } from './fixtures/minimax-docs.ts'
 import { MINIMAX, MINIMAX_CN, parseMinimaxPricing } from './minimax-docs.ts'
 import type { MinimaxPlatform } from './minimax-docs.ts'
@@ -185,6 +186,22 @@ describe('minimaxPricingSection', () => {
         minimaxPricingHtml(MINIMAX_PRICING_LLM_MDX, MINIMAX_PRICING_LLM_MDX),
       ),
     ).toThrow('minimax: 2 "## LLM" headings, not one')
+  })
+
+  it('reads the module from the RSC payload as served before 2026-10-29', () => {
+    const rsc = minimaxPricingRscHtml(
+      MINIMAX_PRICING_LLM_MDX,
+      MINIMAX_PRICING_AUDIO_MDX,
+    )
+    expect(rsc).not.toContain('data-mint')
+    expect(section(rsc)).toBe(section(EN))
+  })
+
+  it('throws when the manifest holding the module has no compiledSource', () => {
+    const moved = EN.replace('"compiledSource":', '"source":')
+    expect(() => section(moved)).toThrow(
+      "minimax: compiled MDX is not the manifest's page.mdx.mdxSource.compiledSource",
+    )
   })
 
   it('throws when the page has no compiled MDX body', () => {

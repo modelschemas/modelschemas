@@ -3,9 +3,12 @@
  * The `.md` export (#379) and, since 2026-10-21, `llms-full.txt` (#399)
  * render each `<Tab>` title as a bold line and drop the struck list price
  * and its badge, which leaves no way to tell the tiers apart or a standing
- * price from a promotion. The HTML page's RSC payload still embeds the
- * compiled MDX: `self.__next_f.push([1,"…"])`, a JSON string holding the
- * module source, whose `_createMdxContent` returns a JSX tree: values are
+ * price from a promotion. The HTML page still embeds the compiled MDX
+ * module source: since 2026-10-29 (#526) in the Mintlify manifest
+ * (`<template data-mint="manifest">`, JSON with the source at
+ * `page.mdx.mdxSource.compiledSource`), before that in the RSC payload
+ * (`self.__next_f.push([1,"…"])`, a JSON string). Its
+ * `_createMdxContent` returns a JSX tree: values are
  * template literals with no `${…}`, and a key that is not an identifier is
  * a double-quoted string.
  *
@@ -174,9 +177,21 @@ class MdxReader {
   }
 }
 
+/** The `compiledSource` string of a parsed Mintlify manifest, if any. */
+function compiledSource(manifest: unknown): unknown {
+  let value = manifest
+  for (const key of ['page', 'mdx', 'mdxSource', 'compiledSource']) {
+    if (typeof value !== 'object' || value === null) return undefined
+    value = (value as Record<string, unknown>)[key]
+  }
+  return value
+}
+
 /**
- * The module source the page's RSC payload carries as a JSON string.
- * Throws unless exactly one payload chunk holds a `_createMdxContent`.
+ * The module source the page carries: the Mintlify manifest's
+ * `compiledSource` when the compiled MDX is inside that template, else
+ * the RSC payload string holding it. Throws unless exactly one
+ * `_createMdxContent` is on the page.
  */
 function mdxModule(html: string, label: string): string {
   const marker = 'function _createMdxContent('
@@ -185,10 +200,32 @@ function mdxModule(html: string, label: string): string {
   if (html.includes(marker, at + 1)) {
     throw new Error(`${label}: page carries the compiled MDX twice`)
   }
+  const template = '<template data-mint="manifest">'
+  const start = html.lastIndexOf(template, at)
+  const end = start < 0 ? -1 : html.indexOf('</template>', start)
+  if (end > at) {
+    let manifest: unknown
+    try {
+      manifest = JSON.parse(html.slice(start + template.length, end))
+    } catch (error) {
+      throw new Error(`${label}: Mintlify manifest does not parse`, {
+        cause: error,
+      })
+    }
+    const source = compiledSource(manifest)
+    if (typeof source !== 'string' || !source.includes(marker)) {
+      throw new Error(
+        `${label}: compiled MDX is not the manifest's page.mdx.mdxSource.compiledSource`,
+      )
+    }
+    return source
+  }
   const push = 'self.__next_f.push([1,'
   const open = html.lastIndexOf(push, at) + push.length
   if (open < push.length || html[open] !== '"') {
-    throw new Error(`${label}: compiled MDX is not in an RSC payload string`)
+    throw new Error(
+      `${label}: compiled MDX is in neither a Mintlify manifest nor an RSC payload string`,
+    )
   }
   let close = open + 1
   while (close < html.length && html[close] !== '"') {
