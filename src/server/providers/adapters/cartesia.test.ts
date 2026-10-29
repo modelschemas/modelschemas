@@ -2,21 +2,63 @@ import { requestUrl } from '#/lib/text.ts'
 import { describe, expect, it } from 'vitest'
 
 import {
-  CARTESIA_SPEC_FALLBACK_URL,
-  CARTESIA_STATS_URL,
+  CARTESIA_API_INDEX_URL,
   CARTESIA_VERSION,
   CARTESIA_VOICES_URL,
   provider,
 } from './cartesia.ts'
 
-const SPEC_FIXTURE = {
-  openapi: '3.0.1',
-  info: { title: 'Cartesia API', version: '0.0.1' },
-  paths: {
-    '/tts/bytes': { post: { operationId: 'tts_bytes' } },
-    '/stt': { post: { operationId: 'stt_transcribe' } },
-  },
-}
+const PAGE = `https://docs.cartesia.ai/${CARTESIA_VERSION}/api-reference`
+const TTS_PAGE = `${PAGE}/tts/bytes.md`
+const STT_PAGE = `${PAGE}/stt/transcribe.md`
+const WS_PAGE = `${PAGE}/tts/websocket.md`
+
+const INDEX = [
+  `- [TTS](${TTS_PAGE}): Stream audio`,
+  `- [STT](${STT_PAGE})`,
+  `- [TTS WS](${WS_PAGE})`,
+  `- [Old](https://docs.cartesia.ai/api-reference/tts/bytes.md)`,
+  `- [JA](https://docs.cartesia.ai/ja-jp/api-reference/tts/bytes.md)`,
+].join('\n')
+
+const block = (op: string, yaml: string) =>
+  `# Page\n\n## OpenAPI\n\n\`\`\`\`yaml ${CARTESIA_VERSION}/api.yml ${op}\n${yaml}\`\`\`\`\n`
+
+const TTS_MD = block(
+  'POST /tts/bytes',
+  `openapi: 3.0.1
+info:
+  title: Cartesia API
+  version: 0.0.1
+paths:
+  /tts/bytes:
+    post:
+      operationId: tts_bytes
+components:
+  schemas:
+    VoiceId:
+      type: string
+`,
+)
+const STT_MD = block(
+  'POST /stt',
+  `openapi: 3.0.1
+info:
+  title: Cartesia API
+  version: 0.0.1
+paths:
+  /stt:
+    post:
+      operationId: stt_transcribe
+components:
+  schemas:
+    VoiceId:
+      type: string
+    STTModel:
+      type: string
+`,
+)
+const WS_MD = `## AsyncAPI\n\n\`\`\`\`yaml ${CARTESIA_VERSION}/asyncapi.yml /tts/websocket\nasyncapi: 3.0.0\n\`\`\`\`\n`
 
 async function withFetch<T>(
   handler: (url: string, init?: RequestInit) => Response,
@@ -96,53 +138,71 @@ describe('cartesia listModels', () => {
 })
 
 describe('cartesia fetchSpec', () => {
-  it('resolves the Stainless spec URL from .stats.yml', async () => {
-    const specUrl = 'https://example.test/cartesia-openapi.yml'
-    const { result, urls } = await withFetch(
-      (url) => {
-        if (url === CARTESIA_STATS_URL) {
-          return new Response(
-            `configured_endpoints: 50\nopenapi_spec_url: ${specUrl}\n`,
-          )
-        }
-        if (url === specUrl) {
-          return new Response(JSON.stringify(SPEC_FIXTURE), {
-            headers: { 'content-type': 'application/json' },
-          })
-        }
-        return new Response('not found', { status: 404 })
-      },
-      () => provider.fetchSpec({}),
+  const pages = (overrides: Record<string, string> = {}) => {
+    const bodies: Record<string, string> = {
+      [CARTESIA_API_INDEX_URL]: INDEX,
+      [TTS_PAGE]: TTS_MD,
+      [STT_PAGE]: STT_MD,
+      [WS_PAGE]: WS_MD,
+      ...overrides,
+    }
+    return (url: string) =>
+      url in bodies
+        ? new Response(bodies[url])
+        : new Response('not found', { status: 404 })
+  }
+
+  it('merges the versioned API pages into one OpenAPI document', async () => {
+    const { result, urls } = await withFetch(pages(), () =>
+      provider.fetchSpec({}),
     )
-    expect(urls).toEqual([CARTESIA_STATS_URL, specUrl])
-    expect(result.specs).toHaveLength(1)
-    expect(result.sources[0]?.url).toBe(specUrl)
-    expect(result.sources[0]?.hash).toMatch(/^[0-9a-f]{64}$/)
+    expect(urls[0]).toBe(CARTESIA_API_INDEX_URL)
+    expect(urls.slice(1).sort()).toEqual([STT_PAGE, TTS_PAGE, WS_PAGE])
+    const spec = result.specs[0]
+    expect(Object.keys(spec?.paths ?? {}).sort()).toEqual([
+      '/stt',
+      '/tts/bytes',
+    ])
+    expect(spec?.components).toEqual({
+      schemas: { VoiceId: { type: 'string' }, STTModel: { type: 'string' } },
+    })
+    expect(result.sources).toEqual([
+      { url: CARTESIA_API_INDEX_URL, hash: result.specRevision },
+    ])
+    expect(result.specRevision).toMatch(/^[0-9a-f]{64}$/)
     expect(result.outputStrategy).toBe('post-200')
-    expect(result.specRevision).toBe(specUrl)
-    expect(result.warnings).toBeUndefined()
   })
 
-  it('falls back to the last published spec when stats omit the URL', async () => {
-    const { result, urls } = await withFetch(
-      (url) => {
-        if (url === CARTESIA_STATS_URL) {
-          return new Response('configured_endpoints: 50\n')
-        }
-        if (url === CARTESIA_SPEC_FALLBACK_URL) {
-          return new Response(JSON.stringify(SPEC_FIXTURE), {
-            headers: { 'content-type': 'application/json' },
-          })
-        }
-        return new Response('not found', { status: 404 })
-      },
-      () => provider.fetchSpec({}),
+  it('throws when two pages disagree on a component', async () => {
+    const conflicting = STT_MD.replace(
+      'VoiceId:\n      type: string',
+      'VoiceId:\n      type: integer',
     )
-    expect(urls).toEqual([CARTESIA_STATS_URL, CARTESIA_SPEC_FALLBACK_URL])
-    expect(result.sources[0]?.url).toBe(CARTESIA_SPEC_FALLBACK_URL)
-    expect(result.warnings).toEqual([
-      'cartesia: Stainless .stats.yml has no openapi_spec_url — using last published spec',
-    ])
+    await expect(
+      withFetch(pages({ [STT_PAGE]: conflicting }), () =>
+        provider.fetchSpec({}),
+      ),
+    ).rejects.toThrow('components.schemas VoiceId differs between API pages')
+  })
+
+  it('throws when a page fetch fails', async () => {
+    await expect(
+      withFetch(
+        (url) =>
+          url === CARTESIA_API_INDEX_URL
+            ? new Response(INDEX)
+            : new Response('denied', { status: 403 }),
+        () => provider.fetchSpec({}),
+      ),
+    ).rejects.toThrow('403')
+  })
+
+  it('throws when the index lists no versioned pages', async () => {
+    await expect(
+      withFetch(pages({ [CARTESIA_API_INDEX_URL]: '# empty' }), () =>
+        provider.fetchSpec({}),
+      ),
+    ).rejects.toThrow('cartesia: no')
   })
 })
 
