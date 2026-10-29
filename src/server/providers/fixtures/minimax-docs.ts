@@ -492,20 +492,52 @@ export const MINIMAX_CN_PRICING_LLM_MDX =
 export const MINIMAX_PRICING_AUDIO_MDX =
   '_jsxs(`section`,{id:`models/speech`,className:`pricing-section`,children:[_jsx(Heading,{level:`2`,id:`audio`,children:`Audio`}),_jsxs(Table,{children:[_jsx(_components.thead,{children:_jsxs(_components.tr,{children:[_jsx(_components.th,{children:_jsx(_components.strong,{children:`Model`})}),_jsx(_components.th,{children:`Price`})]})}),_jsx(_components.tbody,{children:_jsxs(_components.tr,{children:[_jsx(_components.td,{children:_jsx(_components.strong,{children:`MiniMax-M9`})}),_jsx(_components.td,{children:`$9`})]})})]})]})'
 
-/**
- * A Mintlify page whose RSC payload carries a compiled MDX module, its
- * body a `<div>` around `sections` (compiled JSX source, joined by commas).
- */
-export function minimaxPricingHtml(...sections: Array<string>): string {
-  const source = [
+/** A compiled MDX module whose body is a `<div>` around `sections`. */
+function minimaxPricingModule(sections: Array<string>): string {
+  return [
     '"use strict";const{jsx:_jsx,jsxs:_jsxs}=arguments[0];',
     'function _createMdxContent(props){const _components={a:`a`,code:`code`,del:`del`,li:`li`,ol:`ol`,p:`p`,strong:`strong`,tbody:`tbody`,td:`td`,th:`th`,thead:`thead`,tr:`tr`,ul:`ul`,...props.components},{Accordion,Heading,Info,Tab,Table,Tabs}=_components;',
     `return _jsxs(\`div\`,{id:\`pricing-document\`,children:[${sections.join(',')}]})}`,
     'return{default:_createMdxContent};',
   ].join('')
+}
+
+const PRICING_HEAD =
+  '<!DOCTYPE html><html><head><title>Pricing Overview</title></head><body>'
+
+/**
+ * A Mintlify page as served since 2026-10-29 (#526): the compiled MDX
+ * module (`sections` as compiled JSX source, joined by commas) is the
+ * `page.mdx.mdxSource.compiledSource` string of the
+ * `<template data-mint="manifest">` JSON.
+ */
+export function minimaxPricingHtml(...sections: Array<string>): string {
+  const manifest = {
+    docsConfig: { theme: 'mint', name: 'MiniMax API Docs' },
+    page: {
+      pagePath: 'pricing/overview',
+      mdx: {
+        mdxSource: {
+          compiledSource: minimaxPricingModule(sections),
+          frontmatter: {},
+          scope: {},
+        },
+      },
+    },
+  }
   return [
-    '<!DOCTYPE html><html><head><title>Pricing Overview</title></head><body>',
-    `<script>self.__next_f.push([1,${JSON.stringify(source)}])</script>`,
+    PRICING_HEAD,
+    '<div id="content">Pricing Overview</div>',
+    `<template data-mint="manifest">${JSON.stringify(manifest)}</template>`,
+    '</body></html>',
+  ].join('')
+}
+
+/** The same page as served before 2026-10-29, the module in an RSC payload string. */
+export function minimaxPricingRscHtml(...sections: Array<string>): string {
+  return [
+    PRICING_HEAD,
+    `<script>self.__next_f.push([1,${JSON.stringify(minimaxPricingModule(sections))}])</script>`,
     '</body></html>',
   ].join('')
 }
