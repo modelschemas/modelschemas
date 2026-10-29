@@ -210,7 +210,7 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // hours.
 // v39: Deepgram rates are keyed by the pricing page's OfferCatalog product
 // names (#528). A v38 entry's old keys would leave every row unpriced.
-const DOCS_CACHE_VERSION = 'v39'
+const DOCS_CACHE_VERSION = 'v40'
 
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not

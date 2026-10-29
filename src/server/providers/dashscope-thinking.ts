@@ -16,7 +16,10 @@ interface ThinkingDoc {
     string,
     { hybrid: boolean; budget?: boolean; mandatory?: boolean | null }
   >
-  replay: Array<string>
+  /** Null when the page states no `preserve_thinking` model list. */
+  replay: Array<string> | null
+  /** False when the page states no `thinking_budget` applicability. */
+  budgetScope: boolean
   hash: string
 }
 function ids(text: string): Array<string> {
@@ -122,10 +125,10 @@ export function parseDashscopeThinking(
     !/client needs to provide historical assistant messages/i.test(markdown)
   )
     throw new Error('dashscope thinking: unreadable native replay scope')
-  const replay = replayBlock ? ids(replayBlock) : []
-  if (replayBlock && !replay.length)
+  const replay = replayBlock ? ids(replayBlock) : null
+  if (replay && !replay.length)
     throw new Error('dashscope thinking: empty replay scope')
-  return { models, replay }
+  return { models, replay, budgetScope: budgetScope !== undefined }
 }
 export async function dashscopeThinking(
   kv?: KVNamespace,
@@ -148,8 +151,20 @@ export function applyDashscopeThinking(
 ): ModelInfo {
   if (model.activity !== 'chat') return model
   const stated = doc.models[model.rawId]
-  const replay = doc.replay.includes(model.rawId)
-  if (!stated && !replay) return model
+  const replay = doc.replay?.includes(model.rawId) ?? false
+  // A scope the page no longer states keeps the stored value: the budget
+  // mode of a thinking-only row, and every chat row's request map (the
+  // replay flag lives in it).
+  const kept: ModelInfo['absent'] = {
+    ...(doc.replay === null ? { requestMap: 'unavailable' as const } : {}),
+    ...(stated && !stated.hybrid && !stated.budget && !doc.budgetScope
+      ? { reasoning: 'unavailable' as const }
+      : {}),
+  }
+  const absent = Object.keys(kept).length
+    ? { absent: { ...model.absent, ...kept } }
+    : {}
+  if (!stated && !replay) return { ...model, ...absent }
   if (replay && model.requestMap?.replayReasoningContent === false)
     throw new Error(
       'dashscope: native replay contradicts existing explicit rejection',
@@ -183,6 +198,7 @@ export function applyDashscopeThinking(
   })
   return {
     ...model,
+    ...absent,
     ...(stated
       ? {
           capabilities,
