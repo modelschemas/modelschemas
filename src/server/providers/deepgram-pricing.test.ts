@@ -11,37 +11,70 @@ const SOURCE = {
   extractedAt: '2026-10-03T00:00:00.000Z',
 }
 
-function offers(rows: Array<[string, string]>): string {
-  const ld = rows
-    .map(
-      ([product, amount]) =>
-        `{"@type":"Offer","name":"Deepgram Voice AI Platform Pricing - ${product} - Pay As You Go","price":"${amount}","priceCurrency":"USD"}`,
-    )
-    .join(',')
-  const units = rows
-    .map(([product, amount]) =>
-      product === 'Flux TTS' || product.startsWith('Aura')
-        ? `$${amount}/1k characters`
-        : `$${amount}/min`,
-    )
-    .join(' ')
-  return `${ld} ${units}`
+type Row = [product: string, amount: number, unit?: string]
+
+function offer(product: string, plan: string, amount: number, unit: string) {
+  return {
+    '@type': 'Offer',
+    name: `${product} — ${plan}`,
+    category: plan,
+    price: amount,
+    priceCurrency: 'USD',
+    priceSpecification: {
+      '@type': 'UnitPriceSpecification',
+      price: amount,
+      priceCurrency: 'USD',
+      unitText: unit,
+    },
+  }
 }
 
-const PAGE =
-  offers([
-    ['Streaming - Flux English', '0.0065'],
-    ['Streaming - Flux Multilingual', '0.0078'],
-    ['Streaming - Nova-3 Monolingual', '0.0048'],
-    ['Streaming - Nova-3 Multilingual', '0.0058'],
-    ['Pre-Recorded - Nova-3 Monolingual', '0.0043'],
-    ['Pre-Recorded - Nova-3 Multilingual', '0.0052'],
-    ['Pre-Recorded - Whisper Large', '0.0048'],
-    ['Flux TTS', '0.0450'],
-    ['Aura-2', '0.030'],
-    ['Aura-1', '0.0150'],
-  ]) +
-  '{"@type":"Offer","name":"Deepgram Voice AI Platform Pricing - Streaming - Nova-3 Monolingual - Growth","price":"9.99"}'
+function page(rows: Array<Row>, extra: Array<object> = []): string {
+  const items = rows.map(([product, amount, unit]) =>
+    offer(
+      product,
+      'Pay as you go',
+      amount,
+      unit ??
+        (product.startsWith('Text-to-speech: ')
+          ? '1,000 characters'
+          : 'minute'),
+    ),
+  )
+  const ld = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'OfferCatalog',
+        name: 'Rates by product',
+        itemListElement: [...items, ...extra],
+      },
+    ],
+  }
+  return `<html><script type="application/ld+json">${JSON.stringify(ld)}</script></html>`
+}
+
+const ROWS: Array<Row> = [
+  ['Speech-to-text: Flux STT English (Streaming)', 0.0077],
+  ['Speech-to-text: Flux STT Multilingual (Streaming)', 0.0078],
+  ['Speech-to-text: Nova-3 Monolingual (Streaming)', 0.0048],
+  ['Speech-to-text: Nova-3 Multilingual (Streaming)', 0.0058],
+  ['Speech-to-text: Nova-3 Monolingual (Pre-recorded)', 0.0043],
+  ['Speech-to-text: Nova-3 Multilingual (Pre-recorded)', 0.0052],
+  ['Speech-to-text: Whisper Large (Pre-recorded)', 0.0048],
+  ['Text-to-speech: Flux TTS', 0.045],
+  ['Text-to-speech: Aura-2', 0.03],
+  ['Text-to-speech: Aura-1', 0.015],
+]
+
+const PAGE = page(ROWS, [
+  offer(
+    'Speech-to-text: Nova-3 Monolingual (Streaming)',
+    'Growth',
+    9.99,
+    'minute',
+  ),
+])
 
 function usd(
   card: RateCard | null,
@@ -52,15 +85,24 @@ function usd(
 }
 
 describe('deepgram pricing page', () => {
-  it('reads Pay As You Go family rates and skips a unit the page does not show', () => {
+  it('reads Pay As You Go offers from the JSON-LD catalog, not Growth', () => {
     const rates = parseDeepgramPricing(PAGE)
-    expect(rates.get('Streaming - Flux English')).toBe(0.0065)
-    expect(rates.get('Aura-2')).toBe(0.03)
-    expect(rates.get('Aura-1')).toBe(0.015)
-    expect(rates.get('Streaming - Nova-3 Monolingual')).toBe(0.0048)
-    expect(parseDeepgramPricing(PAGE.replace('$0.0065/min', ''))).toEqual(
-      new Map(),
+    expect(rates.get('Speech-to-text: Flux STT English (Streaming)')).toBe(
+      0.0077,
     )
+    expect(rates.get('Text-to-speech: Aura-2')).toBe(0.03)
+    expect(rates.get('Text-to-speech: Aura-1')).toBe(0.015)
+    expect(rates.get('Speech-to-text: Nova-3 Monolingual (Streaming)')).toBe(
+      0.0048,
+    )
+  })
+
+  it('refuses the page when a required rate carries the wrong unit or is missing', () => {
+    const wrongUnit = ROWS.map((row): Row =>
+      row[0] === 'Text-to-speech: Aura-2' ? [row[0], row[1], 'minute'] : row,
+    )
+    expect(parseDeepgramPricing(page(wrongUnit))).toEqual(new Map())
+    expect(parseDeepgramPricing(page(ROWS.slice(1)))).toEqual(new Map())
   })
 
   it('shares one Aura-2 character rate and prices Nova-3 by mode', () => {
@@ -97,6 +139,6 @@ describe('deepgram pricing page', () => {
       usd(deepgramCard('flux-general-en', rates, SOURCE), {
         audio_seconds: 60,
       }),
-    ).toBeCloseTo(0.0065, 9)
+    ).toBeCloseTo(0.0077, 9)
   })
 })

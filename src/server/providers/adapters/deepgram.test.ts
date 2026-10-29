@@ -9,6 +9,18 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
+function pricingPage(rows: Array<[string, number, string]>): string {
+  const offers = rows.map(([product, price, unitText]) => ({
+    '@type': 'Offer',
+    name: `${product} — Pay as you go`,
+    category: 'Pay as you go',
+    price,
+    priceCurrency: 'USD',
+    priceSpecification: { price, priceCurrency: 'USD', unitText },
+  }))
+  return `<script type="application/ld+json">${JSON.stringify({ '@graph': offers })}</script>`
+}
+
 describe('deepgram provider', () => {
   it('exports seed metadata for auto-registration', () => {
     expect(provider.id).toBe('deepgram')
@@ -55,18 +67,41 @@ describe('deepgram listModels', () => {
       if (String(url) === DEEPGRAM_PRICING_URL) {
         return Promise.resolve(
           new Response(
-            [
-              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Flux English - Pay As You Go","price":"0.0065"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Flux Multilingual - Pay As You Go","price":"0.0078"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Nova-3 Monolingual - Pay As You Go","price":"0.0048"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Streaming - Nova-3 Multilingual - Pay As You Go","price":"0.0058"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Pre-Recorded - Nova-3 Monolingual - Pay As You Go","price":"0.0043"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Pre-Recorded - Nova-3 Multilingual - Pay As You Go","price":"0.0052"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Flux TTS - Pay As You Go","price":"0.0450"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Aura-2 - Pay As You Go","price":"0.030"}',
-              '{"name":"Deepgram Voice AI Platform Pricing - Aura-1 - Pay As You Go","price":"0.0150"}',
-              '$0.0065/min $0.0078/min $0.0048/min $0.0058/min $0.0043/min $0.0052/min $0.0450/1k $0.030/1k $0.0150/1k',
-            ].join(' '),
+            pricingPage([
+              [
+                'Speech-to-text: Flux STT English (Streaming)',
+                0.0065,
+                'minute',
+              ],
+              [
+                'Speech-to-text: Flux STT Multilingual (Streaming)',
+                0.0078,
+                'minute',
+              ],
+              [
+                'Speech-to-text: Nova-3 Monolingual (Streaming)',
+                0.0048,
+                'minute',
+              ],
+              [
+                'Speech-to-text: Nova-3 Multilingual (Streaming)',
+                0.0058,
+                'minute',
+              ],
+              [
+                'Speech-to-text: Nova-3 Monolingual (Pre-recorded)',
+                0.0043,
+                'minute',
+              ],
+              [
+                'Speech-to-text: Nova-3 Multilingual (Pre-recorded)',
+                0.0052,
+                'minute',
+              ],
+              ['Text-to-speech: Flux TTS', 0.045, '1,000 characters'],
+              ['Text-to-speech: Aura-2', 0.03, '1,000 characters'],
+              ['Text-to-speech: Aura-1', 0.015, '1,000 characters'],
+            ]),
           ),
         )
       }
