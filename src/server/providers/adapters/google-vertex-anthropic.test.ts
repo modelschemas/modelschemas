@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { resetGoogleDocsLimit } from '../google-docs.ts'
+import { googleDocsFailures, resetGoogleDocsLimit } from '../google-docs.ts'
 import {
   VERTEX_CLAUDE_URL,
   VERTEX_CLAUDE_REQUEST_URL,
@@ -68,6 +68,7 @@ describe('google-vertex-anthropic', () => {
     const spec = await provider.fetchSpec({})
 
     expect(listed.skipped).toBeUndefined()
+    expect(listed.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
     expect(listed.models).toHaveLength(1)
     expect(listed.models[0]).toMatchObject({
       rawId: 'claude-sonnet-4-6',
@@ -138,6 +139,33 @@ describe('google-vertex-anthropic', () => {
     expect(
       calls.filter((url) => url.includes('docs.cloud.google.com')),
     ).toEqual([VERTEX_CLAUDE_URL])
+    expect(again.docsFailures).toMatchObject({ failed: 1, skipped: 1 })
+    expect(again.docsFailures?.first.map((item) => item.source)).toEqual([
+      `${VERTEX_CLAUDE_URL}#paths`,
+      `https://docs.cloud.google.com${path}`,
+    ])
+
+    resetGoogleDocsLimit()
+    calls.length = 0
+    globalThis.fetch = ((url: string) => {
+      calls.push(String(url))
+      const text = pages[String(url)]
+      if (text === undefined) {
+        throw new Error(`unexpected fetch: ${String(url)}`)
+      }
+      return Promise.resolve(new Response(text))
+    }) as typeof fetch
+    const recovered = await provider.listModels({}, kv)
+    expect(
+      calls.filter((url) => url.includes('docs.cloud.google.com')).length,
+    ).toBeGreaterThan(0)
+    expect(recovered.models[0]?.rawId).toBe('claude-sonnet-4-6')
+    expect(recovered.docsFailures).toEqual({
+      failed: 0,
+      skipped: 0,
+      first: [],
+    })
+    expect(googleDocsFailures()).toEqual(recovered.docsFailures)
   })
   it('fails a source outage rather than returning an empty successful catalog', async () => {
     globalThis.fetch = () =>

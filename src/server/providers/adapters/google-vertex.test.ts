@@ -128,6 +128,7 @@ describe('google-vertex', () => {
     )
 
     expect(listed.skipped).toBeUndefined()
+    expect(listed.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
     expect(model?.displayName).toBe('Gemini 3.1 Pro')
     expect(model?.contextWindow).toBe(1_048_576)
     expect(model?.reasoning).toEqual({

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { fetchText } from './types.ts'
-import { cachedGoogleDocs, resetGoogleDocsLimit } from './google-docs.ts'
+import {
+  cachedGoogleDocs,
+  googleDocsFailures,
+  resetGoogleDocsLimit,
+} from './google-docs.ts'
 import { docsCacheKey } from './model-facts.ts'
 
 const PAGE_A =
@@ -74,6 +78,12 @@ describe('cachedGoogleDocs', () => {
       cachedGoogleDocs(kv, PAGE_B, () => fetchText(PAGE_B)),
     ).resolves.toBe('beta')
     expect(calls).toEqual([PAGE_A])
+    expect(googleDocsFailures()).toMatchObject({ failed: 1, skipped: 1 })
+    expect(googleDocsFailures().first.map((item) => item.source)).toEqual([
+      PAGE_A,
+      PAGE_B,
+    ])
+    expect(googleDocsFailures().first[1]?.elapsedMs).toBe(0)
   })
 
   it('fails the load when a 429 has nothing stored', async () => {
@@ -106,5 +116,50 @@ describe('cachedGoogleDocs', () => {
     await cachedGoogleDocs(kv, PAGE_A, () => fetchText(PAGE_A))
     expect(calls).toBe(1)
     expect(docsCacheKey(PAGE_A)).toMatch(/^docs:v\d+:/)
+    expect(googleDocsFailures()).toEqual({ failed: 0, skipped: 0, first: [] })
+  })
+
+  it('does not store an assembly built from a stale page as a fresh hit', async () => {
+    const { kv, dropFresh } = memoryKv()
+    globalThis.fetch = () => Promise.resolve(ok('page'))
+    await cachedGoogleDocs(kv, PAGE_B, () => fetchText(PAGE_B))
+    await cachedGoogleDocs(kv, PAGE_A, async () => {
+      const inner = await cachedGoogleDocs(kv, PAGE_B, () => fetchText(PAGE_B))
+      return `bundle:${inner}`
+    })
+    dropFresh()
+
+    let calls = 0
+    globalThis.fetch = () => {
+      calls += 1
+      return Promise.resolve(limited())
+    }
+    await expect(
+      cachedGoogleDocs(kv, PAGE_A, async () => {
+        const inner = await cachedGoogleDocs(kv, PAGE_B, () =>
+          fetchText(PAGE_B),
+        )
+        return `bundle:${inner}`
+      }),
+    ).resolves.toBe('bundle:page')
+    expect(calls).toBe(1)
+    expect(googleDocsFailures()).toMatchObject({
+      failed: 1,
+      skipped: 0,
+      first: [{ source: PAGE_B }],
+    })
+
+    resetGoogleDocsLimit()
+    calls = 0
+    globalThis.fetch = ((url: string) => {
+      calls += 1
+      return Promise.resolve(ok(String(url) === PAGE_B ? 'page' : 'index'))
+    }) as typeof fetch
+    await cachedGoogleDocs(kv, PAGE_A, async () => {
+      const inner = await cachedGoogleDocs(kv, PAGE_B, () => fetchText(PAGE_B))
+      return `bundle:${inner}`
+    })
+    expect(calls).toBeGreaterThan(0)
+    expect(googleDocsFailures()).toEqual({ failed: 0, skipped: 0, first: [] })
   })
 })
