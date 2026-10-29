@@ -274,42 +274,60 @@ export function claudeGlobalPrices(
   return out
 }
 
+/**
+ * Each page is its own KV entry (issue #516): docs.cloud.google.com
+ * rate-limits Workers egress, and one 429 should cost a refetch of that
+ * page, not of every page the poll already read. The keys carry a `#`
+ * suffix so a pre-#516 whole-catalog entry under the bare URL is never
+ * read back as one of these.
+ */
 export async function vertexClaudeModels(
   kv?: KVNamespace,
 ): Promise<ModelInfo[]> {
-  return cachedDocs(kv, VERTEX_CLAUDE_URL, async () => {
-    const paths = claudeCardPaths(await fetchText(VERTEX_CLAUDE_URL))
-    const rows = (
-      await mapConcurrent(paths, 6, async (path) => {
-        const url = `${HOST}${path}`
+  const paths = await cachedDocs(kv, `${VERTEX_CLAUDE_URL}#paths`, async () =>
+    claudeCardPaths(await fetchText(VERTEX_CLAUDE_URL)),
+  )
+  const rows = (
+    await mapConcurrent(paths, 6, (path) => {
+      const url = `${HOST}${path}`
+      return cachedDocs(kv, `${url}#models`, async () => {
         const html = await fetchText(url)
         return claudeCardModels(html, url, await sha256Text(html))
       })
-    ).flat()
-    const pricesText = await fetchText(VERTEX_CLAUDE_PRICING_URL)
-    const hash = await sha256Text(pricesText)
-    const prices = claudeGlobalPrices(pricesText, {
-      url: VERTEX_CLAUDE_PRICING_URL,
-      hash,
-      extractedAt: new Date().toISOString(),
     })
-    const byId = new Map<string, ModelInfo>()
-    for (const row of rows) {
-      const pricing =
-        prices.get(
-          normModelName((row.displayName ?? '').replace(/^Claude\s+/i, '')),
-        ) ?? null
-      byId.set(row.rawId, {
-        ...row,
-        pricing,
-        absent: { pricing: pricing ? undefined : 'cleared' },
-        factSources: {
-          ...row.factSources,
-          ...tagDocsFacts({ pricing }, VERTEX_CLAUDE_PRICING_URL, hash),
-        },
+  ).flat()
+  const priced = await cachedDocs(
+    kv,
+    `${VERTEX_CLAUDE_PRICING_URL}#claude-global`,
+    async () => {
+      const text = await fetchText(VERTEX_CLAUDE_PRICING_URL)
+      const hash = await sha256Text(text)
+      const cards = claudeGlobalPrices(text, {
+        url: VERTEX_CLAUDE_PRICING_URL,
+        hash,
+        extractedAt: new Date().toISOString(),
       })
-    }
-    if (!byId.size) throw new Error('vertex claude: empty catalog')
-    return [...byId.values()]
-  })
+      return { hash, cards: Object.fromEntries(cards) }
+    },
+  )
+  const prices = new Map(Object.entries(priced.cards))
+  const hash = priced.hash
+  const byId = new Map<string, ModelInfo>()
+  for (const row of rows) {
+    const pricing =
+      prices.get(
+        normModelName((row.displayName ?? '').replace(/^Claude\s+/i, '')),
+      ) ?? null
+    byId.set(row.rawId, {
+      ...row,
+      pricing,
+      absent: { pricing: pricing ? undefined : 'cleared' },
+      factSources: {
+        ...row.factSources,
+        ...tagDocsFacts({ pricing }, VERTEX_CLAUDE_PRICING_URL, hash),
+      },
+    })
+  }
+  if (!byId.size) throw new Error('vertex claude: empty catalog')
+  return [...byId.values()]
 }

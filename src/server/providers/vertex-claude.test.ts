@@ -1,10 +1,13 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { price } from '@modelschemas/rate-card'
 import {
   claudeCardModels,
   claudeCardPaths,
   claudeGlobalPrices,
+  VERTEX_CLAUDE_PRICING_URL,
+  VERTEX_CLAUDE_URL,
+  vertexClaudeModels,
 } from './vertex-claude.ts'
 import { normModelName } from './vertex-text.ts'
 
@@ -116,5 +119,48 @@ describe('Google native Claude sources', () => {
     // The native Global table leaves Opus 5.5's long input cell blank while
     // publishing other long-context prices. It supplies no complete card.
     expect(claudeGlobalPrices(prices, source).has('opus 5 5')).toBe(false)
+  })
+})
+
+describe('vertexClaudeModels cache', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('keeps the pages it read when a later page answers 429 (#516)', async () => {
+    const stored = new Map<string, string>()
+    const kv = {
+      get: async (key: string) => stored.get(key) ?? null,
+      put: async (key: string, value: string) => {
+        stored.set(key, value)
+      },
+    } as unknown as KVNamespace
+    const cardUrl = `${VERTEX_CLAUDE_URL}/sonnet-4-6`
+    let pricingStatus = 429
+    const fetched: string[] = []
+    vi.stubGlobal('fetch', async (url: string) => {
+      fetched.push(url)
+      if (url === VERTEX_CLAUDE_URL)
+        return new Response(
+          `<article><a href="${new URL(cardUrl).pathname}">Sonnet</a></article>`,
+        )
+      if (url === cardUrl) return new Response(card)
+      if (url === VERTEX_CLAUDE_PRICING_URL)
+        return new Response(pricingStatus === 200 ? prices : 'slow down', {
+          status: pricingStatus,
+        })
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    await expect(vertexClaudeModels(kv)).rejects.toThrow('429')
+    pricingStatus = 200
+    const rows = await vertexClaudeModels(kv)
+
+    expect(fetched).toEqual([
+      VERTEX_CLAUDE_URL,
+      cardUrl,
+      VERTEX_CLAUDE_PRICING_URL,
+      VERTEX_CLAUDE_PRICING_URL,
+    ])
+    expect(rows[0]?.rawId).toBe('claude-sonnet-4-6')
+    expect(rows[0]?.pricing).not.toBeNull()
   })
 })
