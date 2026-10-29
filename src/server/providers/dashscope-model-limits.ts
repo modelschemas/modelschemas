@@ -13,7 +13,9 @@ const PAGE_ORIGIN = 'https://www.alibabacloud.com/help/en/model-studio'
 /**
  * alibabacloud.com answered the Worker's bare fetch with an HTML page from
  * 2026-10-07 (issue #256); workerd sends no User-Agent or Accept. These
- * match a browser's fetch of the `.md` URL.
+ * match a browser's fetch of the `.md` URL. Since 2026-10-27 the portal
+ * serves the rendered page to every client (issue #520); `dashscopeDocText`
+ * reads either answer.
  */
 export const DASHSCOPE_DOCS_INIT: RequestInit = {
   headers: {
@@ -73,7 +75,7 @@ function htmlRows(section: string): Array<Array<string>> {
   const table = section.match(/<table[\s\S]*?<\/table>/i)?.[0]
   if (!table) return []
   const rows: Array<Array<string>> = []
-  for (const row of table.matchAll(/<tr>([\s\S]*?)<\/tr>/gi)) {
+  for (const row of table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const rowHtml = row[1]
     if (!rowHtml) continue
     const cells = [
@@ -143,14 +145,89 @@ export function parseDashscopeModelLimits(
   return models
 }
 
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&#x27;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCodePoint(Number(code)),
+    )
+    .replace(/&amp;/g, '&')
+}
+
+function inlineText(html: string): string {
+  return decodeEntities(html.replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 /**
- * Throws when a Model Studio `.md` URL answered with an HTML page. The
- * error carries the page title and the first 200 characters, so the next
- * failure shows what Alibaba served (challenge, region notice).
+ * The rendered help page's article, back in the shape the `.md` URL used
+ * to serve: headings become `#` lines, `<code>` backticks, `<pre>` fences,
+ * block elements line breaks. Tables stay HTML; the parsers read those as
+ * the markdown carried them.
  */
-export function assertDashscopeMarkdown(body: string, label: string): void {
+function articleText(article: string): string {
+  const tables: Array<string> = []
+  const text = article
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, '')
+    .replace(
+      /<table\b[\s\S]*?<\/table>/gi,
+      (table) => `\n\uE000${String(tables.push(table) - 1)}\uE000\n`,
+    )
+    .replace(
+      /<pre\b[^>]*>([\s\S]*?)<\/pre>/gi,
+      (_, code: string) =>
+        `\n\`\`\`\n${decodeEntities(code.replace(/<[^>]+>/g, ''))}\n\`\`\`\n`,
+    )
+    .replace(
+      /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi,
+      (_, level: string, inner: string) =>
+        `\n${'#'.repeat(Number(level))} ${inlineText(inner)}\n`,
+    )
+    .replace(
+      /<code\b[^>]*>([\s\S]*?)<\/code>/gi,
+      (_, inner: string) => `\`${inner.replace(/<[^>]+>/g, '')}\``,
+    )
+    .replace(
+      /<\/?(?:p|li|ul|ol|div|section|blockquote|br|dd|dt)\b[^>]*>/gi,
+      '\n',
+    )
+    .replace(/<[^>]+>/g, '')
+  return `${decodeEntities(text)
+    .replace(
+      /\uE000(\d+)\uE000/g,
+      (_, index: string) => tables[Number(index)] ?? '',
+    )
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()}\n`
+}
+
+/**
+ * The text the Model Studio parsers read: the body itself when it is
+ * markdown, or the article of a rendered help page (issue #520) turned
+ * back into that shape, under the page's h1 (`<product>:<title>`, outside
+ * the article) as the markdown's `#` title. Throws on an HTML page with no
+ * article (a challenge or an error page), naming its title and first 200
+ * characters so the next failure shows what Alibaba served.
+ */
+export function dashscopeDocText(body: string, label: string): string {
   const text = body.trimStart()
-  if (!text.startsWith('<')) return
+  if (!text.startsWith('<')) return body
+  const article = text.match(
+    /<article\b[^>]*\bmarkdown-body\b[^>]*>([\s\S]*?)<\/article>/i,
+  )?.[1]
+  if (article) {
+    const h1 = text.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1]
+    const heading = h1
+      ? `# ${inlineText(h1).replace(/^Alibaba Cloud Model Studio:/, '')}\n\n`
+      : ''
+    return heading + articleText(article)
+  }
   const title = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim()
   const head = text.slice(0, 200).replace(/\s+/g, ' ')
   throw new Error(
@@ -161,9 +238,9 @@ export function assertDashscopeMarkdown(body: string, label: string): void {
 }
 
 export async function loadDashscopeModelLimits(
-  markdown: string,
+  body: string,
 ): Promise<DashscopeLimitsDoc> {
-  assertDashscopeMarkdown(markdown, 'dashscope model page')
+  const markdown = dashscopeDocText(body, 'dashscope model page')
   return {
     sourceHash: await sha256Text(markdown),
     models: parseDashscopeModelLimits(markdown),

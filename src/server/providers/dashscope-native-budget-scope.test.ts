@@ -52,11 +52,31 @@ it('does not derive budget scope from code examples or malformed scope declarati
       ),
     ),
   ).toThrow()
-  expect(() =>
-    parseDashscopeThinking(
-      text.replace(/ {2}`thinking_budget`Parameter[^\n]+/, '```\n$&\n```'),
-    ),
-  ).toThrow()
+  const fenced = parseDashscopeThinking(
+    text.replace(/ {2}`thinking_budget`Parameter[^\n]+/, '```\n$&\n```'),
+  )
+  expect(Object.values(fenced.models).some((model) => model.budget)).toBe(false)
+})
+
+it('states no budget or replay scope once the page drops both tips (2026-10-27)', () => {
+  const text = docs[DASHSCOPE_THINKING_URL]
+    .replace(/<Tip>\s*`thinking_budget`Parameter[\s\S]*?<\/Tip>/, '')
+    .replace(/<Tip>\s*`preserve_thinking`This Parameter[\s\S]*?<\/Tip>/, '')
+  expect(text).not.toMatch(/Applicable to|This Parameter only supports/)
+  const parsed = parseDashscopeThinking(text)
+  expect(parsed.replay).toEqual([])
+  expect(Object.values(parsed.models).some((model) => model.budget)).toBe(false)
+  const doc = { ...parsed, hash: 'source' }
+  expect(
+    applyDashscopeThinking({ rawId: 'qwen3.7-max', activity: 'chat' }, doc)
+      .reasoning,
+  ).toEqual({ mode: 'toggle', mandatory: false })
+  const only = applyDashscopeThinking(
+    { rawId: 'qwen3.7-max-preview', activity: 'chat' },
+    doc,
+  )
+  expect(only.reasoning).toBeUndefined()
+  expect(only.capabilities).toEqual(['reasoning'])
 })
 
 it('rejects negated native budget applicability and thinking-only declarations', () => {

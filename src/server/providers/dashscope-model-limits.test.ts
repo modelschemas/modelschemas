@@ -1,10 +1,18 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import {
+  dashscopeDocText,
   dashscopeModelPageUrl,
   loadDashscopeModelLimits,
   parseDashscopeModelLimits,
 } from './dashscope-model-limits.ts'
+
+/** The rendered qwen3-omni-flash.md page, fetched 2026-10-29 (issue #520). */
+const OMNI_PAGE = readFileSync(
+  new URL('./fixtures/dashscope/qwen3-omni-flash.html', import.meta.url),
+  'utf8',
+)
 
 /** Context limits from qwen3-omni-flash.md, checked 2026-10-08. */
 const OMNI_FIXTURE = `# qwen3-omni-flash
@@ -85,6 +93,56 @@ describe('dashscope model limits', () => {
     expect(() => parseDashscopeModelLimits('# qwen-plus\n\nno table')).toThrow(
       /parsed 0 context-limit rows/,
     )
+  })
+
+  it('reads the rendered help page the .md URL serves since 2026-10-27', async () => {
+    const doc = await loadDashscopeModelLimits(OMNI_PAGE)
+    expect(doc.models).toEqual({
+      'qwen3-omni-flash': { contextWindow: 65536, maxOutput: 16384 },
+    })
+    // The page's traceid changes per request; the hash covers the article.
+    expect(doc.sourceHash).toBe(
+      (
+        await loadDashscopeModelLimits(
+          OMNI_PAGE.replace(/traceid="[^"]*"/, 'traceid="other"'),
+        )
+      ).sourceHash,
+    )
+  })
+
+  it('turns the article back into the markdown shape, keeping tables', () => {
+    const page = `<!DOCTYPE html><html traceid="x"><head><title>t</title></head><body>
+<h1 class="page-title">Alibaba Cloud Model Studio:qwen-plus</h1>
+<article class="product-description markdown-body"><div>
+<p>Use the <code>thinking_budget</code> parameter &amp; see <a href="/x">docs</a>.</p>
+<h2 id="s">Supported Models <span id="a"></span></h2>
+<section><h4>Qwen3</h4><ul><li><strong>Plus</strong> (Hybrid thinking mode): qwen-plus, qwen-plus-latest</li></ul></section>
+<pre class="pre codeblock"><code>model=&quot;qwen-plus&quot;</code></pre>
+<h2>Context Limits</h2>
+<table><tbody><tr><td><p>Context Window</p></td><td><p>1,000,000</p></td></tr></tbody></table>
+</div></article><div class="nav-footer"><h2>Feedback</h2></div></body></html>`
+    expect(dashscopeDocText(page, 'x')).toBe(`# qwen-plus
+
+Use the \`thinking_budget\` parameter & see docs.
+
+## Supported Models
+
+#### Qwen3
+
+Plus (Hybrid thinking mode): qwen-plus, qwen-plus-latest
+
+\`\`\`
+model="qwen-plus"
+\`\`\`
+
+## Context Limits
+
+<table><tbody><tr><td><p>Context Window</p></td><td><p>1,000,000</p></td></tr></tbody></table>
+`)
+    expect(parseDashscopeModelLimits(dashscopeDocText(page, 'x'))).toEqual({
+      'qwen-plus': { contextWindow: 1000000, maxOutput: null },
+    })
+    expect(dashscopeDocText('# md\n', 'x')).toBe('# md\n')
   })
 
   it('rejects an HTML shell', async () => {

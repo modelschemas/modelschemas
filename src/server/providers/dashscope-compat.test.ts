@@ -109,6 +109,23 @@ describe('parseDashscopeCompat', () => {
     )
   })
 
+  it('reads the same facts from the rendered page', async () => {
+    const page = `<!DOCTYPE html><html><head><title>Call Qwen models via OpenAI API</title></head><body>
+<h1 class="page-title">Alibaba Cloud Model Studio:Call Qwen models via OpenAI API</h1>
+<article class="product-description markdown-body">${COMPAT_FIXTURE.replace(
+      /^## (.+)$/gm,
+      '<h3 id="x">$1 <span id="y"></span></h3>',
+    )
+      .split('\n\n')
+      .map((block) => (block.startsWith('<') ? block : `<p>${block}</p>`))
+      .join('')}</article></body></html>`
+    const fromPage = await parseDashscopeCompat(page)
+    const fromMarkdown = await parseDashscopeCompat(COMPAT_FIXTURE)
+    expect(fromPage.flags).toEqual(fromMarkdown.flags)
+    expect(fromPage.requestMap).toEqual(fromMarkdown.requestMap)
+    expect(fromPage.scope).toEqual(fromMarkdown.scope)
+  })
+
   it('names an HTML page as HTML, with its title', async () => {
     await expect(
       parseDashscopeCompat(

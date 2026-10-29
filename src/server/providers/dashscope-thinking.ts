@@ -3,7 +3,7 @@ import { isCapabilityMap } from '#/lib/capabilities.ts'
 
 import {
   DASHSCOPE_DOCS_INIT,
-  assertDashscopeMarkdown,
+  dashscopeDocText,
 } from './dashscope-model-limits.ts'
 import { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
@@ -48,17 +48,20 @@ export function parseDashscopeThinking(
     )
   )
     throw new Error('dashscope thinking: negated native budget declaration')
+  // Until 2026-10-27 a tip named the `thinking_budget` families; the page
+  // now points at the Chat Completions reference instead. No tip states no
+  // budget scope: thinking-only models then get no reasoning mode.
   const budgetScope = budgetLine?.match(
     /Applicable to ([^\n]+?) series models\./,
   )?.[1]
-  if (!budgetScope)
+  if (budgetLine && !budgetScope)
     throw new Error('dashscope thinking: missing native thinking-budget scope')
-  const budgetFamilies = budgetScope
+  const budgetFamilies = (budgetScope ?? '')
     .split(/,|\band\b/)
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
   if (
-    !budgetFamilies.length ||
+    (budgetScope && !budgetFamilies.length) ||
     budgetFamilies.some((value) => !/^[a-z0-9.-]+$/.test(value))
   )
     throw new Error('dashscope thinking: malformed native budget families')
@@ -109,16 +112,19 @@ export function parseDashscopeThinking(
   }
   if (!Object.keys(models).length)
     throw new Error('dashscope thinking: parsed zero native model IDs')
+  // The same date dropped the `preserve_thinking` model list; without it
+  // the page states no replay scope.
   const replayBlock = markdown.match(
     /`preserve_thinking`This Parameter only supports ([^\n]+)/,
   )?.[1]
   if (
-    !replayBlock ||
+    replayBlock &&
     !/client needs to provide historical assistant messages/i.test(markdown)
   )
     throw new Error('dashscope thinking: unreadable native replay scope')
-  const replay = ids(replayBlock)
-  if (!replay.length) throw new Error('dashscope thinking: empty replay scope')
+  const replay = replayBlock ? ids(replayBlock) : []
+  if (replayBlock && !replay.length)
+    throw new Error('dashscope thinking: empty replay scope')
   return { models, replay }
 }
 export async function dashscopeThinking(
@@ -126,11 +132,10 @@ export async function dashscopeThinking(
   cached: typeof cachedDocs = cachedDocs,
 ) {
   return cached(kv, `${DASHSCOPE_THINKING_URL}#model-thinking`, async () => {
-    const markdown = await fetchText(
-      DASHSCOPE_THINKING_URL,
-      DASHSCOPE_DOCS_INIT,
+    const markdown = dashscopeDocText(
+      await fetchText(DASHSCOPE_THINKING_URL, DASHSCOPE_DOCS_INIT),
+      'dashscope thinking',
     )
-    assertDashscopeMarkdown(markdown, 'dashscope thinking')
     return {
       ...parseDashscopeThinking(markdown),
       hash: await sha256Text(markdown),
