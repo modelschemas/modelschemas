@@ -1,6 +1,10 @@
 /**
- * Cartesia — real-time TTS/STT. Official OpenAPI is Stainless-hosted;
- * cartesia-python `.stats.yml` exposes `openapi_spec_url` when present.
+ * Cartesia — real-time TTS/STT. The OpenAPI URL is `openapi_spec_url` in
+ * cartesia-python `.stats.yml` when Stainless publishes one. There is no
+ * fallback: the old GCS object is private (403), and docs.cartesia.ai
+ * OpenAPI URLs redirect to a login even with `CARTESIA_API_KEY`
+ * (issue #523). A missing URL throws, so spec sync stays degraded and the
+ * last stored schemas keep being served.
  * Voices stand in for models. Requests need a Cartesia-Version header.
  *
  * No per-voice USD rate. https://docs.cartesia.ai/pricing meters credits
@@ -12,7 +16,13 @@
 import type { Activity } from '#/db/schema.ts'
 import { normalizeMediaModalities } from '../media-modalities.ts'
 import { isoToEpochSeconds } from '../release-dates.ts'
-import { fetchJson, fetchOpenApi, fetchText, skippedResult } from '../types.ts'
+import {
+  fetchJson,
+  fetchOpenApi,
+  fetchText,
+  skippedResult,
+  stainlessSpecUrlFromStats,
+} from '../types.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -22,12 +32,6 @@ import type {
 
 export const CARTESIA_STATS_URL =
   'https://raw.githubusercontent.com/cartesia-ai/cartesia-python/main/.stats.yml'
-/**
- * Last published Stainless spec (hash-stamped GCS). Used when `.stats.yml`
- * no longer lists `openapi_spec_url` (current file is endpoints-only).
- */
-export const CARTESIA_SPEC_FALLBACK_URL =
-  'https://storage.googleapis.com/stainless-sdk-openapi-specs/cartesia-noahlt/noah-testing-f9cc29df072fe2838347fe9845e6384708bec9c3937ad7a63c3e72650c1bd891.yml'
 export const CARTESIA_VOICES_URL = 'https://api.cartesia.ai/voices'
 export const CARTESIA_VERSION = '2026-03-01'
 
@@ -53,36 +57,18 @@ function classify(path: string): Activity | null {
   return null
 }
 
-function specUrlFromStats(text: string): string | null {
-  const match = text.match(/^openapi_spec_url:\s*(.+)$/m)
-  const url = match?.[1]?.trim()
-  return url && url.startsWith('https://') ? url : null
-}
-
-async function resolveSpecUrl(): Promise<{ url: string; warning?: string }> {
-  try {
-    const text = await fetchText(CARTESIA_STATS_URL)
-    const url = specUrlFromStats(text)
-    if (url) return { url }
-  } catch {
-    // Fall through to the last published official spec.
-  }
-  return {
-    url: CARTESIA_SPEC_FALLBACK_URL,
-    warning:
-      'cartesia: Stainless .stats.yml has no openapi_spec_url — using last published spec',
-  }
-}
-
 async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
-  const { url, warning } = await resolveSpecUrl()
+  const text = await fetchText(CARTESIA_STATS_URL)
+  const url = stainlessSpecUrlFromStats(text, 'cartesia')
+  if (!url.startsWith('https://')) {
+    throw new Error('cartesia .stats.yml: openapi_spec_url is not https')
+  }
   const { spec, hash } = await fetchOpenApi(url)
   return {
     specs: [spec],
     sources: [{ url, hash }],
     outputStrategy: 'post-200',
     specRevision: url,
-    warnings: warning ? [warning] : undefined,
   }
 }
 

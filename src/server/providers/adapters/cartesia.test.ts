@@ -2,7 +2,6 @@ import { requestUrl } from '#/lib/text.ts'
 import { describe, expect, it } from 'vitest'
 
 import {
-  CARTESIA_SPEC_FALLBACK_URL,
   CARTESIA_STATS_URL,
   CARTESIA_VERSION,
   CARTESIA_VOICES_URL,
@@ -123,26 +122,44 @@ describe('cartesia fetchSpec', () => {
     expect(result.warnings).toBeUndefined()
   })
 
-  it('falls back to the last published spec when stats omit the URL', async () => {
-    const { result, urls } = await withFetch(
-      (url) => {
-        if (url === CARTESIA_STATS_URL) {
-          return new Response('configured_endpoints: 50\n')
-        }
-        if (url === CARTESIA_SPEC_FALLBACK_URL) {
-          return new Response(JSON.stringify(SPEC_FIXTURE), {
-            headers: { 'content-type': 'application/json' },
-          })
-        }
-        return new Response('not found', { status: 404 })
-      },
-      () => provider.fetchSpec({}),
-    )
-    expect(urls).toEqual([CARTESIA_STATS_URL, CARTESIA_SPEC_FALLBACK_URL])
-    expect(result.sources[0]?.url).toBe(CARTESIA_SPEC_FALLBACK_URL)
-    expect(result.warnings).toEqual([
-      'cartesia: Stainless .stats.yml has no openapi_spec_url — using last published spec',
-    ])
+  it('throws when .stats.yml has no openapi_spec_url and fetches nothing else', async () => {
+    const urls: Array<string> = []
+    const original = globalThis.fetch
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      const href = requestUrl(input)
+      urls.push(href)
+      if (href === CARTESIA_STATS_URL) {
+        return Promise.resolve(new Response('configured_endpoints: 53\n'))
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    }
+    try {
+      await expect(provider.fetchSpec({})).rejects.toThrow(
+        /cartesia \.stats\.yml: couldn't find openapi_spec_url/,
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+    expect(urls).toEqual([CARTESIA_STATS_URL])
+  })
+
+  it('throws when openapi_spec_url is not https', async () => {
+    const urls: Array<string> = []
+    const original = globalThis.fetch
+    globalThis.fetch = (input: RequestInfo | URL) => {
+      urls.push(requestUrl(input))
+      return Promise.resolve(
+        new Response('openapi_spec_url: http://example.test/spec.yml\n'),
+      )
+    }
+    try {
+      await expect(provider.fetchSpec({})).rejects.toThrow(
+        /openapi_spec_url is not https/,
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+    expect(urls).toEqual([CARTESIA_STATS_URL])
   })
 })
 
