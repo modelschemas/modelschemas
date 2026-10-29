@@ -209,10 +209,12 @@ export function parsePerplexityModelsPage(markdown: string): {
 /**
  * Flags the effort page (named "presets" before 2026-10-22) states in its
  * "current effort level values" accordions: each effort level names its
- * model, the `reasoning.effort` it sends, and its tools. A model a level
- * runs with an effort takes `reasoning.effort`; one it runs with tools
- * takes `tools`. The page says nothing of `tool_choice`, and nothing of a
- * level's fallback model beyond its name.
+ * model, the `reasoning.effort` it sends, and its tools, except a level
+ * that says it has no frozen configuration, which names none. A model a
+ * level runs with an effort takes `reasoning.effort`; one it runs with
+ * tools takes `tools`. The page says nothing of `tool_choice`. A level's
+ * fallback model gets no flags: the frozen request sends it the level's
+ * settings, but the page never says the fallback accepts them.
  */
 export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
   const stated: StatedFlags = new Map()
@@ -223,11 +225,11 @@ export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
   const start = markdown.search(/^> \*\*[^\n]*current effort level values/m)
   const run = start < 0 ? '' : (markdown.slice(start).split(/^## /m)[0] ?? '')
   for (const block of run === '' ? [] : run.trim().split(/\n\n+/)) {
-    const quoted =
-      /^> \*\*[^*\n]* — current effort level values\*\*\n((?:>.*(?:\n|$))*)$/.exec(
+    const [, level, quoted] =
+      /^> \*\*([^*\n]*) — current effort level values\*\*\n((?:>.*(?:\n|$))*)$/.exec(
         block,
-      )?.[1]
-    if (quoted === undefined) {
+      ) ?? []
+    if (level === undefined || quoted === undefined) {
       throw new Error(
         'perplexity: effort level accordion is in an unread shape',
       )
@@ -257,14 +259,11 @@ export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
               several ?? '',
             )?.[1]
     if (!model) {
-      // A level with no frozen configuration (`ultra-preview`) names no
-      // model and states nothing.
+      // A level that says it has no frozen configuration (`ultra-preview`)
+      // names no model. Any bullet on it is a setting this does not read.
       if (
-        single === null &&
-        several === null &&
-        effort === null &&
-        tools === null &&
-        /^`[^`\s]+` has no frozen configuration\./m.test(body)
+        !/^\* \*\*/m.test(body) &&
+        body.includes(`\`${level}\` has no frozen configuration.`)
       ) {
         continue
       }

@@ -294,27 +294,33 @@ describe('parsePerplexityEffortLevels', () => {
     ])
   })
 
-  // As served on 2026-10-29: `fast` and `xhigh` name a fallback model,
-  // and `ultra-preview` names no model at all.
+  // The change served on 2026-10-29, trimmed like EFFORT_DOC: `fast` and
+  // `xhigh` name a fallback model, and `ultra-preview` names no model (its
+  // code samples are cut).
   const FALLBACK_DOC = EFFORT_DOC.replace(
     '> * **Model:** `openai/gpt-6-luna`\n> * **Prompt cache key:** `fast`',
     '> * **Models:** `openai/gpt-6-luna`, with `openai/gpt-5.6-luna` as the [fallback model](https://docs.perplexity.ai/docs/agent-api/model-fallback.md)\n> * **Prompt cache key:** `fast`',
-  ).replace(
-    '\n## Next Steps',
-    [
-      '',
-      '> **ultra-preview — current effort level values**',
-      '>',
-      '> Broad research and data-gathering tasks where coverage matters most.',
-      '>',
-      '> `ultra-preview` has no frozen configuration. Its settings are not all part of the documented request schema, so call it by name.',
-      '',
-      '## Next Steps',
-    ].join('\n'),
   )
+    .replace(
+      '> * **Model:** `anthropic/claude-opus-5-5`',
+      '> * **Models:** `anthropic/claude-opus-5-5`, with `openai/gpt-6.1-sol` as the [fallback model](https://docs.perplexity.ai/docs/agent-api/model-fallback.md)',
+    )
+    .replace(
+      '\n## Next Steps',
+      [
+        '',
+        '> **ultra-preview — current effort level values**',
+        '>',
+        '> Broad research and data-gathering tasks where coverage matters most.',
+        '>',
+        '> `ultra-preview` has no frozen configuration. Its settings are not all part of the documented request schema, so call it by name.',
+        '',
+        '## Next Steps',
+      ].join('\n'),
+    )
 
   it("reads the first of a level's models, and skips a level with no frozen configuration", () => {
-    expect(FALLBACK_DOC).toContain('**Models:**')
+    expect(FALLBACK_DOC.match(/\*\*Models:\*\*/g)).toHaveLength(2)
     expect(FALLBACK_DOC).toContain('ultra-preview')
     expect([...parsePerplexityEffortLevels(FALLBACK_DOC)]).toEqual([
       ['openai/gpt-6-luna', ['reasoning', 'reasoning_effort', 'tools']],
@@ -331,7 +337,17 @@ describe('parsePerplexityEffortLevels', () => {
     [
       'a model-less level that states a setting',
       '> `ultra-preview` has no',
-      '> * **Tools:** `web_search`\n>\n> `ultra-preview` has no',
+      '> * **Max steps:** 300\n>\n> `ultra-preview` has no',
+    ],
+    [
+      'a model-less level that does not say it has no frozen configuration',
+      'has no frozen configuration.',
+      'is in preview.',
+    ],
+    [
+      "a model-less level quoting another level's frozen configuration",
+      '> `ultra-preview` has no',
+      '> `fast` has no',
     ],
     [
       'both a Model and a Models bullet',
@@ -342,7 +358,7 @@ describe('parsePerplexityEffortLevels', () => {
     const mutated = FALLBACK_DOC.replace(from, to)
     expect(mutated).not.toBe(FALLBACK_DOC)
     expect(() => parsePerplexityEffortLevels(mutated)).toThrow(
-      'perplexity: effort',
+      'perplexity: effort level names no model',
     )
   })
 
