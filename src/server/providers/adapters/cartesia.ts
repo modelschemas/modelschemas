@@ -35,6 +35,7 @@ const BLOCK_RE = new RegExp(
   `^\`{4}yaml ${CARTESIA_VERSION}/api\\.yml [^\\n]*\\n([\\s\\S]*?)^\`{4}$`,
   'm',
 )
+const ASYNCAPI_MARKER = `\`\`\`\`yaml ${CARTESIA_VERSION}/asyncapi.yml `
 
 function pathMatches(path: string, prefix: string): boolean {
   const bare = path.split('?')[0] ?? path
@@ -42,8 +43,10 @@ function pathMatches(path: string, prefix: string): boolean {
 }
 
 /**
- * Generation surface is TTS, STT, infill, and voice-changer. Agents, voice
- * library admin, datasets, fine-tunes, files, and auth classify null.
+ * Generation surface is TTS, STT, and infill (the 2026-03-01 docs no
+ * longer list voice-changer; the match stays for older stored rows).
+ * Agents, voice library admin, datasets, fine-tunes, files, and auth
+ * classify null.
  */
 function classify(path: string): Activity | null {
   if (
@@ -59,7 +62,7 @@ function classify(path: string): Activity | null {
 }
 
 /** The versioned API-reference page URLs listed in the API index. */
-export function apiPageUrls(index: string): Array<string> {
+function apiPageUrls(index: string): Array<string> {
   const urls = new Set<string>()
   for (const [, url] of index.matchAll(/\((https:\/\/[^)\s]+\.md)\)/g)) {
     if (url?.startsWith(PAGE_PREFIX)) urls.add(url)
@@ -67,9 +70,15 @@ export function apiPageUrls(index: string): Array<string> {
   return [...urls].sort()
 }
 
-/** A page's `api.yml` block, or null (AsyncAPI websocket pages have none). */
-export function openApiBlock(page: string): string | null {
-  return BLOCK_RE.exec(page)?.[1] ?? null
+/**
+ * A page's `api.yml` block, or null for an AsyncAPI websocket page. A page
+ * with neither throws: a renamed block must not drop its endpoint silently.
+ */
+function openApiBlock(url: string, page: string): string | null {
+  const block = BLOCK_RE.exec(page)?.[1]
+  if (block) return block
+  if (page.includes(ASYNCAPI_MARKER)) return null
+  throw new Error(`cartesia: ${url} has no ${CARTESIA_VERSION} api.yml block`)
 }
 
 type Section = Record<string, unknown>
@@ -79,7 +88,7 @@ type Section = Record<string, unknown>
  * a path or component name seen twice must carry the same value; a
  * mismatch throws rather than picking one.
  */
-export function mergeOperationDocs(
+function mergeOperationDocs(
   docs: Array<{ url: string; doc: OpenApiDocument }>,
 ): OpenApiDocument {
   const first = docs[0]?.doc
@@ -126,7 +135,7 @@ async function fetchSpec(_env: ProviderSecrets): Promise<SpecFetchResult> {
   const pages = await Promise.all(
     urls.map(async (url) => ({
       url,
-      block: openApiBlock(await fetchText(url)),
+      block: openApiBlock(url, await fetchText(url)),
     })),
   )
   const blocks = pages.filter(

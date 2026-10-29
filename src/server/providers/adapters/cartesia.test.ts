@@ -185,6 +185,15 @@ describe('cartesia fetchSpec', () => {
     ).rejects.toThrow('components.schemas VoiceId differs between API pages')
   })
 
+  it('throws when a page has neither an api.yml nor an asyncapi.yml block', async () => {
+    const renamed = TTS_MD.replace('/api.yml ', '/api-v2.yml ')
+    await expect(
+      withFetch(pages({ [TTS_PAGE]: renamed }), () => provider.fetchSpec({})),
+    ).rejects.toThrow(
+      `cartesia: ${TTS_PAGE} has no ${CARTESIA_VERSION} api.yml block`,
+    )
+  })
+
   it('throws when a page fetch fails', async () => {
     await expect(
       withFetch(
