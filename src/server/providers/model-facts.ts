@@ -141,7 +141,7 @@ export function llmsFullPage(text: string, url: string): string {
   return lines.slice(start, end).join('\n')
 }
 
-const DOCS_TTL_SECONDS = 6 * 60 * 60
+export const DOCS_TTL_SECONDS = 6 * 60 * 60
 
 /**
  * Bumped whenever a parsed-docs shape changes. A deploy that changed the
@@ -212,6 +212,11 @@ const DOCS_TTL_SECONDS = 6 * 60 * 60
 // names (#528). A v38 entry's old keys would leave every row unpriced.
 const DOCS_CACHE_VERSION = 'v40'
 
+/** Fresh-window key for one parsed docs page. Shared with the stale copy. */
+export function docsCacheKey(url: string): string {
+  return `docs:${DOCS_CACHE_VERSION}:${url}`
+}
+
 /**
  * KV cache for parsed docs, keyed by source URL. A failed load is not
  * stored, so the next poll retries. `kv` is omitted in unit tests that
@@ -222,7 +227,7 @@ export async function cachedDocs<T>(
   url: string,
   load: () => Promise<T>,
 ): Promise<T> {
-  const key = `docs:${DOCS_CACHE_VERSION}:${url}`
+  const key = docsCacheKey(url)
   if (kv) {
     const hit = await getJson<T>(kv, key)
     if (hit !== null) return hit
