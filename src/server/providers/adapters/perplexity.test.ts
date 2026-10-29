@@ -294,6 +294,58 @@ describe('parsePerplexityEffortLevels', () => {
     ])
   })
 
+  // As served on 2026-10-29: `fast` and `xhigh` name a fallback model,
+  // and `ultra-preview` names no model at all.
+  const FALLBACK_DOC = EFFORT_DOC.replace(
+    '> * **Model:** `openai/gpt-6-luna`\n> * **Prompt cache key:** `fast`',
+    '> * **Models:** `openai/gpt-6-luna`, with `openai/gpt-5.6-luna` as the [fallback model](https://docs.perplexity.ai/docs/agent-api/model-fallback.md)\n> * **Prompt cache key:** `fast`',
+  ).replace(
+    '\n## Next Steps',
+    [
+      '',
+      '> **ultra-preview — current effort level values**',
+      '>',
+      '> Broad research and data-gathering tasks where coverage matters most.',
+      '>',
+      '> `ultra-preview` has no frozen configuration. Its settings are not all part of the documented request schema, so call it by name.',
+      '',
+      '## Next Steps',
+    ].join('\n'),
+  )
+
+  it("reads the first of a level's models, and skips a level with no frozen configuration", () => {
+    expect(FALLBACK_DOC).toContain('**Models:**')
+    expect(FALLBACK_DOC).toContain('ultra-preview')
+    expect([...parsePerplexityEffortLevels(FALLBACK_DOC)]).toEqual([
+      ['openai/gpt-6-luna', ['reasoning', 'reasoning_effort', 'tools']],
+      ['anthropic/claude-opus-5-5', ['reasoning', 'reasoning_effort', 'tools']],
+    ])
+  })
+
+  it.each([
+    [
+      'a fallback clause in another shape',
+      'as the [fallback model]',
+      'as backup',
+    ],
+    [
+      'a model-less level that states a setting',
+      '> `ultra-preview` has no',
+      '> * **Tools:** `web_search`\n>\n> `ultra-preview` has no',
+    ],
+    [
+      'both a Model and a Models bullet',
+      '> * **Prompt cache key:** `fast`',
+      '> * **Model:** `openai/gpt-6-luna`\n> * **Prompt cache key:** `fast`',
+    ],
+  ])('throws on %s', (_case, from, to) => {
+    const mutated = FALLBACK_DOC.replace(from, to)
+    expect(mutated).not.toBe(FALLBACK_DOC)
+    expect(() => parsePerplexityEffortLevels(mutated)).toThrow(
+      'perplexity: effort',
+    )
+  })
+
   it('gives a level with no tools or effort bullet neither flag', () => {
     const bare = EFFORT_DOC.replace(
       '> * **Reasoning effort:** `high`\n> * **Tools:** `web_search`, `finance_search`, `sandbox`\n',

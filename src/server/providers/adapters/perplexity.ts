@@ -211,7 +211,8 @@ export function parsePerplexityModelsPage(markdown: string): {
  * "current effort level values" accordions: each effort level names its
  * model, the `reasoning.effort` it sends, and its tools. A model a level
  * runs with an effort takes `reasoning.effort`; one it runs with tools
- * takes `tools`. The page says nothing of `tool_choice`.
+ * takes `tools`. The page says nothing of `tool_choice`, and nothing of a
+ * level's fallback model beyond its name.
  */
 export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
   const stated: StatedFlags = new Map()
@@ -241,10 +242,34 @@ export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
       }
       return lines[0]?.[1] ?? null
     }
-    const model = /^`([^`\s]+)`$/.exec(bullet('Model') ?? '')?.[1]
-    if (!model) throw new Error('perplexity: effort level names no model')
     const effort = bullet('Reasoning effort')
     const tools = bullet('Tools')
+    const single = bullet('Model')
+    const several = bullet('Models')
+    // `Models:` names the level's model, then the fallback the request
+    // carries. Only the first is the model the level is stated to run on.
+    const model =
+      single !== null && several !== null
+        ? undefined
+        : single !== null
+          ? /^`([^`\s]+)`$/.exec(single)?.[1]
+          : /^`([^`\s]+)`, with `[^`\s]+` as the \[fallback model\]\([^)\s]+\)$/.exec(
+              several ?? '',
+            )?.[1]
+    if (!model) {
+      // A level with no frozen configuration (`ultra-preview`) names no
+      // model and states nothing.
+      if (
+        single === null &&
+        several === null &&
+        effort === null &&
+        tools === null &&
+        /^`[^`\s]+` has no frozen configuration\./m.test(body)
+      ) {
+        continue
+      }
+      throw new Error('perplexity: effort level names no model')
+    }
     if (effort !== null) {
       if (!/^`[a-z]+`$/.test(effort)) {
         throw new Error(
