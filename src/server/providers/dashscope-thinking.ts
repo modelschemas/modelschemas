@@ -3,7 +3,7 @@ import { isCapabilityMap } from '#/lib/capabilities.ts'
 
 import {
   DASHSCOPE_DOCS_INIT,
-  assertDashscopeMarkdown,
+  dashscopeDocText,
 } from './dashscope-model-limits.ts'
 import { cachedDocs } from './model-facts.ts'
 import { fetchText, sha256Text } from './types.ts'
@@ -16,7 +16,10 @@ interface ThinkingDoc {
     string,
     { hybrid: boolean; budget?: boolean; mandatory?: boolean | null }
   >
-  replay: Array<string>
+  /** Null when the page states no `preserve_thinking` model list. */
+  replay: Array<string> | null
+  /** False when the page states no `thinking_budget` applicability. */
+  budgetScope: boolean
   hash: string
 }
 function ids(text: string): Array<string> {
@@ -48,17 +51,20 @@ export function parseDashscopeThinking(
     )
   )
     throw new Error('dashscope thinking: negated native budget declaration')
+  // Until 2026-10-27 a tip named the `thinking_budget` families; the page
+  // now points at the Chat Completions reference instead. No tip states no
+  // budget scope: thinking-only models then get no reasoning mode.
   const budgetScope = budgetLine?.match(
     /Applicable to ([^\n]+?) series models\./,
   )?.[1]
-  if (!budgetScope)
+  if (budgetLine && !budgetScope)
     throw new Error('dashscope thinking: missing native thinking-budget scope')
-  const budgetFamilies = budgetScope
+  const budgetFamilies = (budgetScope ?? '')
     .split(/,|\band\b/)
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)
   if (
-    !budgetFamilies.length ||
+    (budgetScope && !budgetFamilies.length) ||
     budgetFamilies.some((value) => !/^[a-z0-9.-]+$/.test(value))
   )
     throw new Error('dashscope thinking: malformed native budget families')
@@ -109,28 +115,30 @@ export function parseDashscopeThinking(
   }
   if (!Object.keys(models).length)
     throw new Error('dashscope thinking: parsed zero native model IDs')
+  // The same date dropped the `preserve_thinking` model list; without it
+  // the page states no replay scope.
   const replayBlock = markdown.match(
     /`preserve_thinking`This Parameter only supports ([^\n]+)/,
   )?.[1]
   if (
-    !replayBlock ||
+    replayBlock &&
     !/client needs to provide historical assistant messages/i.test(markdown)
   )
     throw new Error('dashscope thinking: unreadable native replay scope')
-  const replay = ids(replayBlock)
-  if (!replay.length) throw new Error('dashscope thinking: empty replay scope')
-  return { models, replay }
+  const replay = replayBlock ? ids(replayBlock) : null
+  if (replay && !replay.length)
+    throw new Error('dashscope thinking: empty replay scope')
+  return { models, replay, budgetScope: budgetScope !== undefined }
 }
 export async function dashscopeThinking(
   kv?: KVNamespace,
   cached: typeof cachedDocs = cachedDocs,
 ) {
   return cached(kv, `${DASHSCOPE_THINKING_URL}#model-thinking`, async () => {
-    const markdown = await fetchText(
-      DASHSCOPE_THINKING_URL,
-      DASHSCOPE_DOCS_INIT,
+    const markdown = dashscopeDocText(
+      await fetchText(DASHSCOPE_THINKING_URL, DASHSCOPE_DOCS_INIT),
+      'dashscope thinking',
     )
-    assertDashscopeMarkdown(markdown, 'dashscope thinking')
     return {
       ...parseDashscopeThinking(markdown),
       hash: await sha256Text(markdown),
@@ -143,8 +151,20 @@ export function applyDashscopeThinking(
 ): ModelInfo {
   if (model.activity !== 'chat') return model
   const stated = doc.models[model.rawId]
-  const replay = doc.replay.includes(model.rawId)
-  if (!stated && !replay) return model
+  const replay = doc.replay?.includes(model.rawId) ?? false
+  // A scope the page no longer states keeps the stored value: the budget
+  // mode of a thinking-only row, and every chat row's request map (the
+  // replay flag lives in it).
+  const kept: ModelInfo['absent'] = {
+    ...(doc.replay === null ? { requestMap: 'unavailable' as const } : {}),
+    ...(stated && !stated.hybrid && !stated.budget && !doc.budgetScope
+      ? { reasoning: 'unavailable' as const }
+      : {}),
+  }
+  const absent = Object.keys(kept).length
+    ? { absent: { ...model.absent, ...kept } }
+    : {}
+  if (!stated && !replay) return { ...model, ...absent }
   if (replay && model.requestMap?.replayReasoningContent === false)
     throw new Error(
       'dashscope: native replay contradicts existing explicit rejection',
@@ -178,6 +198,7 @@ export function applyDashscopeThinking(
   })
   return {
     ...model,
+    ...absent,
     ...(stated
       ? {
           capabilities,
