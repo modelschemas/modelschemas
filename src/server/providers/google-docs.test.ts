@@ -78,12 +78,32 @@ describe('cachedGoogleDocs', () => {
       cachedGoogleDocs(kv, PAGE_B, () => fetchText(PAGE_B)),
     ).resolves.toBe('beta')
     expect(calls).toEqual([PAGE_A])
-    expect(googleDocsFailures()).toMatchObject({ failed: 1, skipped: 1 })
-    expect(googleDocsFailures().first.map((item) => item.source)).toEqual([
-      PAGE_A,
-      PAGE_B,
-    ])
-    expect(googleDocsFailures().first[1]?.elapsedMs).toBe(0)
+    const failures = googleDocsFailures()
+    expect(failures).toMatchObject({ failed: 1, skipped: 1 })
+    expect(failures.first.map((item) => item.source)).toEqual([PAGE_A])
+    expect(failures.failed - failures.first.length).toBeGreaterThanOrEqual(0)
+  })
+
+  it('counts cooling skips without putting them in the failure list', async () => {
+    const { kv, dropFresh } = memoryKv()
+    const pages = Array.from({ length: 7 }, (_, index) => `${PAGE_A}/${index}`)
+    globalThis.fetch = ((url: string) =>
+      Promise.resolve(ok(String(url)))) as typeof fetch
+    for (const page of pages) {
+      await cachedGoogleDocs(kv, page, () => fetchText(page))
+    }
+    dropFresh()
+    resetGoogleDocsLimit()
+
+    globalThis.fetch = () => Promise.resolve(limited())
+    for (const page of pages) {
+      await cachedGoogleDocs(kv, page, () => fetchText(page))
+    }
+    const failures = googleDocsFailures()
+    expect(failures.failed).toBe(1)
+    expect(failures.skipped).toBe(6)
+    expect(failures.first).toHaveLength(1)
+    expect(failures.first[0]?.source).toBe(pages[0])
   })
 
   it('fails the load when a 429 has nothing stored', async () => {

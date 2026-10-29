@@ -86,9 +86,13 @@ function noteLimit(): void {
 
 function noteServe(url: string, error: unknown, elapsedMs: number): void {
   staleServes += 1
-  const cooling = error instanceof GoogleDocsCooling
-  if (cooling) skipped += 1
-  else failed += 1
+  // `first` is failures only. poll-models computes `failed - first.length`,
+  // so a cooling skip in that list makes the remainder negative.
+  if (error instanceof GoogleDocsCooling) {
+    skipped += 1
+    return
+  }
+  failed += 1
   if (first.length >= SERVES_KEPT) return
   first.push({
     source: url,
