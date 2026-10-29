@@ -105,6 +105,20 @@ describe('deepgram pricing page', () => {
     expect(parseDeepgramPricing(page(ROWS.slice(1)))).toEqual(new Map())
   })
 
+  it('refuses conflicting Pay as you go rates and ignores a Growth-category offer', () => {
+    const aura = offer(
+      'Text-to-speech: Aura-2',
+      'Pay as you go',
+      0.04,
+      '1,000 characters',
+    )
+    expect(parseDeepgramPricing(page(ROWS, [aura]))).toEqual(new Map())
+    const growth = { ...aura, category: 'Growth' }
+    expect(
+      parseDeepgramPricing(page(ROWS, [growth])).get('Text-to-speech: Aura-2'),
+    ).toBe(0.03)
+  })
+
   it('shares one Aura-2 character rate and prices Nova-3 by mode', () => {
     const rates = parseDeepgramPricing(PAGE)
     const aura = deepgramCard('aura-2-thalia-en', rates, SOURCE)

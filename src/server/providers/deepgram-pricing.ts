@@ -6,7 +6,8 @@
  * tiers, and Audio Intelligence are not model rates. Nova-2, Enhanced, and
  * Base are absent from the current offers, so those rows stay null.
  * Whisper Large is priced for pre-recorded only while the model also streams,
- * so that id stays null rather than quoting one mode for both.
+ * so that id stays null rather than quoting one mode for both. Only the
+ * products `deepgramCard` reads are kept.
  */
 import { compileUnitCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
@@ -35,13 +36,10 @@ const REQUIRED = [
 const LD_JSON =
   /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g
 
-/** The `unitText` a product's rate must carry. */
+/** The `unitText` a required product's rate must carry. */
 function unitFor(product: string): 'minute' | '1,000 characters' | null {
-  if (/^Speech-to-text: .+ \((?:Streaming|Pre-recorded)\)$/.test(product)) {
-    return 'minute'
-  }
-  if (product.startsWith('Text-to-speech: ')) return '1,000 characters'
-  return null
+  if (!(REQUIRED as ReadonlyArray<string>).includes(product)) return null
+  return product.startsWith('Speech-to-text: ') ? 'minute' : '1,000 characters'
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -64,7 +62,10 @@ function collectOffers(
   for (const value of Object.values(obj)) collectOffers(value, out)
 }
 
-/** Pay As You Go product → USD per minute or per 1k characters. Empty on a bad page. */
+/**
+ * Pay As You Go product → USD per minute or per 1k characters. Empty when a
+ * required rate is missing or conflicting; throws on malformed JSON-LD.
+ */
 export function parseDeepgramPricing(html: string): Map<string, number> {
   const offers: Array<Record<string, unknown>> = []
   for (const match of html.matchAll(LD_JSON)) {
