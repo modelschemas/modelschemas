@@ -2,6 +2,7 @@
 import { compileTokenCard } from '@modelschemas/rate-card'
 import type { RateCard } from '@modelschemas/rate-card'
 import { tagDocsFacts } from './fact-sources.ts'
+import { cachedGoogleDocs } from './google-docs.ts'
 import {
   cachedDocs,
   mapConcurrent,
@@ -279,18 +280,22 @@ export function claudeGlobalPrices(
  * rate-limits Workers egress, and one 429 should cost a refetch of that
  * page, not of every page the poll already read. The keys carry a `#`
  * suffix so a pre-#516 whole-catalog entry under the bare URL is never
- * read back as one of these.
+ * read back as one of these. A 429 serves the stored page and cools the
+ * host (issue #517). Cards load one at a time so that cool-down starts
+ * before the next card.
  */
 export async function vertexClaudeModels(
   kv?: KVNamespace,
 ): Promise<ModelInfo[]> {
-  const paths = await cachedDocs(kv, `${VERTEX_CLAUDE_URL}#paths`, async () =>
-    claudeCardPaths(await fetchText(VERTEX_CLAUDE_URL)),
+  const paths = await cachedGoogleDocs(
+    kv,
+    `${VERTEX_CLAUDE_URL}#paths`,
+    async () => claudeCardPaths(await fetchText(VERTEX_CLAUDE_URL)),
   )
   const rows = (
-    await mapConcurrent(paths, 6, (path) => {
+    await mapConcurrent(paths, 1, async (path) => {
       const url = `${HOST}${path}`
-      return cachedDocs(kv, `${url}#models`, async () => {
+      return cachedGoogleDocs(kv, `${url}#models`, async () => {
         const html = await fetchText(url)
         return claudeCardModels(html, url, await sha256Text(html))
       })

@@ -9,6 +9,7 @@ import type { Activity } from '#/db/schema.ts'
 
 import { bearerConnect } from '../connect.ts'
 import type { DiscoveryDoc } from '../gemini.ts'
+import { beginGoogleDocsPoll, googleDocsFailures } from '../google-docs.ts'
 import { fetchText, sha256Text } from '../types.ts'
 import type {
   ListModelsResult,
@@ -47,7 +48,11 @@ async function listModels(
   _env: ProviderSecrets,
   kv?: KVNamespace,
 ): Promise<ListModelsResult> {
-  return { models: await vertexModelList(kv) }
+  beginGoogleDocsPoll()
+  return {
+    models: await vertexModelList(kv),
+    docsFailures: googleDocsFailures(),
+  }
 }
 
 export const provider: ProviderConfig = {

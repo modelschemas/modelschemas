@@ -1,6 +1,7 @@
 /**
  * Google-hosted Claude: dynamically read Google's linked model cards and prices.
  */
+import { beginGoogleDocsPoll, googleDocsFailures } from '../google-docs.ts'
 import type {
   ListModelsResult,
   ProviderConfig,
@@ -42,7 +43,13 @@ export const provider: ProviderConfig = {
   listModels: async (
     _env: ProviderSecrets,
     kv?: KVNamespace,
-  ): Promise<ListModelsResult> => ({ models: await vertexClaudeModels(kv) }),
+  ): Promise<ListModelsResult> => {
+    beginGoogleDocsPoll()
+    return {
+      models: await vertexClaudeModels(kv),
+      docsFailures: googleDocsFailures(),
+    }
+  },
   bindSyncedRoutesOnly: true,
   classify: () => null,
 }

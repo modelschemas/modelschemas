@@ -10,9 +10,9 @@
 import type { Activity } from '#/db/schema.ts'
 
 import { tagDocsFacts } from './fact-sources.ts'
+import { cachedGoogleDocs } from './google-docs.ts'
 import {
   assertParsed,
-  cachedDocs,
   mapConcurrent,
   parseDay,
   tokenCount,
@@ -446,8 +446,9 @@ async function loadCards(
   kv?: KVNamespace,
 ): Promise<Map<string, VertexCard>> {
   const cards = new Map<string, VertexCard>()
-  await mapConcurrent(paths, 4, async (path) => {
-    const card = await cachedDocs(kv, cardUrl(path), async () =>
+  // One at a time so the first 429 can cool the host before the next card.
+  await mapConcurrent(paths, 1, async (path) => {
+    const card = await cachedGoogleDocs(kv, cardUrl(path), async () =>
       parseCard(await fetchText(cardUrl(path))),
     )
     cards.set(path, card)
@@ -462,21 +463,25 @@ async function loadCards(
 export async function vertexModelList(
   kv?: KVNamespace,
 ): Promise<Array<ModelInfo>> {
-  const locations = await cachedDocs(kv, VERTEX_LOCATIONS_URL, async () => {
-    const models = parseLocationModels(await fetchText(VERTEX_LOCATIONS_URL))
-    assertParsed(
-      new Map(models.map((model) => [model.rawId, model])),
-      'vertex locations',
-    )
-    return models
-  })
+  const locations = await cachedGoogleDocs(
+    kv,
+    VERTEX_LOCATIONS_URL,
+    async () => {
+      const models = parseLocationModels(await fetchText(VERTEX_LOCATIONS_URL))
+      assertParsed(
+        new Map(models.map((model) => [model.rawId, model])),
+        'vertex locations',
+      )
+      return models
+    },
+  )
   const paths = [
     ...new Set(
       locations.flatMap((model) => (model.cardPath ? [model.cardPath] : [])),
     ),
   ]
   const cards = await loadCards(paths, kv)
-  const thinking = await cachedDocs(kv, VERTEX_THINKING_URL, async () => {
+  const thinking = await cachedGoogleDocs(kv, VERTEX_THINKING_URL, async () => {
     const parsed = parseThinking(await fetchText(VERTEX_THINKING_URL))
     if (
       parsed.effort.size === 0 &&

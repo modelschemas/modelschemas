@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { resetGoogleDocsLimit } from '../google-docs.ts'
 
 import { provider } from './google-vertex.ts'
 
@@ -18,6 +19,7 @@ const originalFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  resetGoogleDocsLimit()
 })
 
 const LOCATIONS = `
@@ -126,6 +128,7 @@ describe('google-vertex', () => {
     )
 
     expect(listed.skipped).toBeUndefined()
+    expect(listed.docsFailures).toEqual({ failed: 0, skipped: 0, first: [] })
     expect(model?.displayName).toBe('Gemini 3.1 Pro')
     expect(model?.contextWindow).toBe(1_048_576)
     expect(model?.reasoning).toEqual({
@@ -146,5 +149,31 @@ describe('google-vertex', () => {
         {},
       ),
     ).toBe('embeddings')
+  })
+
+  it('does not publish a listing when an uncached model card answers 429', async () => {
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      if (href.endsWith('/3-1-pro')) {
+        return Promise.resolve(
+          new Response('slow down', {
+            status: 429,
+            statusText: 'Too Many Requests',
+          }),
+        )
+      }
+      const body = href.includes('$discovery')
+        ? JSON.stringify(DISCOVERY)
+        : href.endsWith('/locations')
+          ? LOCATIONS
+          : href.endsWith('/thinking')
+            ? THINKING
+            : href.endsWith('/pricing')
+              ? PRICING
+              : CARD
+      return Promise.resolve(new Response(body, { status: 200 }))
+    }) as typeof fetch
+
+    await expect(provider.listModels({})).rejects.toThrow('→ 429')
   })
 })

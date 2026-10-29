@@ -597,10 +597,11 @@ export interface ModelDeprecation {
 export interface ListModelsResult {
   models: Array<ModelInfo>
   /**
-   * Docs sources that failed while the listing itself loaded (`tryDocs`).
+   * Docs sources that failed while the listing itself loaded (`tryDocs`,
+   * or a docs.cloud.google.com 429 served from the stored parse).
    * The poll goes on; rows mark the facts those sources supply
-   * `unavailable`. A failed listing still throws. An adapter that uses
-   * `tryDocs` always returns this, zeros included: that is what clears
+   * `unavailable`. A failed listing still throws. An adapter that reports
+   * docs failures always returns this, zeros included: that is what clears
    * the provider's `docs-failing` record.
    */
   docsFailures?: DocsFailures
