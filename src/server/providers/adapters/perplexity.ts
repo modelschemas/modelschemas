@@ -82,8 +82,9 @@ function unquote(text: string): string {
  * Models" each provider tab is one `> [tab] Title` blockquote (the
  * markdown export's shape since 2026-10-30) holding a `> [card] Title`
  * card, a model table and, for some, `> [!NOTE]`/`> [!WARNING]` callouts.
- * A tab with no card, a second card, any other blockquote in a tab, or a
- * table or card outside a tab throws.
+ * A tab with no card, a second card, any other blockquote in a tab, a
+ * table or card outside a tab, or any block between or after the tabs
+ * throws.
  *
  * - "Kimi K3 accepts `minimal`, … and `max` reasoning effort." gives
  *   `reasoning` and `reasoning_effort` to the row whose link text is the
@@ -118,15 +119,21 @@ export function parsePerplexityModelsPage(markdown: string): {
   const section = /^## Available Models\n([^]*?)(?=^## |(?![^]))/m.exec(
     markdown,
   )?.[1]
+  let tabs = 0
   for (const block of (section ?? '').trim().split(/\n\n+/)) {
     const [, title, quotedTab] =
       /^> \[tab\] ([^\n]+)\n>\n((?:>.*(?:\n|$))+)$/.exec(block) ?? []
     if (title === undefined || quotedTab === undefined) {
-      if (/^(?:> ?)*(?:\||\[(?:tab|card)\])/m.test(block)) {
+      // Prose and callouts before the first tab are the section's intro.
+      // Anything between or after tabs would be unread tab content.
+      if (tabs > 0 || /^(?:> ?)*(?:\||\[(?:tab|card)\])/m.test(block)) {
         throw unread('a tab with no title')
       }
       continue
     }
+    tabs += 1
+    // The tab's body with its own quote level removed; its card and
+    // callouts are still quoted.
     const chunk = unquote(quotedTab)
     const tab = unquote(chunk)
     const table = markdownTableRows(tab).filter((row) =>

@@ -246,7 +246,17 @@ describe('parsePerplexityModelsPage', () => {
     ],
     ['a card and table outside any tab', '> [tab] xAI\n>\n', ''],
     [
-      'the bold title line the export used before 2026-10-30',
+      'a callout split from its tab by a blank line',
+      '\n\n> [tab] NVIDIA',
+      '\n\n> > [!NOTE]\n> >\n> > Reasoning cannot be disabled on GLM 5.3.\n\n> [tab] NVIDIA',
+    ],
+    [
+      'prose between tabs',
+      '\n\n> [tab] NVIDIA',
+      '\n\nThinking is always on for Z.AI models.\n\n> [tab] NVIDIA',
+    ],
+    [
+      'a bold tab title and card, as the export wrote them before 2026-10-30',
       '> [tab] Z.AI\n>\n> > [card] Z.AI',
       '**Z.AI**\n\n> **Z.AI**',
     ],
