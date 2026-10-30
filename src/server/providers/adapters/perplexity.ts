@@ -79,11 +79,12 @@ function unquote(text: string): string {
 
 /**
  * Flags the Agent API models page states, per model id. Under "Available
- * Models" each provider tab is a bold title line, then a `> **Title**`
- * card blockquote, a model table and, for some, `> [!NOTE]`/`> [!WARNING]`
- * callouts; the tab runs to the next title line or the section's end. A
- * tab with no card, a second card, any other blockquote, or a table or
- * card before the first title throws.
+ * Models" each provider tab is one `> [tab] Title` blockquote (the
+ * markdown export's shape since 2026-10-30) holding a `> [card] Title`
+ * card, a model table and, for some, `> [!NOTE]`/`> [!WARNING]` callouts.
+ * A tab with no card, a second card, any other blockquote in a tab, a
+ * table or card outside a tab, or any block between or after the tabs
+ * throws.
  *
  * - "Kimi K3 accepts `minimal`, … and `max` reasoning effort." gives
  *   `reasoning` and `reasoning_effort` to the row whose link text is the
@@ -118,12 +119,22 @@ export function parsePerplexityModelsPage(markdown: string): {
   const section = /^## Available Models\n([^]*?)(?=^## |(?![^]))/m.exec(
     markdown,
   )?.[1]
-  for (const chunk of (section ?? '').split(/^(?=\*\*[^*\n]+\*\*$)/m)) {
-    const title = /^\*\*([^*\n]+)\*\*\n/.exec(chunk)?.[1]
-    if (title === undefined) {
-      if (/^(?:\||> \*\*)/m.test(chunk)) throw unread('a tab with no title')
+  let tabs = 0
+  for (const block of (section ?? '').trim().split(/\n\n+/)) {
+    const [, title, quotedTab] =
+      /^> \[tab\] ([^\n]+)\n>\n((?:>.*(?:\n|$))+)$/.exec(block) ?? []
+    if (title === undefined || quotedTab === undefined) {
+      // Prose and callouts before the first tab are the section's intro.
+      // Anything between or after tabs would be unread tab content.
+      if (tabs > 0 || /^(?:> ?)*(?:\||\[(?:tab|card)\])/m.test(block)) {
+        throw unread('a tab with no title')
+      }
       continue
     }
+    tabs += 1
+    // The tab's body with its own quote level removed; its card and
+    // callouts are still quoted.
+    const chunk = unquote(quotedTab)
     const tab = unquote(chunk)
     const table = markdownTableRows(tab).filter((row) =>
       /^`[^`]+`$/.test(row[0] ?? ''),
@@ -134,7 +145,7 @@ export function parsePerplexityModelsPage(markdown: string): {
     // Blank-line-separated blocks: the one card, then only callouts quote.
     const quotes = chunk.split(/\n\n+/).filter((b) => b.startsWith('>'))
     const cards = quotes.filter((b) => !b.startsWith('> [!'))
-    const quoted = /^> \*\*([^*\n]+)\*\*\n>\n((?:>.*(?:\n|$))+)$/.exec(
+    const quoted = /^> \[card\] ([^\n]+)\n>\n((?:>.*(?:\n|$))+)$/.exec(
       cards[0] ?? '',
     )
     if (cards.length !== 1 || !quoted) throw unread('a card')
@@ -218,15 +229,18 @@ export function parsePerplexityModelsPage(markdown: string): {
  */
 export function parsePerplexityEffortLevels(markdown: string): StatedFlags {
   const stated: StatedFlags = new Map()
-  // Each accordion is one `> **name — current effort level values**` blockquote,
-  // and they run back to back up to the next unquoted `## ` heading (the
-  // prompts' own `## ` headings stay inside the quote). Any other block in
-  // that run, or a blank line splitting an accordion, throws.
-  const start = markdown.search(/^> \*\*[^\n]*current effort level values/m)
+  // Each accordion is one `> [accordion] name — current effort level values`
+  // blockquote (the markdown export's shape since 2026-10-30), and they run
+  // back to back up to the next unquoted `## ` heading (the prompts' own
+  // `## ` headings stay inside the quote). Any other block in that run, or
+  // a blank line splitting an accordion, throws.
+  const start = markdown.search(
+    /^> \[accordion\] [^\n]*current effort level values/m,
+  )
   const run = start < 0 ? '' : (markdown.slice(start).split(/^## /m)[0] ?? '')
   for (const block of run === '' ? [] : run.trim().split(/\n\n+/)) {
     const [, level, quoted] =
-      /^> \*\*([^*\n]*) — current effort level values\*\*\n((?:>.*(?:\n|$))*)$/.exec(
+      /^> \[accordion\] ([^\s—]+) — current effort level values\n((?:>.*(?:\n|$))*)$/.exec(
         block,
       ) ?? []
     if (level === undefined || quoted === undefined) {
