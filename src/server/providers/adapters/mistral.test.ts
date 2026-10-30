@@ -227,6 +227,65 @@ describe('mistral listModels modalities', () => {
   })
 })
 
+describe('mistral listModels docs failures', () => {
+  it('keeps stored facts and reports the pages when the docs 404', async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = ((url: string) => {
+      const href = String(url)
+      if (href === 'https://api.mistral.ai/v1/models') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: 'mistral-small-latest',
+                  capabilities: { completion_chat: true },
+                },
+              ],
+            }),
+          ),
+        )
+      }
+      if (href === 'https://docs.mistral.ai/openapi.yaml') {
+        return Promise.resolve(
+          new Response(`components:
+  schemas:
+    ChatCompletionRequest:
+      properties:
+        max_tokens: { type: integer }
+`),
+        )
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }))
+    }) as typeof fetch
+    try {
+      const { models, docsFailures } = await provider.listModels({
+        MISTRAL_API_KEY: 'k',
+      })
+      expect(models.map((model) => model.rawId)).toEqual([
+        'mistral-small-latest',
+      ])
+      expect(models[0]?.absent).toMatchObject({
+        pricing: 'unavailable',
+        serverTools: 'unavailable',
+        modalities: 'unavailable',
+        maxOutput: 'unavailable',
+        reasoning: 'unavailable',
+        requestMap: 'unavailable',
+      })
+      expect(models[0]?.requestMap).toBeUndefined()
+      expect(docsFailures?.first.map((failure) => failure.source)).toEqual(
+        expect.arrayContaining([
+          'https://docs.mistral.ai/inference/pricing',
+          'https://docs.mistral.ai/studio/conversations/reasoning.md',
+        ]),
+      )
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+})
+
 describe('mistral fetchSpec', () => {
   it('loads the public OpenAPI document without a key', async () => {
     const fixture = JSON.stringify({

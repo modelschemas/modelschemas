@@ -466,12 +466,13 @@ async function loadReasoningMap(
   source: string,
   parse: (body: string) => Map<string, ModelReasoning>,
   fetchBody: (url: string) => Promise<string> = fetchText,
+  cached: typeof cachedDocs = cachedDocs,
 ): Promise<{
   byId: Record<string, ModelReasoning>
   hash: string
   url: string
 }> {
-  return cachedDocs(kv, url, async () => {
+  return cached(kv, url, async () => {
     const body = await fetchBody(url)
     const parsed = parse(body)
     assertParsed(parsed, source)
@@ -488,12 +489,17 @@ function lookup(doc: {
     reasoningFactsFor(rawId, doc.byId, doc, capability)
 }
 
-export async function mistralModelReasoning(kv?: KVNamespace) {
+export async function mistralModelReasoning(
+  kv?: KVNamespace,
+  cached: typeof cachedDocs = cachedDocs,
+) {
   const doc = await loadReasoningMap(
     kv,
     MISTRAL_REASONING_URL,
     'mistral reasoning page',
     parseMistralReasoning,
+    fetchText,
+    cached,
   )
   return lookup(doc)
 }

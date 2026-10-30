@@ -9,12 +9,13 @@ import {
   loadDeprecations,
   parseMistralDeprecations,
 } from '../deprecations.ts'
-import { docsReport, docsRun } from '../model-facts.ts'
+import { docsReport, docsRun, tryDocs, unavailable } from '../model-facts.ts'
 import {
   mistralGenerationEndpointId,
   mistralModelActivity,
 } from '../model-meta.ts'
 import {
+  MISTRAL_PRICING_URL,
   copyMistralAliasFacts,
   mistralModelPricing,
 } from '../mistral-pricing.ts'
@@ -24,6 +25,7 @@ import {
   mistralRequestMap,
 } from '../mistral-request.ts'
 import {
+  MISTRAL_REASONING_URL,
   listsReasoning,
   mistralModelReasoning,
   overlayModelFacts,
@@ -133,25 +135,43 @@ export const provider: ProviderConfig = {
       MISTRAL_DEPRECATIONS_URL,
       parseMistralDeprecations,
     )
+    // The pricing load reads the pricing table, changelog, models index,
+    // model pages and web search guide; a failing docs page keeps the
+    // stored facts instead of failing the poll.
     const [pricing, reasoning, wire] = await Promise.all([
-      mistralModelPricing(
-        kv,
-        listed.models.map((model) => model.rawId),
+      tryDocs(docs, MISTRAL_PRICING_URL, (cached) =>
+        mistralModelPricing(
+          kv,
+          listed.models.map((model) => model.rawId),
+          cached,
+        ),
       ),
-      mistralModelReasoning(kv),
+      tryDocs(docs, MISTRAL_REASONING_URL, (cached) =>
+        mistralModelReasoning(kv, cached),
+      ),
       chat ? mistralChatWire(kv) : Promise.resolve(null),
     ])
     const models = listed.models.map((model) =>
       overlayModelFacts(
         model,
-        pricing(model.rawId),
-        reasoning(model.rawId, listsReasoning(model.capabilities)),
+        pricing
+          ? pricing(model.rawId)
+          : unavailable('pricing', 'serverTools', 'modalities', 'maxOutput'),
+        reasoning
+          ? reasoning(model.rawId, listsReasoning(model.capabilities))
+          : unavailable('reasoning'),
       ),
     )
     copyMistralAliasFacts(models, aliases)
     if (wire) {
       for (const model of models) {
         if (model.activity !== 'chat') continue
+        // The thinking request comes from the reasoning facts; keep the
+        // stored map whole rather than write one built without them.
+        if (!reasoning) {
+          model.absent = { ...model.absent, requestMap: 'unavailable' }
+          continue
+        }
         model.requestMap = mistralRequestMap(wire, model.reasoning)
         model.factSources = {
           ...model.factSources,
@@ -164,7 +184,7 @@ export const provider: ProviderConfig = {
         }
       }
     }
-    clearUnpriced(models, pricing.seen, aliases)
+    if (pricing) clearUnpriced(models, pricing.seen, aliases)
     return {
       ...listed,
       models,

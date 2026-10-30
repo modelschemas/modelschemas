@@ -1121,8 +1121,9 @@ export function mistralConversationTools(
 export async function mistralModelPricing(
   kv?: KVNamespace,
   listedIds: ReadonlyArray<string> = [],
+  cached: typeof cachedDocs = cachedDocs,
 ): Promise<MistralPricingLookup> {
-  const table = await cachedDocs(kv, MISTRAL_PRICING_URL, async () => {
+  const table = await cached(kv, MISTRAL_PRICING_URL, async () => {
     const [html, changelog] = await Promise.all([
       fetchText(MISTRAL_PRICING_URL),
       fetchText(MISTRAL_CHANGELOG_URL),
@@ -1139,7 +1140,7 @@ export async function mistralModelPricing(
   const bySlug = new Map(Object.entries(table.bySlug))
   const loadPage = async (slug: string): Promise<MistralModelPage> => {
     const url = MISTRAL_MODEL_PAGE(slug)
-    const page = await cachedDocs(kv, url, async () => {
+    const page = await cached(kv, url, async () => {
       const body = await fetchText(url)
       const ids = parseMistralApiIds(body, slug)
       const features = parseMistralPageFeatures(body)
@@ -1167,7 +1168,7 @@ export async function mistralModelPricing(
   const missing = listedIds.filter((id) => !covered.has(id))
   let extraSlugs: Array<string> = []
   if (missing.length > 0) {
-    const slugs = await cachedDocs(kv, MISTRAL_MODELS_INDEX, async () => {
+    const slugs = await cached(kv, MISTRAL_MODELS_INDEX, async () => {
       const html = await fetchText(MISTRAL_MODELS_INDEX)
       const parsed = parseMistralModelIndex(html)
       if (parsed.length === 0) {
@@ -1206,7 +1207,7 @@ export async function mistralModelPricing(
   const maxOutput = indexPageField(pages, (page) => page.maxOutput)
   const pageRates = indexPageField(pages, (page) => page.pagePrice)
   const featured = indexPageField(pages, (page) => page.features)
-  const webSearch = await cachedDocs(kv, MISTRAL_WEBSEARCH_URL, async () => {
+  const webSearch = await cached(kv, MISTRAL_WEBSEARCH_URL, async () => {
     const markdown = await fetchText(MISTRAL_WEBSEARCH_URL)
     return {
       tools: parseMistralWebSearchTools(markdown),
