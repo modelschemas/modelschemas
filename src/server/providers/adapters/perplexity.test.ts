@@ -15,62 +15,77 @@ const HEADER = [
   '| - | - | - | - | - | - |',
 ]
 
+// One quote level more: how a `> [tab]` blockquote holds its card, table
+// and callouts.
+const quote = (lines: Array<string>): Array<string> =>
+  lines.map((line) => (line === '' ? '>' : `> ${line}`))
+
 // Five tabs of the Agent API models page, as served on 2026-10-07, in the
-// markdown export's shape since 2026-10-20: a bold tab title, the card as
-// a `> **Title**` blockquote, the table, and the effort note as a
-// `> [!NOTE]` callout.
+// markdown export's shape since 2026-10-30: each tab is one `> [tab] Title`
+// blockquote holding the card as a `> [card] Title` blockquote, the table,
+// and the effort note as a `> [!NOTE]` callout.
 const MODELS_DOC = [
   '## Available Models',
   '',
-  '**xAI**',
+  '> [tab] xAI',
+  ...quote([
+    '',
+    '> [card] xAI',
+    '>',
+    '> Grok 4.7, 4.6, 4.5, 4.3, and 4.20 variants: flagship, reasoning, non-reasoning, and multi-agent.',
+    '',
+    ...HEADER,
+    '| `xai/grok-4.20-non-reasoning` | 1.25 (\\<200k)<br />2.50 (≥200k) | 2.50 (\\<200k)<br />5.00 (≥200k) | 0.20 | — | [Grok 4.20 Non Reasoning](https://docs.x.ai/developers/models) |',
+  ]),
   '',
-  '> **xAI**',
-  '>',
-  '> Grok 4.7, 4.6, 4.5, 4.3, and 4.20 variants: flagship, reasoning, non-reasoning, and multi-agent.',
+  '> [tab] Z.AI',
+  ...quote([
+    '',
+    '> [card] Z.AI',
+    '>',
+    '> GLM 5.3 and GLM 5.3 Flash — Z.AI reasoning models.',
+    '',
+    ...HEADER,
+    '| `perplexity/glm-5.3` | 1.40 | 4.40 | 0.26 | — | [GLM](https://docs.z.ai) |',
+    '| `perplexity/glm-5.3-flash` | 0.15 | 0.50 | 0.03 | — | [GLM-5.3 Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) |',
+  ]),
   '',
-  ...HEADER,
-  '| `xai/grok-4.20-non-reasoning` | 1.25 (\\<200k)<br />2.50 (≥200k) | 2.50 (\\<200k)<br />5.00 (≥200k) | 0.20 | — | [Grok 4.20 Non Reasoning](https://docs.x.ai/developers/models) |',
+  '> [tab] Moonshot AI',
+  ...quote([
+    '',
+    '> [card] Moonshot AI',
+    '>',
+    "> Kimi K3 — Moonshot AI's flagship reasoning model.",
+    '',
+    ...HEADER,
+    '| `perplexity/kimi-k3` | 3.00 | 15.00 | 0.30 | — | [Kimi K3](https://huggingface.co/moonshotai/Kimi-K3) |',
+    '',
+    '> [!NOTE]',
+    '>',
+    '> Kimi K3 accepts `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` reasoning effort. `minimal` uses low effort, while `xhigh` and `max` use maximum effort. Reasoning tokens are billed at the output-token rate.',
+  ]),
   '',
-  '**Z.AI**',
+  '> [tab] NVIDIA',
+  ...quote([
+    '',
+    '> [card] NVIDIA',
+    '>',
+    '> Nemotron 3 Ultra is an open-weight reasoning model.',
+    '',
+    ...HEADER,
+    '| `perplexity/nemotron-3-ultra-550b-a55b` | 0.25 | 2.50 | 0.25 | — | [Nemotron 3 Ultra](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16) |',
+  ]),
   '',
-  '> **Z.AI**',
-  '>',
-  '> GLM 5.3 and GLM 5.3 Flash — Z.AI reasoning models.',
-  '',
-  ...HEADER,
-  '| `perplexity/glm-5.3` | 1.40 | 4.40 | 0.26 | — | [GLM](https://docs.z.ai) |',
-  '| `perplexity/glm-5.3-flash` | 0.15 | 0.50 | 0.03 | — | [GLM-5.3 Flash](https://huggingface.co/zai-org/GLM-5.3-Flash) |',
-  '',
-  '**Moonshot AI**',
-  '',
-  '> **Moonshot AI**',
-  '>',
-  "> Kimi K3 — Moonshot AI's flagship reasoning model.",
-  '',
-  ...HEADER,
-  '| `perplexity/kimi-k3` | 3.00 | 15.00 | 0.30 | — | [Kimi K3](https://huggingface.co/moonshotai/Kimi-K3) |',
-  '',
-  '> [!NOTE]',
-  '>',
-  '> Kimi K3 accepts `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` reasoning effort. `minimal` uses low effort, while `xhigh` and `max` use maximum effort. Reasoning tokens are billed at the output-token rate.',
-  '',
-  '**NVIDIA**',
-  '',
-  '> **NVIDIA**',
-  '>',
-  '> Nemotron 3 Ultra is an open-weight reasoning model.',
-  '',
-  ...HEADER,
-  '| `perplexity/nemotron-3-ultra-550b-a55b` | 0.25 | 2.50 | 0.25 | — | [Nemotron 3 Ultra](https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16) |',
-  '',
-  '**Perplexity**',
-  '',
-  '> **Perplexity**',
-  '>',
-  "> Perplexity's grounded search model.",
-  '',
-  ...HEADER,
-  '| `perplexity/sonar` | 0.25 | 2.50 | 0.0625 | — | — |',
+  '> [tab] Perplexity',
+  ...quote([
+    '',
+    '> [card] Perplexity',
+    '>',
+    "> Perplexity's grounded search model.",
+    '',
+    ...HEADER,
+    '| `perplexity/sonar` | 0.25 | 2.50 | 0.0625 | — | — |',
+  ]),
   '',
   '## Service tiers',
   '',
@@ -102,12 +117,14 @@ describe('parsePerplexityModelsPage', () => {
   it('reads a reasoning-model card that goes on to state other facts', () => {
     // The NVIDIA tab as served on 2026-10-15.
     const nvidia = MODELS_DOC.replace(
-      /^> Nemotron 3 Ultra[^]*?(?=\*\*Perplexity\*\*)/m,
+      /^> > Nemotron 3 Ultra[^]*?(?=> \[tab\] Perplexity)/m,
       [
-        '> Nemotron 3.5 Super is a reasoning model with a 1,048,576-token context window and up to 131,072 output tokens. It accepts text input only.',
-        '',
-        ...HEADER,
-        '| `perplexity/nemotron-3.5-super-120b-a12b` | 0.20 | 0.50 | 0.04 | — | — |',
+        ...quote([
+          '> Nemotron 3.5 Super is a reasoning model with a 1,048,576-token context window and up to 131,072 output tokens. It accepts text input only.',
+          '',
+          ...HEADER,
+          '| `perplexity/nemotron-3.5-super-120b-a12b` | 0.20 | 0.50 | 0.04 | — | — |',
+        ]),
         '',
         '',
       ].join('\n'),
@@ -129,7 +146,7 @@ describe('parsePerplexityModelsPage', () => {
 
   it('leaves the effort flag off when no tab states an effort', () => {
     const silent = MODELS_DOC.replace(
-      /^> \[!NOTE\]\n>\n> Kimi K3[^\n]*\n\n/m,
+      /^>\n> > \[!NOTE\]\n> >\n> > Kimi K3[^\n]*\n/m,
       '',
     )
     const page = parsePerplexityModelsPage(silent)
@@ -148,16 +165,16 @@ describe('parsePerplexityModelsPage', () => {
     [
       'a second, unread mention',
       'output-token rate.',
-      'output-token rate.\n>\n> GLM takes any reasoning effort.',
+      'output-token rate.\n> >\n> > GLM takes any reasoning effort.',
     ],
     [
       'a second sentence for the same model',
       'output-token rate.',
-      'output-token rate.\n>\n> Kimi K3 accepts `low` and `high` reasoning effort.',
+      'output-token rate.\n> >\n> > Kimi K3 accepts `low` and `high` reasoning effort.',
     ],
     [
       'the sentence moved outside the tabs',
-      /^> \[!NOTE\]\n>\n> Kimi K3 accepts[^\n]*\n\n([^]*?## Service tiers\n)/m,
+      /^>\n> > \[!NOTE\]\n> >\n> > Kimi K3 accepts[^\n]*\n([^]*?## Service tiers\n)/m,
       `$1\n${KIMI_SENTENCE}\n`,
     ],
     [
@@ -210,15 +227,29 @@ describe('parsePerplexityModelsPage', () => {
       'is an open-weight reasoning model.',
       'is an open-weight reasoning model with a chain-of-thought you cannot skip.',
     ],
-    ['a card titled for another tab', '> **NVIDIA**', '> **Nemotron**'],
-    ['a card with no spacer line', '> **Z.AI**\n>\n', '> **Z.AI**\n'],
-    ['a tab title in another shape', '**Z.AI**\n', '**Z.AI** \n'],
+    [
+      'a card titled for another tab',
+      '> > [card] NVIDIA',
+      '> > [card] Nemotron',
+    ],
+    [
+      'a card with no spacer line',
+      '> > [card] Z.AI\n> >\n',
+      '> > [card] Z.AI\n',
+    ],
+    ['a tab title in another shape', '> [tab] Z.AI\n', '> [tabs] Z.AI\n'],
+    ['a tab with no spacer line', '> [tab] Z.AI\n>\n', '> [tab] Z.AI\n'],
     [
       'a card split by a blank line',
-      '> Nemotron 3 Ultra is',
-      '> NVIDIA Nemotron.\n\n> Nemotron 3 Ultra is',
+      '> > Nemotron 3 Ultra is',
+      '> > NVIDIA Nemotron.\n>\n> > Nemotron 3 Ultra is',
     ],
-    ['a table before the first tab title', '**xAI**\n\n', ''],
+    ['a card and table outside any tab', '> [tab] xAI\n>\n', ''],
+    [
+      'the bold title line the export used before 2026-10-30',
+      '> [tab] Z.AI\n>\n> > [card] Z.AI',
+      '**Z.AI**\n\n> **Z.AI**',
+    ],
     [
       'a card that goes on with a clause other than "with"',
       'is an open-weight reasoning model.',
@@ -231,7 +262,20 @@ describe('parsePerplexityModelsPage', () => {
   })
 
   it('reads only the Available Models section', () => {
-    const later = `${MODELS_DOC}\n\n**Extra**\n\n> **Extra**\n>\n> Extra is a reasoning model.\n\n${HEADER.join('\n')}\n| \`perplexity/extra\` | 1 | 1 | 1 | — | — |\n`
+    const later = [
+      MODELS_DOC,
+      '',
+      '> [tab] Extra',
+      ...quote([
+        '',
+        '> [card] Extra',
+        '>',
+        '> Extra is a reasoning model.',
+        '',
+        ...HEADER,
+        '| `perplexity/extra` | 1 | 1 | 1 | — | — |',
+      ]),
+    ].join('\n')
     expect(parsePerplexityModelsPage(later).flags.has('perplexity/extra')).toBe(
       false,
     )
@@ -245,13 +289,14 @@ describe('parsePerplexityModelsPage', () => {
 })
 
 // Three of the five effort levels as served on 2026-10-22, when the
-// presets page became the effort page: each accordion is one blockquote.
+// presets page became the effort page, in the markdown export's shape since
+// 2026-10-30: each accordion is one `> [accordion] title` blockquote.
 // Bullets are trimmed, and only `fast` keeps its prompt block, cut to one
 // `## ` heading; the real blocks also hold SDK code samples.
 const EFFORT_DOC = [
   '## Current effort level values',
   '',
-  '> **fast — current effort level values**',
+  '> [accordion] fast — current effort level values',
   '>',
   '> Quick factual lookups with minimal latency and inline citations for search-backed claims.',
   '>',
@@ -268,13 +313,13 @@ const EFFORT_DOC = [
   '> ## Role',
   '> ```',
   '',
-  '> **low — current effort level values**',
+  '> [accordion] low — current effort level values',
   '>',
   '> * **Model:** `openai/gpt-6-luna`',
   '> * **Reasoning effort:** `minimal`',
   '> * **Tools:** `web_search`, `fetch_url` (`max_urls: 1`)',
   '',
-  '> **xhigh — current effort level values**',
+  '> [accordion] xhigh — current effort level values',
   '>',
   '> * **Model:** `anthropic/claude-opus-5-5`',
   '> * **Max steps:** 100',
@@ -309,7 +354,7 @@ describe('parsePerplexityEffortLevels', () => {
       '\n## Next Steps',
       [
         '',
-        '> **ultra-preview — current effort level values**',
+        '> [accordion] ultra-preview — current effort level values',
         '>',
         '> Broad research and data-gathering tasks where coverage matters most.',
         '>',
@@ -407,8 +452,8 @@ describe('parsePerplexityEffortLevels', () => {
     ],
     [
       'an accordion title in another shape',
-      '> **xhigh — current effort level values**',
-      '> **xhigh — current effort level values (beta)**',
+      '> [accordion] xhigh — current effort level values',
+      '> [accordion] xhigh — current effort level values (beta)',
     ],
   ])('throws on %s', (_case, from, to) => {
     const mutated = EFFORT_DOC.replace(from, to)
@@ -564,12 +609,14 @@ describe('perplexity listModels', () => {
   it('puts a card sentence’s limits on its own row only', async () => {
     const nemotron = 'perplexity/nemotron-3.5-super-120b-a12b'
     const nvidia = MODELS_DOC.replace(
-      /^> Nemotron 3 Ultra[^]*?(?=\*\*Perplexity\*\*)/m,
+      /^> > Nemotron 3 Ultra[^]*?(?=> \[tab\] Perplexity)/m,
       [
-        '> Nemotron 3.5 Super is a reasoning model with a 1,048,576-token context window and up to 131,072 output tokens. It accepts text input only.',
-        '',
-        ...HEADER,
-        `| \`${nemotron}\` | 0.20 | 0.50 | 0.04 | — | — |`,
+        ...quote([
+          '> Nemotron 3.5 Super is a reasoning model with a 1,048,576-token context window and up to 131,072 output tokens. It accepts text input only.',
+          '',
+          ...HEADER,
+          `| \`${nemotron}\` | 0.20 | 0.50 | 0.04 | — | — |`,
+        ]),
         '',
         '',
       ].join('\n'),
