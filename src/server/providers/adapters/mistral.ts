@@ -135,16 +135,20 @@ export const provider: ProviderConfig = {
       MISTRAL_DEPRECATIONS_URL,
       parseMistralDeprecations,
     )
-    // The pricing load reads the model pages and the web search guide; a
-    // failing docs page keeps the stored facts instead of failing the poll.
+    // The pricing load reads the pricing table, changelog, models index,
+    // model pages and web search guide; a failing docs page keeps the
+    // stored facts instead of failing the poll.
     const [pricing, reasoning, wire] = await Promise.all([
-      tryDocs(docs, MISTRAL_PRICING_URL, () =>
+      tryDocs(docs, MISTRAL_PRICING_URL, (cached) =>
         mistralModelPricing(
           kv,
           listed.models.map((model) => model.rawId),
+          cached,
         ),
       ),
-      tryDocs(docs, MISTRAL_REASONING_URL, () => mistralModelReasoning(kv)),
+      tryDocs(docs, MISTRAL_REASONING_URL, (cached) =>
+        mistralModelReasoning(kv, cached),
+      ),
       chat ? mistralChatWire(kv) : Promise.resolve(null),
     ])
     const models = listed.models.map((model) =>
@@ -162,7 +166,8 @@ export const provider: ProviderConfig = {
     if (wire) {
       for (const model of models) {
         if (model.activity !== 'chat') continue
-        // The thinking request comes from the reasoning facts.
+        // The thinking request comes from the reasoning facts; keep the
+        // stored map whole rather than write one built without them.
         if (!reasoning) {
           model.absent = { ...model.absent, requestMap: 'unavailable' }
           continue
