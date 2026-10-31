@@ -16,7 +16,9 @@ import {
  *
  * A per-1M-token price is stored only when that model's file names input
  * and output as `tokens (per 1M)`, plus cached input or cache creation
- * when those keys are present. Any other pricing key nulls the card.
+ * when those keys are present, or names the same rates as `Short-context`
+ * and `Long-context` and states one `long_context_threshold_tokens` under
+ * `provider_details`. Any other pricing key nulls the card.
  * fetchSpec binds native catalog inputs to the documented universal REST envelope.
  * Logical endpoint ids are model ids; their HTTP path remains the native /ai/run path.
  */
@@ -70,12 +72,20 @@ const TASK_ACTIVITY: Record<string, Activity> = {
   'Music Generation': 'audio',
 }
 
-/** JSON keys that render as a flat per-1M-token rate. Any other key nulls the card. */
+/** JSON keys that render as a flat per-1M-token rate. Other keys price only as `CONTEXT_LEVERS` tiers. */
 const FLAT_LEVERS: Record<string, string> = {
   'Input tokens (per 1M)': 'input_tokens',
   'Output tokens (per 1M)': 'output_tokens',
   'Cached input tokens (per 1M)': 'cache_read_tokens',
   'Cache creation tokens (per 1M)': 'cache_write_tokens',
+}
+
+/** Rate names after a `Short-context ` / `Long-context ` prefix. */
+const CONTEXT_LEVERS: Record<string, string> = {
+  'input (per 1M)': 'input_tokens',
+  'output (per 1M)': 'output_tokens',
+  'cached input (per 1M)': 'cache_read_tokens',
+  'cache write (per 1M)': 'cache_write_tokens',
 }
 
 const MODALITY_KEYS = [
@@ -206,8 +216,45 @@ function stringList(
   return value
 }
 
+function perToken(dollars: unknown, rawId: string, key: string): number {
+  if (typeof dollars !== 'number' || !Number.isFinite(dollars) || dollars < 0) {
+    throw fail(rawId, `pricing ${key} is not a finite number`)
+  }
+  return dollars / 1_000_000
+}
+
+/**
+ * The prompt size above which `Long-context` rates apply, from the file's
+ * `provider_details[].pricing.long_context_threshold_tokens`. Null when no
+ * entry states one or two entries disagree.
+ */
+function longContextThreshold(details: unknown, rawId: string): number | null {
+  if (details == null) return null
+  if (!Array.isArray(details)) {
+    throw fail(rawId, 'provider_details was not a list')
+  }
+  const stated = new Set<number>()
+  for (const entry of details) {
+    if (!isRecord(entry))
+      throw fail(rawId, 'provider_details entry is not an object')
+    if (entry.pricing == null) continue
+    if (!isRecord(entry.pricing)) {
+      throw fail(rawId, 'provider_details pricing was not an object')
+    }
+    const threshold = positiveInt(
+      entry.pricing.long_context_threshold_tokens,
+      rawId,
+      'provider_details pricing.long_context_threshold_tokens',
+    )
+    if (threshold !== null) stated.add(threshold)
+  }
+  const [threshold] = stated
+  return stated.size === 1 && threshold !== undefined ? threshold : null
+}
+
 function tokenCard(
   pricing: unknown,
+  details: unknown,
   rawId: string,
   source: RateCard['source'],
 ): RateCard | null {
@@ -215,25 +262,44 @@ function tokenCard(
   if (!isRecord(pricing)) throw fail(rawId, 'pricing was not an object')
   const keys = Object.keys(pricing)
   if (keys.length === 0) return null
-  if (keys.some((key) => FLAT_LEVERS[key] === undefined)) return null
-  const rates: Record<string, number> = {}
-  for (const key of keys) {
-    const lever = FLAT_LEVERS[key]
-    if (!lever) return null
-    const dollars = pricing[key]
-    if (
-      typeof dollars !== 'number' ||
-      !Number.isFinite(dollars) ||
-      dollars < 0
-    ) {
-      throw fail(rawId, `pricing ${key} is not a finite number`)
+  if (keys.every((key) => FLAT_LEVERS[key] !== undefined)) {
+    const rates: Record<string, number> = {}
+    for (const key of keys) {
+      const lever = FLAT_LEVERS[key]
+      if (!lever) return null
+      rates[lever] = perToken(pricing[key], rawId, key)
     }
-    rates[lever] = dollars / 1_000_000
+    if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
+      return null
+    }
+    return compileTokenCard(rates, [], source)
   }
-  if (rates.input_tokens === undefined || rates.output_tokens === undefined) {
+  const short: Record<string, number> = {}
+  const long: Record<string, number> = {}
+  for (const key of keys) {
+    const match = /^(Short|Long)-context (.+)$/.exec(key)
+    const tier = match?.[1]
+    const lever = CONTEXT_LEVERS[match?.[2] ?? '']
+    if (!tier || !lever) return null
+    const rates = tier === 'Short' ? short : long
+    rates[lever] = perToken(pricing[key], rawId, key)
+  }
+  const levers = (rates: Record<string, number>) =>
+    Object.keys(rates).sort().join()
+  if (
+    short.input_tokens === undefined ||
+    short.output_tokens === undefined ||
+    levers(short) !== levers(long)
+  ) {
     return null
   }
-  return compileTokenCard(rates, [], source)
+  const threshold = longContextThreshold(details, rawId)
+  if (threshold === null) return null
+  return compileTokenCard(
+    short,
+    [{ minPromptTokens: threshold, rates: long }],
+    source,
+  )
 }
 
 function outputModalities(activity: Activity | null): Array<string> {
@@ -803,7 +869,12 @@ export function parseCatalogModel(
     rawId,
     'max_output_tokens',
   )
-  const pricing = tokenCard(model.pricing, rawId, source)
+  const pricing = tokenCard(
+    model.pricing,
+    model.provider_details,
+    rawId,
+    source,
+  )
   const cited = (path: string) => provenance(source, path)
   const flagPath = (flag: string): string => {
     if (flag === 'tools' && tools) return tools
