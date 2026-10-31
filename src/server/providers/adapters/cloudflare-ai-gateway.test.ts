@@ -1,5 +1,7 @@
 import nativeEfforts from '../fixtures/cloudflare-native-effort-excerpts.json'
 import { GATEWAY_REST_DOCS } from '../cloudflare-gateway-schema.ts'
+import { price } from '@modelschemas/rate-card'
+import type { RateCard } from '@modelschemas/rate-card'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -136,6 +138,49 @@ describe('cloudflare-ai-gateway', () => {
     })
     expect(parseCatalogModel(FABLE, SOURCE).reasoning).toBeUndefined()
     expect(parseCatalogModel(FABLE, SOURCE).capabilities).toEqual(['reasoning'])
+  })
+
+  it('prices Short-/Long-context rates above the stated long-context threshold', () => {
+    // openai-gpt-5.6-terra.json as published on 2026-10-30.
+    const terra = {
+      ...FABLE,
+      model_id: 'openai/gpt-5.6-terra',
+      pricing: {
+        'Short-context input (per 1M)': 2,
+        'Short-context cached input (per 1M)': 0.2,
+        'Short-context cache write (per 1M)': 2.5,
+        'Short-context output (per 1M)': 12,
+        'Long-context input (per 1M)': 4,
+        'Long-context cached input (per 1M)': 0.4,
+        'Long-context cache write (per 1M)': 5,
+        'Long-context output (per 1M)': 18,
+      },
+      provider_details: [
+        {
+          id: 'openai',
+          pricing: {
+            long_context_threshold_tokens: 272_000,
+            short_context_input_tokens: 2,
+            long_context_input_tokens: 4,
+          },
+        },
+      ],
+    }
+    const card = parseCatalogModel(terra, SOURCE).pricing as RateCard
+    expect(card).not.toBeNull()
+    expect(
+      price(card, {}, { input_tokens: 272_000, output_tokens: 1_000_000 }),
+    ).toBeCloseTo(0.544 + 12)
+    expect(
+      price(card, {}, { input_tokens: 272_001, output_tokens: 1_000_000 }),
+    ).toBeCloseTo((272_001 * 4) / 1_000_000 + 18)
+    expect(
+      parseCatalogModel({ ...terra, provider_details: [] }, SOURCE).pricing,
+    ).toBeNull()
+    const { 'Long-context cache write (per 1M)': _, ...uneven } = terra.pricing
+    expect(
+      parseCatalogModel({ ...terra, pricing: uneven }, SOURCE).pricing,
+    ).toBeNull()
   })
 
   it('leaves per-second, tiered, and extra rate keys unpriced', () => {
