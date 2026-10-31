@@ -340,8 +340,8 @@ shard's worth with `POST /v1/admin/extract/fal`;
 The extract model runs through Cloudflare AI Gateway on Unified Billing,
 so its cost lands on the Cloudflare bill and needs no provider key: the
 Worker's `AI` binding calls the gateway named by the `AI_GATEWAY_ID` var
-in `wrangler.jsonc` (TanStack AI `chat()` with
-`@tanstack/ai-cloudflare`). Create that gateway in the dashboard (AI →
+in `wrangler.jsonc` (TanStack AI `chat()` with the Anthropic adapter over
+`cloudflareBindingFetch` from `@tanstack/ai-cloudflare`). Create that gateway in the dashboard (AI →
 AI Gateway) and load credits on the account. Without them every
 leftover fails and the cursor rewinds, as it does for any extract
 error. Re-pick the model with `bun scripts/compare-fal-extract-models.ts`.

@@ -1,11 +1,11 @@
 /**
  * Issue #550: score candidate FAL rate-card extract models on the same
  * Pricing sections, through the production prompt, checks and repair turn
- * (`extractRateCard` over `gatewayChat`: TanStack AI with the
- * `@tanstack/ai-cloudflare` adapter, as production runs). Only the gateway hop is swapped: a stand-in binding
- * sends the adapter's request to the provider with its own key (env or
- * Doppler `dev`). The gateway passes provider rates through, so the cost
- * column matches what Unified Billing would charge (before its 5% fee).
+ * (`extractRateCard` over `gatewayChat`, as production runs). Only the
+ * gateway hop is swapped: a stand-in binding sends the Anthropic adapter's
+ * request to Anthropic with the dev key (env or Doppler `dev`). The gateway
+ * passes provider rates through, so the cost column matches what Unified
+ * Billing would charge (before its 5% fee).
  *
  *   bun scripts/compare-fal-extract-models.ts [--leftovers 13] [--models a,b] [--cache file.json]
  *
@@ -32,7 +32,6 @@ import { KLING_V3_PRO_IMAGE_TO_VIDEO } from '../packages/rate-card/src/fixtures/
 import { NANO_BANANA_2 } from '../packages/rate-card/src/fixtures/nano-banana-2.ts'
 import { SEEDANCE_FAL_RATE_CARDS } from '../packages/rate-card/src/fixtures/seedance-fal.ts'
 import {
-  FAL_PRICING_EXTRACT_OPTIONS,
   extractRateCard,
   gatewayChat,
   isStubPricingSection,
@@ -44,17 +43,16 @@ import { priceFalNamedSection } from '../src/server/ingest/fal-unit-rate.ts'
 import { requestSchemaPropertyNames } from '../src/server/providers/fact-sources.ts'
 
 interface Candidate {
-  /** Gateway catalog id. */
-  id: string
-  /** USD per million tokens, from the gateway catalog. */
+  model: Parameters<typeof gatewayChat>[2] & string
+  /** USD per million tokens (Anthropic list price, which the gateway passes through). */
   input: number
   output: number
-  modelOptions: Record<string, unknown>
-  /** Where the stand-in binding sends the call: an OpenAI-compatible endpoint. */
-  url: string
-  keyName: string
-  providerModel: string
 }
+
+const CANDIDATES: Array<Candidate> = [
+  { model: 'claude-sonnet-5-5', input: 2, output: 10 },
+  { model: 'claude-haiku-5-5', input: 0.1, output: 0.5 },
+]
 
 function secret(name: string): string {
   const fromEnv = process.env[name]
@@ -66,109 +64,50 @@ function secret(name: string): string {
   ).trim()
 }
 
-const JSON_MODE = { response_format: { type: 'json_object' } }
-
-const CANDIDATES: Array<Candidate> = [
-  {
-    id: 'anthropic/claude-sonnet-5.5',
-    input: 2,
-    output: 10,
-    // Claude 5.5 refuses temperature and json_object here; the prompt
-    // asks for JSON only.
-    modelOptions: {},
-    url: 'https://api.anthropic.com/v1/chat/completions',
-    keyName: 'ANTHROPIC_API_KEY',
-    providerModel: 'claude-sonnet-5-5',
-  },
-  {
-    id: 'anthropic/claude-haiku-5.5',
-    input: 0.1,
-    output: 0.5,
-    // Claude 5.5 refuses temperature and json_object here; the prompt
-    // asks for JSON only.
-    modelOptions: {},
-    url: 'https://api.anthropic.com/v1/chat/completions',
-    keyName: 'ANTHROPIC_API_KEY',
-    providerModel: 'claude-haiku-5-5',
-  },
-  {
-    id: 'openai/gpt-6-luna',
-    input: 0.1,
-    output: 0.5,
-    // Luna 400s on temperature 0 ("only the default (1)").
-    modelOptions: { ...JSON_MODE, reasoning_effort: 'low' },
-    url: 'https://api.openai.com/v1/chat/completions',
-    keyName: 'OPENAI_API_KEY',
-    providerModel: 'gpt-6-luna',
-  },
-  {
-    id: 'xai/grok-4.7',
-    input: 4,
-    output: 12,
-    modelOptions: { ...FAL_PRICING_EXTRACT_OPTIONS },
-    url: 'https://api.x.ai/v1/chat/completions',
-    keyName: 'XAI_API_KEY',
-    providerModel: 'grok-4.7',
-  },
-  {
-    id: 'google/gemini-3.8-flash',
-    input: 0.75,
-    output: 3.75,
-    modelOptions: { ...FAL_PRICING_EXTRACT_OPTIONS },
-    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-    keyName: 'GEMINI_API_KEY',
-    providerModel: 'gemini-3.8-flash',
-  },
-]
-
-interface ProviderUsage {
-  prompt_tokens: number
-  completion_tokens: number
-  total_tokens?: number
+interface Usage {
+  input: number
+  output: number
 }
 
-/** The usage object of a chat completion, streamed (last `usage` chunk) or not. */
-async function readUsage(response: Response): Promise<ProviderUsage> {
-  const text = await response.text()
-  if (!response.headers.get('content-type')?.includes('event-stream'))
-    return (JSON.parse(text) as { usage: ProviderUsage }).usage
-  let usage: ProviderUsage = { prompt_tokens: 0, completion_tokens: 0 }
-  for (const line of text.split('\n')) {
+/** Token totals of a streamed Messages reply: `message_start` in, `message_delta` out. */
+async function readUsage(response: Response): Promise<Usage> {
+  const usage: Usage = { input: 0, output: 0 }
+  for (const line of (await response.text()).split('\n')) {
     if (!line.startsWith('data: {')) continue
-    const chunk = JSON.parse(line.slice(6)) as { usage?: ProviderUsage | null }
-    if (chunk.usage) usage = chunk.usage
+    const event = JSON.parse(line.slice(6)) as {
+      message?: { usage?: { input_tokens?: number } }
+      usage?: { output_tokens?: number }
+    }
+    usage.input += event.message?.usage?.input_tokens ?? 0
+    usage.output = event.usage?.output_tokens ?? usage.output
   }
   return usage
 }
 
 /**
- * Stands in for `env.AI` with a gateway: the adapter's `run(model, inputs,
- * { gateway, returnRawResponse })` goes to the provider instead, with the
- * same inputs, and the raw response comes back as the gateway's would.
+ * Stands in for `env.AI`: the binding fetch's `run('anthropic/<model>',
+ * body)` goes to Anthropic's Messages API with the dev key instead of the
+ * gateway, and the raw response comes back as the gateway's would.
  */
-function standInBinding(
-  candidate: Candidate,
-  onUsage: (usage: ProviderUsage) => void,
-): Ai {
-  const key = secret(candidate.keyName)
-  const run = async (_model: string, inputs: Record<string, unknown>) => {
-    const response = await fetch(candidate.url, {
+function standInBinding(onUsage: (usage: Usage) => void): Ai {
+  const key = secret('ANTHROPIC_API_KEY')
+  const run = async (model: string, body: Record<string, unknown>) => {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        ...inputs,
-        model: candidate.providerModel,
-        ...(inputs.stream ? { stream_options: { include_usage: true } } : {}),
+        ...body,
+        model: model.replace(/^anthropic\//, ''),
       }),
     })
-    // The adapter drops a stream's trailing usage chunk, so read it here.
     if (response.ok) void readUsage(response.clone()).then(onUsage)
     return response
   }
-  return { run, gateway: () => ({}) } as unknown as Ai
+  return { run } as unknown as Ai
 }
 
 interface Section {
@@ -324,7 +263,7 @@ interface Row {
 
 async function score(candidate: Candidate, sections: Array<Section>) {
   const row: Row = {
-    model: candidate.id,
+    model: candidate.model,
     sections: sections.length,
     passed: 0,
     repaired: 0,
@@ -336,23 +275,14 @@ async function score(candidate: Candidate, sections: Array<Section>) {
   }
   for (const section of sections) {
     let turns = 0
-    const binding = standInBinding(candidate, (usage) => {
-      // Reasoning billed outside completion tokens (xAI) shows in the total.
-      const output = Math.max(
-        usage.completion_tokens,
-        (usage.total_tokens ?? 0) - usage.prompt_tokens,
-      )
+    const binding = standInBinding((usage) => {
       row.usd +=
-        (usage.prompt_tokens * candidate.input + output * candidate.output) /
-        1e6
+        (usage.input * candidate.input + usage.output * candidate.output) / 1e6
     })
-    const gateway = gatewayChat(binding, 'stand-in', {
-      model: candidate.id,
-      modelOptions: candidate.modelOptions,
-    })
-    const chat: ExtractChat = (messages) => {
+    const gateway = gatewayChat(binding, 'stand-in', candidate.model)
+    const chat: ExtractChat = (turnsSoFar) => {
       turns++
-      return gateway(messages)
+      return gateway(turnsSoFar)
     }
     const started = performance.now()
     const result = await extractRateCard({
@@ -382,7 +312,7 @@ async function score(candidate: Candidate, sections: Array<Section>) {
     }
     process.stderr.write('.')
   }
-  process.stderr.write(` ${candidate.id}\n`)
+  process.stderr.write(` ${candidate.model}\n`)
   return row
 }
 
@@ -428,7 +358,7 @@ async function main(): Promise<void> {
   }
   const leftoverCount = Number(flag('--leftovers') ?? 13)
   const modelIds = (
-    flag('--models') ?? CANDIDATES.map((c) => c.id).join(',')
+    flag('--models') ?? CANDIDATES.map((c) => c.model).join(',')
   ).split(',')
 
   const cachePath = flag('--cache')
@@ -453,7 +383,7 @@ async function main(): Promise<void> {
 
   const rows: Array<Row> = []
   for (const id of modelIds) {
-    const candidate = CANDIDATES.find((c) => c.id === id)
+    const candidate = CANDIDATES.find((c) => c.model === id)
     if (!candidate) throw new Error(`unknown model ${id}`)
     rows.push(await score(candidate, sections))
   }

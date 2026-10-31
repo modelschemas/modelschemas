@@ -9,7 +9,6 @@ import {
   FAL_PRICING_EXTRACT_CRONS,
   FAL_PRICING_EXTRACT_CAP,
   FAL_PRICING_EXTRACT_MODEL,
-  FAL_PRICING_EXTRACT_OPTIONS,
   FAL_PRICING_FETCH_CAP,
   FAL_PRICING_FETCH_FAIL_ABORT,
   EXTRACT_SYSTEM,
@@ -44,13 +43,56 @@ function gatewayReplies(...replies: Array<unknown>): RunMock {
   return mock
 }
 
-/** A streamed chat completion, the shape the gateway returns for `stream: true`. */
-function sseReply(content: string): Response {
-  const events = [
-    { choices: [{ index: 0, delta: { role: 'assistant', content } }] },
-    { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+/** A streamed Anthropic Messages reply, as the gateway returns it. */
+function sseReply(text: string): Response {
+  const events: Array<[string, unknown]> = [
+    [
+      'message_start',
+      {
+        type: 'message_start',
+        message: {
+          id: 'msg_test',
+          type: 'message',
+          role: 'assistant',
+          model: FAL_PRICING_EXTRACT_MODEL,
+          content: [],
+          stop_reason: null,
+          usage: { input_tokens: 1, output_tokens: 0 },
+        },
+      },
+    ],
+    [
+      'content_block_start',
+      {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'text', text: '' },
+      },
+    ],
+    [
+      'content_block_delta',
+      {
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text },
+      },
+    ],
+    ['content_block_stop', { type: 'content_block_stop', index: 0 }],
+    [
+      'message_delta',
+      {
+        type: 'message_delta',
+        delta: { stop_reason: 'end_turn' },
+        usage: { output_tokens: 1 },
+      },
+    ],
+    ['message_stop', { type: 'message_stop' }],
   ]
-  const body = `${events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('')}data: [DONE]\n\n`
+  const body = events
+    .map(
+      ([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+    )
+    .join('')
   return new Response(body, {
     headers: { 'content-type': 'text/event-stream' },
   })
@@ -58,20 +100,25 @@ function sseReply(content: string): Response {
 
 /** `env.AI` with only `run` doing anything. */
 function fakeAi(run: RunMock): Ai {
-  return { run, gateway: () => ({}) } as unknown as Ai
+  return { run } as unknown as Ai
 }
 
-/** The chat-completions input of call `n`. */
+/** The Anthropic Messages body of call `n`. */
 function runInput(
   run: RunMock,
   n: number,
 ): {
-  messages: Array<{ role: string; content: string }>
-  temperature?: number
+  system?: unknown
+  messages: Array<{ role: string; content: unknown }>
 } {
   return run.mock.calls[n]?.[1] as {
-    messages: Array<{ role: string; content: string }>
+    messages: Array<{ role: string; content: unknown }>
   }
+}
+
+/** A message's text, whether sent as a string or as content blocks. */
+function textOf(content: unknown): string {
+  return typeof content === 'string' ? content : JSON.stringify(content)
 }
 
 const NANO_LLMS = `# Nano Banana 2
@@ -235,7 +282,7 @@ describe('FAL_PRICING_EXTRACT_CRONS', () => {
     expect(FAL_PRICING_FETCH_CAP).toBe(250)
     expect(FAL_PRICING_EXTRACT_CAP).toBe(40)
     expect(FAL_PRICING_FETCH_FAIL_ABORT).toBe(8)
-    expect(FAL_PRICING_EXTRACT_MODEL).toBe('grok-4-fast')
+    expect(FAL_PRICING_EXTRACT_MODEL).toBe('claude-sonnet-5-5')
     for (const cron of FAL_PRICING_EXTRACT_CRONS) {
       expect(
         (SPEC_SYNC_SHARD_CRONS as ReadonlyArray<string>).includes(cron),
@@ -311,9 +358,13 @@ describe('extractRateCard through the gateway', () => {
     expect(card.source.hash).toBe(args.sourceHash)
     expect(card.source.url).toBe(args.sourceUrl)
     const [model, input, options] = run.mock.calls[0] ?? []
-    expect(model).toBe(FAL_PRICING_EXTRACT_MODEL)
-    expect(input).toMatchObject(FAL_PRICING_EXTRACT_OPTIONS)
+    expect(model).toBe(`anthropic/${FAL_PRICING_EXTRACT_MODEL}`)
     expect(options).toMatchObject({ gateway: { id: 'gw-test' } })
+    // Claude 5 400s on temperature (#550).
+    expect(input).not.toHaveProperty('temperature')
+    expect(textOf(runInput(run, 0).system)).toContain(
+      'You write a modelschemas RateCard',
+    )
   })
 
   it('returns unverified only for a section that names no price', async () => {
@@ -336,15 +387,13 @@ describe('extractRateCard through the gateway', () => {
     const card = await extract(args, run)
     expect(card).toMatchObject({ price: NANO_BANANA_2.price })
     expect(run).toHaveBeenCalledTimes(2)
-    expect(run.mock.calls[1]?.[0]).toBe(FAL_PRICING_EXTRACT_MODEL)
     const retry = runInput(run, 1)
     expect(retry.messages.map((m) => m.role)).toEqual([
-      'system',
       'user',
       'assistant',
       'user',
     ])
-    expect(retry.messages[3]?.content).toContain('$0.08')
+    expect(textOf(retry.messages[2]?.content)).toContain('$0.08')
   })
 
   it('returns the rejection when a priced section is refused twice', async () => {
@@ -370,7 +419,7 @@ describe('extractRateCard through the gateway', () => {
     expect(await extractError(args, run)).toMatch(
       /^rejected twice: verifyExamples failed/,
     )
-    expect(runInput(run, 1).messages[3]?.content).toContain(
+    expect(textOf(runInput(run, 1).messages[2]?.content)).toContain(
       'verifyExamples failed',
     )
   })
@@ -406,7 +455,6 @@ describe('extractRateCard through the gateway', () => {
   })
 
   it('returns the provider status and body when the gateway answers non-ok (#394)', async () => {
-    // The adapter retries a failed stream once without streaming.
     const run: RunMock = vi.fn(() =>
       Promise.resolve(
         Response.json({ error: { message: 'rate limited' } }, { status: 429 }),
@@ -415,10 +463,10 @@ describe('extractRateCard through the gateway', () => {
     expect(await extractError(args, run)).toMatch(/429.*rate limited/)
   })
 
-  it('fails closed on a reply with no text', async () => {
+  it('treats an empty reply as a rejection', async () => {
     const run: RunMock = vi.fn(() => Promise.resolve(sseReply('')))
     await expect(extract(args, run)).resolves.toEqual({
-      error: 'gateway reply has no text',
+      error: 'rejected twice: reply is not JSON',
     })
   })
 })

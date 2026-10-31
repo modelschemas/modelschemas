@@ -6,9 +6,9 @@
  * and the model poll stores those; this job still owns every other section.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { CloudflareTextAdapter } from '@tanstack/ai-cloudflare'
-import type { CloudflareBindingConfig } from '@tanstack/ai-cloudflare'
-import { EventType, chat } from '@tanstack/ai'
+import { createAnthropicChat } from '@tanstack/ai-anthropic'
+import { cloudflareBindingFetch } from '@tanstack/ai-cloudflare'
+import { chat } from '@tanstack/ai'
 import { z } from 'zod'
 
 import { cardParams, verifyExamples } from '@modelschemas/rate-card'
@@ -70,16 +70,11 @@ export function falPricingExtractCursorKey(providerId = 'fal'): string {
 }
 
 /**
- * Single extract model, an AI Gateway catalog id — fail-closed; never a
- * second guess. Picked by `scripts/compare-fal-extract-models.ts` (#550).
+ * Single extract model — fail-closed; never a second guess. Picked by
+ * `scripts/compare-fal-extract-models.ts` (#550). Anthropic's id: the
+ * binding fetch prefixes `anthropic/` for the gateway.
  */
-export const FAL_PRICING_EXTRACT_MODEL = 'grok-4-fast'
-
-/** Request options for that model (temperature, JSON mode). */
-export const FAL_PRICING_EXTRACT_OPTIONS: Record<string, unknown> = {
-  temperature: 0,
-  response_format: { type: 'json_object' },
-}
+export const FAL_PRICING_EXTRACT_MODEL = 'claude-sonnet-5-5'
 
 const extractedBodySchema = rateCardSchema.omit({ source: true }).extend({
   expiresAt: z.iso.datetime().optional(),
@@ -360,66 +355,42 @@ export function checkExtractedCard(
   return card
 }
 
-export type ChatMessage = {
-  role: 'system' | 'user' | 'assistant'
-  content: string
-}
+export type ChatTurn = { role: 'user' | 'assistant'; content: string }
 
-/** One chat turn: the reply text, or why there is none. */
-export type ExtractChat = (
-  messages: Array<ChatMessage>,
-) => Promise<string | { error: string }>
-
-export interface GatewayChatOptions {
-  model?: string
-  modelOptions?: Record<string, unknown>
-}
+/** The model's reply to these turns after `EXTRACT_SYSTEM`; throws on error. */
+export type ExtractChat = (turns: Array<ChatTurn>) => Promise<string>
 
 /**
- * The extract model through Cloudflare AI Gateway (Unified Billing, so no
- * provider key): TanStack AI `chat()` with the `@tanstack/ai-cloudflare`
- * text adapter on the `env.AI` binding, which takes any gateway catalog id.
- * `modelOptions` go into the request as-is. A `RUN_ERROR` (gateway or
- * provider error) becomes `{ error }`.
+ * The extract model through Cloudflare AI Gateway on Unified Billing: the
+ * TanStack AI Anthropic adapter, its requests sent over the `env.AI`
+ * binding (which authenticates, so no provider key). No temperature: Claude 5
+ * models 400 on it (`anthropic-features.ts`). A gateway or provider error
+ * throws.
  */
 export function gatewayChat(
   ai: Ai,
   gatewayId: string,
-  options: GatewayChatOptions = {},
+  model:
+    | typeof FAL_PRICING_EXTRACT_MODEL
+    | 'claude-haiku-5-5' = FAL_PRICING_EXTRACT_MODEL,
 ): ExtractChat {
-  // The class, not `createCloudflareText`: its typed options have no
-  // `response_format`, and JSON mode is per model here.
-  const adapter = new CloudflareTextAdapter<string, Record<string, unknown>>(
-    {
-      // The adapter pins workers-types 4; ours is 5. Same binding object.
-      binding: ai as unknown as CloudflareBindingConfig['binding'],
+  const adapter = createAnthropicChat(model, 'cloudflare-binding', {
+    fetch: cloudflareBindingFetch({
+      binding: ai,
+      vendor: 'anthropic',
       gateway: { id: gatewayId },
-    },
-    options.model ?? FAL_PRICING_EXTRACT_MODEL,
-  )
-  // One thread per extraction: the repair turn continues it.
-  const threadId = `fal-extract-${crypto.randomUUID()}`
-  return async (messages) => {
-    let text = ''
-    for await (const chunk of chat({
+    }),
+  })
+  const threadId = crypto.randomUUID()
+  return async (turns) => {
+    const { text } = await chat({
       adapter,
       threadId,
-      systemPrompts: messages
-        .filter((m) => m.role === 'system')
-        .map((m) => m.content),
-      messages: messages
-        .filter((m) => m.role !== 'system')
-        .map((m) => ({
-          role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-          content: m.content,
-        })),
-      modelOptions: options.modelOptions ?? FAL_PRICING_EXTRACT_OPTIONS,
-    })) {
-      if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) text += chunk.delta
-      else if (chunk.type === EventType.RUN_ERROR)
-        return { error: chunk.message }
-    }
-    return text.length > 0 ? text : { error: 'gateway reply has no text' }
+      stream: false,
+      systemPrompts: [EXTRACT_SYSTEM],
+      messages: turns,
+    })
+    return text
   }
 }
 
@@ -431,8 +402,7 @@ export function gatewayChat(
 export async function extractRateCard(
   args: ExtractCardArgs & { chat: ExtractChat },
 ): Promise<ExtractedCard> {
-  const messages: Array<ChatMessage> = [
-    { role: 'system', content: EXTRACT_SYSTEM },
+  const turns: Array<ChatTurn> = [
     {
       role: 'user',
       content: extractUserPrompt(args.pricingText, args.requestProperties),
@@ -441,12 +411,11 @@ export async function extractRateCard(
   try {
     let rejected = ''
     for (let turn = 0; turn < 2; turn++) {
-      const content = await args.chat(messages)
-      if (typeof content !== 'string') return content
+      const content = await args.chat(turns)
       const checked = checkExtractedCard(content, args)
       if (checked === 'unverified' || !('error' in checked)) return checked
       rejected = checked.error
-      messages.push(
+      turns.push(
         { role: 'assistant', content },
         {
           role: 'user',

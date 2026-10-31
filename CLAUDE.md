@@ -158,7 +158,7 @@ ones).
   hash and are copied onto every row sharing it. A priced leftover must
   become a card (one repair turn, same model); a failed one rewinds the
   cursor so the next shard retries it once. The model call is TanStack AI
-  `chat()` (`@tanstack/ai-cloudflare`) on the `AI` binding through AI Gateway (`gatewayChat`, Unified
+  `chat()` (`@tanstack/ai-anthropic` over `@tanstack/ai-cloudflare`'s `cloudflareBindingFetch`) on the `AI` binding through AI Gateway (`gatewayChat`, Unified
   Billing, gateway id `AI_GATEWAY_ID`); `scripts/compare-fal-extract-models.ts`
   scores candidates through the same code.
   `models.reasoning` (`{ mode, mandatory, efforts? }`; mode is
