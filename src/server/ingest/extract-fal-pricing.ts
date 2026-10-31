@@ -374,23 +374,43 @@ export function gatewayChat(
     | typeof FAL_PRICING_EXTRACT_MODEL
     | 'claude-haiku-5-5' = FAL_PRICING_EXTRACT_MODEL,
 ): ExtractChat {
+  const bindingFetch = cloudflareBindingFetch({
+    binding: ai,
+    vendor: 'anthropic',
+    gateway: { id: gatewayId },
+  })
+  // The Anthropic SDK reports a thrown fetch as a bare "Connection error."
+  // and drops the binding's error, so keep it and rethrow it as the cause.
+  let bindingError: unknown
   const adapter = createAnthropicChat(model, 'cloudflare-binding', {
-    fetch: cloudflareBindingFetch({
-      binding: ai,
-      vendor: 'anthropic',
-      gateway: { id: gatewayId },
-    }),
+    fetch: async (...args: Parameters<typeof bindingFetch>) => {
+      try {
+        const response = await bindingFetch(...args)
+        // A retry got through: an earlier throw is not this call's cause.
+        bindingError = undefined
+        return response
+      } catch (error) {
+        bindingError = error
+        throw error
+      }
+    },
   })
   const threadId = crypto.randomUUID()
   return async (turns) => {
-    const { text } = await chat({
-      adapter,
-      threadId,
-      stream: false,
-      systemPrompts: [EXTRACT_SYSTEM],
-      messages: turns,
-    })
-    return text
+    bindingError = undefined
+    try {
+      const { text } = await chat({
+        adapter,
+        threadId,
+        stream: false,
+        systemPrompts: [EXTRACT_SYSTEM],
+        messages: turns,
+      })
+      return text
+    } catch (error) {
+      if (bindingError === undefined) throw error
+      throw new Error(errorMessage(error), { cause: bindingError })
+    }
   }
 }
 

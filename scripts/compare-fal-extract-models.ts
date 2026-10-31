@@ -89,7 +89,10 @@ async function readUsage(response: Response): Promise<Usage> {
  * body)` goes to Anthropic's Messages API with the dev key instead of the
  * gateway, and the raw response comes back as the gateway's would.
  */
-function standInBinding(onUsage: (usage: Usage) => void): Ai {
+function standInBinding(
+  onUsage: (usage: Usage) => void,
+  pending: Array<Promise<void>>,
+): Ai {
   const key = secret('ANTHROPIC_API_KEY')
   const run = async (model: string, body: Record<string, unknown>) => {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -104,7 +107,7 @@ function standInBinding(onUsage: (usage: Usage) => void): Ai {
         model: model.replace(/^anthropic\//, ''),
       }),
     })
-    if (response.ok) void readUsage(response.clone()).then(onUsage)
+    if (response.ok) pending.push(readUsage(response.clone()).then(onUsage))
     return response
   }
   return { run } as unknown as Ai
@@ -273,12 +276,13 @@ async function score(candidate: Candidate, sections: Array<Section>) {
     ms: [],
     failures: [],
   }
+  const pending: Array<Promise<void>> = []
   for (const section of sections) {
     let turns = 0
     const binding = standInBinding((usage) => {
       row.usd +=
         (usage.input * candidate.input + usage.output * candidate.output) / 1e6
-    })
+    }, pending)
     const gateway = gatewayChat(binding, 'stand-in', candidate.model)
     const chat: ExtractChat = (turnsSoFar) => {
       turns++
@@ -312,6 +316,7 @@ async function score(candidate: Candidate, sections: Array<Section>) {
     }
     process.stderr.write('.')
   }
+  await Promise.all(pending)
   process.stderr.write(` ${candidate.model}\n`)
   return row
 }

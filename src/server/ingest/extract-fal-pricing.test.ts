@@ -444,14 +444,31 @@ describe('extractRateCard through the gateway', () => {
   })
 
   it('fails closed when the binding call throws', async () => {
-    // The OpenAI SDK under the adapter reports a thrown fetch as a
-    // connection error; gateway and provider HTTP errors keep their text.
+    // The Anthropic SDK reports a thrown fetch as "Connection error.";
+    // gatewayChat keeps the binding's own error as the cause.
     const run: RunMock = vi
       .fn()
       .mockRejectedValue(new Error('3040: Capacity temporarily exceeded'))
-    await expect(extract(args, run)).resolves.toEqual({
-      error: 'Connection error.',
-    })
+    expect(await extractError(args, run)).toMatch(
+      /Connection error\..*caused by: 3040: Capacity temporarily exceeded/,
+    )
+  })
+
+  it('does not blame an earlier retried throw for a later HTTP error', async () => {
+    const run: RunMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('3040: Capacity temporarily exceeded'))
+      .mockImplementation(() =>
+        Promise.resolve(
+          Response.json(
+            { error: { message: 'rate limited' } },
+            { status: 429 },
+          ),
+        ),
+      )
+    const error = await extractError(args, run)
+    expect(error).toMatch(/429.*rate limited/)
+    expect(error).not.toContain('3040')
   })
 
   it('returns the provider status and body when the gateway answers non-ok (#394)', async () => {
