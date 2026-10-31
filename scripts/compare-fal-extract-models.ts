@@ -1,9 +1,11 @@
 /**
  * Issue #550: score candidate FAL rate-card extract models on the same
  * Pricing sections, through the production prompt, checks and repair turn
- * (`extractRateCard`). Calls each provider directly with its own key
- * (env or Doppler `dev`); the gateway passes provider rates through, so the
- * cost column matches what Unified Billing would charge (before its 5%).
+ * (`extractRateCard` over `gatewayChat`, the TanStack AI adapter
+ * production runs). Only the gateway hop is swapped: a stand-in binding
+ * sends the adapter's request to the provider with its own key (env or
+ * Doppler `dev`). The gateway passes provider rates through, so the cost
+ * column matches what Unified Billing would charge (before its 5% fee).
  *
  *   bun scripts/compare-fal-extract-models.ts [--leftovers 13] [--models a,b] [--cache file.json]
  *
@@ -30,15 +32,14 @@ import { KLING_V3_PRO_IMAGE_TO_VIDEO } from '../packages/rate-card/src/fixtures/
 import { NANO_BANANA_2 } from '../packages/rate-card/src/fixtures/nano-banana-2.ts'
 import { SEEDANCE_FAL_RATE_CARDS } from '../packages/rate-card/src/fixtures/seedance-fal.ts'
 import {
+  FAL_PRICING_EXTRACT_OPTIONS,
   extractRateCard,
+  gatewayChat,
   isStubPricingSection,
   pricingSection,
   pricingSectionHash,
 } from '../src/server/ingest/extract-fal-pricing.ts'
-import type {
-  ChatMessage,
-  ExtractChat,
-} from '../src/server/ingest/extract-fal-pricing.ts'
+import type { ExtractChat } from '../src/server/ingest/extract-fal-pricing.ts'
 import { priceFalNamedSection } from '../src/server/ingest/fal-unit-rate.ts'
 import { requestSchemaPropertyNames } from '../src/server/providers/fact-sources.ts'
 
@@ -48,11 +49,11 @@ interface Candidate {
   /** USD per million tokens, from the gateway catalog. */
   input: number
   output: number
-  call: (messages: Array<ChatMessage>) => Promise<{
-    content: string
-    inputTokens: number
-    outputTokens: number
-  }>
+  modelOptions: Record<string, unknown>
+  /** Where the stand-in binding sends the call: an OpenAI-compatible endpoint. */
+  url: string
+  keyName: string
+  providerModel: string
 }
 
 function secret(name: string): string {
@@ -65,130 +66,115 @@ function secret(name: string): string {
   ).trim()
 }
 
-async function postJson(
-  url: string,
-  headers: Record<string, string>,
-  body: unknown,
-): Promise<Record<string, unknown>> {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  })
-  const text = await response.text()
-  if (!response.ok) throw new Error(`${response.status}: ${text.slice(0, 300)}`)
-  return JSON.parse(text) as Record<string, unknown>
-}
+const JSON_MODE = { response_format: { type: 'json_object' } }
 
-/** OpenAI-compatible chat completions, the request the gateway is sent. */
-function openAiCompat(
-  url: string,
-  key: string,
-  model: string,
-  extra: Record<string, unknown> = { temperature: 0 },
-): Candidate['call'] {
-  return async (messages) => {
-    const data = await postJson(
-      url,
-      { Authorization: `Bearer ${key}` },
-      {
-        model,
-        messages,
-        response_format: { type: 'json_object' },
-        ...extra,
-      },
-    )
-    const choices = data.choices as Array<{ message: { content: string } }>
-    const usage = data.usage as {
-      prompt_tokens: number
-      completion_tokens: number
-      completion_tokens_details?: { reasoning_tokens?: number }
-    }
-    // xAI reports reasoning outside completion_tokens; both are billed.
-    const reasoning = url.includes('x.ai')
-      ? (usage.completion_tokens_details?.reasoning_tokens ?? 0)
-      : 0
-    return {
-      content: choices[0]?.message.content ?? '',
-      inputTokens: usage.prompt_tokens,
-      outputTokens: usage.completion_tokens + reasoning,
-    }
-  }
-}
-
-function anthropic(model: string): Candidate['call'] {
-  const key = secret('ANTHROPIC_API_KEY')
-  return async (messages) => {
-    const system = messages.find((m) => m.role === 'system')?.content
-    const data = await postJson(
-      'https://api.anthropic.com/v1/messages',
-      { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      {
-        model,
-        max_tokens: 8192,
-        temperature: 0,
-        system,
-        messages: messages.filter((m) => m.role !== 'system'),
-      },
-    )
-    const content = (data.content as Array<{ type: string; text?: string }>)
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-    const usage = data.usage as { input_tokens: number; output_tokens: number }
-    return {
-      content,
-      inputTokens: usage.input_tokens,
-      outputTokens: usage.output_tokens,
-    }
-  }
-}
-
-const CANDIDATES: Record<string, () => Candidate> = {
-  'anthropic/claude-sonnet-5.5': () => ({
+const CANDIDATES: Array<Candidate> = [
+  {
     id: 'anthropic/claude-sonnet-5.5',
     input: 2,
     output: 10,
-    call: anthropic('claude-sonnet-5-5'),
-  }),
-  'anthropic/claude-haiku-5.5': () => ({
+    // Claude 5.5 refuses temperature and json_object here; the prompt
+    // asks for JSON only.
+    modelOptions: {},
+    url: 'https://api.anthropic.com/v1/chat/completions',
+    keyName: 'ANTHROPIC_API_KEY',
+    providerModel: 'claude-sonnet-5-5',
+  },
+  {
     id: 'anthropic/claude-haiku-5.5',
     input: 0.1,
     output: 0.5,
-    call: anthropic('claude-haiku-5-5'),
-  }),
-  'openai/gpt-6-luna': () => ({
+    // Claude 5.5 refuses temperature and json_object here; the prompt
+    // asks for JSON only.
+    modelOptions: {},
+    url: 'https://api.anthropic.com/v1/chat/completions',
+    keyName: 'ANTHROPIC_API_KEY',
+    providerModel: 'claude-haiku-5-5',
+  },
+  {
     id: 'openai/gpt-6-luna',
     input: 0.1,
     output: 0.5,
-    call: openAiCompat(
-      'https://api.openai.com/v1/chat/completions',
-      secret('OPENAI_API_KEY'),
-      'gpt-6-luna',
-      // Luna 400s on temperature 0 ("only the default (1)").
-      { reasoning_effort: 'low' },
-    ),
-  }),
-  'xai/grok-4.7': () => ({
+    // Luna 400s on temperature 0 ("only the default (1)").
+    modelOptions: { ...JSON_MODE, reasoning_effort: 'low' },
+    url: 'https://api.openai.com/v1/chat/completions',
+    keyName: 'OPENAI_API_KEY',
+    providerModel: 'gpt-6-luna',
+  },
+  {
     id: 'xai/grok-4.7',
     input: 4,
     output: 12,
-    call: openAiCompat(
-      'https://api.x.ai/v1/chat/completions',
-      secret('XAI_API_KEY'),
-      'grok-4.7',
-    ),
-  }),
-  'google/gemini-3.8-flash': () => ({
+    modelOptions: { ...FAL_PRICING_EXTRACT_OPTIONS },
+    url: 'https://api.x.ai/v1/chat/completions',
+    keyName: 'XAI_API_KEY',
+    providerModel: 'grok-4.7',
+  },
+  {
     id: 'google/gemini-3.8-flash',
     input: 0.75,
     output: 3.75,
-    call: openAiCompat(
-      'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-      secret('GEMINI_API_KEY'),
-      'gemini-3.8-flash',
-    ),
-  }),
+    modelOptions: { ...FAL_PRICING_EXTRACT_OPTIONS },
+    url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    keyName: 'GEMINI_API_KEY',
+    providerModel: 'gemini-3.8-flash',
+  },
+]
+
+interface ProviderUsage {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens?: number
+}
+
+/** The usage object of a chat completion, streamed (last `usage` chunk) or not. */
+async function readUsage(response: Response): Promise<ProviderUsage> {
+  const text = await response.text()
+  if (!response.headers.get('content-type')?.includes('event-stream'))
+    return (JSON.parse(text) as { usage: ProviderUsage }).usage
+  let usage: ProviderUsage = { prompt_tokens: 0, completion_tokens: 0 }
+  for (const line of text.split('\n')) {
+    if (!line.startsWith('data: {')) continue
+    const chunk = JSON.parse(line.slice(6)) as { usage?: ProviderUsage | null }
+    if (chunk.usage) usage = chunk.usage
+  }
+  return usage
+}
+
+/**
+ * Stands in for `env.AI` with a gateway: the adapter's `run(model, inputs,
+ * { gateway, returnRawResponse })` goes to the provider instead, with the
+ * same inputs, and the raw response comes back as the gateway's would.
+ */
+function standInBinding(
+  candidate: Candidate,
+  onUsage: (usage: ProviderUsage) => void,
+): Ai {
+  const key = secret(candidate.keyName)
+  const run = async (
+    _model: string,
+    { tools, ...inputs }: Record<string, unknown>,
+  ) => {
+    const response = await fetch(candidate.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        ...inputs,
+        // The adapter always sends `tools: []`; Anthropic's OpenAI-compatible
+        // endpoint 400s on an empty list (the gateway speaks Anthropic's own API).
+        ...(Array.isArray(tools) && tools.length > 0 ? { tools } : {}),
+        model: candidate.providerModel,
+        ...(inputs.stream ? { stream_options: { include_usage: true } } : {}),
+      }),
+    })
+    // The adapter drops a stream's trailing usage chunk, so read it here.
+    if (response.ok) void readUsage(response.clone()).then(onUsage)
+    return response
+  }
+  return { run, gateway: () => ({}) } as unknown as Ai
 }
 
 interface Section {
@@ -197,7 +183,6 @@ interface Section {
   hash: string
   requestProperties: Set<string>
   truth?: RateCard
-  truthStale?: boolean
 }
 
 const FIXTURES: Array<RateCard> = [
@@ -357,18 +342,23 @@ async function score(candidate: Candidate, sections: Array<Section>) {
   }
   for (const section of sections) {
     let turns = 0
-    const chat: ExtractChat = async (messages) => {
+    const binding = standInBinding(candidate, (usage) => {
+      // Reasoning billed outside completion tokens (xAI) shows in the total.
+      const output = Math.max(
+        usage.completion_tokens,
+        (usage.total_tokens ?? 0) - usage.prompt_tokens,
+      )
+      row.usd +=
+        (usage.prompt_tokens * candidate.input + output * candidate.output) /
+        1e6
+    })
+    const gateway = gatewayChat(binding, 'stand-in', {
+      model: candidate.id,
+      modelOptions: candidate.modelOptions,
+    })
+    const chat: ExtractChat = (messages) => {
       turns++
-      try {
-        const reply = await candidate.call(messages)
-        row.usd +=
-          (reply.inputTokens * candidate.input +
-            reply.outputTokens * candidate.output) /
-          1e6
-        return reply.content
-      } catch (error) {
-        return { error: error instanceof Error ? error.message : String(error) }
-      }
+      return gateway(messages)
     }
     const started = performance.now()
     const result = await extractRateCard({
@@ -444,23 +434,17 @@ async function main(): Promise<void> {
   }
   const leftoverCount = Number(flag('--leftovers') ?? 13)
   const modelIds = (
-    flag('--models') ?? Object.keys(CANDIDATES).join(',')
+    flag('--models') ?? CANDIDATES.map((c) => c.id).join(',')
   ).split(',')
 
   const cachePath = flag('--cache')
   const cached = cachePath ? await readCache(cachePath) : null
   const sections: Array<Section> = cached ?? []
-  if (!cached)
+  if (!cached) {
     for (const truth of FIXTURES) {
       const section = await loadSection(rawIdOf(truth.source.url))
-      if (!section) continue
-      sections.push({
-        ...section,
-        truth,
-        truthStale: section.hash !== truth.source.hash,
-      })
+      if (section) sections.push({ ...section, truth })
     }
-  if (!cached) {
     sections.push(
       ...(await sampleLeftovers(
         leftoverCount,
@@ -470,19 +454,14 @@ async function main(): Promise<void> {
     if (cachePath) await writeCache(cachePath, sections)
   }
   console.error(
-    `${sections.length} sections (${sections.filter((s) => s.truth).length} with hand cards; stale hash: ${
-      sections
-        .filter((s) => s.truthStale)
-        .map((s) => s.rawId)
-        .join(', ') || 'none'
-    })`,
+    `${sections.length} sections, ${sections.filter((s) => s.truth).length} with hand cards`,
   )
 
   const rows: Array<Row> = []
   for (const id of modelIds) {
-    const make = CANDIDATES[id]
-    if (!make) throw new Error(`unknown model ${id}`)
-    rows.push(await score(make(), sections))
+    const candidate = CANDIDATES.find((c) => c.id === id)
+    if (!candidate) throw new Error(`unknown model ${id}`)
+    rows.push(await score(candidate, sections))
   }
 
   console.log(

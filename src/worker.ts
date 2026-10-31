@@ -19,7 +19,6 @@ import {
   FAL_PRICING_EXTRACT_CRONS,
   extractFalPricing,
 } from '#/server/ingest/extract-fal-pricing.ts'
-import type { GatewayAi } from '#/server/ingest/extract-fal-pricing.ts'
 import {
   VERCEL_PRICING_EXTRACT_CRON,
   extractVercelPricing,
@@ -43,7 +42,7 @@ const MODELS_POLL_CRON = '*/15 * * * *'
 
 export interface WorkerEnv extends DbEnv, KvEnv, ProviderEnvironment {
   ADMIN_KEY?: string
-  AI?: GatewayAi
+  AI?: Ai
   AI_GATEWAY_ID?: string
 }
 

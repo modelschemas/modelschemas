@@ -6,6 +6,8 @@
  * and the model poll stores those; this job still owns every other section.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { createWorkersAiChat } from '@cloudflare/tanstack-ai/adapters/workers-ai'
+import { EventType, chat } from '@tanstack/ai'
 import { z } from 'zod'
 
 import { cardParams, verifyExamples } from '@modelschemas/rate-card'
@@ -66,8 +68,17 @@ export function falPricingExtractCursorKey(providerId = 'fal'): string {
   return `${FAL_PRICING_EXTRACT_CURSOR_KEY}:${providerId}`
 }
 
-/** Single extract model — fail-closed; never a second guess. */
+/**
+ * Single extract model, an AI Gateway catalog id — fail-closed; never a
+ * second guess. Picked by `scripts/compare-fal-extract-models.ts` (#550).
+ */
 export const FAL_PRICING_EXTRACT_MODEL = 'grok-4-fast'
+
+/** Request options for that model (temperature, JSON mode). */
+export const FAL_PRICING_EXTRACT_OPTIONS: Record<string, unknown> = {
+  temperature: 0,
+  response_format: { type: 'json_object' },
+}
 
 const extractedBodySchema = rateCardSchema.omit({ source: true }).extend({
   expiresAt: z.iso.datetime().optional(),
@@ -117,7 +128,7 @@ export interface FalPricingExtractDeps extends SyncDeps {
   fetchText?: (url: string) => Promise<FalLlmsFetchResult>
   extractCard?: (args: ExtractCardArgs) => Promise<ExtractedCard>
   /** Workers AI binding + AI Gateway id; both unset = leftovers skipped. */
-  ai?: GatewayAi
+  ai?: Ai
   gatewayId?: string
   fetchCap?: number
   extractCap?: number
@@ -227,17 +238,6 @@ function logFetchFailure(
       status,
     }),
   )
-}
-
-function chatContent(data: unknown): string | null {
-  if (!isRecord(data)) return null
-  const choices = data.choices
-  if (!Array.isArray(choices)) return null
-  const first: unknown = choices[0]
-  if (!isRecord(first)) return null
-  const message = first.message
-  if (!isRecord(message) || typeof message.content !== 'string') return null
-  return message.content
 }
 
 function parseJsonObject(text: string): unknown {
@@ -369,34 +369,60 @@ export type ExtractChat = (
   messages: Array<ChatMessage>,
 ) => Promise<string | { error: string }>
 
-/** The slice of the Workers AI binding the extract uses. */
-export interface GatewayAi {
-  run: (
-    model: string,
-    input: Record<string, unknown>,
-    options: { gateway: { id: string } },
-  ) => Promise<unknown>
+/** `env.AI` as the TanStack adapter types it (against lib.dom). */
+type AdapterBinding = Extract<
+  Parameters<typeof createWorkersAiChat>[1],
+  { binding: { gateway: unknown } }
+>['binding']
+
+export interface GatewayChatOptions {
+  model?: string
+  modelOptions?: Record<string, unknown>
 }
 
 /**
  * The extract model through Cloudflare AI Gateway (Unified Billing, so no
- * provider key). Third-party models answer in the chat-completions shape.
- * A throw (gateway or provider error) is caught by `extractRateCard`.
+ * provider key): TanStack AI `chat()` over the Workers AI binding, which
+ * takes any gateway catalog id. The adapter forwards only `modelOptions`
+ * to the request. A `RUN_ERROR` (gateway or provider error) becomes
+ * `{ error }`; `chat({ stream: false })` would return '' for it.
  */
-export function gatewayChat(ai: GatewayAi, gatewayId: string): ExtractChat {
+export function gatewayChat(
+  ai: Ai,
+  gatewayId: string,
+  options: GatewayChatOptions = {},
+): ExtractChat {
+  const adapter = createWorkersAiChat(
+    options.model ?? FAL_PRICING_EXTRACT_MODEL,
+    {
+      // Same object; workers-types' Response is not lib.dom's
+      // (cloudflare-shim.d.ts), so the binding crosses that seam here.
+      binding: ai as unknown as AdapterBinding,
+      gateway: gatewayId,
+      // One call per turn: no hidden SDK retries.
+      maxRetries: 0,
+    },
+  )
   return async (messages) => {
-    const reply = await ai.run(
-      FAL_PRICING_EXTRACT_MODEL,
-      {
-        messages,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-      },
-      { gateway: { id: gatewayId } },
-    )
-    return (
-      chatContent(reply) ?? { error: 'gateway reply has no message content' }
-    )
+    let text = ''
+    for await (const chunk of chat({
+      adapter,
+      systemPrompts: messages
+        .filter((m) => m.role === 'system')
+        .map((m) => m.content),
+      messages: messages
+        .filter((m) => m.role !== 'system')
+        .map((m) => ({
+          role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
+          content: m.content,
+        })),
+      modelOptions: options.modelOptions ?? FAL_PRICING_EXTRACT_OPTIONS,
+    })) {
+      if (chunk.type === EventType.TEXT_MESSAGE_CONTENT) text += chunk.delta
+      else if (chunk.type === EventType.RUN_ERROR)
+        return { error: chunk.message }
+    }
+    return text.length > 0 ? text : { error: 'gateway reply has no text' }
   }
 }
 

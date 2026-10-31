@@ -9,6 +9,7 @@ import {
   FAL_PRICING_EXTRACT_CRONS,
   FAL_PRICING_EXTRACT_CAP,
   FAL_PRICING_EXTRACT_MODEL,
+  FAL_PRICING_EXTRACT_OPTIONS,
   FAL_PRICING_FETCH_CAP,
   FAL_PRICING_FETCH_FAIL_ABORT,
   EXTRACT_SYSTEM,
@@ -22,20 +23,42 @@ import {
   resumeIndex,
   shouldSkipExtract,
 } from './extract-fal-pricing.ts'
-import type { GatewayAi } from './extract-fal-pricing.ts'
 import { parseFalUnitRate } from './fal-unit-rate.ts'
 import { SPEC_SYNC_SHARD_CRONS } from './sync.ts'
 
-type RunMock = Mock<GatewayAi['run']>
+type RunMock = Mock<
+  (
+    model: string,
+    inputs: Record<string, unknown>,
+    options: Record<string, unknown>,
+  ) => Promise<Response>
+>
 
-/** An AI binding answering successive chat calls with these contents. */
+/** Gateway `run` answering successive chat calls with these contents. */
 function gatewayReplies(...replies: Array<unknown>): RunMock {
   const mock: RunMock = vi.fn()
   for (const reply of replies) {
     const content = typeof reply === 'string' ? reply : JSON.stringify(reply)
-    mock.mockResolvedValueOnce({ choices: [{ message: { content } }] })
+    mock.mockResolvedValueOnce(sseReply(content))
   }
   return mock
+}
+
+/** A streamed chat completion, the shape the gateway returns for `stream: true`. */
+function sseReply(content: string): Response {
+  const events = [
+    { choices: [{ index: 0, delta: { role: 'assistant', content } }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] },
+  ]
+  const body = `${events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('')}data: [DONE]\n\n`
+  return new Response(body, {
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
+
+/** `env.AI` with only `run` doing anything. */
+function fakeAi(run: RunMock): Ai {
+  return { run, gateway: () => ({}) } as unknown as Ai
 }
 
 /** The chat-completions input of call `n`. */
@@ -253,7 +276,7 @@ describe('isRetryableLlmsStatus', () => {
 type ExtractArgs = Omit<Parameters<typeof extractRateCard>[0], 'chat'>
 
 function extract(args: ExtractArgs, run: RunMock) {
-  return extractRateCard({ ...args, chat: gatewayChat({ run }, 'gw-test') })
+  return extractRateCard({ ...args, chat: gatewayChat(fakeAi(run), 'gw-test') })
 }
 
 async function extractError(
@@ -289,8 +312,8 @@ describe('extractRateCard through the gateway', () => {
     expect(card.source.url).toBe(args.sourceUrl)
     const [model, input, options] = run.mock.calls[0] ?? []
     expect(model).toBe(FAL_PRICING_EXTRACT_MODEL)
-    expect(input).toMatchObject({ response_format: { type: 'json_object' } })
-    expect(options).toEqual({ gateway: { id: 'gw-test' } })
+    expect(input).toMatchObject(FAL_PRICING_EXTRACT_OPTIONS)
+    expect(options).toMatchObject({ gateway: { id: 'gw-test' } })
   })
 
   it('returns unverified only for a section that names no price', async () => {
@@ -371,20 +394,32 @@ describe('extractRateCard through the gateway', () => {
     ).resolves.toEqual({ error: 'rejected twice: reply is not JSON' })
   })
 
-  it('returns the thrown message when the gateway call throws (#394)', async () => {
+  it('returns the binding error when the gateway call throws (#394)', async () => {
     const run: RunMock = vi
       .fn()
-      .mockRejectedValue(new Error('AiError: 429 rate limited'))
-    await expect(extract(args, run)).resolves.toEqual({
-      error: 'AiError: 429 rate limited',
+      .mockRejectedValue(new Error('3040: Capacity temporarily exceeded'))
+    const result = await extract(args, run)
+    expect(result).toMatchObject({
+      error: expect.stringContaining(
+        '3040: Capacity temporarily exceeded',
+      ) as string,
     })
-    expect(run).toHaveBeenCalledTimes(1)
   })
 
-  it('fails closed on a reply with no message content', async () => {
-    const run: RunMock = vi.fn().mockResolvedValue({ choices: [] })
+  it('returns the provider status and body when the gateway answers non-ok (#394)', async () => {
+    // The adapter retries a failed stream once without streaming.
+    const run: RunMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ error: { message: 'rate limited' } }, { status: 429 }),
+      ),
+    )
+    expect(await extractError(args, run)).toMatch(/429.*rate limited/)
+  })
+
+  it('fails closed on a reply with no text', async () => {
+    const run: RunMock = vi.fn(() => Promise.resolve(sseReply('')))
     await expect(extract(args, run)).resolves.toEqual({
-      error: 'gateway reply has no message content',
+      error: 'gateway reply has no text',
     })
   })
 })
