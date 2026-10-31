@@ -16,8 +16,8 @@ import {
  *
  * A per-1M-token price is stored only when that model's file names input
  * and output as `tokens (per 1M)`, plus cached input or cache creation
- * when those keys are present, or names them as `Short-context` and
- * `Long-context` rates and states `long_context_threshold_tokens` under
+ * when those keys are present, or names the same rates as `Short-context`
+ * and `Long-context` and states one `long_context_threshold_tokens` under
  * `provider_details`. Any other pricing key nulls the card.
  * fetchSpec binds native catalog inputs to the documented universal REST envelope.
  * Logical endpoint ids are model ids; their HTTP path remains the native /ai/run path.
@@ -72,7 +72,7 @@ const TASK_ACTIVITY: Record<string, Activity> = {
   'Music Generation': 'audio',
 }
 
-/** JSON keys that render as a flat per-1M-token rate. Any other key nulls the card. */
+/** JSON keys that render as a flat per-1M-token rate. Other keys price only as `CONTEXT_LEVERS` tiers. */
 const FLAT_LEVERS: Record<string, string> = {
   'Input tokens (per 1M)': 'input_tokens',
   'Output tokens (per 1M)': 'output_tokens',

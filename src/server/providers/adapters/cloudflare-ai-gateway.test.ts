@@ -141,7 +141,7 @@ describe('cloudflare-ai-gateway', () => {
   })
 
   it('prices Short-/Long-context rates above the stated long-context threshold', () => {
-    // openai-gpt-5.6-terra.json as published on 2026-10-30.
+    // openai-gpt-5.6-terra.json as published on 2026-10-30 (provider_details trimmed).
     const terra = {
       ...FABLE,
       model_id: 'openai/gpt-5.6-terra',
@@ -174,8 +174,43 @@ describe('cloudflare-ai-gateway', () => {
     expect(
       price(card, {}, { input_tokens: 272_001, output_tokens: 1_000_000 }),
     ).toBeCloseTo((272_001 * 4) / 1_000_000 + 18)
+    // Cached tokens count toward the threshold and take their own long rate.
+    expect(
+      price(
+        card,
+        {},
+        {
+          input_tokens: 100_000,
+          cache_read_tokens: 172_001,
+          cache_write_tokens: 0,
+          output_tokens: 0,
+        },
+      ),
+    ).toBeCloseTo((100_000 * 4 + 172_001 * 0.4) / 1_000_000)
+    expect(
+      price(
+        card,
+        {},
+        { input_tokens: 0, cache_write_tokens: 1_000_000, output_tokens: 0 },
+      ),
+    ).toBeCloseTo(5)
     expect(
       parseCatalogModel({ ...terra, provider_details: [] }, SOURCE).pricing,
+    ).toBeNull()
+    expect(
+      parseCatalogModel(
+        {
+          ...terra,
+          provider_details: [
+            ...terra.provider_details,
+            {
+              id: 'other',
+              pricing: { long_context_threshold_tokens: 128_000 },
+            },
+          ],
+        },
+        SOURCE,
+      ).pricing,
     ).toBeNull()
     const { 'Long-context cache write (per 1M)': _, ...uneven } = terra.pricing
     expect(
@@ -183,7 +218,7 @@ describe('cloudflare-ai-gateway', () => {
     ).toBeNull()
   })
 
-  it('leaves per-second, tiered, and extra rate keys unpriced', () => {
+  it('leaves per-second, <=200k-tiered, and extra rate keys unpriced', () => {
     expect(
       parseCatalogModel(
         {
