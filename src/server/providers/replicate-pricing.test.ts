@@ -160,6 +160,18 @@ describe('replicate prediction prices', () => {
       },
     })
     expect(priced.amount).toBeCloseTo(2 * 0.08 + 3 * 0.01, 10)
+    // Unkeyed tiers name nothing to choose between them.
+    expect(
+      compileReplicateBilling(
+        {
+          current_tiers: [
+            { criteria: [], prices: tier('low', '1k', '$0.04').prices },
+            { criteria: [], prices: tier('low', '1k', '$0.09').prices },
+          ],
+        },
+        SOURCE,
+      ),
+    ).toBeNull()
     // A tier missing from the grid is not a card.
     expect(
       compileReplicateBilling(
