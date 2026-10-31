@@ -394,15 +394,14 @@ describe('extractRateCard through the gateway', () => {
     ).resolves.toEqual({ error: 'rejected twice: reply is not JSON' })
   })
 
-  it('returns the binding error when the gateway call throws (#394)', async () => {
+  it('fails closed when the binding call throws', async () => {
+    // The OpenAI SDK under the adapter reports a thrown fetch as a
+    // connection error; gateway and provider HTTP errors keep their text.
     const run: RunMock = vi
       .fn()
       .mockRejectedValue(new Error('3040: Capacity temporarily exceeded'))
-    const result = await extract(args, run)
-    expect(result).toMatchObject({
-      error: expect.stringContaining(
-        '3040: Capacity temporarily exceeded',
-      ) as string,
+    await expect(extract(args, run)).resolves.toEqual({
+      error: 'Connection error.',
     })
   })
 

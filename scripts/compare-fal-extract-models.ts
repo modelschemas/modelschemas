@@ -1,8 +1,8 @@
 /**
  * Issue #550: score candidate FAL rate-card extract models on the same
  * Pricing sections, through the production prompt, checks and repair turn
- * (`extractRateCard` over `gatewayChat`, the TanStack AI adapter
- * production runs). Only the gateway hop is swapped: a stand-in binding
+ * (`extractRateCard` over `gatewayChat`: TanStack AI with the
+ * `@tanstack/ai-cloudflare` adapter, as production runs). Only the gateway hop is swapped: a stand-in binding
  * sends the adapter's request to the provider with its own key (env or
  * Doppler `dev`). The gateway passes provider rates through, so the cost
  * column matches what Unified Billing would charge (before its 5% fee).
@@ -151,10 +151,7 @@ function standInBinding(
   onUsage: (usage: ProviderUsage) => void,
 ): Ai {
   const key = secret(candidate.keyName)
-  const run = async (
-    _model: string,
-    { tools, ...inputs }: Record<string, unknown>,
-  ) => {
+  const run = async (_model: string, inputs: Record<string, unknown>) => {
     const response = await fetch(candidate.url, {
       method: 'POST',
       headers: {
@@ -163,9 +160,6 @@ function standInBinding(
       },
       body: JSON.stringify({
         ...inputs,
-        // The adapter always sends `tools: []`; Anthropic's OpenAI-compatible
-        // endpoint 400s on an empty list (the gateway speaks Anthropic's own API).
-        ...(Array.isArray(tools) && tools.length > 0 ? { tools } : {}),
         model: candidate.providerModel,
         ...(inputs.stream ? { stream_options: { include_usage: true } } : {}),
       }),

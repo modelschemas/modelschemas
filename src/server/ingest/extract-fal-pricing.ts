@@ -6,7 +6,8 @@
  * and the model poll stores those; this job still owns every other section.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { createWorkersAiChat } from '@cloudflare/tanstack-ai/adapters/workers-ai'
+import { CloudflareTextAdapter } from '@tanstack/ai-cloudflare'
+import type { CloudflareBindingConfig } from '@tanstack/ai-cloudflare'
 import { EventType, chat } from '@tanstack/ai'
 import { z } from 'zod'
 
@@ -369,12 +370,6 @@ export type ExtractChat = (
   messages: Array<ChatMessage>,
 ) => Promise<string | { error: string }>
 
-/** `env.AI` as the TanStack adapter types it (against lib.dom). */
-type AdapterBinding = Extract<
-  Parameters<typeof createWorkersAiChat>[1],
-  { binding: { gateway: unknown } }
->['binding']
-
 export interface GatewayChatOptions {
   model?: string
   modelOptions?: Record<string, unknown>
@@ -382,31 +377,33 @@ export interface GatewayChatOptions {
 
 /**
  * The extract model through Cloudflare AI Gateway (Unified Billing, so no
- * provider key): TanStack AI `chat()` over the Workers AI binding, which
- * takes any gateway catalog id. The adapter forwards only `modelOptions`
- * to the request. A `RUN_ERROR` (gateway or provider error) becomes
- * `{ error }`; `chat({ stream: false })` would return '' for it.
+ * provider key): TanStack AI `chat()` with the `@tanstack/ai-cloudflare`
+ * text adapter on the `env.AI` binding, which takes any gateway catalog id.
+ * `modelOptions` go into the request as-is. A `RUN_ERROR` (gateway or
+ * provider error) becomes `{ error }`.
  */
 export function gatewayChat(
   ai: Ai,
   gatewayId: string,
   options: GatewayChatOptions = {},
 ): ExtractChat {
-  const adapter = createWorkersAiChat(
-    options.model ?? FAL_PRICING_EXTRACT_MODEL,
+  // The class, not `createCloudflareText`: its typed options have no
+  // `response_format`, and JSON mode is per model here.
+  const adapter = new CloudflareTextAdapter<string, Record<string, unknown>>(
     {
-      // Same object; workers-types' Response is not lib.dom's
-      // (cloudflare-shim.d.ts), so the binding crosses that seam here.
-      binding: ai as unknown as AdapterBinding,
-      gateway: gatewayId,
-      // One call per turn: no hidden SDK retries.
-      maxRetries: 0,
+      // The adapter pins workers-types 4; ours is 5. Same binding object.
+      binding: ai as unknown as CloudflareBindingConfig['binding'],
+      gateway: { id: gatewayId },
     },
+    options.model ?? FAL_PRICING_EXTRACT_MODEL,
   )
+  // One thread per extraction: the repair turn continues it.
+  const threadId = `fal-extract-${crypto.randomUUID()}`
   return async (messages) => {
     let text = ''
     for await (const chunk of chat({
       adapter,
+      threadId,
       systemPrompts: messages
         .filter((m) => m.role === 'system')
         .map((m) => m.content),
