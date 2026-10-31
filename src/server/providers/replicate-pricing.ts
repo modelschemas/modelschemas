@@ -7,7 +7,13 @@
  * range tier read.
  */
 import { compileTokenCard, compileUnitCard } from '@modelschemas/rate-card'
-import type { RateCard, TokenRateTier, UnitKey } from '@modelschemas/rate-card'
+import type {
+  Expr,
+  RateCard,
+  Table,
+  TokenRateTier,
+  UnitKey,
+} from '@modelschemas/rate-card'
 
 import { tagDocsFacts } from './fact-sources.ts'
 import type { ModelInfo } from './types.ts'
@@ -38,6 +44,7 @@ export interface ReplicateBilling {
 
 const METRIC_PARAM: Record<string, string> = {
   image_output_count: 'output_images',
+  image_input_megapixel_count: 'input_megapixels',
   token_input_count: 'input_tokens',
   token_output_count: 'output_tokens',
   video_output_duration_seconds: 'video_seconds',
@@ -58,7 +65,11 @@ export function replicatePriceScale(title: string | undefined): number | null {
   if (text.startsWith('per thousand')) return 1000
   if (text.startsWith('per million')) return 1_000_000
   if (text.startsWith('per second')) return 1
-  if (text.startsWith('per output image') || text.startsWith('per image')) {
+  if (
+    text.startsWith('per output image') ||
+    text.startsWith('per image') ||
+    text.startsWith('per input image megapixel')
+  ) {
     return 1
   }
   if (text.startsWith('per minute')) return 60
@@ -80,10 +91,11 @@ interface Leaf {
   param: string
   /** USD per one unit of `param`. */
   rate: number
-  key?: { param: string; value: string }
+  /** Request fields this tier is keyed by, in criterion order. */
+  keys: Array<{ param: string; value: string }>
 }
 
-function leaf(price: ReplicatePrice, key?: Leaf['key']): Leaf | null {
+function leaf(price: ReplicatePrice, keys: Leaf['keys']): Leaf | null {
   if (price.type !== undefined && price.type !== 'per-unit') return null
   const param = price.metric ? METRIC_PARAM[price.metric] : undefined
   const dollars = replicateDollars(price.price)
@@ -94,7 +106,7 @@ function leaf(price: ReplicatePrice, key?: Leaf['key']): Leaf | null {
   // toPrecision: `$0.015` per thousand is 0.000015, not 0.0000149999….
   const rate = Number((dollars / scale).toPrecision(12))
   if (!(rate > 0)) return null
-  return { param, rate, ...(key ? { key } : {}) }
+  return { param, rate, keys }
 }
 
 function tokenRates(
@@ -102,7 +114,7 @@ function tokenRates(
 ): Record<string, number> | null {
   const rates: Record<string, number> = {}
   for (const price of prices) {
-    const row = leaf(price)
+    const row = leaf(price, [])
     if (!row || !row.param.endsWith('_tokens') || row.param in rates) {
       return null
     }
@@ -163,6 +175,11 @@ function compilePromptTiers(
 /**
  * Dollar prediction price → rate card.
  * `null` when the config has no usable published price.
+ *
+ * Tiers keyed by request fields (`equals` criteria) become a lookup nested
+ * in criterion order. A tier that quotes more than one metric (an output
+ * image plus each input megapixel) is billed for all of them, so the card
+ * sums one `quantity × rate` term per metric.
  */
 export function compileReplicateBilling(
   billing: ReplicateBilling | null | undefined,
@@ -175,76 +192,120 @@ export function compileReplicateBilling(
   }
 
   const leaves: Array<Leaf> = []
+  let keyParams: Array<string> | null = null
   for (const tier of tiers) {
-    const criteria = tier.criteria ?? []
     const prices = tier.prices ?? []
     if (prices.length === 0) return null
-    let key: Leaf['key']
-    if (criteria.length > 0) {
-      if (criteria.length !== 1 || prices.length !== 1) return null
-      const criterion = criteria[0]
-      if (!criterion || criterion.type !== 'equals') return null
+    const keys: Leaf['keys'] = []
+    for (const criterion of tier.criteria ?? []) {
       const param = criterionParam(criterion.title)
       if (
+        criterion.type !== 'equals' ||
         !param ||
         typeof criterion.value !== 'string' ||
         criterion.value === ''
       ) {
         return null
       }
-      key = { param, value: criterion.value }
+      keys.push({ param, value: criterion.value })
     }
+    const tierParams = keys.map((key) => key.param)
+    if (new Set(tierParams).size !== tierParams.length) return null
+    if (keyParams === null) keyParams = tierParams
+    else if (tierParams.join('\0') !== keyParams.join('\0')) return null
+    const tierLeaves: Array<Leaf> = []
     for (const price of prices) {
-      const row = leaf(price, key)
-      if (!row) return null
-      leaves.push(row)
+      const row = leaf(price, keys)
+      if (!row || tierLeaves.some((other) => other.param === row.param)) {
+        return null
+      }
+      tierLeaves.push(row)
     }
+    leaves.push(...tierLeaves)
   }
+  if (!keyParams) return null
 
-  const params = new Set(leaves.map((row) => row.param))
-  const keyParams = new Set(
-    leaves.flatMap((row) => (row.key ? [row.key.param] : [])),
-  )
-  if (keyParams.size > 1) return null
-  const tokenParams = [...params].filter((param) => param.endsWith('_tokens'))
+  const params = [...new Set(leaves.map((row) => row.param))]
+  const tokenParams = params.filter((param) => param.endsWith('_tokens'))
   if (tokenParams.length > 0) {
-    if (tokenParams.length !== params.size || keyParams.size > 0) return null
-    if (new Set(leaves.map((row) => row.param)).size !== leaves.length)
+    if (tokenParams.length !== params.length || keyParams.length > 0) {
       return null
+    }
+    if (params.length !== leaves.length) return null
     return compileTokenCard(
       Object.fromEntries(leaves.map((row) => [row.param, row.rate])),
       [],
       source,
     )
   }
-  if (params.size !== 1) return null
-  const param = [...params][0]
-  if (!param) return null
-  const keyParam = [...keyParams][0]
-  if (!keyParam) {
-    if (leaves.length !== 1) return null
-    return compileUnitCard(
-      {
-        quantity: { param, bound: 'usage' },
-        rates: leaves[0]?.rate ?? 0,
-      },
+
+  const combos = tiers.length
+  if (leaves.length !== combos * params.length) return null
+  const keys: Array<UnitKey> = keyParams.map((param, index) => ({
+    param,
+    values: [...new Set(leaves.map((row) => row.keys[index]?.value ?? ''))],
+    bound: 'usage',
+  }))
+  const terms: Array<{ param: string; card: RateCard; rates: number | Table }> =
+    []
+  for (const param of params) {
+    const rows = leaves.filter((row) => row.param === param)
+    if (rows.length !== combos) return null
+    let rates: number | Table = 0
+    if (keys.length === 0) {
+      rates = rows[0]?.rate ?? 0
+    } else {
+      const table: Table = {}
+      for (const row of rows) {
+        let node = table
+        for (const [index, key] of row.keys.entries()) {
+          if (index === row.keys.length - 1) {
+            if (key.value in node) return null
+            node[key.value] = row.rate
+          } else {
+            const next = node[key.value] ?? {}
+            if (typeof next === 'number') return null
+            node[key.value] = next
+            node = next
+          }
+        }
+      }
+      rates = table
+    }
+    const card = compileUnitCard(
+      { quantity: { param, bound: 'usage' }, keys, rates },
       source,
     )
+    if (!card) return null
+    terms.push({ param, card, rates })
   }
-  const values = leaves.map((row) => row.key?.value ?? '')
-  if (new Set(values).size !== values.length) return null
-  const key: UnitKey = { param: keyParam, values, bound: 'usage' }
-  const rates = Object.fromEntries(
-    leaves.map((row) => [row.key?.value ?? '', row.rate]),
-  )
-  return compileUnitCard(
-    {
-      quantity: { param, bound: 'usage' },
-      keys: [key],
-      rates,
+  const [only] = terms
+  if (terms.length === 1 && only) return only.card
+
+  // One rate table per metric, named for it; the price adds the terms.
+  const lookupKeys = keys.map((key) => ({ var: key.param }))
+  return {
+    inputs: Object.fromEntries(
+      terms.flatMap(({ card }) => Object.entries(card.inputs)),
+    ),
+    tables: Object.fromEntries(
+      terms.flatMap(({ param, rates }) =>
+        typeof rates === 'number' ? [] : [[param, rates]],
+      ),
+    ),
+    price: {
+      '+': terms.map(({ param, rates }): Expr => ({
+        '*': [
+          { var: param },
+          typeof rates === 'number'
+            ? rates
+            : { lookup: { table: param, keys: lookupKeys } },
+        ],
+      })),
     },
+    examples: [],
     source,
-  )
+  }
 }
 
 /** Opens the JSON every official model page embeds. */
