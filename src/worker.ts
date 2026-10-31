@@ -19,6 +19,7 @@ import {
   FAL_PRICING_EXTRACT_CRONS,
   extractFalPricing,
 } from '#/server/ingest/extract-fal-pricing.ts'
+import type { GatewayAi } from '#/server/ingest/extract-fal-pricing.ts'
 import {
   VERCEL_PRICING_EXTRACT_CRON,
   extractVercelPricing,
@@ -42,6 +43,8 @@ const MODELS_POLL_CRON = '*/15 * * * *'
 
 export interface WorkerEnv extends DbEnv, KvEnv, ProviderEnvironment {
   ADMIN_KEY?: string
+  AI?: GatewayAi
+  AI_GATEWAY_ID?: string
 }
 
 function syncDeps(env: WorkerEnv): SyncDeps {
@@ -198,7 +201,11 @@ export default {
       )
     ) {
       ctx.waitUntil(
-        extractFalPricing(syncDeps(env)).then((outcome) => {
+        extractFalPricing({
+          ...syncDeps(env),
+          ai: env.AI,
+          gatewayId: env.AI_GATEWAY_ID,
+        }).then((outcome) => {
           console.log(JSON.stringify({ job: 'fal-pricing-extract', outcome }))
         }),
       )

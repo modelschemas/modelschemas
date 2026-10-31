@@ -69,8 +69,6 @@ export function falPricingExtractCursorKey(providerId = 'fal'): string {
 /** Single extract model — fail-closed; never a second guess. */
 export const FAL_PRICING_EXTRACT_MODEL = 'grok-4-fast'
 
-const XAI_CHAT_URL = 'https://api.x.ai/v1/chat/completions'
-
 const extractedBodySchema = rateCardSchema.omit({ source: true }).extend({
   expiresAt: z.iso.datetime().optional(),
 })
@@ -101,7 +99,7 @@ export interface FalPricingExtractOutcome {
   error?: string
 }
 
-/** `{ error }` = no card this run, and why (xAI HTTP error or empty reply, a throw, or two rejections). */
+/** `{ error }` = no card this run, and why (gateway error or empty reply, a throw, or two rejections). */
 export type ExtractedCard = RateCard | 'unverified' | { error: string }
 
 export interface ExtractCardArgs {
@@ -118,6 +116,9 @@ export type FalLlmsFetchResult = string | null | { status: number }
 export interface FalPricingExtractDeps extends SyncDeps {
   fetchText?: (url: string) => Promise<FalLlmsFetchResult>
   extractCard?: (args: ExtractCardArgs) => Promise<ExtractedCard>
+  /** Workers AI binding + AI Gateway id; both unset = leftovers skipped. */
+  ai?: GatewayAi
+  gatewayId?: string
   fetchCap?: number
   extractCap?: number
   providerId?: string
@@ -358,34 +359,45 @@ export function checkExtractedCard(
   return card
 }
 
-type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
 
-async function grokChat(
-  apiKey: string,
+/** One chat turn: the reply text, or why there is none. */
+export type ExtractChat = (
   messages: Array<ChatMessage>,
-): Promise<string | { error: string }> {
-  const response = await fetch(XAI_CHAT_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: FAL_PRICING_EXTRACT_MODEL,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages,
-    }),
-  })
-  if (!response.ok) {
-    const body = (await response.text()).slice(0, 200)
-    return { error: `xai ${response.status}: ${body}` }
+) => Promise<string | { error: string }>
+
+/** The slice of the Workers AI binding the extract uses. */
+export interface GatewayAi {
+  run: (
+    model: string,
+    input: Record<string, unknown>,
+    options: { gateway: { id: string } },
+  ) => Promise<unknown>
+}
+
+/**
+ * The extract model through Cloudflare AI Gateway (Unified Billing, so no
+ * provider key). Third-party models answer in the chat-completions shape.
+ * A throw (gateway or provider error) is caught by `extractRateCard`.
+ */
+export function gatewayChat(ai: GatewayAi, gatewayId: string): ExtractChat {
+  return async (messages) => {
+    const reply = await ai.run(
+      FAL_PRICING_EXTRACT_MODEL,
+      {
+        messages,
+        temperature: 0,
+        response_format: { type: 'json_object' },
+      },
+      { gateway: { id: gatewayId } },
+    )
+    return (
+      chatContent(reply) ?? { error: 'gateway reply has no message content' }
+    )
   }
-  return (
-    chatContent((await response.json()) as unknown) ?? {
-      error: 'xai reply has no message content',
-    }
-  )
 }
 
 /**
@@ -393,8 +405,8 @@ async function grokChat(
  * reason (same model — not a fallback). `{ error }` = no card this run; the
  * caller holds the cursor so the next shard retries it, and reports why.
  */
-export async function extractRateCardWithGrok(
-  args: ExtractCardArgs & { apiKey: string },
+export async function extractRateCard(
+  args: ExtractCardArgs & { chat: ExtractChat },
 ): Promise<ExtractedCard> {
   const messages: Array<ChatMessage> = [
     { role: 'system', content: EXTRACT_SYSTEM },
@@ -406,7 +418,7 @@ export async function extractRateCardWithGrok(
   try {
     let rejected = ''
     for (let turn = 0; turn < 2; turn++) {
-      const content = await grokChat(args.apiKey, messages)
+      const content = await args.chat(messages)
       if (typeof content !== 'string') return content
       const checked = checkExtractedCard(content, args)
       if (checked === 'unverified' || !('error' in checked)) return checked
@@ -688,11 +700,12 @@ async function extractFalPricingScoped(
     cursor: null,
   }
 
-  const apiKey = deps.secrets.XAI_API_KEY
+  const { ai, gatewayId } = deps
   const extract =
     deps.extractCard ??
-    (apiKey
-      ? (args: ExtractCardArgs) => extractRateCardWithGrok({ ...args, apiKey })
+    (ai && gatewayId
+      ? (args: ExtractCardArgs) =>
+          extractRateCard({ ...args, chat: gatewayChat(ai, gatewayId) })
       : null)
 
   try {
@@ -940,7 +953,8 @@ async function extractFalPricingScoped(
     const failed = new Set<string>()
     const reasons = new Set<string>()
     if (leftovers.size > 0 && extract === null) {
-      outcome.skipped = 'XAI_API_KEY not set — leftovers skipped'
+      outcome.skipped =
+        'AI binding or AI_GATEWAY_ID not set — leftovers skipped'
     } else if (leftovers.size > 0 && extract !== null) {
       const groups = [...leftovers.entries()]
       const results = await mapLimit(

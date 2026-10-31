@@ -1,5 +1,5 @@
-import { bodyText } from '#/lib/text.ts'
 import { describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 
 import { verifyExamples } from '@modelschemas/rate-card'
 
@@ -14,28 +14,41 @@ import {
   EXTRACT_SYSTEM,
   checkExtractedCard,
   isRetryableLlmsStatus,
-  extractRateCardWithGrok,
+  extractRateCard,
+  gatewayChat,
   isStubPricingSection,
   pricingSection,
   pricingSectionHash,
   resumeIndex,
   shouldSkipExtract,
 } from './extract-fal-pricing.ts'
+import type { GatewayAi } from './extract-fal-pricing.ts'
 import { parseFalUnitRate } from './fal-unit-rate.ts'
 import { SPEC_SYNC_SHARD_CRONS } from './sync.ts'
 
-/** A fetch mock answering successive chat calls with these contents. */
-function grokReplies(...replies: Array<unknown>) {
-  const mock = vi.fn<typeof fetch>()
+type RunMock = Mock<GatewayAi['run']>
+
+/** An AI binding answering successive chat calls with these contents. */
+function gatewayReplies(...replies: Array<unknown>): RunMock {
+  const mock: RunMock = vi.fn()
   for (const reply of replies) {
     const content = typeof reply === 'string' ? reply : JSON.stringify(reply)
-    mock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
-        status: 200,
-      }),
-    )
+    mock.mockResolvedValueOnce({ choices: [{ message: { content } }] })
   }
   return mock
+}
+
+/** The chat-completions input of call `n`. */
+function runInput(
+  run: RunMock,
+  n: number,
+): {
+  messages: Array<{ role: string; content: string }>
+  temperature?: number
+} {
+  return run.mock.calls[n]?.[1] as {
+    messages: Array<{ role: string; content: string }>
+  }
 }
 
 const NANO_LLMS = `# Nano Banana 2
@@ -237,14 +250,21 @@ describe('isRetryableLlmsStatus', () => {
   })
 })
 
+type ExtractArgs = Omit<Parameters<typeof extractRateCard>[0], 'chat'>
+
+function extract(args: ExtractArgs, run: RunMock) {
+  return extractRateCard({ ...args, chat: gatewayChat({ run }, 'gw-test') })
+}
+
 async function extractError(
-  args: Parameters<typeof extractRateCardWithGrok>[0],
+  args: ExtractArgs,
+  run: RunMock,
 ): Promise<string | null> {
-  const result = await extractRateCardWithGrok(args)
+  const result = await extract(args, run)
   return typeof result === 'object' && 'error' in result ? result.error : null
 }
 
-describe('extractRateCardWithGrok', () => {
+describe('extractRateCard through the gateway', () => {
   const args = {
     pricingText: pricingSection(NANO_LLMS),
     requestProperties: new Set([
@@ -256,129 +276,83 @@ describe('extractRateCardWithGrok', () => {
     sourceUrl: NANO_BANANA_2.source.url,
     sourceHash: 'c'.repeat(64),
     now: 1_781_150_000,
-    apiKey: 'xai-test',
   }
+  const { source: _source, ...body } = NANO_BANANA_2
 
   it('stamps source and accepts a verified card', async () => {
-    const { source: _source, ...body } = NANO_BANANA_2
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          choices: [{ message: { content: JSON.stringify(body) } }],
-        }),
-        { status: 200 },
-      ),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      const card = await extractRateCardWithGrok(args)
-      expect(card).not.toBe('unverified')
-      expect(card).not.toHaveProperty('error')
-      if (card === 'unverified' || 'error' in card) return
-      expect(card.source.hash).toBe(args.sourceHash)
-      expect(card.source.url).toBe(args.sourceUrl)
-      expect(fetchMock.mock.calls[0]?.[0]).toBe(
-        'https://api.x.ai/v1/chat/completions',
-      )
-      const init = fetchMock.mock.calls[0]?.[1]
-      expect(init?.method).toBe('POST')
-      const payload = JSON.parse(bodyText(init?.body)) as {
-        model: string
-      }
-      expect(payload.model).toBe(FAL_PRICING_EXTRACT_MODEL)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    const run = gatewayReplies(body)
+    const card = await extract(args, run)
+    expect(card).not.toBe('unverified')
+    expect(card).not.toHaveProperty('error')
+    if (card === 'unverified' || 'error' in card) return
+    expect(card.source.hash).toBe(args.sourceHash)
+    expect(card.source.url).toBe(args.sourceUrl)
+    const [model, input, options] = run.mock.calls[0] ?? []
+    expect(model).toBe(FAL_PRICING_EXTRACT_MODEL)
+    expect(input).toMatchObject({ response_format: { type: 'json_object' } })
+    expect(options).toEqual({ gateway: { id: 'gw-test' } })
   })
 
   it('returns unverified only for a section that names no price', async () => {
-    const fetchMock = grokReplies({ unverified: true })
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      await expect(
-        extractRateCardWithGrok({
+    const run = gatewayReplies({ unverified: true })
+    await expect(
+      extract(
+        {
           ...args,
           pricingText:
             '## Pricing\n\nSee [fal.ai pricing](https://fal.ai/pricing).',
-        }),
-      ).resolves.toBe('unverified')
-      expect(fetchMock).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+        },
+        run,
+      ),
+    ).resolves.toBe('unverified')
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
   it('sends a priced section back once when the model says unverified (#88)', async () => {
-    const { source: _source, ...body } = NANO_BANANA_2
-    const fetchMock = grokReplies({ unverified: true }, body)
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      const card = await extractRateCardWithGrok(args)
-      expect(card).toMatchObject({ price: NANO_BANANA_2.price })
-      expect(fetchMock).toHaveBeenCalledTimes(2)
-      const retry = JSON.parse(
-        bodyText(fetchMock.mock.calls[1]?.[1]?.body),
-      ) as {
-        model: string
-        messages: Array<{ role: string; content: string }>
-      }
-      expect(retry.model).toBe(FAL_PRICING_EXTRACT_MODEL)
-      expect(retry.messages.map((m) => m.role)).toEqual([
-        'system',
-        'user',
-        'assistant',
-        'user',
-      ])
-      expect(retry.messages[3]?.content).toContain('$0.08')
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    const run = gatewayReplies({ unverified: true }, body)
+    const card = await extract(args, run)
+    expect(card).toMatchObject({ price: NANO_BANANA_2.price })
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(run.mock.calls[1]?.[0]).toBe(FAL_PRICING_EXTRACT_MODEL)
+    const retry = runInput(run, 1)
+    expect(retry.messages.map((m) => m.role)).toEqual([
+      'system',
+      'user',
+      'assistant',
+      'user',
+    ])
+    expect(retry.messages[3]?.content).toContain('$0.08')
   })
 
   it('returns the rejection when a priced section is refused twice', async () => {
-    const { source: _source, ...body } = NANO_BANANA_2
     for (const reply of [{ unverified: true }, { ...body, examples: [] }]) {
-      const fetchMock = grokReplies(reply, reply)
-      vi.stubGlobal('fetch', fetchMock)
-      try {
-        expect(await extractError(args)).toMatch(
-          /^rejected twice: the section names/,
-        )
-        expect(fetchMock).toHaveBeenCalledTimes(2)
-      } finally {
-        vi.unstubAllGlobals()
-      }
+      const run = gatewayReplies(reply, reply)
+      expect(await extractError(args, run)).toMatch(
+        /^rejected twice: the section names/,
+      )
+      expect(run).toHaveBeenCalledTimes(2)
     }
   })
 
   it('returns the rejection when verifyExamples fails on both turns', async () => {
-    const { source: _source, examples, ...body } = NANO_BANANA_2
+    const { examples, ...rest } = body
     const first = examples[0]
     const bad = {
-      ...body,
+      ...rest,
       examples: first
         ? [{ ...first, usd: 999 }]
         : [{ params: {}, usd: 999, quote: 'nope' }],
     }
-    const fetchMock = grokReplies(bad, bad)
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      expect(await extractError(args)).toMatch(
-        /^rejected twice: verifyExamples failed/,
-      )
-      const retry = JSON.parse(
-        bodyText(fetchMock.mock.calls[1]?.[1]?.body),
-      ) as {
-        messages: Array<{ content: string }>
-      }
-      expect(retry.messages[3]?.content).toContain('verifyExamples failed')
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    const run = gatewayReplies(bad, bad)
+    expect(await extractError(args, run)).toMatch(
+      /^rejected twice: verifyExamples failed/,
+    )
+    expect(runInput(run, 1).messages[3]?.content).toContain(
+      'verifyExamples failed',
+    )
   })
 
   it('rejects a request-bound param the input schema does not have', async () => {
-    const { source: _source, ...body } = NANO_BANANA_2
     const invented = {
       ...body,
       inputs: {
@@ -386,56 +360,32 @@ describe('extractRateCardWithGrok', () => {
         num_images: { param: 'image_count', kind: 'number', default: 1 },
       },
     }
-    vi.stubGlobal('fetch', grokReplies(invented, invented))
-    try {
-      expect(await extractError(args)).toMatch(
-        /^rejected twice: a request-bound/,
-      )
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    expect(
+      await extractError(args, gatewayReplies(invented, invented)),
+    ).toMatch(/^rejected twice: a request-bound/)
   })
 
   it('fails closed on a non-card payload', async () => {
-    vi.stubGlobal('fetch', grokReplies({ nope: true }, 'not json'))
-    try {
-      await expect(extractRateCardWithGrok(args)).resolves.toEqual({
-        error: 'rejected twice: reply is not JSON',
-      })
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    await expect(
+      extract(args, gatewayReplies({ nope: true }, 'not json')),
+    ).resolves.toEqual({ error: 'rejected twice: reply is not JSON' })
   })
 
-  it('returns the thrown message when the call throws (#394)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof fetch>().mockRejectedValue(new Error('network down')),
-    )
-    try {
-      await expect(extractRateCardWithGrok(args)).resolves.toEqual({
-        error: 'network down',
-      })
-    } finally {
-      vi.unstubAllGlobals()
-    }
+  it('returns the thrown message when the gateway call throws (#394)', async () => {
+    const run: RunMock = vi
+      .fn()
+      .mockRejectedValue(new Error('AiError: 429 rate limited'))
+    await expect(extract(args, run)).resolves.toEqual({
+      error: 'AiError: 429 rate limited',
+    })
+    expect(run).toHaveBeenCalledTimes(1)
   })
 
-  it('returns the xAI status and body when the call fails (#394)', async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response('{"error":"rate limited"}', { status: 429 }),
-      )
-    vi.stubGlobal('fetch', fetchMock)
-    try {
-      await expect(extractRateCardWithGrok(args)).resolves.toEqual({
-        error: 'xai 429: {"error":"rate limited"}',
-      })
-      expect(fetchMock).toHaveBeenCalledTimes(1)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+  it('fails closed on a reply with no message content', async () => {
+    const run: RunMock = vi.fn().mockResolvedValue({ choices: [] })
+    await expect(extract(args, run)).resolves.toEqual({
+      error: 'gateway reply has no message content',
+    })
   })
 })
 
